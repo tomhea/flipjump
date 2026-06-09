@@ -332,7 +332,6 @@ ops/frame *and* assemble time are the joint go/no-go gate before any scaling.**
 - **G21 — tic/render decoupling:** allow rendering 1 of N tics so input/sim stay responsive.
 - **G22 — flat-mode reference:** build a host-side reference model of our *exact* flat renderer to diff
   `SCREEN→PNG` against (stock DOOM only references textured mode).
-
 ## Open questions (still unresolved — to be settled by measurement or in R1)
 
 These are genuinely undecided; most are *empirical gates*, not design debates:
