@@ -1,4 +1,4 @@
-// Is All Letters (#0189)
+// Is All Letters (#0185)
 
 // Reads a non-empty `\n`-terminated line ≤ 80 chars and prints `1\n` if every byte is `A`-`Z` or `a`-`z`, else `0\n`.
 

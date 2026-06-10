@@ -1,4 +1,4 @@
-// Demo Bit Inc 4bit (#1251)
+// Demo Bit Inc 4bit (#0848)
 
 // Reads a 4-char `0`/`1` binary string + `\n`. Uses `bit.inc` (4-bit). Prints result as 4-char binary + `\n` (mod 16).
 

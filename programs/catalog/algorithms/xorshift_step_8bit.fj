@@ -1,4 +1,4 @@
-// Xorshift Step 8bit (#1216)
+// Xorshift Step 8bit (#0579)
 
 // Reads one non-zero byte (state). Applies xorshift8: `s ^= s << 3; s ^= s >> 4; s ^= s << 2;` (all mod 256). Outputs the new state as one raw byte.
 

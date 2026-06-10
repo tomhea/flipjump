@@ -1,4 +1,4 @@
-// Lcg Step 8bit (#1214)
+// Lcg Step 8bit (#0577)
 
 // Reads one byte (the seed/state). Applies one LCG step: `state = (state * 5 + 3) mod 256`. Outputs the new state as one raw byte.
 

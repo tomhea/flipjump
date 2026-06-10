@@ -1,4 +1,4 @@
-// Array First 3 (#1149)
+// Array First 3 (#0396)
 
 // Reads digit N `3`-`9` + `\n`, then N decimals. Prints just the first 3 values, one per line.
 

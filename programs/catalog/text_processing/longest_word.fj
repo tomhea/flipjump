@@ -1,4 +1,4 @@
-// Longest Word (#1099)
+// Longest Word (#0743)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Prints the longest whitespace-separated token + `\n`. Ties: prints the first such word. Empty input → empty line `\n`.
 

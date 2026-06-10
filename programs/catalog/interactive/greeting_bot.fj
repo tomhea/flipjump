@@ -1,0 +1,25 @@
+// Greeting Bot (#0434)
+
+// Reads a name (`\n`-terminated, ≤ 20 chars) and prints `Hello, <name>!\nGoodbye, <name>!\n`.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    stl.output "Hello, "
+    hex.set hw, bptr, buf
+    hex.print_ptr_text bptr, slen
+    stl.output "!\nGoodbye, "
+    hex.set hw, bptr, buf
+    hex.print_ptr_text bptr, slen
+    stl.output "!\n"
+    stl.loop
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw

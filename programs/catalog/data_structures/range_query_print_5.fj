@@ -1,4 +1,4 @@
-// Range Query Print 5 (#1161)
+// Range Query Print 5 (#0408)
 
 // Reads 5 decimals `0`-`99` (each on own line), then `lo` `hi`. Prints each value with `lo <= x <= hi` in input order, one per line.
 

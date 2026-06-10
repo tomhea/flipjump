@@ -1,4 +1,4 @@
-// Compare To 100 (#0206)
+// Compare To 100 (#0333)
 
 // Reads one decimal and prints `less\n` if `<100`, `equal\n` if `=100`, `more\n` if `>100`.
 

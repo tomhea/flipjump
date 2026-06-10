@@ -1,0 +1,26 @@
+// Print Bar Chart H 5 (#0831)
+
+// Reads 5 decimals each `0`-`9` (own line). Same as `print_bar_chart_h_3` with 5 rows.
+
+main
+
+def main @ err < val {
+    stl.startup_and_init_all
+    rep(5, i) hrow err, val
+  err:
+    stl.loop
+}
+
+// Read one decimal and print that many '*' followed by a newline.
+def hrow err, val @ loop, done {
+    hex.input_dec_uint 4, val, err
+  loop:
+    hex.if0 4, val, done
+    stl.output '*'
+    hex.dec 4, val
+    ;loop
+  done:
+    stl.output '\n'
+}
+
+val: hex.vec 4

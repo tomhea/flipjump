@@ -1,0 +1,11 @@
+// Print Christmas Tree 5 (#0805)
+
+// No input. Prints a fixed 5-row centered Christmas tree of `*` (rows of width 1,3,5,7,9 centered in a 9-col field with leading spaces).
+
+main
+
+def main {
+    stl.startup
+    stl.output "    *\n   ***\n  *****\n *******\n*********\n"
+    stl.loop
+}

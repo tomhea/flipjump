@@ -1,0 +1,28 @@
+// Nim Winner Three Heaps (#0965)
+
+// Reads 3 decimals (each `0`-`7`, own line) representing heap sizes. Prints `first\n` if first player has a winning strategy (XOR of heaps != 0), else `second\n`.
+
+main
+
+def main @ err, nm_second < nm_a, nm_b, nm_c, nm_xr {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, nm_a, err
+    hex.input_dec_uint 4, nm_b, err
+    hex.input_dec_uint 4, nm_c, err
+    hex.mov 4, nm_xr, nm_a
+    hex.xor 4, nm_xr, nm_b
+    hex.xor 4, nm_xr, nm_c
+    hex.if0 4, nm_xr, nm_second
+    stl.output "first\n"
+    stl.loop
+  nm_second:
+    stl.output "second\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+nm_a: hex.vec 4
+nm_b: hex.vec 4
+nm_c: hex.vec 4
+nm_xr: hex.vec 4

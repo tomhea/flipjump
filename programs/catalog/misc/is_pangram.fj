@@ -1,4 +1,4 @@
-// Is Pangram (#1081)
+// Is Pangram (#1021)
 
 // Reads `\n`-terminated line ≤ 80 chars. Prints `1\n` if the line contains every letter `a`-`z` at least once (case-insensitive), else `0\n`.
 

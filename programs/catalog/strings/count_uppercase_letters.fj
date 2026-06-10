@@ -1,4 +1,4 @@
-// Count Uppercase Letters (#0171)
+// Count Uppercase Letters (#0169)
 
 // Reads a `\n`-terminated line ≤ 80 chars and prints the count of `A`-`Z` bytes as decimal + `\n`.
 

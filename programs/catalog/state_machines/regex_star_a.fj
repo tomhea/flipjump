@@ -1,0 +1,37 @@
+// Regex Star A (#0771)
+
+// Reads a `\n`-terminated string of lowercase letters ≤ 30 chars. Prints `1\n` if the string matches `a*` (zero or more `a`s, no other characters), else `0\n`.
+
+main
+
+def main @ err, loop, done, print0j, done_j < ch, char_a, nl_char, ok, tmp {
+    stl.startup_and_init_all 100
+    hex.set 2, ok, 1
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, loop
+    hex.set 2, ok, 0
+    ;loop
+  done:
+    // ok==1 means all chars were 'a'
+    hex.if0 2, ok, print0j
+    stl.output "1\n"
+    ;done_j
+  print0j:
+    stl.output "0\n"
+  done_j:
+    stl.loop
+  err:
+    stl.loop
+}
+
+ch: hex.vec 2
+tmp: hex.vec 2
+ok: hex.vec 2
+char_a: hex.vec 2, 'a'
+nl_char: hex.vec 2, '\n'

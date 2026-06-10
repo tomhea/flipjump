@@ -1,0 +1,11 @@
+// Print Table 2X3 (#0817)
+
+// No input. Prints a fixed 2-row × 3-column ASCII table with `+`, `-`, `|` separators and fixed contents (`Name` / `Age` / `City` headers + one data row `Alice` / `30` / `Paris`).
+
+main
+
+def main {
+    stl.startup
+    stl.output "+-------+-----+-------+\n| Name  | Age | City  |\n+-------+-----+-------+\n| Alice | 30  | Paris |\n+-------+-----+-------+\n"
+    stl.loop
+}

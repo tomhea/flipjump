@@ -1,4 +1,4 @@
-// Jacobi Symbol Small (#1037)
+// Jacobi Symbol Small (#0148)
 
 // Reads decimals `a` `n` (`n` odd `1`-`19`, `a` `0`-`n-1`). Prints the Jacobi symbol as `1\n`, `-1\n`, or `0\n`.
 

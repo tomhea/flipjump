@@ -1,4 +1,4 @@
-// Odds First N (#0918)
+// Odds First N (#0725)
 
 // Reads digit N `1`-`9` + `\n`. Prints first N positive odd numbers `1, 3, ..., 2N-1` space-separated + `\n`.
 

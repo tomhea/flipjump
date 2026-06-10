@@ -1,0 +1,79 @@
+// Encrypt Then Uppercase (#0895)
+
+// Reads a `\n`-terminated plaintext ≤ 20 chars. Applies Caesar shift of `+5`, then uppercases all letters. Prints + `\n`.
+
+main
+
+def main @ err, loop, go, upit, dolower, notlower, done < b, nl, nn5, out, la, lz, c20b {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.set 4, nn5, 5
+    shift_byte b, nn5, out
+    hex.cmp 2, out, la, notlower, upit, upit
+  upit:
+    hex.cmp 2, out, lz, dolower, dolower, notlower
+  dolower:
+    hex.sub 2, out, c20b
+  notlower:
+    hex.print out
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// out[:2] = byte b shifted forward by nn (0..25) within its letter case; else b.
+def shift_byte b, nn, out @ low_in, do_low, ge26_l, prn_l, up_chk, up_in, do_up, ge26_u, prn_u, plain, done < sv, st, la, lz, ua, uz, c26 {
+    hex.zero 4, sv
+    hex.mov 2, sv, b
+    hex.cmp 4, sv, la, up_chk, low_in, low_in
+  low_in:
+    hex.cmp 4, sv, lz, do_low, do_low, up_chk
+  do_low:
+    hex.mov 4, st, sv
+    hex.sub 4, st, la
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_l, ge26_l, ge26_l
+  ge26_l:
+    hex.sub 4, st, c26
+  prn_l:
+    hex.add 4, st, la
+    hex.mov 2, out, st
+    ;done
+  up_chk:
+    hex.cmp 4, sv, ua, plain, up_in, up_in
+  up_in:
+    hex.cmp 4, sv, uz, do_up, do_up, plain
+  do_up:
+    hex.mov 4, st, sv
+    hex.sub 4, st, ua
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_u, ge26_u, ge26_u
+  ge26_u:
+    hex.sub 4, st, c26
+  prn_u:
+    hex.add 4, st, ua
+    hex.mov 2, out, st
+    ;done
+  plain:
+    hex.mov 2, out, b
+  done:
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+nn5: hex.vec 4
+out: hex.vec 2
+c20b: hex.vec 2, 0x20
+sv: hex.vec 4
+st: hex.vec 4
+la: hex.vec 4, 'a'
+lz: hex.vec 4, 'z'
+ua: hex.vec 4, 'A'
+uz: hex.vec 4, 'Z'
+c26: hex.vec 4, 26

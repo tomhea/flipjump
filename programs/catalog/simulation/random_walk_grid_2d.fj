@@ -1,0 +1,66 @@
+// Random Walk Grid 2D (#0640)
+
+// Reads digit N `1`-`9` + `\n`, then N raw bytes. Starts at `(0,0)`. For each byte, moves according to `byte mod 4`: `0`=up (`y+1`), `1`=right (`x+1`), `2`=down (`y-1`), `3`=left (`x-1`). Prints final `<x> <y>\n`.
+
+main
+
+def main @ err, rw_loop, rw_done, rw_d0, rw_d1, rw_d2, rw_d3, rw_dafter, rw_ck1, rw_ck2 < rw_n, rw_cnt, rw_byte, rw_x, rw_y, rw_dir, rw_four, rw_q, rw_rem, rw_zero4, rw_one4, rw_two4, zero_char {
+    stl.startup_and_init_all 100
+    hex.input rw_n
+    hex.sub 2, rw_n, zero_char
+    hex.input rw_cnt
+    hex.zero 4, rw_x
+    hex.zero 4, rw_y
+    hex.mov 2, rw_cnt, rw_n
+  rw_loop:
+    hex.if0 2, rw_cnt, rw_done
+    hex.input rw_byte
+    hex.zero 4, rw_dir
+    hex.mov 2, rw_dir, rw_byte
+    hex.div 4, 4, rw_q, rw_rem, rw_dir, rw_four, err
+    // branch on rem: 0,1,2,3
+    hex.cmp 4, rw_rem, rw_zero4, rw_d1, rw_d0, rw_d1
+  rw_d0:
+    // rem == 0: y+1
+    hex.inc 4, rw_y
+    ;rw_dafter
+  rw_d1:
+    hex.cmp 4, rw_rem, rw_one4, rw_d2, rw_ck1, rw_d2
+  rw_ck1:
+    // rem == 1: x+1
+    hex.inc 4, rw_x
+    ;rw_dafter
+  rw_d2:
+    hex.cmp 4, rw_rem, rw_two4, rw_d3, rw_ck2, rw_d3
+  rw_ck2:
+    // rem == 2: y-1
+    hex.dec 4, rw_y
+    ;rw_dafter
+  rw_d3:
+    // rem == 3: x-1
+    hex.dec 4, rw_x
+  rw_dafter:
+    hex.dec 2, rw_cnt
+    ;rw_loop
+  rw_done:
+    hex.print_dec_int 4, rw_x
+    stl.output ' '
+    hex.print_dec_int 4, rw_y
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+rw_n: hex.vec 2
+rw_cnt: hex.vec 2
+rw_byte: hex.vec 2
+rw_x: hex.vec 4
+rw_y: hex.vec 4
+rw_dir: hex.vec 4
+rw_four: hex.vec 4, 4
+rw_q: hex.vec 4
+rw_rem: hex.vec 4
+rw_zero4: hex.vec 4, 0
+rw_one4: hex.vec 4, 1
+rw_two4: hex.vec 4, 2
+zero_char: hex.vec 2, '0'

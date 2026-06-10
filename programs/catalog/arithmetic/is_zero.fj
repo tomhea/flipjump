@@ -1,4 +1,4 @@
-// Is Zero (#0105)
+// Is Zero (#0080)
 
 // Reads one decimal integer and prints `1\n` if it equals zero, else `0\n`.
 

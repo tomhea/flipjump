@@ -1,4 +1,4 @@
-// Legendre Symbol Small (#1036)
+// Legendre Symbol Small (#0147)
 
 // Reads decimals `a` `p` (`p` is an odd prime `3`-`19`, `a` `0`-`p-1`). Prints the Legendre symbol `(a/p)`: `1\n` if `a` is a non-zero quadratic residue mod p, `-1\n` if non-residue, `0\n` if `a == 0`.
 

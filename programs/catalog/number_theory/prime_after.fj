@@ -1,4 +1,4 @@
-// Prime After (#0140)
+// Prime After (#0115)
 
 // Reads decimal N in `0`-`50` and prints the smallest prime strictly greater than N (guaranteed ≤ 53) + `\n`.
 

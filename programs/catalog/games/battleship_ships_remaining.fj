@@ -1,0 +1,51 @@
+// Battleship Ships Remaining (#0962)
+
+// Reads a 4×4 grid (4 lines, each 4 chars; `S` = ship cell, `.` = water), then a `\n`-terminated stream of `H`/`M` chars (each char represents the outcome at the corresponding `S` cell, in row-major order, skipping `.` cells). Prints the count of `S` cells that received `M` (or no value) — i.e. ship cells NOT hit yet — as decimal + `\n`.
+
+main
+
+def main @ err, bsr_gloop, bsr_gbody, bsr_gnnl, bsr_gyes, bsr_gskip, bsr_gdone, bsr_hloop, bsr_hbody, bsr_hh, bsr_hdone < bsr_cells, bsr_scount, bsr_hcount, bsr_rb, bsr_c16, bsr_nlc, bsr_Sc, bsr_Hc {
+    stl.startup_and_init_all 100
+    hex.zero 4, bsr_cells
+    hex.zero 4, bsr_scount
+  bsr_gloop:
+    hex.cmp 4, bsr_cells, bsr_c16, bsr_gbody, bsr_gdone, bsr_gdone
+  bsr_gbody:
+    hex.input bsr_rb
+    hex.cmp 2, bsr_rb, bsr_nlc, bsr_gnnl, bsr_gloop, bsr_gnnl
+  bsr_gnnl:
+    hex.inc 4, bsr_cells
+    hex.cmp 2, bsr_rb, bsr_Sc, bsr_gskip, bsr_gyes, bsr_gskip
+  bsr_gyes:
+    hex.inc 4, bsr_scount
+  bsr_gskip:
+    ;bsr_gloop
+  bsr_gdone:
+    hex.input bsr_rb
+    hex.zero 4, bsr_hcount
+  bsr_hloop:
+    hex.input bsr_rb
+    hex.if0 2, bsr_rb, bsr_hdone
+    hex.cmp 2, bsr_rb, bsr_nlc, bsr_hbody, bsr_hdone, bsr_hbody
+  bsr_hbody:
+    hex.cmp 2, bsr_rb, bsr_Hc, bsr_hloop, bsr_hh, bsr_hloop
+  bsr_hh:
+    hex.inc 4, bsr_hcount
+    ;bsr_hloop
+  bsr_hdone:
+    hex.sub 4, bsr_scount, bsr_hcount
+    hex.print_dec_uint 4, bsr_scount
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+bsr_cells: hex.vec 4
+bsr_scount: hex.vec 4
+bsr_hcount: hex.vec 4
+bsr_rb: hex.vec 2
+bsr_c16: hex.vec 4, 16
+bsr_nlc: hex.vec 2, '\n'
+bsr_Sc: hex.vec 2, 'S'
+bsr_Hc: hex.vec 2, 'H'

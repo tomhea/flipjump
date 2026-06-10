@@ -1,0 +1,11 @@
+// Print Motto (#0935)
+
+// No input. Prints `Flip a bit, then jump.\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "Flip a bit, then jump.\n"
+    stl.loop
+}

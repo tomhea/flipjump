@@ -1,4 +1,4 @@
-// Tribonacci First 10 (#0445)
+// Tribonacci First 10 (#0710)
 
 // No input. Prints the first 10 Tribonacci values starting `T(0)=T(1)=0, T(2)=1`: `0 0 1 1 2 4 7 13 24 44\n`.
 

@@ -1,4 +1,4 @@
-// One Op Demo (#1277)
+// One Op Demo (#0874)
 
 // No input. Simulates 5 successive applications of the FlipJump primitive `flip bit a; jump b` on a 4-byte memory region, with hardcoded `a, b` pairs. Prints the final memory contents as 8 hex digits + `\n` (one nibble per output char, MSB first).
 

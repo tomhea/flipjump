@@ -1,0 +1,17 @@
+// Print Label Address Modulo (#0944)
+
+// No input. Defines a label `here`, then prints `<address-of-here> mod 256` as decimal + `\n`. (The value depends on the compiled layout but is deterministic per build.)
+
+main
+
+def main @ here, err < addr_low {
+    stl.startup_and_init_all
+    here:
+    hex.set 4, addr_low, here & 0xff
+    hex.print_dec_uint 4, addr_low
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+addr_low: hex.vec 4

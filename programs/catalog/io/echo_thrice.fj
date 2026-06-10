@@ -1,4 +1,4 @@
-// Echo Thrice (#0034)
+// Echo Thrice (#0033)
 
 // Reads each byte of stdin and outputs it three times.
 

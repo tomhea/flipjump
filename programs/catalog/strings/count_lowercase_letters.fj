@@ -1,4 +1,4 @@
-// Count Lowercase Letters (#0172)
+// Count Lowercase Letters (#0170)
 
 // Reads a `\n`-terminated line ≤ 80 chars and prints the count of `a`-`z` bytes as decimal + `\n`.
 

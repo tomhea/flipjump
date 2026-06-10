@@ -1,4 +1,4 @@
-// Matrix Transpose 3x3 (#1202)
+// Matrix Transpose 3x3 (#0565)
 
 // Reads 9 decimals (3 rows × 3 cols, row-major, each own line). Prints the transposed 3×3 matrix in row-major order, one row per output line with space-separated values + `\n` per row (3 lines total).
 

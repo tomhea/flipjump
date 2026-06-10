@@ -1,0 +1,44 @@
+// Brownian Walk 1D (#0639)
+
+// Reads digit N `1`-`9` + `\n`, then N raw bytes. Starts at position 0. For each byte, advances position by `+1` if byte value is even, `-1` if odd. Prints the final position as signed decimal + `\n`.
+
+main
+
+def main @ err, bw_loop, bw_done, bw_even, bw_odd_done < bw_n, bw_cnt, bw_byte, bw_pos, bw_q, bw_quot, bw_rem, bw_two, zero_char {
+    stl.startup_and_init_all 100
+    hex.input bw_n
+    hex.sub 2, bw_n, zero_char
+    hex.input bw_cnt
+    hex.zero 4, bw_pos
+    hex.mov 2, bw_cnt, bw_n
+  bw_loop:
+    hex.if0 2, bw_cnt, bw_done
+    hex.input bw_byte
+    hex.zero 4, bw_q
+    hex.mov 2, bw_q, bw_byte
+    hex.div 4, 4, bw_quot, bw_rem, bw_q, bw_two, err
+    hex.if0 4, bw_rem, bw_even
+    // odd
+    hex.dec 4, bw_pos
+    ;bw_odd_done
+  bw_even:
+    hex.inc 4, bw_pos
+  bw_odd_done:
+    hex.dec 2, bw_cnt
+    ;bw_loop
+  bw_done:
+    hex.print_dec_int 4, bw_pos
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+bw_n: hex.vec 2
+bw_cnt: hex.vec 2
+bw_byte: hex.vec 2
+bw_pos: hex.vec 4
+bw_q: hex.vec 4
+bw_quot: hex.vec 4
+bw_rem: hex.vec 4
+bw_two: hex.vec 4, 2
+zero_char: hex.vec 2, '0'

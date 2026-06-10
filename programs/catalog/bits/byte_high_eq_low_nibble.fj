@@ -1,4 +1,4 @@
-// Byte High Eq Low Nibble (#0902)
+// Byte High Eq Low Nibble (#0224)
 
 // Reads exactly 1 byte. Prints `1\n` if the high nibble equals the low nibble (e.g. `0xAA`, `0x33`), else `0\n`.
 

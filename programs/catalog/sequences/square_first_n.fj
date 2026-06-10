@@ -1,4 +1,4 @@
-// Square First N (#0432)
+// Square First N (#0698)
 
 // Reads digit N `1`-`9` + `\n`. Prints the first N positive squares `1, 4, 9, ..., N²`, space-separated, + `\n`.
 

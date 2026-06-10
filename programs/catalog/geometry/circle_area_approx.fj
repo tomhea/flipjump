@@ -1,4 +1,4 @@
-// Circle Area Approx (#1058)
+// Circle Area Approx (#0624)
 
 // Reads decimal radius `0`-`9` + `\n`. Prints `(r * r * 314) / 100` (integer approximation of π·r²) + `\n`.
 

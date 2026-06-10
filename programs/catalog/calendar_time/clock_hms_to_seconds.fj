@@ -1,4 +1,4 @@
-// Clock Hms To Seconds (#0857)
+// Clock Hms To Seconds (#0983)
 
 // Reads `HH:MM:SS\n` (8 chars + `\n`, each field zero-padded to 2 digits). Prints total seconds as decimal `0`-`86399` + `\n`.
 

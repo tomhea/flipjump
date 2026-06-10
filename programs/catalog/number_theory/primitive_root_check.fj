@@ -1,4 +1,4 @@
-// Primitive Root Check (#1041)
+// Primitive Root Check (#0152)
 
 // Reads decimals `g` `p` (`p` prime `3`-`19`, `g` `1`-`p-1`). Prints `1\n` if `g` is a primitive root mod p (i.e. its multiplicative order is `p-1`), else `0\n`.
 

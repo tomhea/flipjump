@@ -1,4 +1,4 @@
-// Swap Adjacent Pairs 6 (#1136)
+// Swap Adjacent Pairs 6 (#0383)
 
 // Reads exactly 6 decimals and prints them with each adjacent pair swapped (positions 0↔1, 2↔3, 4↔5), one per line in the new order.
 

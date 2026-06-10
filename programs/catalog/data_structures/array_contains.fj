@@ -1,4 +1,4 @@
-// Array Contains (#1152)
+// Array Contains (#0399)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals, then one more decimal `target`. Prints `1\n` if target appears in the N-element array, else `0\n`.
 

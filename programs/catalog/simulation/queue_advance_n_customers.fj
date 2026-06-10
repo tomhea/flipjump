@@ -1,0 +1,31 @@
+// Queue Advance N Customers (#0651)
+
+// Reads digit N `1`-`9` + `\n`. Prints N lines `serving customer K\n` for `K = 1..N`.
+
+main
+
+def main @ err, qa_loop, qa_done < qa_N, qa_k, qa_cnt, zero_char {
+    stl.startup_and_init_all 100
+    hex.input qa_N
+    hex.sub 2, qa_N, zero_char
+    hex.set 4, qa_k, 1
+    hex.zero 4, qa_cnt
+    hex.mov 2, qa_cnt, qa_N
+  qa_loop:
+    hex.if0 4, qa_cnt, qa_done
+    stl.output "serving customer "
+    hex.print_dec_uint 4, qa_k
+    stl.output '\n'
+    hex.inc 4, qa_k
+    hex.dec 4, qa_cnt
+    ;qa_loop
+  qa_done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+qa_N: hex.vec 2
+qa_k: hex.vec 4
+qa_cnt: hex.vec 4
+zero_char: hex.vec 2, '0'

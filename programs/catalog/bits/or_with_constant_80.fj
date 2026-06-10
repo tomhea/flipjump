@@ -1,4 +1,4 @@
-// Or With Constant 80 (#0378)
+// Or With Constant 80 (#0212)
 
 // Reads one byte and outputs `byte OR 0x80` (MSB set, other bits preserved), as one raw byte.
 

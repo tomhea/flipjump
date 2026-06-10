@@ -1,4 +1,4 @@
-// Is Point Inside Circle (#0588)
+// Is Point Inside Circle (#0612)
 
 // Reads 5 decimals (each own line): point `x y`, center `cx cy`, radius `r` (all `0`-`50`). Prints `1\n` if `(x-cx)^2 + (y-cy)^2 <= r^2`, else `0\n`.
 

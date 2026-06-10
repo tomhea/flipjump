@@ -1,4 +1,4 @@
-// Shift Right One (#0089)
+// Shift Right One (#0203)
 
 // Reads one byte and outputs `byte >> 1` (high bit becomes 0; low bit is lost).
 

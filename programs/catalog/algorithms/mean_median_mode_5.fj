@@ -1,4 +1,4 @@
-// Mean Median Mode 5 (#1194)
+// Mean Median Mode 5 (#0557)
 
 // Reads exactly 5 decimals and prints `<mean>\n<median>\n<mode>\n` (floor mean; median = middle of sorted; mode = most frequent value, ties broken by smallest).
 

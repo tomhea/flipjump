@@ -1,4 +1,4 @@
-// Is All Uppercase (#0186)
+// Is All Uppercase (#0182)
 
 // Reads a non-empty `\n`-terminated line ≤ 80 chars and prints `1\n` if every byte (excluding the `\n`) is `A`-`Z`, else `0\n`.
 

@@ -1,4 +1,4 @@
-// Sum Of Divisors Small (#0148)
+// Sum Of Divisors Small (#0123)
 
 // Reads decimal N in `1`-`30` and prints the sum of all positive divisors of N (including N) as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Multinomial 3 Small (#1045)
+// Multinomial 3 Small (#0156)
 
 // Reads 3 decimals `a` `b` `c` (each `0`-`5`, on own lines). Prints `(a + b + c)! / (a! * b! * c!)` as decimal + `\n`.
 

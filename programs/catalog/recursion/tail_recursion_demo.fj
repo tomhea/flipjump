@@ -1,0 +1,31 @@
+// Tail Recursion Demo (#0431)
+
+// Reads decimal N `0`-`9` + `\n`. Uses tail-recursive macro to compute `2^N` (each call doubles an accumulator). Prints decimal + `\n`. Demonstrates tail-call pattern.
+
+main
+
+def main @ err < r_nval, t2_n, t2_acc, t2_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, t2_n, r_nval
+    hex.set 4, t2_acc, 1
+    stl.call t2_fn
+    hex.print_dec_uint 4, t2_acc
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// t2_acc = t2_acc * 2^t2_n via tail recursion
+t2_fn:
+    hex.if0 4, t2_n, t2_base
+    hex.shl_bit 4, t2_acc
+    hex.dec 4, t2_n
+    stl.call t2_fn
+    stl.return
+  t2_base:
+    stl.return
+
+r_nval: hex.vec 4
+t2_n: hex.vec 4
+t2_acc: hex.vec 4

@@ -1,4 +1,4 @@
-// Compare Three Order (#0220)
+// Compare Three Order (#0347)
 
 // Reads three decimals `a`,`b`,`c` (each own line) and prints one of `abc`/`acb`/`bac`/`bca`/`cab`/`cba` + `\n` indicating their ascending sorted order by original label. (Ties broken alphabetically by label.)
 

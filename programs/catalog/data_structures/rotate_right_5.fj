@@ -1,4 +1,4 @@
-// Rotate Right 5 (#1138)
+// Rotate Right 5 (#0385)
 
 // Reads exactly 5 decimals and prints them rotated right by 1 (input `a b c d e` → output `e\na\nb\nc\nd\n`).
 

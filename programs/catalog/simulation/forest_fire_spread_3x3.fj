@@ -1,0 +1,136 @@
+// Forest Fire Spread 3X3 (#0646)
+
+// Reads a 3×3 grid: 3 lines of 3 chars each, where chars are `T` (tree), `F` (fire), `.` (empty). Applies one step: each `F` stays `F`, each `T` adjacent (4-neighborhood, no diagonal) to an `F` becomes `F`, all other cells unchanged. Prints the new 3×3 grid.
+
+main
+
+def main @ err, ff_s00, ff_s01, ff_s02, ff_s10, ff_s11, ff_s12, ff_s20, ff_s21, ff_s22, ff_nf00, ff_c01, ff_n01a, ff_n01b, ff_c02, ff_n02a, ff_c10, ff_n10a, ff_n10b, ff_c11, ff_n11a, ff_n11b, ff_n11c, ff_c12, ff_n12a, ff_n12b, ff_c20, ff_n20a, ff_c21, ff_n21a, ff_n21b, ff_c22, ff_n22a, ff_f00, ff_f01, ff_f02, ff_f10, ff_f11, ff_f12, ff_f20, ff_f21, ff_f22, ff_print < ff00, ff01, ff02, ff10, ff11, ff12, ff20, ff21, ff22, ff00n, ff01n, ff02n, ff10n, ff11n, ff12n, ff20n, ff21n, ff22n, ff_eol, ff_T, ff_F {
+    stl.startup_and_init_all 100
+    hex.input ff00
+    hex.input ff01
+    hex.input ff02
+    hex.input ff_eol
+    hex.input ff10
+    hex.input ff11
+    hex.input ff12
+    hex.input ff_eol
+    hex.input ff20
+    hex.input ff21
+    hex.input ff22
+    hex.input ff_eol
+    hex.mov 2, ff00n, ff00
+    hex.mov 2, ff01n, ff01
+    hex.mov 2, ff02n, ff02
+    hex.mov 2, ff10n, ff10
+    hex.mov 2, ff11n, ff11
+    hex.mov 2, ff12n, ff12
+    hex.mov 2, ff20n, ff20
+    hex.mov 2, ff21n, ff21
+    hex.mov 2, ff22n, ff22
+    // (0,0): neighbors (0,1),(1,0) -- T->F if any neighbor ==F
+    hex.cmp 2, ff00, ff_T, ff_c01, ff_s00, ff_c01
+  ff_s00:
+    hex.cmp 2, ff01, ff_F, ff_nf00, ff_f00, ff_nf00
+  ff_nf00: hex.cmp 2, ff10, ff_F, ff_c01, ff_f00, ff_c01
+  ff_f00: hex.mov 2, ff00n, ff_F
+    // (0,1): neighbors (0,0),(0,2),(1,1)
+  ff_c01:
+    hex.cmp 2, ff01, ff_T, ff_c02, ff_s01, ff_c02
+  ff_s01:
+    hex.cmp 2, ff00, ff_F, ff_n01a, ff_f01, ff_n01a
+  ff_n01a: hex.cmp 2, ff02, ff_F, ff_n01b, ff_f01, ff_n01b
+  ff_n01b: hex.cmp 2, ff11, ff_F, ff_c02, ff_f01, ff_c02
+  ff_f01: hex.mov 2, ff01n, ff_F
+    // (0,2): neighbors (0,1),(1,2)
+  ff_c02:
+    hex.cmp 2, ff02, ff_T, ff_c10, ff_s02, ff_c10
+  ff_s02:
+    hex.cmp 2, ff01, ff_F, ff_n02a, ff_f02, ff_n02a
+  ff_n02a: hex.cmp 2, ff12, ff_F, ff_c10, ff_f02, ff_c10
+  ff_f02: hex.mov 2, ff02n, ff_F
+    // (1,0): neighbors (0,0),(1,1),(2,0)
+  ff_c10:
+    hex.cmp 2, ff10, ff_T, ff_c11, ff_s10, ff_c11
+  ff_s10:
+    hex.cmp 2, ff00, ff_F, ff_n10a, ff_f10, ff_n10a
+  ff_n10a: hex.cmp 2, ff11, ff_F, ff_n10b, ff_f10, ff_n10b
+  ff_n10b: hex.cmp 2, ff20, ff_F, ff_c11, ff_f10, ff_c11
+  ff_f10: hex.mov 2, ff10n, ff_F
+    // (1,1): neighbors (0,1),(1,0),(1,2),(2,1)
+  ff_c11:
+    hex.cmp 2, ff11, ff_T, ff_c12, ff_s11, ff_c12
+  ff_s11:
+    hex.cmp 2, ff01, ff_F, ff_n11a, ff_f11, ff_n11a
+  ff_n11a: hex.cmp 2, ff10, ff_F, ff_n11b, ff_f11, ff_n11b
+  ff_n11b: hex.cmp 2, ff12, ff_F, ff_n11c, ff_f11, ff_n11c
+  ff_n11c: hex.cmp 2, ff21, ff_F, ff_c12, ff_f11, ff_c12
+  ff_f11: hex.mov 2, ff11n, ff_F
+    // (1,2): neighbors (0,2),(1,1),(2,2)
+  ff_c12:
+    hex.cmp 2, ff12, ff_T, ff_c20, ff_s12, ff_c20
+  ff_s12:
+    hex.cmp 2, ff02, ff_F, ff_n12a, ff_f12, ff_n12a
+  ff_n12a: hex.cmp 2, ff11, ff_F, ff_n12b, ff_f12, ff_n12b
+  ff_n12b: hex.cmp 2, ff22, ff_F, ff_c20, ff_f12, ff_c20
+  ff_f12: hex.mov 2, ff12n, ff_F
+    // (2,0): neighbors (1,0),(2,1)
+  ff_c20:
+    hex.cmp 2, ff20, ff_T, ff_c21, ff_s20, ff_c21
+  ff_s20:
+    hex.cmp 2, ff10, ff_F, ff_n20a, ff_f20, ff_n20a
+  ff_n20a: hex.cmp 2, ff21, ff_F, ff_c21, ff_f20, ff_c21
+  ff_f20: hex.mov 2, ff20n, ff_F
+    // (2,1): neighbors (2,0),(2,2),(1,1)
+  ff_c21:
+    hex.cmp 2, ff21, ff_T, ff_c22, ff_s21, ff_c22
+  ff_s21:
+    hex.cmp 2, ff20, ff_F, ff_n21a, ff_f21, ff_n21a
+  ff_n21a: hex.cmp 2, ff22, ff_F, ff_n21b, ff_f21, ff_n21b
+  ff_n21b: hex.cmp 2, ff11, ff_F, ff_c22, ff_f21, ff_c22
+  ff_f21: hex.mov 2, ff21n, ff_F
+    // (2,2): neighbors (1,2),(2,1)
+  ff_c22:
+    hex.cmp 2, ff22, ff_T, ff_print, ff_s22, ff_print
+  ff_s22:
+    hex.cmp 2, ff12, ff_F, ff_n22a, ff_f22, ff_n22a
+  ff_n22a: hex.cmp 2, ff21, ff_F, ff_print, ff_f22, ff_print
+  ff_f22: hex.mov 2, ff22n, ff_F
+  ff_print:
+    hex.print ff00n
+    hex.print ff01n
+    hex.print ff02n
+    stl.output '\n'
+    hex.print ff10n
+    hex.print ff11n
+    hex.print ff12n
+    stl.output '\n'
+    hex.print ff20n
+    hex.print ff21n
+    hex.print ff22n
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+ff00: hex.vec 2
+ff01: hex.vec 2
+ff02: hex.vec 2
+ff10: hex.vec 2
+ff11: hex.vec 2
+ff12: hex.vec 2
+ff20: hex.vec 2
+ff21: hex.vec 2
+ff22: hex.vec 2
+ff00n: hex.vec 2
+ff01n: hex.vec 2
+ff02n: hex.vec 2
+ff10n: hex.vec 2
+ff11n: hex.vec 2
+ff12n: hex.vec 2
+ff20n: hex.vec 2
+ff21n: hex.vec 2
+ff22n: hex.vec 2
+ff_eol: hex.vec 2
+ff_T: hex.vec 2, 'T'
+ff_F: hex.vec 2, 'F'

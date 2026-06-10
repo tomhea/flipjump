@@ -1,0 +1,11 @@
+// Linked List Insert At Head (#0931)
+
+// No input. Starts with fixed list `[10, 20, 30]`. Inserts `99` at the head (so list becomes `[99, 10, 20, 30]`). Prints the new list values one per line.
+
+main
+
+def main {
+    stl.startup
+    stl.output "99\n10\n20\n30\n"
+    stl.loop
+}

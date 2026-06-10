@@ -1,4 +1,4 @@
-// Random Byte In Range (#1224)
+// Random Byte In Range (#0587)
 
 // Reads one byte (seed), then `lo` `hi` (each on own line, both `0`-`9`, `lo <= hi`). Applies one LCG step, computes `lo + (state mod (hi - lo + 1))`, and prints as decimal + `\n`.
 

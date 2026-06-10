@@ -1,4 +1,4 @@
-// Reverse Words In Line (#1103)
+// Reverse Words In Line (#0747)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Splits on whitespace (single-space separator), prints the words in reverse order separated by single spaces, then `\n`. Example: `hello world foo` → `foo world hello\n`.
 

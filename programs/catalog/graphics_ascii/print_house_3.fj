@@ -1,0 +1,11 @@
+// Print House 3 (#0803)
+
+// No input. Prints a fixed 3-line ASCII house: line 1 ` /\ `, line 2 `/__\`, line 3 `|  |`, each + `\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output " /\\ \n/__\\\n|  |\n"
+    stl.loop
+}

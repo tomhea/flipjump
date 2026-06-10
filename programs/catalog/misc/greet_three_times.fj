@@ -1,4 +1,4 @@
-// Greet Three Times (#1086)
+// Greet Three Times (#1026)
 
 // Reads `\n`-terminated name (≤ 15 chars). Prints `Hello, <name>!\n` three times (3 lines of output).
 

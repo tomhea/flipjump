@@ -1,4 +1,4 @@
-// Toggle Bit At Position (#1064)
+// Toggle Bit At Position (#0242)
 
 // Reads one byte, then one ASCII digit `0`-`7` + `\n`. Outputs the byte with the bit at that position XOR'd (toggled). Convention: position `0` is the LSB (matches `bit_at_position`).
 

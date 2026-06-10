@@ -1,4 +1,4 @@
-// Lah N K Small (#1052)
+// Lah N K Small (#0163)
 
 // Reads decimals `N` `K` (`N` `1`-`6`, `K` `1`-`N`). Prints the (signed) Lah number `L(N, K)` as decimal + `\n`.
 

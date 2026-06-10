@@ -1,0 +1,52 @@
+// Eval Two Op Expr (#0779)
+
+// Reads `<a><op><b>` + `\n` where `op` is one of `+`, `-`, `*` and `a`, `b` are single digits. Prints the result + `\n`.
+
+main
+
+def main < a, b, op {
+    stl.startup_and_init_all
+    read_digit a
+    hex.input op
+    read_digit b
+    apply_op a, op, b
+    hex.print_dec_int 8, a
+    stl.output '\n'
+    stl.loop
+}
+
+// Read one ASCII digit and store its value (0-9) in dst[:8].
+def read_digit dst < db, c0 {
+    hex.input db
+    hex.zero 8, dst
+    hex.mov 2, dst, db
+    hex.sub 8, dst, c0
+}
+
+// acc[:8] = acc <op> val, where op (hex.vec 2) is '+', '-', or '*'.
+def apply_op acc, op, val @ chkminus, chkmul, doadd, dosub, domul, done < pc, mc, prod {
+    hex.cmp 2, op, pc, chkminus, doadd, chkminus
+  chkminus:
+    hex.cmp 2, op, mc, chkmul, dosub, chkmul
+  chkmul:
+    ;domul
+  doadd:
+    hex.add 8, acc, val
+    ;done
+  dosub:
+    hex.sub 8, acc, val
+    ;done
+  domul:
+    hex.mul 8, prod, acc, val
+    hex.mov 8, acc, prod
+  done:
+}
+
+a: hex.vec 8
+b: hex.vec 8
+op: hex.vec 2
+db: hex.vec 2
+c0: hex.vec 8, '0'
+pc: hex.vec 2, '+'
+mc: hex.vec 2, '-'
+prod: hex.vec 8

@@ -1,4 +1,4 @@
-// Rectangle Perimeter (#0582)
+// Rectangle Perimeter (#0608)
 
 // Reads `width` `height` (each own line, `0`-`100`). Prints `2 * (width + height)` + `\n`.
 

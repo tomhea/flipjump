@@ -96,64 +96,54 @@ ns hex {
     //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
     // Space Complexity: ~ n(9@+132)
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
-    // Reads ASCII '0'..'9' until a '\n' or '\0' (EOF) terminator;
-    // jumps to error on any other byte. Inverse of hex.print_dec_uint.
+    // Reads ASCII '0'..'9' and STOPS at the first non-digit byte, which is stored in stop_byte[:2].
     // @requires hex.init
-    def input_dec_uint n, dst, error @ loop, valid_hi, terminator, digit_char, add_digit, digit, byte, end {
+    def input_dec_uint_until n, dst, stop_byte @ loop, digit_lo, add_digit, digit, done {
         .zero n, dst
         .zero n, digit
       loop:
-        .input byte                                       // byte = [low nibble, high nibble]
-        .if_flags byte+dw, (1<<0)|(1<<3), error, valid_hi // high nibble must be 0 (terminator) or 3 (digit)
-      valid_hi:
-        .if_flags byte+dw, 1<<3, terminator, digit_char
-      terminator:
-        .if_flags byte, (1<<0x0)|(1<<0xA), error, end     // '\0' (0x00) or '\n' (0x0A)
-      digit_char:
-        .if_flags byte, (1<<10)-1, error, add_digit       // low nibble must be 0..9
+        .input stop_byte
+        .if_flags stop_byte+dw, 1<<3, done, digit_lo     // high nibble != 3 -> not '0'-'9' -> stop
+      digit_lo:
+        .if_flags stop_byte, (1<<10)-1, done, add_digit  // low nibble not 0..9 -> not a digit -> stop
       add_digit:
         .mul10 n, dst
         .zero digit
-        .xor digit, byte
+        .xor digit, stop_byte
         .add n, dst, digit
         ;loop
 
       digit: hex.vec n
-      byte:  hex.vec 2
-      end:
+      done:
     }
 
     //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
     // Space Complexity: ~ n(10.5@+149)
     //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
-    // Reads an optional leading '-', then ASCII '0'..'9' until a '\n' or '\0' (EOF)
-    // terminator; jumps to error on any other byte. Inverse of hex.print_dec_int.
+    // Reads an optional leading '-', then ASCII '0'..'9', and STOPS at the first non-digit byte,
+    // which gets stored in stop_byte[:2] (note that a leading '+' stops with dst=0).
     // @requires hex.init
-    def input_dec_int n, dst, error @ sign_hi, minus, loop, valid_hi, terminator, digit_char, add_digit, finish, digit, byte, neg, end {
+    def input_dec_int_until n, dst, stop_byte @ sign_hi, do_minus, loop, digit_lo, add_digit, finish, digit, neg, end {
         .zero n, dst
         .zero n, digit
         bit.zero neg
-        .input byte
-        .if_flags byte+dw, 1<<2, loop, sign_hi            // high nibble 2 -> maybe '-'
+        .input stop_byte
+        .if_flags stop_byte+dw, 1<<2, loop, sign_hi      // high nibble 2 -> maybe '-'
       sign_hi:
-        .if_flags byte, 1<<0xD, error, minus              // '-' is 0x2D
-      minus:
+        .if_flags stop_byte, 1<<0xD, loop, do_minus      // '-' (0x2D) negates; else it's the stop byte
+      do_minus:
         bit.not neg
-        .input byte
+        .input stop_byte
       loop:
-        .if_flags byte+dw, (1<<0)|(1<<3), error, valid_hi
-      valid_hi:
-        .if_flags byte+dw, 1<<3, terminator, digit_char
-      terminator:
-        .if_flags byte, (1<<0x0)|(1<<0xA), error, finish
-      digit_char:
-        .if_flags byte, (1<<10)-1, error, add_digit
+        .if_flags stop_byte+dw, 1<<3, finish, digit_lo   // high nibble != 3 -> not '0'-'9' -> stop
+      digit_lo:
+        .if_flags stop_byte, (1<<10)-1, finish, add_digit
       add_digit:
         .mul10 n, dst
         .zero digit
-        .xor digit, byte
+        .xor digit, stop_byte
         .add n, dst, digit
-        .input byte
+        .input stop_byte
         ;loop
       finish:
         bit.if0 neg, end
@@ -161,8 +151,37 @@ ns hex {
         ;end
 
       digit: hex.vec n
-      byte:  hex.vec 2
       neg:   bit.bit
       end:
+    }
+
+    //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
+    // Space Complexity: ~ n(9@+150)
+    //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
+    // Reads ASCII '0'..'9' until a '\n' or '\0' (EOF) terminator; jumps to error on any other byte.
+    // @requires hex.init
+    def input_dec_uint n, dst, error @ valid_lo, stopper, ok {
+        .input_dec_uint_until n, dst, stopper
+        .if_flags stopper+dw, 1<<0, error, valid_lo      // terminator high nibble must be 0
+      valid_lo:
+        .if_flags stopper, (1<<0x0)|(1<<0xA), error, ok  // low nibble 0 ('\0') or A ('\n')
+
+      stopper: hex.vec 2
+      ok:
+    }
+
+    //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
+    // Space Complexity: ~ n(10.5@+167)
+    //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
+    // Reads an optional leading '-', then ASCII '0'..'9' until a '\n'/'\0' terminator; jumps to error on any other byte
+    // @requires hex.init
+    def input_dec_int n, dst, error @ valid_lo, stopper, ok {
+        .input_dec_int_until n, dst, stopper
+        .if_flags stopper+dw, 1<<0, error, valid_lo
+      valid_lo:
+        .if_flags stopper, (1<<0x0)|(1<<0xA), error, ok
+
+      stopper: hex.vec 2
+      ok:
     }
 }

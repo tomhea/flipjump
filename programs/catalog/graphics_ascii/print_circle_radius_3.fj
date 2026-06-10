@@ -1,0 +1,11 @@
+// Print Circle Radius 3 (#0825)
+
+// No input. Prints a rasterized circle of radius 3 centered on a 7×7 grid: each cell is `*` if `i² + j² <= 9` (with `i, j` from `-3` to `3`), else `.`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "...*...\n.*****.\n.*****.\n*******\n.*****.\n.*****.\n...*...\n"
+    stl.loop
+}

@@ -1,4 +1,4 @@
-// Is Abundant Small (#0149)
+// Is Abundant Small (#0124)
 
 // Reads decimal N in `1`-`30` and prints `1\n` if N is abundant (sum of proper divisors > N), else `0\n`.
 

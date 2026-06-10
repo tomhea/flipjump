@@ -1,4 +1,4 @@
-// Spaces Then Stars (#0276)
+// Spaces Then Stars (#0314)
 
 // Reads digit N `1`-`9` + `\n`. Prints N lines: row i has (N-i) spaces, then i `*`, then `\n` (right-aligned triangle).
 

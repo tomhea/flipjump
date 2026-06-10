@@ -1,0 +1,61 @@
+// Sudoku Row Check 9 (#0660)
+
+// Reads 9 decimals `1`-`9` (each on own line). Prints `1\n` if all 9 values are distinct (a valid Sudoku row/column/block), else `0\n`.
+
+main
+
+def main @ err, dup, ok < arr {
+    stl.startup_and_init_all
+    rep(9, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    neq_check arr + 0*dw*4, arr + 1*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 2*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 3*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 4*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 5*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 6*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 0*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 2*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 3*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 4*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 5*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 6*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 1*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 2*dw*4, arr + 3*dw*4, dup
+    neq_check arr + 2*dw*4, arr + 4*dw*4, dup
+    neq_check arr + 2*dw*4, arr + 5*dw*4, dup
+    neq_check arr + 2*dw*4, arr + 6*dw*4, dup
+    neq_check arr + 2*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 2*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 3*dw*4, arr + 4*dw*4, dup
+    neq_check arr + 3*dw*4, arr + 5*dw*4, dup
+    neq_check arr + 3*dw*4, arr + 6*dw*4, dup
+    neq_check arr + 3*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 3*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 4*dw*4, arr + 5*dw*4, dup
+    neq_check arr + 4*dw*4, arr + 6*dw*4, dup
+    neq_check arr + 4*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 4*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 5*dw*4, arr + 6*dw*4, dup
+    neq_check arr + 5*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 5*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 6*dw*4, arr + 7*dw*4, dup
+    neq_check arr + 6*dw*4, arr + 8*dw*4, dup
+    neq_check arr + 7*dw*4, arr + 8*dw*4, dup
+    stl.output "1\n"
+    ;ok
+  dup:
+    stl.output "0\n"
+  ok:
+  err:
+    stl.loop
+}
+
+// Jump `dup` if the two cells are equal.
+def neq_check ai, aj, dup @ ne {
+    hex.cmp 4, ai, aj, ne, dup, ne
+  ne:
+}
+
+arr: hex.vec 4*9

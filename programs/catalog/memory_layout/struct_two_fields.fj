@@ -1,0 +1,22 @@
+// Struct Two Fields (#0928)
+
+// Reads two decimals `a` `b` (each `0`-`99`, own line) representing a 2-field struct `{a, b}`. Prints `field1=<a> field2=<b>\n`.
+
+main
+
+def main @ err < fa, fb {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, fa, err
+    hex.input_dec_uint 4, fb, err
+    stl.output "field1="
+    hex.print_dec_uint 4, fa
+    stl.output " field2="
+    hex.print_dec_uint 4, fb
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+fa: hex.vec 4
+fb: hex.vec 4

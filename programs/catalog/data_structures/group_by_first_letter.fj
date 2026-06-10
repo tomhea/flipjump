@@ -1,4 +1,4 @@
-// Group By First Letter (#1165)
+// Group By First Letter (#0412)
 
 // Reads `N` `1`-`9` + `\n`, then N `\n`-terminated lowercase words. Groups by first letter and prints each `<letter> <count>\n` line, sorted by letter ascending.
 

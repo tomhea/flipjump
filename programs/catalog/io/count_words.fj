@@ -1,4 +1,4 @@
-// Count Words (#0032)
+// Count Words (#0031)
 
 // Reads all of stdin and prints the number of whitespace-separated tokens as decimal + `\n`. Whitespace = any of `' '`, `'\t'`, `'\n'`; runs of consecutive whitespace count as one separator; leading and trailing whitespace introduce no empty tokens; empty input prints `0\n`.
 

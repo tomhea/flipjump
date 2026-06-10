@@ -1,4 +1,4 @@
-// Demo Hex Cmp (#1245)
+// Demo Hex Cmp (#0842)
 
 // Reads two hex chars (each own line). Uses `hex.cmp`. Prints `<`, `=`, or `>` + `\n`.
 

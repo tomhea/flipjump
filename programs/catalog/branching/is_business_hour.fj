@@ -1,4 +1,4 @@
-// Is Business Hour (#0212)
+// Is Business Hour (#0339)
 
 // Reads decimal hour `0`-`23` (24-hour clock) and prints `1\n` if `9 <= h <= 17`, else `0\n`.
 

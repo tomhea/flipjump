@@ -1,4 +1,4 @@
-// Multiplexer 2to1 (#0910)
+// Multiplexer 2to1 (#0263)
 
 // Reads a selector bit + 2 data bits (each on own line). Outputs `data0` if selector is `0`, else `data1`, as one ASCII bit + `\n`.
 

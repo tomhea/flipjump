@@ -1,0 +1,21 @@
+// Emoji Smiley Or Frown (#0526)
+
+// Reads exactly one byte `0` or `1` followed by `\n`. Prints `:)\n` for `1`, `:(\n` for `0`.
+
+main
+
+def main @ smiley, frown, done < ch, onec {
+    stl.startup_and_init_all
+    hex.input ch
+    hex.cmp 2, ch, onec, frown, smiley, frown
+  smiley:
+    stl.output ":)\n"
+    ;done
+  frown:
+    stl.output ":(\n"
+  done:
+    stl.loop
+}
+
+ch: hex.vec 2, 0
+onec: hex.vec 2, '1'

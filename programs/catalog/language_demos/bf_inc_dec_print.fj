@@ -1,4 +1,4 @@
-// Bf Inc Dec Print (#1268)
+// Bf Inc Dec Print (#0865)
 
 // Reads a `\n`-terminated Brainfuck program ≤ 30 chars using only `+`, `-`, `.` (other bytes ignored). Interprets on a single cell (initially 0, mod 256). Each `.` outputs the cell value as one raw byte. Final newline after all output.
 

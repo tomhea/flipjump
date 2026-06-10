@@ -1,4 +1,4 @@
-// Print Byte Grid (#0232)
+// Print Byte Grid (#0272)
 
 // Reads one byte then `\n` then a digit `1`-`9` + `\n`. Prints an N-by-N grid filled with that byte (N lines, each N bytes then `\n`).
 

@@ -1,0 +1,22 @@
+// Print Compile Time Factorial 5 (#0939)
+
+// No input. Internally computes `5! = 120` at compile time (using a `rep`-based multiplicative chain). Prints `120\n`.
+
+main
+
+F1 = 1
+F2 = F1 * 2
+F3 = F2 * 3
+F4 = F3 * 4
+F5 = F4 * 5
+
+def main @ err < result {
+    stl.startup_and_init_all
+    hex.set 4, result, F5
+    hex.print_dec_uint 4, result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+result: hex.vec 4

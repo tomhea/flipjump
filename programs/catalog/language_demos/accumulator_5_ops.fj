@@ -1,4 +1,4 @@
-// Accumulator 5 Ops (#1272)
+// Accumulator 5 Ops (#0869)
 
 // Reads decimal `acc_initial` `0`-`9` + `\n`, then 5 `<op><digit>` tokens (each a 2-char ASCII pair like `+3`) separated by spaces on one line + `\n`. Applies the 5 ops sequentially to acc. Prints the final acc as decimal + `\n`.
 

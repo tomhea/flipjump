@@ -1,4 +1,4 @@
-// Lucas N (#0154)
+// Lucas N (#0129)
 
 // Reads decimal N in `0`-`10` and prints the N-th Lucas number (with `L(0)=2`, `L(1)=1`) + `\n`.
 

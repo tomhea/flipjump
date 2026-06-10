@@ -1,4 +1,4 @@
-// Is Armstrong 3 (#0162)
+// Is Armstrong 3 (#0137)
 
 // Reads decimal N in `100`-`999` and prints `1\n` if N equals the sum of cubes of its three digits, else `0\n`.
 

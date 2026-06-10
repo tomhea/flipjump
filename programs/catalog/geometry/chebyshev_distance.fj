@@ -1,4 +1,4 @@
-// Chebyshev Distance (#1055)
+// Chebyshev Distance (#0621)
 
 // Reads 4 decimals (each own line). Prints `max(|x2-x1|, |y2-y1|)` + `\n`.
 

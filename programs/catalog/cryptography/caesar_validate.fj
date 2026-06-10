@@ -1,0 +1,100 @@
+// Caesar Validate (#0891)
+
+// Reads a signed decimal shift `-25`..`25` + `\n`, then plaintext + `\n`, then candidate ciphertext + `\n` (each ≤ 20 chars). Prints `1\n` if applying Caesar shift to plaintext yields the candidate ciphertext exactly, else `0\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, loop, go, lenok, mismatch, match, done < bufp, bufc, bptr, slenp, slenc, nval, q, nn, rp, rc, cnt, bb, out, cb, c26 {
+    stl.startup_and_init_all
+    hex.input_dec_int 4, nval, err
+    hex.add 4, nval, c26
+    hex.div 4, 4, q, nn, nval, c26, err
+    hex.set hw, bptr, bufp
+    hex.input_ptr_line bptr, slenp
+    hex.set hw, bptr, bufc
+    hex.input_ptr_line bptr, slenc
+    hex.cmp hw, slenp, slenc, mismatch, lenok, mismatch
+  lenok:
+    hex.set hw, rp, bufp
+    hex.set hw, rc, bufc
+    hex.mov hw, cnt, slenp
+  loop:
+    hex.if0 hw, cnt, match
+    hex.read_byte_and_inc bb, rp
+    hex.read_byte_and_inc cb, rc
+    shift_byte bb, nn, out
+    hex.cmp 2, out, cb, mismatch, go, mismatch
+  go:
+    hex.dec hw, cnt
+    ;loop
+  match:
+    stl.output "1\n"
+    ;done
+  mismatch:
+    stl.output "0\n"
+  done:
+  err:
+    stl.loop
+}
+
+// out[:2] = byte b shifted forward by nn (0..25) within its letter case; else b.
+def shift_byte b, nn, out @ low_in, do_low, ge26_l, prn_l, up_chk, up_in, do_up, ge26_u, prn_u, plain, done < sv, st, la, lz, ua, uz, c26 {
+    hex.zero 4, sv
+    hex.mov 2, sv, b
+    hex.cmp 4, sv, la, up_chk, low_in, low_in
+  low_in:
+    hex.cmp 4, sv, lz, do_low, do_low, up_chk
+  do_low:
+    hex.mov 4, st, sv
+    hex.sub 4, st, la
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_l, ge26_l, ge26_l
+  ge26_l:
+    hex.sub 4, st, c26
+  prn_l:
+    hex.add 4, st, la
+    hex.mov 2, out, st
+    ;done
+  up_chk:
+    hex.cmp 4, sv, ua, plain, up_in, up_in
+  up_in:
+    hex.cmp 4, sv, uz, do_up, do_up, plain
+  do_up:
+    hex.mov 4, st, sv
+    hex.sub 4, st, ua
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_u, ge26_u, ge26_u
+  ge26_u:
+    hex.sub 4, st, c26
+  prn_u:
+    hex.add 4, st, ua
+    hex.mov 2, out, st
+    ;done
+  plain:
+    hex.mov 2, out, b
+  done:
+}
+
+bufp: hex.vec 42
+bufc: hex.vec 42
+bptr: hex.vec hw
+slenp: hex.vec hw
+slenc: hex.vec hw
+nval: hex.vec 4
+q: hex.vec 4
+nn: hex.vec 4
+rp: hex.vec hw
+rc: hex.vec hw
+cnt: hex.vec hw
+bb: hex.vec 2
+out: hex.vec 2
+cb: hex.vec 2
+sv: hex.vec 4
+st: hex.vec 4
+la: hex.vec 4, 'a'
+lz: hex.vec 4, 'z'
+ua: hex.vec 4, 'A'
+uz: hex.vec 4, 'Z'
+c26: hex.vec 4, 26

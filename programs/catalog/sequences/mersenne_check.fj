@@ -1,4 +1,4 @@
-// Mersenne Check (#1072)
+// Mersenne Check (#0733)
 
 // Reads decimal N in `2`-`17` (one or two ASCII digits, terminated by `\n`). Prints `1\n` if `2^N - 1` is prime, else `0\n`. (Upper bound `17` keeps trial division ≤ √(2^17 - 1) ≈ 362, well within runtime budget.)
 

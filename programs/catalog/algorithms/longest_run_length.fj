@@ -1,4 +1,4 @@
-// Longest Run Length (#1176)
+// Longest Run Length (#0540)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints the length of the longest run of equal consecutive elements as decimal + `\n`.
 

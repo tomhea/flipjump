@@ -1,4 +1,4 @@
-// Is Isosceles (#0590)
+// Is Isosceles (#0614)
 
 // Reads 3 decimals (each on own line) representing triangle side lengths. Prints `1\n` if at least two of the three sides are equal (i.e. equilateral triangles also qualify), else `0\n`.
 

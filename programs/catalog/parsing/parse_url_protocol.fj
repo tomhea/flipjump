@@ -1,0 +1,22 @@
+// Parse Url Protocol (#0788)
+
+// Reads `<proto>://<rest>\n` (proto is `1`-`8` lowercase letters). Prints the protocol + `\n`.
+
+main
+
+def main @ loop, echo, done < b, colon {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, colon, echo, done, echo
+  echo:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+    stl.loop
+}
+
+b: hex.vec 2
+colon: hex.vec 2, ':'

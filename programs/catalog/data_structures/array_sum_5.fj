@@ -1,4 +1,4 @@
-// Array Sum 5 (#1110)
+// Array Sum 5 (#0357)
 
 // Reads exactly 5 decimal integers, each on its own line, and prints their sum + `\n`.
 

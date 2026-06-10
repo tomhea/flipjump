@@ -1,4 +1,4 @@
-// Popcount Byte (#0076)
+// Popcount Byte (#0193)
 
 // Reads one byte from stdin and prints its 1-bit count as a single decimal digit `0`-`8` + `\n`.
 

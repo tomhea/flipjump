@@ -1,4 +1,4 @@
-// Kv Update Then Lookup (#1164)
+// Kv Update Then Lookup (#0411)
 
 // Reads 5 key-value pairs (same format), then reads one update pair (new key + new value), then a query key. Applies the update (overwrites if key exists, else adds — but if adding would exceed capacity 6, drops the oldest entry). Prints lookup result or `not found\n`.
 

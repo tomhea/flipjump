@@ -1,4 +1,4 @@
-// Array Dedupe Sorted (#1150)
+// Array Dedupe Sorted (#0397)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals already sorted ascending. Prints the unique values in order, one per line.
 

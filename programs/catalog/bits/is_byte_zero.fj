@@ -1,4 +1,4 @@
-// Is Byte Zero (#0374)
+// Is Byte Zero (#0208)
 
 // Reads one byte and prints `1\n` if it equals `0x00`, else `0\n`.
 

@@ -1,4 +1,4 @@
-// Byte Concat To Hex Word (#1066)
+// Byte Concat To Hex Word (#0244)
 
 // Reads exactly two bytes (high then low) and prints 4 lowercase hex chars (no `0x` prefix) + `\n`. The first byte's hex appears first.
 

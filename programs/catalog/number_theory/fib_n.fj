@@ -1,4 +1,4 @@
-// Fib N (#0151)
+// Fib N (#0126)
 
 // Reads decimal N in `0`-`12` and prints the N-th Fibonacci number `F(N)` (with `F(0)=0`, `F(1)=1`) + `\n`.
 

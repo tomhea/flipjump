@@ -1,0 +1,64 @@
+// Dfa Starts A Ends Z (#0759)
+
+// Reads a `\n`-terminated ASCII string of length ≥ 2 ≤ 30 chars. Prints `1\n` if first byte is `a` and last byte (immediately before `\n`) is `z`, else `0\n`.
+
+main
+
+def main @ err, loop, done, first_a, ongoing, set3, print1e, done_e < state, ch, tmp, first, nl_char, char_a, char_z, two_val, three_val_e {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+    hex.set 2, first, 1
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.if0 2, first, ongoing
+    // IS the first char (first==1, falls through here)
+    hex.set 2, first, 0
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, first_a
+    hex.set 2, state, 2
+    ;loop
+  first_a:
+    hex.set 2, state, 1
+    ;loop
+  ongoing:
+    // first==0: not first char
+    // if state==2: dead
+    hex.mov 2, tmp, state
+    hex.sub 2, tmp, two_val
+    hex.if0 2, tmp, loop
+    // track last char: 'z'->3, else->1
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_z
+    hex.if0 2, tmp, set3
+    hex.set 2, state, 1
+    ;loop
+  set3:
+    hex.set 2, state, 3
+    ;loop
+  done:
+    hex.mov 2, tmp, state
+    hex.sub 2, tmp, three_val_e
+    hex.if0 2, tmp, print1e
+    stl.output "0\n"
+    ;done_e
+  print1e:
+    stl.output "1\n"
+  done_e:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+first: hex.vec 2
+char_a: hex.vec 2, 'a'
+char_z: hex.vec 2, 'z'
+nl_char: hex.vec 2, '\n'
+two_val: hex.vec 2, 2
+three_val_e: hex.vec 2, 3

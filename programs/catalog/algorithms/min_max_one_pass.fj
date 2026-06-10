@@ -1,4 +1,4 @@
-// Min Max One Pass (#1180)
+// Min Max One Pass (#0544)
 
 // Reads digit N `1`-`9` + `\n`, then N signed decimals. Prints `<min>\n<max>\n` using a single pass (pair-compare optimization).
 

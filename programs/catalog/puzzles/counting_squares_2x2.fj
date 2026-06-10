@@ -1,0 +1,11 @@
+// Counting Squares 2X2 (#0675)
+
+// No input. Prints `5\n` (the number of squares in a 2×2 lattice grid: four unit squares + one 2×2 square).
+
+main
+
+def main {
+    stl.startup
+    stl.output "5\n"
+    stl.loop
+}

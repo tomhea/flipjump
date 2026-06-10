@@ -1,0 +1,11 @@
+// Print Chess Knight (#0822)
+
+// No input. Prints a multi-line ASCII chess knight (4 lines, e.g. with `/\\`).
+
+main
+
+def main {
+    stl.startup
+    stl.output "/\\ \n|o|\n/_\\\n|_|\n"
+    stl.loop
+}

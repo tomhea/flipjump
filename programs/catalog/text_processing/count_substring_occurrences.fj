@@ -1,4 +1,4 @@
-// Count Substring Occurrences (#1109)
+// Count Substring Occurrences (#0753)
 
 // Reads a `\n`-terminated pattern (≤ 20 chars), then a `\n`-terminated text (≤ 60 chars). Prints the count of non-overlapping left-to-right occurrences of pattern in text as decimal + `\n`. Empty pattern → `0\n`.
 

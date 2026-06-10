@@ -1,4 +1,4 @@
-// Mux 4to1 (#0912)
+// Mux 4to1 (#0265)
 
 // Reads two selector bits + 4 data bits (each on own line). Outputs the selected data bit (selector encodes 0-3 as `s1*2+s0`) + `\n`.
 

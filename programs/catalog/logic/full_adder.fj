@@ -1,4 +1,4 @@
-// Full Adder (#0915)
+// Full Adder (#0268)
 
 // Reads three ASCII bits `a b c_in` (each own line). Prints `<sum> <c_out>\n` where `sum = a XOR b XOR c_in` and `c_out = (a AND b) OR (c_in AND (a XOR b))`.
 

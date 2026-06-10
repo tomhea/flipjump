@@ -1,4 +1,4 @@
-// Euclidean Gcd With Steps (#1199)
+// Euclidean Gcd With Steps (#0562)
 
 // Reads two positive decimals `a`, `b` each `1`-`100` (own lines). Prints each step of Euclidean GCD as `a b\n` (current pair after `a = b, b = a % b`), terminating with `<gcd> 0\n`.
 

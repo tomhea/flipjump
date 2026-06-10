@@ -1,0 +1,616 @@
+// Morse To Ascii Letter (#0524)
+
+// Reads a `\n`-terminated Morse Code sequence (using only `.` and `-`, ≤ 6 chars, one of the 36 lowercase-letter / digit codes). Prints the decoded ASCII byte (no extra `\n`).
+
+hw = w / 4
+
+main
+
+def main @ hit0, hit1, hit2, hit3, hit4, hit5, hit6, hit7, hit8, hit9, hit10, hit11, hit12, hit13, hit14, hit15, hit16, hit17, hit18, hit19, hit20, hit21, hit22, hit23, hit24, hit25, hit26, hit27, hit28, hit29, hit30, hit31, hit32, hit33, hit34, hit35, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16, n17, n18, n19, n20, n21, n22, n23, n24, n25, n26, n27, n28, n29, n30, n31, n32, n33, n34, fin < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    equals_k0 buf, slen, hit0, n1
+  n1:
+    equals_k1 buf, slen, hit1, n2
+  n2:
+    equals_k2 buf, slen, hit2, n3
+  n3:
+    equals_k3 buf, slen, hit3, n4
+  n4:
+    equals_k4 buf, slen, hit4, n5
+  n5:
+    equals_k5 buf, slen, hit5, n6
+  n6:
+    equals_k6 buf, slen, hit6, n7
+  n7:
+    equals_k7 buf, slen, hit7, n8
+  n8:
+    equals_k8 buf, slen, hit8, n9
+  n9:
+    equals_k9 buf, slen, hit9, n10
+  n10:
+    equals_k10 buf, slen, hit10, n11
+  n11:
+    equals_k11 buf, slen, hit11, n12
+  n12:
+    equals_k12 buf, slen, hit12, n13
+  n13:
+    equals_k13 buf, slen, hit13, n14
+  n14:
+    equals_k14 buf, slen, hit14, n15
+  n15:
+    equals_k15 buf, slen, hit15, n16
+  n16:
+    equals_k16 buf, slen, hit16, n17
+  n17:
+    equals_k17 buf, slen, hit17, n18
+  n18:
+    equals_k18 buf, slen, hit18, n19
+  n19:
+    equals_k19 buf, slen, hit19, n20
+  n20:
+    equals_k20 buf, slen, hit20, n21
+  n21:
+    equals_k21 buf, slen, hit21, n22
+  n22:
+    equals_k22 buf, slen, hit22, n23
+  n23:
+    equals_k23 buf, slen, hit23, n24
+  n24:
+    equals_k24 buf, slen, hit24, n25
+  n25:
+    equals_k25 buf, slen, hit25, n26
+  n26:
+    equals_k26 buf, slen, hit26, n27
+  n27:
+    equals_k27 buf, slen, hit27, n28
+  n28:
+    equals_k28 buf, slen, hit28, n29
+  n29:
+    equals_k29 buf, slen, hit29, n30
+  n30:
+    equals_k30 buf, slen, hit30, n31
+  n31:
+    equals_k31 buf, slen, hit31, n32
+  n32:
+    equals_k32 buf, slen, hit32, n33
+  n33:
+    equals_k33 buf, slen, hit33, n34
+  n34:
+    equals_k34 buf, slen, hit34, hit35
+  hit0:
+    stl.output "a"
+    ;fin
+  hit1:
+    stl.output "b"
+    ;fin
+  hit2:
+    stl.output "c"
+    ;fin
+  hit3:
+    stl.output "d"
+    ;fin
+  hit4:
+    stl.output "e"
+    ;fin
+  hit5:
+    stl.output "f"
+    ;fin
+  hit6:
+    stl.output "g"
+    ;fin
+  hit7:
+    stl.output "h"
+    ;fin
+  hit8:
+    stl.output "i"
+    ;fin
+  hit9:
+    stl.output "j"
+    ;fin
+  hit10:
+    stl.output "k"
+    ;fin
+  hit11:
+    stl.output "l"
+    ;fin
+  hit12:
+    stl.output "m"
+    ;fin
+  hit13:
+    stl.output "n"
+    ;fin
+  hit14:
+    stl.output "o"
+    ;fin
+  hit15:
+    stl.output "p"
+    ;fin
+  hit16:
+    stl.output "q"
+    ;fin
+  hit17:
+    stl.output "r"
+    ;fin
+  hit18:
+    stl.output "s"
+    ;fin
+  hit19:
+    stl.output "t"
+    ;fin
+  hit20:
+    stl.output "u"
+    ;fin
+  hit21:
+    stl.output "v"
+    ;fin
+  hit22:
+    stl.output "w"
+    ;fin
+  hit23:
+    stl.output "x"
+    ;fin
+  hit24:
+    stl.output "y"
+    ;fin
+  hit25:
+    stl.output "z"
+    ;fin
+  hit26:
+    stl.output "0"
+    ;fin
+  hit27:
+    stl.output "1"
+    ;fin
+  hit28:
+    stl.output "2"
+    ;fin
+  hit29:
+    stl.output "3"
+    ;fin
+  hit30:
+    stl.output "4"
+    ;fin
+  hit31:
+    stl.output "5"
+    ;fin
+  hit32:
+    stl.output "6"
+    ;fin
+  hit33:
+    stl.output "7"
+    ;fin
+  hit34:
+    stl.output "8"
+    ;fin
+  hit35:
+    stl.output "9"
+
+  fin:
+    stl.loop
+}
+
+// Jump `yes` if buf[:slen] equals ".-", else `no`.
+def equals_k0 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 2
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-...", else `no`.
+def equals_k1 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-.-.", else `no`.
+def equals_k2 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-..", else `no`.
+def equals_k3 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".", else `no`.
+def equals_k4 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 1
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "..-.", else `no`.
+def equals_k5 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "--.", else `no`.
+def equals_k6 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "....", else `no`.
+def equals_k7 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "..", else `no`.
+def equals_k8 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 2
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".---", else `no`.
+def equals_k9 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-.-", else `no`.
+def equals_k10 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".-..", else `no`.
+def equals_k11 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "--", else `no`.
+def equals_k12 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 2
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-.", else `no`.
+def equals_k13 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 2
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "---", else `no`.
+def equals_k14 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".--.", else `no`.
+def equals_k15 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "--.-", else `no`.
+def equals_k16 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".-.", else `no`.
+def equals_k17 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "...", else `no`.
+def equals_k18 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-", else `no`.
+def equals_k19 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 1
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "..-", else `no`.
+def equals_k20 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "...-", else `no`.
+def equals_k21 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".--", else `no`.
+def equals_k22 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-..-", else `no`.
+def equals_k23 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-.--", else `no`.
+def equals_k24 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "--..", else `no`.
+def equals_k25 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-----", else `no`.
+def equals_k26 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".----", else `no`.
+def equals_k27 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "..---", else `no`.
+def equals_k28 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "...--", else `no`.
+def equals_k29 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "....-", else `no`.
+def equals_k30 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '-', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals ".....", else `no`.
+def equals_k31 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "-....", else `no`.
+def equals_k32 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "--...", else `no`.
+def equals_k33 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+// Jump `yes` if buf[:slen] equals "---..", else `no`.
+def equals_k34 buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '-', no
+    next_byte_is eqptr, '.', no
+    next_byte_is eqptr, '.', no
+    ;yes
+}
+
+// Read the next buffer byte through ptr (advancing it); jump `no` if it differs from c.
+def next_byte_is ptr, c, no @ ok < cb, cc {
+    hex.read_byte_and_inc cb, ptr
+    hex.set 2, cc, c
+    hex.cmp 2, cb, cc, no, ok, no
+  ok:
+}
+
+buf: hex.vec 84
+bptr: hex.vec w/4
+slen: hex.vec w/4
+eqptr: hex.vec w/4
+lenreg: hex.vec w/4
+cb: hex.vec 2
+cc: hex.vec 2

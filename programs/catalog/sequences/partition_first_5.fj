@@ -1,4 +1,4 @@
-// Partition First 5 (#1071)
+// Partition First 5 (#0732)
 
 // No input. Prints the first 5 integer-partition counts `p(1), ..., p(5)` = `1 2 3 5 7` space-separated + `\n`.
 

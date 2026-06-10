@@ -1,0 +1,35 @@
+// Parse Rgb To Grayscale (#0798)
+
+// Reads `R,G,B\n` (each `0`-`255`, decimals separated by commas). Prints `floor((R*30 + G*59 + B*11) / 100)` as decimal + `\n`.
+
+main
+
+def main @ err < r, g, b, acc, t, gray, rem, sb, c30, c59, c11, c100 {
+    stl.startup_and_init_all
+    hex.input_dec_uint_until 8, r, sb
+    hex.input_dec_uint_until 8, g, sb
+    hex.input_dec_uint_until 8, b, sb
+    hex.mul 8, acc, r, c30
+    hex.mul 8, t, g, c59
+    hex.add 8, acc, t
+    hex.mul 8, t, b, c11
+    hex.add 8, acc, t
+    hex.div 8, 8, gray, rem, acc, c100, err
+    hex.print_dec_uint 8, gray
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+r: hex.vec 8
+g: hex.vec 8
+b: hex.vec 8
+acc: hex.vec 8
+t: hex.vec 8
+gray: hex.vec 8
+rem: hex.vec 8
+sb: hex.vec 2
+c30: hex.vec 8, 30
+c59: hex.vec 8, 59
+c11: hex.vec 8, 11
+c100: hex.vec 8, 100

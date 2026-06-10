@@ -1,0 +1,53 @@
+// Ptr Write At Offset (#0924)
+
+// Reads a base index `0`-`15` + `\n`, then offset `0`-`15` + `\n`, then a value `0`-`255` + `\n`. Writes the value at `(base + offset) mod 16` in an initially-zero 16-byte array, then prints the array as 16 decimals space-separated + `\n`.
+
+main
+
+def main @ err, print_loop, print_body, print_done, no_space < arr, sixteen, rbase, roff, rval, sum51, rem51, quot51, widx, wptr, rbyte, pcnt {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, rbase, err
+    hex.input_dec_uint 4, roff, err
+    hex.input_dec_uint 2, rval, err
+    // widx = (rbase + roff) mod 16
+    hex.mov 4, sum51, rbase
+    hex.add 4, sum51, roff
+    hex.div 4, 4, quot51, rem51, sum51, sixteen, err
+    // extend rem51 (4 nibbles) into widx (w/4 nibbles)
+    hex.zero w/4, widx
+    hex.mov 4, widx, rem51
+    // write arr[widx] = rval
+    hex.set w/4, wptr, arr
+    hex.write_nth_byte wptr, widx, rval
+    // print all 16 bytes space-separated
+    hex.set w/4, wptr, arr
+    hex.zero 4, pcnt
+  print_loop:
+    hex.cmp 4, pcnt, sixteen, print_body, print_done, print_done
+  print_body:
+    hex.if0 4, pcnt, no_space
+    stl.output ' '
+  no_space:
+    hex.read_byte_and_inc rbyte, wptr
+    hex.print_dec_uint 2, rbyte
+    hex.inc 4, pcnt
+    ;print_loop
+  print_done:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+rbase: hex.vec 4
+roff: hex.vec 4
+rval: hex.vec 2
+sum51: hex.vec 4
+rem51: hex.vec 4
+widx: hex.vec w/4
+quot51: hex.vec 4
+wptr: hex.vec w/4
+rbyte: hex.vec 2
+pcnt: hex.vec 4
+sixteen: hex.vec 4, 16
+arr: hex.vec 16, 0

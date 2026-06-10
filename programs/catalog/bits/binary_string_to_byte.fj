@@ -1,4 +1,4 @@
-// Binary String To Byte (#1065)
+// Binary String To Byte (#0243)
 
 // Reads an 8-char binary string of `0`/`1` + `\n` and outputs the corresponding raw byte (no trailing `\n`). Inverse of `byte_to_binary_string`.
 

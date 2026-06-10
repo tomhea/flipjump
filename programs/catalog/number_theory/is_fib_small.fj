@@ -1,4 +1,4 @@
-// Is Fib Small (#0153)
+// Is Fib Small (#0128)
 
 // Reads decimal N in `0`-`200` and prints `1\n` if N is a Fibonacci number, else `0\n`.
 

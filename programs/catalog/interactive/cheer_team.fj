@@ -1,0 +1,21 @@
+// Cheer Team (#0455)
+
+// Reads digit `1`-`3` + `\n`. Prints `Go team <N>!\n` exactly three times.
+
+main
+
+def main < ch {
+    stl.startup_and_init_all
+    hex.input ch
+    rep(3, t) cheer ch
+    stl.loop
+}
+
+// Print "Go team <ch>!" + newline.
+def cheer ch {
+    stl.output "Go team "
+    hex.print ch
+    stl.output "!\n"
+}
+
+ch: hex.vec 2, 0

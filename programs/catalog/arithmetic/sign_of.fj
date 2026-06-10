@@ -1,4 +1,4 @@
-// Sign Of (#0104)
+// Sign Of (#0079)
 
 // Reads one signed decimal integer and prints `-` if negative, `0` if zero, `+` if positive, followed by `\n`.
 

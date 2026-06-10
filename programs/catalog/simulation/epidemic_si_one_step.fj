@@ -1,0 +1,34 @@
+// Epidemic Si One Step (#0648)
+
+// Reads `S` `0`-`99`, `I` `0`-`99` (each own line). Applies one SI-model step: `new_infections = S * I / 100` (clamp to remaining S), `S' = S - new_infections`, `I' = I + new_infections`. Prints `<S'> <I'>\n`.
+
+main
+
+def main @ err, si_clamp, si_ok < si_S, si_I, si_ni, si_tmp, si_q, si_r, si_hundred {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, si_S, err
+    hex.input_dec_uint 4, si_I, err
+    hex.mul 4, si_tmp, si_S, si_I
+    hex.div 4, 4, si_q, si_r, si_tmp, si_hundred, err
+    hex.mov 4, si_ni, si_q
+    hex.cmp 4, si_ni, si_S, si_ok, si_ok, si_clamp
+  si_clamp:
+    hex.mov 4, si_ni, si_S
+  si_ok:
+    hex.sub 4, si_S, si_ni
+    hex.add 4, si_I, si_ni
+    hex.print_dec_uint 4, si_S
+    stl.output ' '
+    hex.print_dec_uint 4, si_I
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+si_S: hex.vec 4
+si_I: hex.vec 4
+si_ni: hex.vec 4
+si_tmp: hex.vec 4
+si_q: hex.vec 4
+si_r: hex.vec 4
+si_hundred: hex.vec 4, 100

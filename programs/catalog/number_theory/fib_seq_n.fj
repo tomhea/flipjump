@@ -1,4 +1,4 @@
-// Fib Seq N (#0152)
+// Fib Seq N (#0127)
 
 // Reads decimal N in `0`-`12` and prints `F(0), F(1), ..., F(N)` one per line.
 

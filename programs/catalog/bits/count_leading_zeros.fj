@@ -1,4 +1,4 @@
-// Count Leading Zeros (#0370)
+// Count Leading Zeros (#0205)
 
 // Reads one byte and prints the count of zero bits before the first `1` (counting from the MSB downward), `0`-`8`, + `\n`. The zero byte yields `8`.
 

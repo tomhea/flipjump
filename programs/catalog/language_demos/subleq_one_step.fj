@@ -1,4 +1,4 @@
-// Subleq One Step (#1274)
+// Subleq One Step (#0871)
 
 // Reads three decimals `m_a` `m_b` `pc` (each `0`-`9`, on own lines), then 10 decimals (the SUBLEQ memory cells `mem[0..9]`, each on own line, each `0`-`9`). Executes one SUBLEQ instruction `mem[m_b] = mem[m_b] - mem[m_a]; if mem[m_b] <= 0: pc = ...` (here we ignore the jump target — just the SUBLEQ subtract step). Prints the new value of `mem[m_b]` (signed decimal, may go negative) + `\n`.
 

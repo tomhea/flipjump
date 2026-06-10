@@ -1,0 +1,19 @@
+// Coin Flip Pseudo (#0444)
+
+// Reads exactly one byte. Prints `Heads\n` if its value is even, `Tails\n` if odd. (Pseudo-random via input parity.)
+
+main
+
+def main @ odd, done < ch {
+    stl.startup
+    bit.input ch
+    bit.if1 ch, odd
+    stl.output "Heads\n"
+    ;done
+  odd:
+    stl.output "Tails\n"
+  done:
+    stl.loop
+}
+
+ch: bit.vec 8, 0

@@ -1,0 +1,16 @@
+// Print Word Size Compile Time (#0934)
+
+// No input. Uses the compile-time constant `#w` to print the program's word size as decimal + `\n` (e.g. `64\n` if compiled with `w=64`, `32\n` if `w=32`).
+
+main
+
+def main @ err < wval {
+    stl.startup_and_init_all
+    hex.set 4, wval, w
+    hex.print_dec_uint 4, wval
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+wval: hex.vec 4

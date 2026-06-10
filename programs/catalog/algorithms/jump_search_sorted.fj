@@ -1,4 +1,4 @@
-// Jump Search Sorted (#1172)
+// Jump Search Sorted (#0536)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals sorted ascending, then target. Prints the 0-based index of any match + `\n`, or `not found\n`. Implementation: jump search (block size ~√N, linear scan within block).
 

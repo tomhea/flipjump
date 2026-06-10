@@ -1,4 +1,4 @@
-// Digit Sum (#0158)
+// Digit Sum (#0133)
 
 // Reads decimal N in `0`-`999` and prints the sum of its base-10 digits as decimal + `\n`.
 

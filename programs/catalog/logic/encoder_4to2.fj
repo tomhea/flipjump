@@ -1,4 +1,4 @@
-// Encoder 4to2 (#0913)
+// Encoder 4to2 (#0266)
 
 // Reads 4 bits (assumed one-hot input, exactly one is `1`). Prints 2 bits as `<s1><s0>\n` (e.g. position 0 → `00`, position 3 → `11`).
 

@@ -1,4 +1,4 @@
-// Longest Common Suffix Two (#1106)
+// Longest Common Suffix Two (#0750)
 
 // Reads two `\n`-terminated lines (each ≤ 40 chars). Prints the longest common suffix (compared between the lines' contents, excluding their `\n`s) + `\n`. If none, prints just `\n`.
 

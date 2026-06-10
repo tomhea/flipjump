@@ -1,0 +1,11 @@
+// Print Filled Diamond 5 (#0813)
+
+// No input. Prints a 5-row filled diamond of `*` centered in a 5-col field: rows ` * `, `***`, `*****` (truncated to 5-col), `***`, ` * ` — actually use rows widths 1,3,5,3,1 centered on width-5 grid with leading spaces.
+
+main
+
+def main {
+    stl.startup
+    stl.output "  *\n ***\n*****\n ***\n  *\n"
+    stl.loop
+}

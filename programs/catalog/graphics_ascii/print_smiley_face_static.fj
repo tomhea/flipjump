@@ -1,0 +1,11 @@
+// Print Smiley Face Static (#0811)
+
+// No input. Prints `:)\n`. (Distinct from `emoji_smiley_or_frown` which reads input first.)
+
+main
+
+def main {
+    stl.startup
+    stl.output ":)\n"
+    stl.loop
+}

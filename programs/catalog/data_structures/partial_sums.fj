@@ -1,4 +1,4 @@
-// Partial Sums (#1124)
+// Partial Sums (#0371)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints the running cumulative sum after each input, one per line (N lines).
 

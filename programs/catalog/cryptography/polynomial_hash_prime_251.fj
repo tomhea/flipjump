@@ -1,0 +1,43 @@
+// Polynomial Hash Prime 251 (#0908)
+
+// Reads a `\n`-terminated line ≤ 30 chars. Same algorithm as `polynomial_hash_mod_256` but with modulus 251 instead of 256. Prints hash as decimal `0`-`250` + `\n`.
+
+main
+
+def main @ err, loop, go, done < b, nl, h, p, bx, bp, np, q, r, c31, c251 {
+    stl.startup_and_init_all
+    hex.zero 4, h
+    hex.set 4, p, 1
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.zero 4, bx
+    hex.mov 2, bx, b
+    hex.mul 4, bp, bx, p
+    hex.add 4, h, bp
+    hex.div 4, 4, q, r, h, c251, err
+    hex.mov 4, h, r
+    hex.mul 4, np, p, c31
+    hex.div 4, 4, q, r, np, c251, err
+    hex.mov 4, p, r
+    ;loop
+  done:
+    hex.print_dec_uint 4, h
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+h: hex.vec 4
+p: hex.vec 4
+bx: hex.vec 4
+bp: hex.vec 4
+np: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4
+c31: hex.vec 4, 31
+c251: hex.vec 4, 251

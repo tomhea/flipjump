@@ -1,4 +1,4 @@
-// Binomial Coefficient Small (#1044)
+// Binomial Coefficient Small (#0155)
 
 // Reads decimals `N` `K` (`N` `0`-`10`, `K` `0`-`N`, on own lines). Prints `C(N, K)` as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Demo Stl Output String (#1260)
+// Demo Stl Output String (#0857)
 
 // No input. Uses `stl.output "Hello, FlipJump!\n"` to print the string.
 

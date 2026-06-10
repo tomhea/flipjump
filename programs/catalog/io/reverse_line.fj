@@ -1,4 +1,4 @@
-// Reverse Line (#1090)
+// Reverse Line (#0055)
 
 // Reads a single line from stdin (up to `\n`) and prints it reversed followed by `\n`.
 

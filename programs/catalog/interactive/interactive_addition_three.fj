@@ -1,0 +1,30 @@
+// Interactive Addition Three (#0465)
+
+// Reads three decimals (each `\n`-terminated). Prints the human-readable expression `<a> + <b> + <c> = <sum>\n`.
+
+main
+
+def main @ err < a, b, c, sum {
+    stl.startup_and_init_all
+    hex.input_dec_int 4, a, err
+    hex.input_dec_int 4, b, err
+    hex.input_dec_int 4, c, err
+    hex.mov 4, sum, a
+    hex.add 4, sum, b
+    hex.add 4, sum, c
+    hex.print_dec_int 4, a
+    stl.output " + "
+    hex.print_dec_int 4, b
+    stl.output " + "
+    hex.print_dec_int 4, c
+    stl.output " = "
+    hex.print_dec_int 4, sum
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+b: hex.vec 4
+c: hex.vec 4
+sum: hex.vec 4

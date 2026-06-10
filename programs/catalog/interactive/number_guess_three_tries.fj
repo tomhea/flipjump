@@ -1,0 +1,35 @@
+// Number Guess Three Tries (#0462)
+
+// Secret value is `5`. Reads up to 3 decimal guesses `1`-`10` (each `\n`-terminated). After each guess prints `too low\n`, `too high\n`, or `correct!\n` then exits on correct. If 3 wrong guesses, prints `Out of tries. Secret was 5.\n` and exits.
+
+main
+
+def main @ err, won, done {
+    stl.startup_and_init_all
+    rep(3, t) try_guess err, won
+    stl.output "Out of tries. Secret was 5.\n"
+    ;done
+  won:
+  done:
+  err:
+    stl.loop
+}
+
+// Read one guess; print too low/high; jump `won` (and print) if it equals 5.
+def try_guess err, won @ low, correct, high, done < guess, five {
+    hex.input_dec_uint 4, guess, err
+    hex.cmp 4, guess, five, low, correct, high
+  low:
+    stl.output "too low\n"
+    ;done
+  high:
+    stl.output "too high\n"
+    ;done
+  correct:
+    stl.output "correct!\n"
+    ;won
+  done:
+}
+
+guess: hex.vec 4
+five: hex.vec 4, 5

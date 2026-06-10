@@ -1,4 +1,4 @@
-// Bernoulli Trial Count 8 (#1209)
+// Bernoulli Trial Count 8 (#0572)
 
 // Reads exactly 8 raw bytes. Counts how many are even (a "success"). Prints count `0`-`8` as decimal + `\n`.
 

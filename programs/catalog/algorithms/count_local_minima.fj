@@ -1,4 +1,4 @@
-// Count Local Minima (#1186)
+// Count Local Minima (#0550)
 
 // Reads digit N `3`-`9` + `\n`, then N decimals. Prints the count of strict local minima + `\n`.
 

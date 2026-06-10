@@ -1,4 +1,4 @@
-// Demo Hex Inc (#1243)
+// Demo Hex Inc (#0840)
 
 // Reads one hex char + `\n`. Uses `hex.inc`. Prints result hex + `\n` (`f` wraps to `0`).
 

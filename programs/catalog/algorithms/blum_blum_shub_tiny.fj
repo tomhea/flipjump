@@ -1,4 +1,4 @@
-// Blum Blum Shub Tiny (#1221)
+// Blum Blum Shub Tiny (#0584)
 
 // Reads one byte `1`-`15` (state). Applies one BBS step: `state = (state * state) mod 21` (where `21 = 3 * 7`, both Blum primes). Outputs the new state as one raw byte.
 

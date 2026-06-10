@@ -1,4 +1,4 @@
-// Unary Addition Tm (#1276)
+// Unary Addition Tm (#0873)
 
 // Reads a `\n`-terminated string of the form `1^a + 1^b` (e.g. `111+11` for 3+2). Outputs `1^(a+b)` + `\n` (`11111` for 3+2).
 

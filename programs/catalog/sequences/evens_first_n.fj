@@ -1,4 +1,4 @@
-// Evens First N (#0917)
+// Evens First N (#0724)
 
 // Reads digit N `1`-`9` + `\n`. Prints first N positive even numbers `2, 4, ..., 2N` space-separated + `\n`.
 

@@ -1,0 +1,205 @@
+// Ascii To Morse Letter (#0523)
+
+// Reads exactly one byte (a single lowercase letter `a`-`z` or digit `0`-`9`). Prints the International Morse Code representation using `.` and `-` (no spaces) + `\n`. Example: `a` → `.-\n`; `0` → `-----\n`.
+
+main
+
+def main @ done, chk_z, do_letter, is_digit, lw0, lw1, lw2, lw3, lw4, lw5, lw6, lw7, lw8, lw9, lw10, lw11, lw12, lw13, lw14, lw15, lw16, lw17, lw18, lw19, lw20, lw21, lw22, lw23, lw24, lw25, dw0, dw1, dw2, dw3, dw4, dw5, dw6, dw7, dw8, dw9 < b, v, c_a, c_z, c_0 {
+    stl.startup_and_init_all
+    hex.input b
+    hex.zero 4, v
+    hex.mov 2, v, b
+    hex.cmp 4, v, c_a, is_digit, chk_z, chk_z
+  chk_z:
+    hex.cmp 4, v, c_z, do_letter, do_letter, is_digit
+  do_letter:
+    hex.sub 4, v, c_a
+    hex.if0 4, v, lw0
+    hex.dec 4, v
+    hex.if0 4, v, lw1
+    hex.dec 4, v
+    hex.if0 4, v, lw2
+    hex.dec 4, v
+    hex.if0 4, v, lw3
+    hex.dec 4, v
+    hex.if0 4, v, lw4
+    hex.dec 4, v
+    hex.if0 4, v, lw5
+    hex.dec 4, v
+    hex.if0 4, v, lw6
+    hex.dec 4, v
+    hex.if0 4, v, lw7
+    hex.dec 4, v
+    hex.if0 4, v, lw8
+    hex.dec 4, v
+    hex.if0 4, v, lw9
+    hex.dec 4, v
+    hex.if0 4, v, lw10
+    hex.dec 4, v
+    hex.if0 4, v, lw11
+    hex.dec 4, v
+    hex.if0 4, v, lw12
+    hex.dec 4, v
+    hex.if0 4, v, lw13
+    hex.dec 4, v
+    hex.if0 4, v, lw14
+    hex.dec 4, v
+    hex.if0 4, v, lw15
+    hex.dec 4, v
+    hex.if0 4, v, lw16
+    hex.dec 4, v
+    hex.if0 4, v, lw17
+    hex.dec 4, v
+    hex.if0 4, v, lw18
+    hex.dec 4, v
+    hex.if0 4, v, lw19
+    hex.dec 4, v
+    hex.if0 4, v, lw20
+    hex.dec 4, v
+    hex.if0 4, v, lw21
+    hex.dec 4, v
+    hex.if0 4, v, lw22
+    hex.dec 4, v
+    hex.if0 4, v, lw23
+    hex.dec 4, v
+    hex.if0 4, v, lw24
+    hex.dec 4, v
+    ;lw25
+  is_digit:
+    hex.sub 4, v, c_0
+    hex.if0 4, v, dw0
+    hex.dec 4, v
+    hex.if0 4, v, dw1
+    hex.dec 4, v
+    hex.if0 4, v, dw2
+    hex.dec 4, v
+    hex.if0 4, v, dw3
+    hex.dec 4, v
+    hex.if0 4, v, dw4
+    hex.dec 4, v
+    hex.if0 4, v, dw5
+    hex.dec 4, v
+    hex.if0 4, v, dw6
+    hex.dec 4, v
+    hex.if0 4, v, dw7
+    hex.dec 4, v
+    hex.if0 4, v, dw8
+    hex.dec 4, v
+    ;dw9
+  lw0:
+    stl.output ".-\n"
+    ;done
+  lw1:
+    stl.output "-...\n"
+    ;done
+  lw2:
+    stl.output "-.-.\n"
+    ;done
+  lw3:
+    stl.output "-..\n"
+    ;done
+  lw4:
+    stl.output ".\n"
+    ;done
+  lw5:
+    stl.output "..-.\n"
+    ;done
+  lw6:
+    stl.output "--.\n"
+    ;done
+  lw7:
+    stl.output "....\n"
+    ;done
+  lw8:
+    stl.output "..\n"
+    ;done
+  lw9:
+    stl.output ".---\n"
+    ;done
+  lw10:
+    stl.output "-.-\n"
+    ;done
+  lw11:
+    stl.output ".-..\n"
+    ;done
+  lw12:
+    stl.output "--\n"
+    ;done
+  lw13:
+    stl.output "-.\n"
+    ;done
+  lw14:
+    stl.output "---\n"
+    ;done
+  lw15:
+    stl.output ".--.\n"
+    ;done
+  lw16:
+    stl.output "--.-\n"
+    ;done
+  lw17:
+    stl.output ".-.\n"
+    ;done
+  lw18:
+    stl.output "...\n"
+    ;done
+  lw19:
+    stl.output "-\n"
+    ;done
+  lw20:
+    stl.output "..-\n"
+    ;done
+  lw21:
+    stl.output "...-\n"
+    ;done
+  lw22:
+    stl.output ".--\n"
+    ;done
+  lw23:
+    stl.output "-..-\n"
+    ;done
+  lw24:
+    stl.output "-.--\n"
+    ;done
+  lw25:
+    stl.output "--..\n"
+    ;done
+  dw0:
+    stl.output "-----\n"
+    ;done
+  dw1:
+    stl.output ".----\n"
+    ;done
+  dw2:
+    stl.output "..---\n"
+    ;done
+  dw3:
+    stl.output "...--\n"
+    ;done
+  dw4:
+    stl.output "....-\n"
+    ;done
+  dw5:
+    stl.output ".....\n"
+    ;done
+  dw6:
+    stl.output "-....\n"
+    ;done
+  dw7:
+    stl.output "--...\n"
+    ;done
+  dw8:
+    stl.output "---..\n"
+    ;done
+  dw9:
+    stl.output "----.\n"
+    ;done
+  done:
+    stl.loop
+}
+
+b: hex.vec 2
+v: hex.vec 4
+c_a: hex.vec 4, 'a'
+c_z: hex.vec 4, 'z'
+c_0: hex.vec 4, '0'

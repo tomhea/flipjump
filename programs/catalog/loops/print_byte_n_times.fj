@@ -1,4 +1,4 @@
-// Print Byte N Times (#0230)
+// Print Byte N Times (#0270)
 
 // Reads one byte then `\n` then a digit `0`-`9` + `\n`. Outputs the byte N times in a row.
 

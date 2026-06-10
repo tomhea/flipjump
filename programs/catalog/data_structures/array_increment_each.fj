@@ -1,4 +1,4 @@
-// Array Increment Each (#1120)
+// Array Increment Each (#0367)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `a_i + 1` for each input on its own line, in the same order.
 

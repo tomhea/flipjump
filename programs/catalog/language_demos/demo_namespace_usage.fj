@@ -1,4 +1,4 @@
-// Demo Namespace Usage (#1266)
+// Demo Namespace Usage (#0863)
 
 // Defines `ns mathops { def add_one(x) { bit.inc x } }` and uses `mathops.add_one` on a 4-bit value `0011`. Prints result as 4-char binary + `\n`.
 

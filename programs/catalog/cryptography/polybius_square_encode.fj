@@ -1,0 +1,36 @@
+// Polybius Square Encode (#0889)
+
+// Reads exactly one uppercase letter `A`-`Z` (excluding `J`; `I` and `J` are merged) + `\n`. Prints two decimal digits `<row><col>` (each `1`-`5`) + `\n` based on the standard 5×5 Polybius square (row-major fill of `A B C D E F G H I/J K L M N O P Q R S T U V W X Y Z`).
+
+main
+
+def main @ err, afterI, calc < ch, skipnl, v, row, col, ci, ca, c5, one {
+    stl.startup_and_init_all
+    hex.input ch
+    hex.input skipnl
+    hex.zero 4, v
+    hex.mov 2, v, ch
+    hex.sub 4, v, ca
+    hex.cmp 2, ch, ci, calc, calc, afterI
+  afterI:
+    hex.dec 4, v
+  calc:
+    hex.div 4, 4, row, col, v, c5, err
+    hex.add 4, row, one
+    hex.add 4, col, one
+    hex.print_dec_uint 4, row
+    hex.print_dec_uint 4, col
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+ch: hex.vec 2
+skipnl: hex.vec 2
+v: hex.vec 4
+row: hex.vec 4
+col: hex.vec 4
+ci: hex.vec 2, 'I'
+ca: hex.vec 4, 'A'
+c5: hex.vec 4, 5
+one: hex.vec 4, 1

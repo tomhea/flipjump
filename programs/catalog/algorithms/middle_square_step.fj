@@ -1,4 +1,4 @@
-// Middle Square Step (#1220)
+// Middle Square Step (#0583)
 
 // Reads two bytes (low and high of a 16-bit state). Applies one middle-square step: square the 16-bit state to get a 32-bit result, then take the middle 16 bits. Outputs the new state as two raw bytes (low then high).
 

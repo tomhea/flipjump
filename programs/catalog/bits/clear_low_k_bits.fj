@@ -1,4 +1,4 @@
-// Clear Low K Bits (#1068)
+// Clear Low K Bits (#0246)
 
 // Reads one byte then one decimal digit `0`-`7` + `\n`. Outputs the byte with the lowest `k` bits cleared (`byte AND (~((1<<k)-1))`) as one raw byte.
 

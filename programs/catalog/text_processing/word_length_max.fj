@@ -1,4 +1,4 @@
-// Word Length Max (#0464)
+// Word Length Max (#0736)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Prints the length of the longest whitespace-separated token as decimal + `\n`. Empty input → `0\n`.
 

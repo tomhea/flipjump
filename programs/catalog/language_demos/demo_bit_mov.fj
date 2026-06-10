@@ -1,4 +1,4 @@
-// Demo Bit Mov (#1253)
+// Demo Bit Mov (#0850)
 
 // Reads a 4-char binary + `\n`. Uses `bit.mov` to copy it into another variable, then prints the copy as 4-char binary + `\n`.
 

@@ -1,4 +1,4 @@
-// And 3 (#0098)
+// And 3 (#0255)
 
 // Reads three ASCII bits (each followed by `\n`) and prints their three-way AND + `\n`.
 

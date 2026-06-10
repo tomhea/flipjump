@@ -1,0 +1,35 @@
+// Multiply By Addition (#0422)
+
+// Reads two decimals each `0`-`8` and prints `a*b` computed via the recursive macro `mul(a,b) = a + mul(a, b-1)`.
+
+main
+
+def main @ err < r_a, r_b, mul_a, mul_b, mul_result, mul_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_a, err
+    hex.input_dec_uint 4, r_b, err
+    hex.mov 4, mul_a, r_a
+    hex.mov 4, mul_b, r_b
+    stl.call mul_fn
+    hex.print_dec_uint 4, mul_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// mul_result = mul_a * mul_b via repeated addition
+mul_fn:
+    hex.if0 4, mul_b, mul_base
+    hex.dec 4, mul_b
+    stl.call mul_fn
+    hex.add 4, mul_result, mul_a
+    stl.return
+  mul_base:
+    hex.zero 4, mul_result
+    stl.return
+
+r_a: hex.vec 4
+r_b: hex.vec 4
+mul_a: hex.vec 4
+mul_b: hex.vec 4
+mul_result: hex.vec 4

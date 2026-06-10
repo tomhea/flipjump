@@ -1,0 +1,46 @@
+// Binary Dump Line (#0497)
+
+// Reads a `\n`-terminated line ≤ 16 chars. For each byte (excluding `\n`), prints its 8-char binary representation (MSB first), space-separated, then `\n`.
+
+main
+
+def main @ err, loop, go, fb, emit, done < ch, nlc, first {
+    stl.startup
+    bit.one first
+  loop:
+    bit.input ch
+    bit.if0 8, ch, done
+    bit.cmp 8, ch, nlc, go, done, go
+  go:
+    bit.if1 first, fb
+    stl.output ' '
+    ;emit
+  fb:
+    bit.zero first
+  emit:
+    print_bits ch
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Print one bit (address bp) as '0'/'1'.
+def print_bit bp @ zero, done {
+    bit.if0 bp, zero
+    stl.output '1'
+    ;done
+  zero:
+    stl.output '0'
+  done:
+}
+
+// Print the 8 bits of byte ch (a bit.vec 8), MSB first.
+def print_bits ch {
+    rep(8, k) print_bit ch + (7 - k) * dw
+}
+
+ch: bit.vec 8, 0
+nlc: bit.vec 8, '\n'
+first: bit.bit 1

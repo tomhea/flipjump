@@ -1,4 +1,4 @@
-// Set Low K Bits (#1069)
+// Set Low K Bits (#0247)
 
 // Reads one byte then one decimal digit `0`-`7` + `\n`. Outputs the byte with the lowest `k` bits set to `1` (`byte OR ((1<<k)-1)`) as one raw byte.
 

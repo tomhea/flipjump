@@ -1,4 +1,4 @@
-// Fibonacci Modulo 10 (#0451)
+// Fibonacci Modulo 10 (#0716)
 
 // Reads decimal N in `1`-`20` (one or two ASCII digits, terminated by `\n`). Prints `F(N) mod 10` as a single decimal digit + `\n`.
 

@@ -1,4 +1,4 @@
-// Permutation Count Pn K (#1046)
+// Permutation Count Pn K (#0157)
 
 // Reads decimals `N` `K` (`N` `1`-`10`, `K` `0`-`N`). Prints `P(N, K) = N! / (N-K)!` as decimal + `\n`.
 

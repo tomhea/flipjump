@@ -81,7 +81,7 @@ Every macro is documented with:
 ## Fast search:
 If you want to get to the source of a macro named some_macro (to view the macro's documentation, or its implementation), search in the stl/ folder for `'def some_macro '`.
 
-I created an [autohotkey script](../../ide-extensions/pycharm/fj-pycharm-def-finder.ahk) that jumps to the definition in pycharm by pressing Ctrl+Shift+Click on the macro name, inside the flipjump repo.
+The official [JetBrains](https://plugins.jetbrains.com/plugin/32134-flipjump/reviews) and [VS Code](https://marketplace.visualstudio.com/items?itemName=flipjump.flipjump) plugins let you jump to a macro's definition with Ctrl+Click on the macro name.
 
 
 # The Standard Library Basics

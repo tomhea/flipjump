@@ -1,0 +1,81 @@
+// Dfa Contains Substring Abc (#0758)
+
+// Reads a `\n`-terminated ASCII string ≤ 40 chars. Prints `1\n` if the string contains the substring `abc` anywhere, else `0\n`. Use a 4-state DFA.
+
+main
+
+def main @ err, loop, done, chk_a, to1, chk_ab, to2, chk_abc, to3, print1d, done_d < state, ch, tmp, nl_char, three_val, char_a, char_b, char_c {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    // state 3 absorbing: stay in loop
+    hex.mov 2, tmp, state
+    hex.sub 2, tmp, three_val
+    hex.if0 2, tmp, loop
+    // dispatch on state 0/1/2
+    hex.if0 2, state, chk_a
+    hex.mov 2, tmp, state
+    hex.dec 2, tmp
+    hex.if0 2, tmp, chk_ab
+    ;chk_abc
+  chk_a:
+    // state=0: 'a'->1, else stay 0
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, to1
+    ;loop
+  to1:
+    hex.set 2, state, 1
+    ;loop
+  chk_ab:
+    // state=1: 'b'->2, 'a'->stay 1, else->0
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_b
+    hex.if0 2, tmp, to2
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, loop
+    hex.set 2, state, 0
+    ;loop
+  to2:
+    hex.set 2, state, 2
+    ;loop
+  chk_abc:
+    // state=2: 'c'->3, 'a'->1, else->0
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_c
+    hex.if0 2, tmp, to3
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, to1
+    hex.set 2, state, 0
+    ;loop
+  to3:
+    hex.set 2, state, 3
+    ;loop
+  done:
+    hex.mov 2, tmp, state
+    hex.sub 2, tmp, three_val
+    hex.if0 2, tmp, print1d
+    stl.output "0\n"
+    ;done_d
+  print1d:
+    stl.output "1\n"
+  done_d:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+char_a: hex.vec 2, 'a'
+char_b: hex.vec 2, 'b'
+char_c: hex.vec 2, 'c'
+nl_char: hex.vec 2, '\n'
+three_val: hex.vec 2, 3

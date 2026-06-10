@@ -1,4 +1,4 @@
-// Major Scale From Root Pcs (#1027)
+// Major Scale From Root Pcs (#1014)
 
 // Reads decimal root pitch class `0`-`11` + `\n`. Prints the 7 pitch classes of the major scale starting at root (intervals 0, 2, 4, 5, 7, 9, 11), all mod 12, space-separated + `\n`.
 

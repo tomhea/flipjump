@@ -1,4 +1,4 @@
-// Stack Push Pop Demo (#1147)
+// Stack Push Pop Demo (#0394)
 
 // Reads digit N `1`-`9` + `\n`. Pushes integers `1..N` onto a stack, then pops all and prints each on its own line. Output is `N\n(N-1)\n...\n1\n` (reverse order).
 

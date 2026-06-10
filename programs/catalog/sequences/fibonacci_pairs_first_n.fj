@@ -1,4 +1,4 @@
-// Fibonacci Pairs First N (#0921)
+// Fibonacci Pairs First N (#0728)
 
 // Reads digit N `1`-`8` + `\n`. Prints `<F(i)> <F(i+1)>\n` for `i = 0..N-1` (N lines of consecutive Fibonacci pairs).
 

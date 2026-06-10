@@ -1,0 +1,22 @@
+// To-do Add (#0460)
+
+// Reads a `\n`-terminated task description (≤ 40 chars). Prints `Added: <task>\n`.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    stl.output "Added: "
+    hex.set hw, bptr, buf
+    hex.print_ptr_text bptr, slen
+    stl.output '\n'
+    stl.loop
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw

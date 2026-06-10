@@ -1,0 +1,43 @@
+// Quiz Show Score (#0456)
+
+// Reads three single-digit decimals `0` or `1` (each `\n`-terminated; `1` = correct, `0` = wrong for 3 rounds). Prints `Total: <S>\nGrade: <G>\n`, where `S` is the sum (0-3) and `G` is `A`/`B`/`C`/`F` for `3`/`2`/`1`/`0`.
+
+main
+
+def main @ err, g2, g1, gA, gB, gC, gF, done < a, sum, c1, c2, c3 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.mov 4, sum, a
+    hex.input_dec_uint 4, a, err
+    hex.add 4, sum, a
+    hex.input_dec_uint 4, a, err
+    hex.add 4, sum, a
+    stl.output "Total: "
+    hex.print_dec_uint 4, sum
+    stl.output "\nGrade: "
+    hex.cmp 4, sum, c3, g2, gA, g2
+  g2:
+    hex.cmp 4, sum, c2, g1, gB, g1
+  g1:
+    hex.cmp 4, sum, c1, gF, gC, gF
+  gA:
+    stl.output "A\n"
+    ;done
+  gB:
+    stl.output "B\n"
+    ;done
+  gC:
+    stl.output "C\n"
+    ;done
+  gF:
+    stl.output "F\n"
+  done:
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+sum: hex.vec 4
+c1: hex.vec 4, 1
+c2: hex.vec 4, 2
+c3: hex.vec 4, 3

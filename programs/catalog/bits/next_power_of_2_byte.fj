@@ -1,4 +1,4 @@
-// Next Power Of 2 Byte (#0926)
+// Next Power Of 2 Byte (#0229)
 
 // Reads one byte `0`-`128` and outputs the smallest power of 2 that is `>=` the input (`0` → `1`, `5` → `8`, `8` → `8`) as one raw byte.
 

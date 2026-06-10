@@ -1,4 +1,4 @@
-// Fizzbuzz Classify One (#0213)
+// Fizzbuzz Classify One (#0340)
 
 // Reads decimal N in `1`-`100` and prints just one of: `fizz\n` if `N % 3 == 0` and not `% 5`; `buzz\n` if `N % 5 == 0` and not `% 3`; `fizzbuzz\n` if both; else `<N>\n`.
 

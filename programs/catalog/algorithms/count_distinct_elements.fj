@@ -1,4 +1,4 @@
-// Count Distinct Elements (#1183)
+// Count Distinct Elements (#0547)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints the count of distinct values + `\n`.
 

@@ -1,4 +1,4 @@
-// Uncapitalize First (#0473)
+// Uncapitalize First (#0741)
 
 // Reads a `\n`-terminated line ≤ 80 chars. If the first byte is `A`-`Z`, outputs it lowercased; the rest of the line is unchanged. Includes final `\n`.
 

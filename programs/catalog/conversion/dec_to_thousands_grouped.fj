@@ -1,4 +1,4 @@
-// Dec To Thousands Grouped (#0355)
+// Dec To Thousands Grouped (#0482)
 
 // Reads decimal `0`-`999999` + `\n` and prints the value with thousands separators (commas), then `\n`. Examples: `7` → `7\n`, `1000` → `1,000\n`, `12345` → `12,345\n`, `999999` → `999,999\n`.
 

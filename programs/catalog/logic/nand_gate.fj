@@ -1,4 +1,4 @@
-// Nand Gate (#0094)
+// Nand Gate (#0251)
 
 // Reads two ASCII bits and prints their NAND + `\n`.
 

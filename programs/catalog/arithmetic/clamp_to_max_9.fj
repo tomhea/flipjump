@@ -1,4 +1,4 @@
-// Clamp To Max 9 (#0135)
+// Clamp To Max 9 (#0110)
 
 // Reads one decimal in `0`-`99` and prints `min(a, 9)` + `\n` (caps the value at 9).
 

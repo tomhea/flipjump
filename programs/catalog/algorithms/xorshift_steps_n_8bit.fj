@@ -1,4 +1,4 @@
-// Xorshift Steps N 8bit (#1217)
+// Xorshift Steps N 8bit (#0580)
 
 // Reads one non-zero byte (state), then decimal N `1`-`9` + `\n`. Applies N xorshift8 steps. Prints each successive state as decimal on its own line.
 

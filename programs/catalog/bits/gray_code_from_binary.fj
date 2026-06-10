@@ -1,4 +1,4 @@
-// Gray Code From Binary (#0924)
+// Gray Code From Binary (#0227)
 
 // Reads one byte and outputs the corresponding Gray code byte (`byte XOR (byte >> 1)`) as one raw byte.
 

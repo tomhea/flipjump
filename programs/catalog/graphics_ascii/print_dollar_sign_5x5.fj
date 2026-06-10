@@ -1,0 +1,11 @@
+// Print Dollar Sign 5X5 (#0824)
+
+// No input. Prints a fixed 5×5 ASCII `$` sign using `*` and spaces.
+
+main
+
+def main {
+    stl.startup
+    stl.output " ****\n* *  \n *** \n  * *\n**** \n"
+    stl.loop
+}

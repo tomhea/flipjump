@@ -1,0 +1,58 @@
+// Hash Match Target (#0910)
+
+// Reads exactly 2 hex chars + `\n` (target hash), then a `\n`-terminated line ≤ 20 chars. Prints `1\n` if `djb2_hash_short(line) == target`, else `0\n`.
+
+main
+
+def main @ err, match, nomatch, done < target, h1, hi, lo, b2skip {
+    stl.startup_and_init_all
+    hex.input_as_hex hi, err
+    hex.input_as_hex lo, err
+    hex.input b2skip
+    hex.zero 2, target
+    hex.mov 1, target, lo
+    hex.mov 1, target + dw, hi
+    djb2_line h1
+    hex.cmp 2, h1, target, nomatch, match, nomatch
+  match:
+    stl.output "1\n"
+    ;done
+  nomatch:
+    stl.output "0\n"
+  done:
+  err:
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+// Stream a line and compute its djb2 hash (mod 256) into target[:2].
+def djb2_line target @ loop, go, done < b2, nl2, c33 {
+    hex.set 2, target, 5
+  loop:
+    hex.input b2
+    hex.if0 2, b2, done
+    hex.cmp 2, b2, nl2, go, done, go
+  go:
+    mulmod target, c33
+    hex.add 2, target, b2
+    ;loop
+  done:
+}
+
+target: hex.vec 2
+h1: hex.vec 2
+hi: hex.vec 1
+lo: hex.vec 1
+b2skip: hex.vec 2
+b2: hex.vec 2
+nl2: hex.vec 2, '\n'
+c33: hex.vec 4, 33
+mh4: hex.vec 4
+mt4: hex.vec 4

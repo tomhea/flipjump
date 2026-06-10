@@ -1,4 +1,4 @@
-// Hex To Binary (#0346)
+// Hex To Binary (#0473)
 
 // Reads exactly two lowercase hex digits + `\n` and prints an 8-char binary string + `\n`.
 

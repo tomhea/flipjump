@@ -1,0 +1,109 @@
+// Permutation Check N (#0669)
+
+// Reads digit N `1`-`9` + `\n`, then N decimals (each own line), then another N decimals. Prints `1\n` if the second N-tuple is a permutation of the first (same multiset), else `0\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, clr, cbody, cdone, oloop, obody, odone, iloop, ibody, checkval, found, icont, notfound, nexti, no, fin < nval, idx, j, arr1, arr2, used, a1ptr, a2ptr, uptr, vi, vj, uj, one, zb2 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, nval, err
+    hex.set hw, a1ptr, arr1
+    read_array a1ptr, nval, err
+    hex.set hw, a2ptr, arr2
+    read_array a2ptr, nval, err
+    hex.set hw, uptr, used
+    hex.zero hw, idx
+  clr:
+    hex.cmp hw, idx, nval, cbody, cdone, cdone
+  cbody:
+    hex.write_byte_and_inc uptr, zb2
+    hex.inc hw, idx
+    ;clr
+  cdone:
+    hex.set hw, a1ptr, arr1
+    hex.set hw, a2ptr, arr2
+    hex.set hw, uptr, used
+    hex.zero hw, idx
+  oloop:
+    hex.cmp hw, idx, nval, obody, odone, odone
+  obody:
+    get_cell a1ptr, idx, vi
+    hex.zero hw, j
+  iloop:
+    hex.cmp hw, j, nval, ibody, notfound, notfound
+  ibody:
+    hex.read_nth_byte uj, uptr, j
+    hex.if0 2, uj, checkval
+    ;icont
+  checkval:
+    get_cell a2ptr, j, vj
+    hex.cmp 4, vi, vj, icont, found, icont
+  found:
+    hex.write_nth_byte uptr, j, one
+    ;nexti
+  icont:
+    hex.inc hw, j
+    ;iloop
+  notfound:
+    ;no
+  nexti:
+    hex.inc hw, idx
+    ;oloop
+  odone:
+    stl.output "1\n"
+    ;fin
+  no:
+    stl.output "0\n"
+  fin:
+  err:
+    stl.loop
+}
+
+// dst[:4] = the idx-th 4-hex cell of the array at *ptr.
+def get_cell ptr, idx, dst < sidx, cell, four {
+    hex.mul w/4, sidx, idx, four
+    hex.ptr_index cell, ptr, sidx
+    hex.read_hex 4, dst, cell
+}
+
+// Store src[:4] into the idx-th 4-hex cell of the array at *ptr.
+def put_cell ptr, idx, src < sidx, cell, four {
+    hex.mul w/4, sidx, idx, four
+    hex.ptr_index cell, ptr, sidx
+    hex.write_hex 4, cell, src
+}
+
+// Read n decimals into the n-th 4-hex cells of the array at *bufptr.
+def read_array bufptr, n, err @ loop, body, done < ridx, val {
+    hex.zero w/4, ridx
+  loop:
+    hex.cmp w/4, ridx, n, body, done, done
+  body:
+    hex.input_dec_uint 4, val, err
+    put_cell bufptr, ridx, val
+    hex.inc w/4, ridx
+    ;loop
+  done:
+}
+
+nval: hex.vec hw
+idx: hex.vec hw
+j: hex.vec hw
+arr1: hex.vec 4*9
+arr2: hex.vec 4*9
+used: hex.vec 9
+a1ptr: hex.vec hw
+a2ptr: hex.vec hw
+uptr: hex.vec hw
+vi: hex.vec 4
+vj: hex.vec 4
+uj: hex.vec 2
+ridx: hex.vec hw
+val: hex.vec 4
+sidx: hex.vec hw
+cell: hex.vec hw
+four: hex.vec hw, 4
+one: hex.vec 2, 1
+zb2: hex.vec 2

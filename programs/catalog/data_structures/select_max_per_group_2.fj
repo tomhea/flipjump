@@ -1,4 +1,4 @@
-// Select Max Per Group 2 (#1166)
+// Select Max Per Group 2 (#0413)
 
 // Reads 5 `(group, value)` pairs (each on 2 own lines, group `0` or `1`, value `0`-`99`). Prints `group 0 max: <v>\ngroup 1 max: <v>\n` (or `none\n` for either group if no pairs).
 

@@ -1,22 +1,25 @@
-# This workflow will upload the new flipjump python package to pypi, using poetry-publish, everytime a new release is created.
+# This workflow will upload this project as a new python package to pypi, everytime a new release is created.
 
+name: Upload python package
 
-name: Python package
 on:
   release:
     types: [published]
 
-# the publish uses the PYPI_API_TOKEN secret (not GITHUB_TOKEN), so the job only
-# needs read access to check out the repo.
 permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Build and publish to pypi
-        uses: JRubics/poetry-publish@v1.17
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Build package
+        run: poetry build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
         with:
-          pypi_token: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_API_TOKEN }}

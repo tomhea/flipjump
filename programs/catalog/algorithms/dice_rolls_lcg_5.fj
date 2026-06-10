@@ -1,4 +1,4 @@
-// Dice Rolls Lcg 5 (#1219)
+// Dice Rolls Lcg 5 (#0582)
 
 // Reads one byte (seed). Applies 5 LCG steps and prints `(state mod 6) + 1` as a decimal digit `1`-`6` on its own line (5 lines total).
 

@@ -1,0 +1,41 @@
+// Interactive Calc (#0442)
+
+// Reads one operator byte `+`, `-`, or `*` + `\n`, then two decimal integers (each `\n`-terminated). Prints the integer result + `\n`. (For `-`, prints signed result.)
+
+main
+
+def main @ err, isadd, ismul, doadd, dosub, domul, pr, done < op, a, b, res, plus, minus {
+    stl.startup_and_init_all
+    hex.input op
+    hex.input b                     // consume the trailing newline after the operator
+    hex.input_dec_int 8, a, err
+    hex.input_dec_int 8, b, err
+    hex.cmp 2, op, plus, isadd, doadd, isadd
+  isadd:
+    hex.cmp 2, op, minus, ismul, dosub, ismul
+  ismul:
+    ;domul
+  doadd:
+    hex.mov 8, res, a
+    hex.add 8, res, b
+    ;pr
+  dosub:
+    hex.mov 8, res, a
+    hex.sub 8, res, b
+    ;pr
+  domul:
+    hex.mul 8, res, a, b
+  pr:
+    hex.print_dec_int 8, res
+    stl.output '\n'
+  done:
+  err:
+    stl.loop
+}
+
+op: hex.vec 2
+a: hex.vec 8
+b: hex.vec 8
+res: hex.vec 8
+plus: hex.vec 2, '+'
+minus: hex.vec 2, '-'

@@ -1,4 +1,4 @@
-// Triangular Inverse N (#0923)
+// Triangular Inverse N (#0730)
 
 // Reads decimal triangular number `1`-`55` + `\n` (i.e. one of `1, 3, 6, 10, 15, 21, 28, 36, 45, 55`). Prints the index `k` such that `T(k) == input`, else `-1` if input isn't triangular.
 

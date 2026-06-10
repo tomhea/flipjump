@@ -1,4 +1,4 @@
-// Crt Two Pairs (#1031)
+// Crt Two Pairs (#0142)
 
 // Reads 4 decimals `r1 m1 r2 m2` (each on own line, `m1`,`m2` coprime, each ≤ `10`). Finds `r` such that `r ≡ r1 mod m1` and `r ≡ r2 mod m2`, with `0 <= r < m1*m2`. Prints `r` as decimal + `\n`.
 

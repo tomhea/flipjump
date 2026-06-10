@@ -1,4 +1,4 @@
-// Weekend Check (#0862)
+// Weekend Check (#0987)
 
 // Reads year, month, day (each own line). Prints `1\n` if the date falls on Saturday or Sunday (computed via Zeller's), else `0\n`.
 

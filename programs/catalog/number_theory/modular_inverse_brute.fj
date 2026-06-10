@@ -1,4 +1,4 @@
-// Modular Inverse Brute (#1030)
+// Modular Inverse Brute (#0141)
 
 // Reads decimals `a` `m` (each `1`-`30`, own line, with `gcd(a, m) = 1` guaranteed). Brute-forces `x` in `1..m-1` such that `(a * x) mod m == 1`. Prints `x` as decimal + `\n`.
 

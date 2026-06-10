@@ -1,0 +1,26 @@
+// Parse Json Bool (#0793)
+
+// Reads `{"b":true}\n` or `{"b":false}\n`. Prints `1\n` for `true`, `0\n` for `false`.
+
+main
+
+def main @ skip, afterskip, istrue, isfalse, done < b, colon, tc {
+    stl.startup_and_init_all
+  skip:
+    hex.input b
+    hex.cmp 2, b, colon, skip, afterskip, skip
+  afterskip:
+    hex.input b
+    hex.cmp 2, b, tc, isfalse, istrue, isfalse
+  istrue:
+    stl.output "1\n"
+    ;done
+  isfalse:
+    stl.output "0\n"
+  done:
+    stl.loop
+}
+
+b: hex.vec 2
+colon: hex.vec 2, ':'
+tc: hex.vec 2, 't'

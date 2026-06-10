@@ -1,0 +1,11 @@
+// Print Chess Queen (#0820)
+
+// No input. Prints a multi-line ASCII chess queen (4 lines, distinct shape from king).
+
+main
+
+def main {
+    stl.startup
+    stl.output "ooo\n\\|/\n | \n|_|\n"
+    stl.loop
+}

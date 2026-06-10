@@ -1,4 +1,4 @@
-// Midi To Pitch Class (#1025)
+// Midi To Pitch Class (#1012)
 
 // Reads decimal MIDI `0`-`127` + `\n`. Prints `midi mod 12` as decimal `0`-`11` + `\n`.
 

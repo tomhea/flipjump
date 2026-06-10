@@ -1,4 +1,4 @@
-// Matrix Is Symmetric 3x3 (#1204)
+// Matrix Is Symmetric 3x3 (#0567)
 
 // Reads 9 decimals (3×3 row-major). Prints `1\n` if the matrix equals its transpose, else `0\n`.
 

@@ -1,0 +1,73 @@
+// Eight Queens Attack Pair Count (#0690)
+
+// Reads exactly 8 decimals (each `0`-`7`, own line) representing the column of a queen for each row 0..7. Prints the count of pairs `(i, j)` with `i < j` such that queens on rows i and j attack each other (same column, or `|rows[i] - rows[j]| == |i - j|`) + `\n`.
+
+main
+
+def main @ err < arr, cnt {
+    stl.startup_and_init_all
+    rep(8, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    hex.zero 4, cnt
+    pair_check arr + 0*dw*4, arr + 1*dw*4, 1
+    pair_check arr + 0*dw*4, arr + 2*dw*4, 2
+    pair_check arr + 0*dw*4, arr + 3*dw*4, 3
+    pair_check arr + 0*dw*4, arr + 4*dw*4, 4
+    pair_check arr + 0*dw*4, arr + 5*dw*4, 5
+    pair_check arr + 0*dw*4, arr + 6*dw*4, 6
+    pair_check arr + 0*dw*4, arr + 7*dw*4, 7
+    pair_check arr + 1*dw*4, arr + 2*dw*4, 1
+    pair_check arr + 1*dw*4, arr + 3*dw*4, 2
+    pair_check arr + 1*dw*4, arr + 4*dw*4, 3
+    pair_check arr + 1*dw*4, arr + 5*dw*4, 4
+    pair_check arr + 1*dw*4, arr + 6*dw*4, 5
+    pair_check arr + 1*dw*4, arr + 7*dw*4, 6
+    pair_check arr + 2*dw*4, arr + 3*dw*4, 1
+    pair_check arr + 2*dw*4, arr + 4*dw*4, 2
+    pair_check arr + 2*dw*4, arr + 5*dw*4, 3
+    pair_check arr + 2*dw*4, arr + 6*dw*4, 4
+    pair_check arr + 2*dw*4, arr + 7*dw*4, 5
+    pair_check arr + 3*dw*4, arr + 4*dw*4, 1
+    pair_check arr + 3*dw*4, arr + 5*dw*4, 2
+    pair_check arr + 3*dw*4, arr + 6*dw*4, 3
+    pair_check arr + 3*dw*4, arr + 7*dw*4, 4
+    pair_check arr + 4*dw*4, arr + 5*dw*4, 1
+    pair_check arr + 4*dw*4, arr + 6*dw*4, 2
+    pair_check arr + 4*dw*4, arr + 7*dw*4, 3
+    pair_check arr + 5*dw*4, arr + 6*dw*4, 1
+    pair_check arr + 5*dw*4, arr + 7*dw*4, 2
+    pair_check arr + 6*dw*4, arr + 7*dw*4, 1
+    hex.print_dec_uint 4, cnt
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// out[:4] = |a - b| (a, b small unsigned).
+def abs_diff a, b, out @ blt, doge, done {
+    hex.cmp 4, a, b, blt, doge, doge
+  blt:
+    hex.mov 4, out, b
+    hex.sub 4, out, a
+    ;done
+  doge:
+    hex.mov 4, out, a
+    hex.sub 4, out, b
+  done:
+}
+
+// Increment cnt if queens at cells ai, aj (gap rows apart) attack each other.
+def pair_check ai, aj, gap @ hit, chkd, done < cnt, ad, gapr {
+    hex.cmp 4, ai, aj, chkd, hit, chkd
+  chkd:
+    abs_diff ai, aj, ad
+    hex.set 4, gapr, gap
+    hex.cmp 4, ad, gapr, done, hit, done
+  hit:
+    hex.inc 4, cnt
+  done:
+}
+
+arr: hex.vec 4*8
+cnt: hex.vec 4
+ad: hex.vec 4
+gapr: hex.vec 4

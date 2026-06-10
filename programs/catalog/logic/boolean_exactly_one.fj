@@ -1,4 +1,4 @@
-// Boolean Exactly One (#0908)
+// Boolean Exactly One (#0261)
 
 // Reads three ASCII bits. Prints `1\n` if exactly one of them is `1`, else `0\n`.
 

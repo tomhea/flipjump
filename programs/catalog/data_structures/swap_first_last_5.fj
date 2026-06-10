@@ -1,4 +1,4 @@
-// Swap First Last 5 (#1135)
+// Swap First Last 5 (#0382)
 
 // Reads exactly 5 decimals and prints them with positions 0 and 4 swapped, one per line.
 

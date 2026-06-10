@@ -1,4 +1,4 @@
-// Demo Compile Time Expr (#1264)
+// Demo Compile Time Expr (#0861)
 
 // No input. Internally uses a compile-time expression `(1 + 2) * (3 + 4)` to produce constant `21`. Uses `bit.print_dec_uint` to print `21\n`.
 

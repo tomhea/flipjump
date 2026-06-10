@@ -1,0 +1,26 @@
+// Print Bar Chart H 3 (#0830)
+
+// Reads 3 decimals each `0`-`9` (own line). Prints 3 rows: row `i` is `input_i` consecutive `*`s + `\n`.
+
+main
+
+def main @ err < val {
+    stl.startup_and_init_all
+    rep(3, i) hrow err, val
+  err:
+    stl.loop
+}
+
+// Read one decimal and print that many '*' followed by a newline.
+def hrow err, val @ loop, done {
+    hex.input_dec_uint 4, val, err
+  loop:
+    hex.if0 4, val, done
+    stl.output '*'
+    hex.dec 4, val
+    ;loop
+  done:
+    stl.output '\n'
+}
+
+val: hex.vec 4

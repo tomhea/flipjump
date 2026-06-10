@@ -1,4 +1,4 @@
-// Avg Two (#0101)
+// Avg Two (#0076)
 
 // Reads two decimal integers and prints their integer average `(a + b) / 2` (floor division) as decimal + `\n`.
 

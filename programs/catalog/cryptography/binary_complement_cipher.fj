@@ -1,0 +1,24 @@
+// Binary Complement Cipher (#0884)
+
+// Reads a `\n`-terminated line ≤ 30 chars. For each byte (excluding `\n`), outputs the bitwise complement `~byte` as a raw byte. Final `\n`.
+
+main
+
+def main @ err, loop, go, done < b, nl {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.not 2, b
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'

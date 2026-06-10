@@ -1,4 +1,4 @@
-// Random Choice Pick 3 (#1077)
+// Random Choice Pick 3 (#1017)
 
 // Reads 3 `\n`-terminated lines (each ≤ 20 chars) then one byte. Prints one of the 3 lines based on `byte mod 3`, followed by `\n`.
 

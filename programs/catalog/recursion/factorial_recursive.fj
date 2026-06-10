@@ -1,0 +1,36 @@
+// Factorial Recursive (#0415)
+
+// Reads decimal N in `0`-`6` and prints `N!` using a recursive macro (via `stl.call` / `stl.return`). Same I/O as `arithmetic/factorial_small`; the purpose is to demonstrate recursion.
+
+main
+
+def main @ err < r_nval, fact_arg, fact_result, fact_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, fact_arg, r_nval
+    stl.call fact_fn
+    hex.print_dec_uint 4, fact_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Reads fact_arg, writes fact_result = fact_arg!
+fact_fn:
+    hex.if0 4, fact_arg, fact_base
+    hex.push 4, fact_arg
+    hex.dec 4, fact_arg
+    stl.call fact_fn
+    hex.pop 4, fact_saved
+    hex.mul 4, fact_tmp, fact_saved, fact_result
+    hex.mov 4, fact_result, fact_tmp
+    stl.return
+  fact_base:
+    hex.set 4, fact_result, 1
+    stl.return
+
+r_nval: hex.vec 4
+fact_arg: hex.vec 4
+fact_result: hex.vec 4
+fact_saved: hex.vec 4
+fact_tmp: hex.vec 4

@@ -1,4 +1,4 @@
-// Byte Is Bit Palindrome (#0903)
+// Byte Is Bit Palindrome (#0225)
 
 // Reads exactly 1 byte. Prints `1\n` if the byte's 8-bit binary representation reads the same forward and backward (e.g. `0x99` = `10011001`), else `0\n`.
 

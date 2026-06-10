@@ -1,4 +1,4 @@
-// Mode Of 5 (#1193)
+// Mode Of 5 (#0556)
 
 // Reads exactly 5 decimals and prints the most frequent value + `\n`. Ties broken by smallest value among the most frequent.
 

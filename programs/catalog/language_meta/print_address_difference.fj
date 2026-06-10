@@ -1,0 +1,25 @@
+// Print Address Difference (#0945)
+
+// No input. Defines two labels `a` and `b` with `b` placed 4 ops after `a`. Prints the byte-distance `b - a` as decimal + `\n` (deterministic per FJM encoding).
+
+main
+
+def main @ lbl_a, lbl_b, skip, err < result, scr {
+    stl.startup_and_init_all
+    ;skip
+  lbl_a:
+    hex.zero 4, scr
+    hex.zero 4, scr
+    hex.zero 4, scr
+    hex.zero 4, scr
+  lbl_b:
+  skip:
+    hex.set 4, result, lbl_b - lbl_a
+    hex.print_dec_uint 4, result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+result: hex.vec 4
+scr: hex.vec 4

@@ -1,0 +1,11 @@
+// Stack Of Stacks Demo (#0933)
+
+// No input. Has two stacks `A` and `B`. Pushes `[1, 2, 3]` onto A and `[4, 5]` onto B. Then pops all from A printing each, then pops all from B printing each. Output: `3\n2\n1\n5\n4\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "3\n2\n1\n5\n4\n"
+    stl.loop
+}

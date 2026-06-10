@@ -1,4 +1,4 @@
-// Rot ASCII Plus One (#0055)
+// Rot ASCII Plus One (#0054)
 
 // Reads stdin and outputs each byte plus 1, modulo 256 (so `0xFF` wraps to `0x00`). All bytes are transformed uniformly; no special-casing of letters or non-letters.
 

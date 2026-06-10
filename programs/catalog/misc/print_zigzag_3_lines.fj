@@ -1,4 +1,4 @@
-// Print Zigzag 3 Lines (#0889)
+// Print Zigzag 3 Lines (#1008)
 
 // No input. Prints a fixed 3-line zigzag of `*` characters: `*       *\n  *   *  \n    *    \n`.
 

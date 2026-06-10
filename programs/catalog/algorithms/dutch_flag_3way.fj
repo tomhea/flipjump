@@ -1,4 +1,4 @@
-// Dutch Flag 3Way (#1175)
+// Dutch Flag 3Way (#0539)
 
 // Reads digit N `1`-`9` + `\n`, then N values each `0`, `1`, or `2` (one per line). Prints the values partitioned in order so all 0s come first, then all 1s, then all 2s (one per line).
 

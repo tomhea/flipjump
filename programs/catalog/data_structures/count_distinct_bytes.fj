@@ -1,4 +1,4 @@
-// Count Distinct Bytes (#1159)
+// Count Distinct Bytes (#0406)
 
 // Reads a `\n`-terminated line ≤ 80 chars and prints the count of distinct byte values in the line (excluding the terminating `\n`) as decimal + `\n`.
 

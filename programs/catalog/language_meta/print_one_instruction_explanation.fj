@@ -1,0 +1,11 @@
+// Print One Instruction Explanation (#0936)
+
+// No input. Prints `The only operation is: a;b (flip bit at a, jump to b).\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "The only operation is: a;b (flip bit at a, jump to b).\n"
+    stl.loop
+}

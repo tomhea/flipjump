@@ -1,4 +1,4 @@
-// Capitalize Words (#0472)
+// Capitalize Words (#0740)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Outputs the line with the first letter of each whitespace-separated word uppercased; all other letters lowercased. Whitespace and non-letters unchanged. Includes final `\n`.
 

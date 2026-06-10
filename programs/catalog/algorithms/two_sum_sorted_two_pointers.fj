@@ -1,4 +1,4 @@
-// Two Sum Sorted Two Pointers (#1188)
+// Two Sum Sorted Two Pointers (#0552)
 
 // Reads digit N `2`-`9` + `\n`, then N decimals sorted ascending, then `target`. Prints `i j\n` (0-based, `i < j`) of any pair summing to target, or `not found\n`. Implementation: two-pointer (left, right).
 

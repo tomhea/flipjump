@@ -1,0 +1,49 @@
+// Magic Square Check 3X3 (#0657)
+
+// Reads 9 decimals (3×3 row-major, each on own line). Prints `1\n` if all 3 rows, all 3 columns, and both diagonals have the same sum, else `0\n`.
+
+main
+
+def main @ err, no, yes < arr, s0, t {
+    stl.startup_and_init_all
+    rep(9, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    sum3 s0, arr + 0*dw*4, arr + 1*dw*4, arr + 2*dw*4
+    sum3 t, arr + 3*dw*4, arr + 4*dw*4, arr + 5*dw*4
+    eq_or_no t, s0, no
+    sum3 t, arr + 6*dw*4, arr + 7*dw*4, arr + 8*dw*4
+    eq_or_no t, s0, no
+    sum3 t, arr + 0*dw*4, arr + 3*dw*4, arr + 6*dw*4
+    eq_or_no t, s0, no
+    sum3 t, arr + 1*dw*4, arr + 4*dw*4, arr + 7*dw*4
+    eq_or_no t, s0, no
+    sum3 t, arr + 2*dw*4, arr + 5*dw*4, arr + 8*dw*4
+    eq_or_no t, s0, no
+    sum3 t, arr + 0*dw*4, arr + 4*dw*4, arr + 8*dw*4
+    eq_or_no t, s0, no
+    sum3 t, arr + 2*dw*4, arr + 4*dw*4, arr + 6*dw*4
+    eq_or_no t, s0, no
+    stl.output "1\n"
+    ;yes
+  no:
+    stl.output "0\n"
+  yes:
+  err:
+    stl.loop
+}
+
+// dst = a + b + c.
+def sum3 dst, a, b, c {
+    hex.mov 4, dst, a
+    hex.add 4, dst, b
+    hex.add 4, dst, c
+}
+
+// Jump `no` unless val == target.
+def eq_or_no val, target, no @ ok {
+    hex.cmp 4, val, target, no, ok, no
+  ok:
+}
+
+arr: hex.vec 4*9
+s0: hex.vec 4
+t: hex.vec 4

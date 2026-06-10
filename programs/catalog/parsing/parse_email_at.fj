@@ -1,0 +1,31 @@
+// Parse Email At (#0789)
+
+// Reads `<user>@<domain>\n` (≤ 30 chars total, exactly one `@`). Prints `<user>\n<domain>\n`.
+
+main
+
+def main @ p1, p1echo, p1end, p2, p2print, done < b, at, nl {
+    stl.startup_and_init_all
+  p1:
+    hex.input b
+    hex.cmp 2, b, at, p1echo, p1end, p1echo
+  p1echo:
+    hex.print b
+    ;p1
+  p1end:
+    stl.output '\n'
+  p2:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, p2print, done, p2print
+  p2print:
+    hex.print b
+    ;p2
+  done:
+    stl.output '\n'
+    stl.loop
+}
+
+b: hex.vec 2
+at: hex.vec 2, '@'
+nl: hex.vec 2, '\n'

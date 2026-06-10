@@ -1,4 +1,4 @@
-// Quicksort 5 (#1228)
+// Quicksort 5 (#0591)
 
 // Reads exactly 5 decimal integers (each on own line) and prints them sorted ascending (one per line). Implementation: quicksort (recursive partition around a pivot).
 

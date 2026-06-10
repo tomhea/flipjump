@@ -1,4 +1,4 @@
-// Array Sum Odds (#1122)
+// Array Sum Odds (#0369)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints the sum of odd-valued elements + `\n`.
 

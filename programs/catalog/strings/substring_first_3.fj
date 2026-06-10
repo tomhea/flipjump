@@ -1,4 +1,4 @@
-// Substring First 3 (#0191)
+// Substring First 3 (#0187)
 
 // Reads a `\n`-terminated line of at least 3 chars and prints just its first 3 bytes + `\n`.
 

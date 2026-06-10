@@ -1,4 +1,4 @@
-// Binary Search Last Match (#1171)
+// Binary Search Last Match (#0535)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals sorted ascending (may have duplicates), then target. Prints the 0-based index of the LAST occurrence (upper-bound-1) + `\n`, or `not found\n`.
 

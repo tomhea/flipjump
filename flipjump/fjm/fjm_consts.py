@@ -59,6 +59,8 @@ SUPPORTED_VERSIONS_NAMES = {
     FJMVersion.CompressedVersion: 'Compressed',
 }
 
+SUPPORTED_MEMORY_WIDTHS: frozenset[int] = frozenset({8, 16, 32, 64})
+
 
 _LZMA_FORMAT = lzma.FORMAT_RAW
 _LZMA_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [{"id": lzma.FILTER_LZMA2}]

@@ -1,0 +1,50 @@
+// Ptr Read At Offset (#0923)
+
+// Reads 16 decimals (each `0`-`255`, own line) representing a 16-byte array, then a base index `0`-`15` + `\n`, then an offset `0`-`15` + `\n`. Prints `array[(base + offset) mod 16]` as decimal + `\n`.
+
+main
+
+def main @ err, read_loop, read_body, read_done < arr, sixteen, rbase, roff, sum50, rem50, ridx, quot50, result, rcnt, wptr, rbyte {
+    stl.startup_and_init_all 100
+    // Read 16 bytes into arr via pointer
+    hex.set w/4, wptr, arr
+    hex.zero 4, rcnt
+  read_loop:
+    hex.cmp 4, rcnt, sixteen, read_body, read_done, read_done
+  read_body:
+    hex.input_dec_uint 2, rbyte, err
+    hex.write_byte_and_inc wptr, rbyte
+    hex.inc 4, rcnt
+    ;read_loop
+  read_done:
+    hex.input_dec_uint 4, rbase, err
+    hex.input_dec_uint 4, roff, err
+    // ridx = (rbase + roff) mod 16
+    hex.mov 4, sum50, rbase
+    hex.add 4, sum50, roff
+    hex.div 4, 4, quot50, rem50, sum50, sixteen, err
+    // extend rem50 into ridx (w/4 nibbles for read_nth_byte)
+    hex.zero w/4, ridx
+    hex.mov 4, ridx, rem50
+    // read arr[ridx]
+    hex.set w/4, wptr, arr
+    hex.read_nth_byte result, wptr, ridx
+    hex.print_dec_uint 2, result
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+arr: hex.vec 16, 0
+rcnt: hex.vec 4
+rbase: hex.vec 4
+roff: hex.vec 4
+sum50: hex.vec 4
+rem50: hex.vec 4
+ridx: hex.vec w/4
+quot50: hex.vec 4
+result: hex.vec 2
+wptr: hex.vec w/4
+rbyte: hex.vec 2
+sixteen: hex.vec 4, 16

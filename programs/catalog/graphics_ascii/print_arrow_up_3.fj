@@ -1,0 +1,11 @@
+// Print Arrow Up 3 (#0809)
+
+// No input. Prints a fixed 3-line upward arrow (`/\`, `||`, `||`), each + `\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "/\\\n||\n||\n"
+    stl.loop
+}

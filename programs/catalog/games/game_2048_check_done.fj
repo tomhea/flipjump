@@ -1,0 +1,119 @@
+// Game 2048 Check Done (#0960)
+
+// Reads a 4×4 grid of decimal digits `0`-`9` (4 lines, each 4 chars). Prints `1\n` if no moves are possible (no zeros AND no two adjacent-equal pairs horizontally or vertically), else `0\n`.
+
+main
+
+def main @ g4_move, g4_no_move, g4_ne00, g4_ne01, g4_ne02, g4_ne03, g4_ne04, g4_ne05, g4_ne06, g4_ne07, g4_ne08, g4_ne09, g4_ne10, g4_ne11, g4_ne12, g4_ne13, g4_ne14, g4_ne15, g4_ne16, g4_ne17, g4_ne18, g4_ne19, g4_ne20, g4_ne21, g4_ne22, g4_ne23 < g4_arr, g4_nl, g4_0c {
+    stl.startup_and_init_all 100
+    hex.input g4_arr + 0*dw*2
+    hex.sub 2, g4_arr + 0*dw*2, g4_0c
+    hex.input g4_arr + 1*dw*2
+    hex.sub 2, g4_arr + 1*dw*2, g4_0c
+    hex.input g4_arr + 2*dw*2
+    hex.sub 2, g4_arr + 2*dw*2, g4_0c
+    hex.input g4_arr + 3*dw*2
+    hex.sub 2, g4_arr + 3*dw*2, g4_0c
+    hex.input g4_nl
+    hex.input g4_arr + 4*dw*2
+    hex.sub 2, g4_arr + 4*dw*2, g4_0c
+    hex.input g4_arr + 5*dw*2
+    hex.sub 2, g4_arr + 5*dw*2, g4_0c
+    hex.input g4_arr + 6*dw*2
+    hex.sub 2, g4_arr + 6*dw*2, g4_0c
+    hex.input g4_arr + 7*dw*2
+    hex.sub 2, g4_arr + 7*dw*2, g4_0c
+    hex.input g4_nl
+    hex.input g4_arr + 8*dw*2
+    hex.sub 2, g4_arr + 8*dw*2, g4_0c
+    hex.input g4_arr + 9*dw*2
+    hex.sub 2, g4_arr + 9*dw*2, g4_0c
+    hex.input g4_arr + 10*dw*2
+    hex.sub 2, g4_arr + 10*dw*2, g4_0c
+    hex.input g4_arr + 11*dw*2
+    hex.sub 2, g4_arr + 11*dw*2, g4_0c
+    hex.input g4_nl
+    hex.input g4_arr + 12*dw*2
+    hex.sub 2, g4_arr + 12*dw*2, g4_0c
+    hex.input g4_arr + 13*dw*2
+    hex.sub 2, g4_arr + 13*dw*2, g4_0c
+    hex.input g4_arr + 14*dw*2
+    hex.sub 2, g4_arr + 14*dw*2, g4_0c
+    hex.input g4_arr + 15*dw*2
+    hex.sub 2, g4_arr + 15*dw*2, g4_0c
+    hex.input g4_nl
+    hex.if0 2, g4_arr + 0*dw*2, g4_move
+    hex.if0 2, g4_arr + 1*dw*2, g4_move
+    hex.if0 2, g4_arr + 2*dw*2, g4_move
+    hex.if0 2, g4_arr + 3*dw*2, g4_move
+    hex.if0 2, g4_arr + 4*dw*2, g4_move
+    hex.if0 2, g4_arr + 5*dw*2, g4_move
+    hex.if0 2, g4_arr + 6*dw*2, g4_move
+    hex.if0 2, g4_arr + 7*dw*2, g4_move
+    hex.if0 2, g4_arr + 8*dw*2, g4_move
+    hex.if0 2, g4_arr + 9*dw*2, g4_move
+    hex.if0 2, g4_arr + 10*dw*2, g4_move
+    hex.if0 2, g4_arr + 11*dw*2, g4_move
+    hex.if0 2, g4_arr + 12*dw*2, g4_move
+    hex.if0 2, g4_arr + 13*dw*2, g4_move
+    hex.if0 2, g4_arr + 14*dw*2, g4_move
+    hex.if0 2, g4_arr + 15*dw*2, g4_move
+    hex.cmp 2, g4_arr + 0*dw*2, g4_arr + 1*dw*2, g4_ne00, g4_move, g4_ne00
+  g4_ne00:
+    hex.cmp 2, g4_arr + 1*dw*2, g4_arr + 2*dw*2, g4_ne01, g4_move, g4_ne01
+  g4_ne01:
+    hex.cmp 2, g4_arr + 2*dw*2, g4_arr + 3*dw*2, g4_ne02, g4_move, g4_ne02
+  g4_ne02:
+    hex.cmp 2, g4_arr + 4*dw*2, g4_arr + 5*dw*2, g4_ne03, g4_move, g4_ne03
+  g4_ne03:
+    hex.cmp 2, g4_arr + 5*dw*2, g4_arr + 6*dw*2, g4_ne04, g4_move, g4_ne04
+  g4_ne04:
+    hex.cmp 2, g4_arr + 6*dw*2, g4_arr + 7*dw*2, g4_ne05, g4_move, g4_ne05
+  g4_ne05:
+    hex.cmp 2, g4_arr + 8*dw*2, g4_arr + 9*dw*2, g4_ne06, g4_move, g4_ne06
+  g4_ne06:
+    hex.cmp 2, g4_arr + 9*dw*2, g4_arr + 10*dw*2, g4_ne07, g4_move, g4_ne07
+  g4_ne07:
+    hex.cmp 2, g4_arr + 10*dw*2, g4_arr + 11*dw*2, g4_ne08, g4_move, g4_ne08
+  g4_ne08:
+    hex.cmp 2, g4_arr + 12*dw*2, g4_arr + 13*dw*2, g4_ne09, g4_move, g4_ne09
+  g4_ne09:
+    hex.cmp 2, g4_arr + 13*dw*2, g4_arr + 14*dw*2, g4_ne10, g4_move, g4_ne10
+  g4_ne10:
+    hex.cmp 2, g4_arr + 14*dw*2, g4_arr + 15*dw*2, g4_ne11, g4_move, g4_ne11
+  g4_ne11:
+    hex.cmp 2, g4_arr + 0*dw*2, g4_arr + 4*dw*2, g4_ne12, g4_move, g4_ne12
+  g4_ne12:
+    hex.cmp 2, g4_arr + 1*dw*2, g4_arr + 5*dw*2, g4_ne13, g4_move, g4_ne13
+  g4_ne13:
+    hex.cmp 2, g4_arr + 2*dw*2, g4_arr + 6*dw*2, g4_ne14, g4_move, g4_ne14
+  g4_ne14:
+    hex.cmp 2, g4_arr + 3*dw*2, g4_arr + 7*dw*2, g4_ne15, g4_move, g4_ne15
+  g4_ne15:
+    hex.cmp 2, g4_arr + 4*dw*2, g4_arr + 8*dw*2, g4_ne16, g4_move, g4_ne16
+  g4_ne16:
+    hex.cmp 2, g4_arr + 5*dw*2, g4_arr + 9*dw*2, g4_ne17, g4_move, g4_ne17
+  g4_ne17:
+    hex.cmp 2, g4_arr + 6*dw*2, g4_arr + 10*dw*2, g4_ne18, g4_move, g4_ne18
+  g4_ne18:
+    hex.cmp 2, g4_arr + 7*dw*2, g4_arr + 11*dw*2, g4_ne19, g4_move, g4_ne19
+  g4_ne19:
+    hex.cmp 2, g4_arr + 8*dw*2, g4_arr + 12*dw*2, g4_ne20, g4_move, g4_ne20
+  g4_ne20:
+    hex.cmp 2, g4_arr + 9*dw*2, g4_arr + 13*dw*2, g4_ne21, g4_move, g4_ne21
+  g4_ne21:
+    hex.cmp 2, g4_arr + 10*dw*2, g4_arr + 14*dw*2, g4_ne22, g4_move, g4_ne22
+  g4_ne22:
+    hex.cmp 2, g4_arr + 11*dw*2, g4_arr + 15*dw*2, g4_ne23, g4_move, g4_ne23
+  g4_ne23:
+  g4_no_move:
+    stl.output "1\n"
+    stl.loop
+  g4_move:
+    stl.output "0\n"
+    stl.loop
+}
+
+g4_arr: hex.vec 2*16
+g4_nl: hex.vec 2
+g4_0c: hex.vec 2, '0'

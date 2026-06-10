@@ -1,4 +1,4 @@
-// Byte Split From Hex Word (#1067)
+// Byte Split From Hex Word (#0245)
 
 // Reads exactly 4 lowercase hex chars + `\n` and outputs two raw bytes: the high byte first, then the low byte.
 

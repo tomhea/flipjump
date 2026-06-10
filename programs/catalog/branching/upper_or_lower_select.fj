@@ -1,4 +1,4 @@
-// Upper Or Lower Select (#0216)
+// Upper Or Lower Select (#0343)
 
 // Reads one ASCII bit, then exactly one byte. If bit is `0` outputs the byte uppercased, if `1` outputs it lowercased.
 

@@ -1,0 +1,97 @@
+// Cnf 2Var 2Clause Sat (#0694)
+
+// Reads two 2-CNF clauses as lines, each in the form `<lit1> <lit2>` where each literal is `x`, `!x`, `y`, or `!y`. Prints `SAT\n` if there's an assignment to x, y making both clauses true, else `UNSAT\n`.
+
+main
+
+def main @ err, sat, done < lvar0, lneg0, lvar1, lneg1, lvar2, lneg2, lvar3, lneg3 {
+    stl.startup_and_init_all
+    read_lit lvar0, lneg0
+    read_lit lvar1, lneg1
+    read_lit lvar2, lneg2
+    read_lit lvar3, lneg3
+    try_assign 0, 0, sat
+    try_assign 0, 1, sat
+    try_assign 1, 0, sat
+    try_assign 1, 1, sat
+    stl.output "UNSAT\n"
+    ;done
+  sat:
+    stl.output "SAT\n"
+  done:
+  err:
+    stl.loop
+}
+
+// Read a literal "x"/"!x"/"y"/"!y"; varout=0 for x,1 for y; negout=1 if negated.
+def read_lit varout, negout @ isneg, chkvar, setx, sety, done < c, sep, xc, bang {
+    hex.zero 4, negout
+    hex.input c
+    hex.cmp 2, c, bang, chkvar, isneg, chkvar
+  isneg:
+    hex.set 4, negout, 1
+    hex.input c
+  chkvar:
+    hex.cmp 2, c, xc, sety, setx, sety
+  setx:
+    hex.zero 4, varout
+    ;done
+  sety:
+    hex.set 4, varout, 1
+  done:
+    hex.input sep
+}
+
+// out[:4] = value of the literal (var,neg) under (xv,yv constants).
+def litval var, neg, xv, yv, out @ usex, applyneg, set1, done {
+    hex.if0 4, var, usex
+    hex.set 4, out, yv
+    ;applyneg
+  usex:
+    hex.set 4, out, xv
+  applyneg:
+    hex.if0 4, neg, done
+    hex.if0 4, out, set1
+    hex.zero 4, out
+    ;done
+  set1:
+    hex.set 4, out, 1
+  done:
+}
+
+// Jump `found` if both clauses are satisfied under (xv,yv).
+def try_assign xv, yv, found @ done < lvar0, lneg0, lvar1, lneg1, lvar2, lneg2, lvar3, lneg3, l0, l1, l2, l3, c1, c2, sat2 {
+    litval lvar0, lneg0, xv, yv, l0
+    litval lvar1, lneg1, xv, yv, l1
+    litval lvar2, lneg2, xv, yv, l2
+    litval lvar3, lneg3, xv, yv, l3
+    hex.mov 4, c1, l0
+    hex.or 4, c1, l1
+    hex.mov 4, c2, l2
+    hex.or 4, c2, l3
+    hex.mov 4, sat2, c1
+    hex.and 4, sat2, c2
+    hex.if0 4, sat2, done
+    ;found
+  done:
+}
+
+lvar0: hex.vec 4
+lneg0: hex.vec 4
+lvar1: hex.vec 4
+lneg1: hex.vec 4
+lvar2: hex.vec 4
+lneg2: hex.vec 4
+lvar3: hex.vec 4
+lneg3: hex.vec 4
+l0: hex.vec 4
+l1: hex.vec 4
+l2: hex.vec 4
+l3: hex.vec 4
+c1: hex.vec 4
+c2: hex.vec 4
+sat2: hex.vec 4
+c: hex.vec 2
+sep: hex.vec 2
+xc: hex.vec 2, 'x'
+bang: hex.vec 2, '!'

@@ -1,4 +1,4 @@
-// Counting Sort N Small (#1231)
+// Counting Sort N Small (#0594)
 
 // Reads digit N `1`-`9` + `\n`, then N single-digit decimals `0`-`9`. Prints them sorted ascending (one per line) via counting sort (tally each value then emit in order).
 

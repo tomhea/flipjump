@@ -1,4 +1,4 @@
-// Hexagonal First N (#0434)
+// Hexagonal First N (#0700)
 
 // Reads digit N `1`-`9` + `\n`. Prints the first N hexagonal numbers `H(k) = k(2k - 1)`, space-separated, + `\n`.
 

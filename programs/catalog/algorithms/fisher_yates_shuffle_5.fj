@@ -1,4 +1,4 @@
-// Fisher Yates Shuffle 5 (#1218)
+// Fisher Yates Shuffle 5 (#0581)
 
 // Reads 5 decimals `0`-`9` (each on own line), then 5 raw bytes (the PRNG bytes). Applies Fisher-Yates shuffle: for `i` from 4 down to 1, swap `arr[i]` with `arr[byte[5-i] mod (i+1)]`. Prints the shuffled array as 5 decimals space-separated + `\n`.
 

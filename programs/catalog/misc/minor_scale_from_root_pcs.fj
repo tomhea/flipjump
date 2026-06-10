@@ -1,4 +1,4 @@
-// Minor Scale From Root Pcs (#1028)
+// Minor Scale From Root Pcs (#1015)
 
 // Reads decimal root pitch class `0`-`11` + `\n`. Prints the 7 pitch classes of the natural minor scale (intervals 0, 2, 3, 5, 7, 8, 10), all mod 12, space-separated + `\n`.
 

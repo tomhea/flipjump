@@ -1,4 +1,4 @@
-// Print Box With Label (#1096)
+// Print Box With Label (#0319)
 
 // Reads digit N `3`-`9` + `\n` then a `\n`-terminated line of exactly N-2 chars. Prints an N-wide hollow box of `*` with the input line centered as the middle row (`* <line> *`).
 

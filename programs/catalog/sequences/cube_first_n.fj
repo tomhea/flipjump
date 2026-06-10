@@ -1,4 +1,4 @@
-// Cube First N (#0435)
+// Cube First N (#0701)
 
 // Reads digit N `1`-`9` + `\n`. Prints the first N positive cubes `1, 8, 27, ..., N³`, space-separated, + `\n`.
 

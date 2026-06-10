@@ -1,4 +1,4 @@
-// Bit At Position (#1061)
+// Bit At Position (#0239)
 
 // Reads one byte, then one ASCII digit `0`-`7` (terminated by `\n`), and prints the bit at that position as `0` or `1` + `\n`. Convention: position `0` is the least-significant bit (LSB); position `7` is the most-significant bit (MSB).
 

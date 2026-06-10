@@ -1,0 +1,44 @@
+// Is Even Mutual Recursive (#0423)
+
+// Reads decimal N `0`-`10` and prints `1\n` if even else `0\n`, computed via mutual recursion: `is_even(0)=1`, `is_even(N) = is_odd(N-1)`, `is_odd(N) = is_even(N-1)`.
+
+main
+
+def main @ err, ie_print_odd, ie_done < r_nval, ie_arg, ie_result, iseven_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, ie_arg, r_nval
+    stl.call iseven_fn
+    hex.if0 4, ie_result, ie_print_odd
+    stl.output "even\n"
+    ;ie_done
+  ie_print_odd:
+    stl.output "odd\n"
+  ie_done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+// ie_result = 1 if ie_arg is even, 0 if odd
+iseven_fn:
+    hex.if0 4, ie_arg, iev_base
+    hex.dec 4, ie_arg
+    stl.call isodd_fn
+    stl.return
+  iev_base:
+    hex.set 4, ie_result, 1
+    stl.return
+
+isodd_fn:
+    hex.if0 4, ie_arg, iod_base
+    hex.dec 4, ie_arg
+    stl.call iseven_fn
+    stl.return
+  iod_base:
+    hex.set 4, ie_result, 0
+    stl.return
+
+r_nval: hex.vec 4
+ie_arg: hex.vec 4
+ie_result: hex.vec 4

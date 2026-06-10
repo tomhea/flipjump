@@ -1,4 +1,4 @@
-// Array Avg 5 (#1116)
+// Array Avg 5 (#0363)
 
 // Reads exactly 5 decimals and prints `floor(sum / 5)` + `\n`.
 

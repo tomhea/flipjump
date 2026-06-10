@@ -1,4 +1,4 @@
-// Transpose By Semitones (#1026)
+// Transpose By Semitones (#1013)
 
 // Reads decimal MIDI `0`-`127` + `\n`, then signed decimal shift `-24` to `24` + `\n`. Prints the new MIDI value `(input + shift)`, clamped to `[0, 127]`, as decimal + `\n`.
 

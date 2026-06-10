@@ -1,4 +1,4 @@
-// Demo Rep 10 Dashes (#1262)
+// Demo Rep 10 Dashes (#0859)
 
 // No input. Uses `rep(10, i) stl.output('-')` then `\n`. Prints `----------\n`.
 

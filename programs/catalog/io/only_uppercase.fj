@@ -1,4 +1,4 @@
-// Only Uppercase (#0041)
+// Only Uppercase (#0040)
 
 // Reads stdin and outputs only `A`-`Z` bytes.
 

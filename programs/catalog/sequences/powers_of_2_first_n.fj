@@ -1,4 +1,4 @@
-// Powers Of 2 First N (#0919)
+// Powers Of 2 First N (#0726)
 
 // Reads digit N `1`-`7` + `\n`. Prints `2^0, 2^1, ..., 2^(N-1)` space-separated + `\n`.
 

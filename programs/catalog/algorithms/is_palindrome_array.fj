@@ -1,4 +1,4 @@
-// Is Palindrome Array (#1184)
+// Is Palindrome Array (#0548)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `1\n` if the sequence reads the same forward and backward, else `0\n`.
 

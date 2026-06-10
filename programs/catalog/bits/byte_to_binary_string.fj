@@ -1,4 +1,4 @@
-// Byte To Binary String (#0372)
+// Byte To Binary String (#0207)
 
 // Reads one byte (raw) and prints an 8-char binary string of `0`/`1` (MSB first), followed by `\n`. Differs from `conversion/dec_to_binary` (which reads a decimal text representation).
 

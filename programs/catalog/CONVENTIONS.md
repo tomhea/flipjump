@@ -22,26 +22,25 @@ Quality > quantity: a smaller catalog of meaningful programs beats a padded one.
 - **No `NNNN_` prefix in filenames.** Slugs are clean (e.g. `factorial.fj`).
 - **Slugs are unique across the entire catalog**, not just within a category.
   This is forced by the pytest-name uniqueness rule below.
-- **Categories** are listed in `CATALOG.md` and `README.md`.
+- **Categories** are listed in `README.md`.
 
 ## Catalog number `#NNNN`
 
-Each program has a four-digit catalog number assigned when `CATALOG.md` is
-locked at the end of Phase 2. The number appears in:
+Each program has a four-digit catalog number. The number appears in:
 
 - The source header: `// Program Name (#NNNN)`.
-- The README row.
-- The `CATALOG.md` row.
+- The `README.md` row.
 
-Numbers are never recycled. A row retired during Phase 3 keeps its number;
-its replacement gets a fresh higher number at the end of `CATALOG.md`.
+Numbers run `0001`–`1029` contiguously, grouped by category in the order the
+categories appear in `README.md`, so each category occupies a consecutive
+block.
 
 ## Program header — every `.fj` starts with this
 
 ```
 // Program Name (#NNNN)
 
-// 1-line description that exactly matches CATALOG.md / README.md description.
+// 1-line description that exactly matches the README.md description.
 // 0-3 additional context lines, each beginning with `// `.
 
 main
@@ -55,9 +54,9 @@ def main {
 // Helper macros below, each prefixed with a 1-line `// what it does` comment.
 ```
 
-The very first description line is the **single source of truth** and must
-match the `description` column in `CATALOG.md` byte-for-byte. The README and
-the `.fj` header propagate that text. Subsequent header lines may add context.
+The `README.md` `description` column is the **single source of truth**; the
+very first description line of each `.fj` must match it byte-for-byte.
+Subsequent header lines may add context.
 
 ## `main` macro convention
 
@@ -151,11 +150,10 @@ adjacent programs.
   macro internals: `n` is the width parameter in every `bit.*`/`hex.*` macro,
   `i` is the conventional `rep(n, i)` loop variable, and `w`/`dw`/`dbit` are
   reserved machine constants. A global `n:` or `i:` silently corrupts macro
-  expansion and crashes the program in a confusing, unrelated-looking way (see
-  `../../flipjump_claude_conclusions.md`). Use `limit`, `idx`, `count`,
-  `bound`, `counter`, `val`, etc.
+  expansion and crashes the program in a confusing, unrelated-looking way.
+  Use `limit`, `idx`, `count`, `bound`, `counter`, `val`, etc.
 
-## Predicate and filter idioms (batch 2)
+## Predicate and filter idioms
 
 Two reusable helper shapes proved out across the `io` category:
 
@@ -247,7 +245,8 @@ programs, add it to the right STL file under `flipjump/stl/` and:
 - Add corresponding test rows in `programs/<existing_category>/` plus
   `tests/tests_tables/test_*_<existing_speed>.csv` so the new macro is
   exercised by `pytest --all`.
-- Document the addition in `../../flipjump_claude_conclusions.md` with rationale.
+- Document the addition in its doc-comment in the `.fj` and in the
+  `writing-flipjump-stl-code` skill (see `reference/quick-signatures.md`).
 - STL additions are NOT counted against the catalog target.
 
 ## Per-program verification (before committing)

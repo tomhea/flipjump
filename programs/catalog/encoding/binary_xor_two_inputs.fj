@@ -1,0 +1,56 @@
+// Binary Xor Two Inputs (#0528)
+
+// Reads two `\n`-terminated 8-char binary strings (each on its own line, each is 8 chars of `0`/`1`). Prints their bitwise XOR as an 8-char binary string + `\n`.
+
+main
+
+def main @ done < v1, v2 {
+    stl.startup
+    read8 v1
+    read8 v2
+    bit.xor 8, v1, v2
+    print_bits v1
+    stl.output '\n'
+  done:
+    stl.loop
+}
+
+// Read 8 ASCII bits (MSB first) into v, then consume the newline.
+def read8 v @ p < skip {
+    rep(8, k) read_bit_into v + (7 - k) * dw
+    bit.input skip
+  p:
+}
+
+// Read one '0'/'1' char and set the bit at pos accordingly.
+def read_bit_into pos @ set1, zero, done < ch, onec {
+    bit.input ch
+    bit.cmp 8, ch, onec, zero, set1, zero
+  set1:
+    bit.one pos
+    ;done
+  zero:
+    bit.zero pos
+  done:
+}
+
+// Print one bit (address bp) as '0'/'1'.
+def print_bit bp @ zero, done {
+    bit.if0 bp, zero
+    stl.output '1'
+    ;done
+  zero:
+    stl.output '0'
+  done:
+}
+
+// Print the 8 bits of byte ch (a bit.vec 8), MSB first.
+def print_bits ch {
+    rep(8, k) print_bit ch + (7 - k) * dw
+}
+
+v1: bit.vec 8, 0
+v2: bit.vec 8, 0
+ch: bit.vec 8, 0
+onec: bit.vec 8, '1'
+skip: bit.vec 8, 0

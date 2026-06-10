@@ -1,4 +1,4 @@
-// Linear Search Count (#1168)
+// Linear Search Count (#0532)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals (each own line), then a target decimal. Prints the count of occurrences of the target in the array as decimal + `\n`.
 

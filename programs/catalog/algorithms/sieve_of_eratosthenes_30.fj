@@ -1,4 +1,4 @@
-// Sieve Of Eratosthenes 30 (#1197)
+// Sieve Of Eratosthenes 30 (#0560)
 
 // No input. Prints the primes in `[2, 30]` space-separated on one line + `\n`: `2 3 5 7 11 13 17 19 23 29\n`. Implementation: sieve of Eratosthenes (mark composites).
 

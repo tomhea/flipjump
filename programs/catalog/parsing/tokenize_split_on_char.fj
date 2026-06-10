@@ -1,0 +1,32 @@
+// Tokenize Split On Char (#0783)
+
+// Reads exactly one separator byte + `\n`, then a `\n`-terminated line ≤ 40 chars. Splits the line on the separator byte and prints each token (including empty) on its own line.
+
+main
+
+def main @ loop, c2, dosep, echo, endline, done < b, sep, tmp, nlc {
+    stl.startup_and_init_all
+    hex.input sep
+    hex.input tmp
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nlc, c2, endline, c2
+  c2:
+    hex.cmp 2, b, sep, echo, dosep, echo
+  dosep:
+    stl.output '\n'
+    ;loop
+  echo:
+    hex.print b
+    ;loop
+  endline:
+    stl.output '\n'
+  done:
+    stl.loop
+}
+
+b: hex.vec 2
+sep: hex.vec 2
+tmp: hex.vec 2
+nlc: hex.vec 2, '\n'

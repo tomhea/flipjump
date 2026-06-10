@@ -1,0 +1,35 @@
+// Game Of Life Count Alive 5X5 (#0971)
+
+// Reads a 5×5 binary grid (5 lines of 5 chars `0`/`1`). Prints the count of `1` cells as decimal + `\n`.
+
+main
+
+def main @ gl_loop, gl_body, gl_is_nl, gl_not_nl, gl_one, gl_done < gl_c, gl_cells, gl_cnt, gl_c25, gl_1c, gl_nlc {
+    stl.startup_and_init_all 100
+    hex.zero 4, gl_cells
+    hex.zero 4, gl_cnt
+  gl_loop:
+    hex.cmp 4, gl_cells, gl_c25, gl_body, gl_done, gl_done
+  gl_body:
+    hex.input gl_c
+    hex.cmp 2, gl_c, gl_nlc, gl_not_nl, gl_is_nl, gl_not_nl
+  gl_is_nl:
+    ;gl_loop
+  gl_not_nl:
+    hex.inc 4, gl_cells
+    hex.cmp 2, gl_c, gl_1c, gl_loop, gl_one, gl_loop
+  gl_one:
+    hex.inc 4, gl_cnt
+    ;gl_loop
+  gl_done:
+    hex.print_dec_uint 4, gl_cnt
+    stl.output '\n'
+    stl.loop
+}
+
+gl_c: hex.vec 2
+gl_cells: hex.vec 4
+gl_cnt: hex.vec 4
+gl_c25: hex.vec 4, 25
+gl_1c: hex.vec 2, '1'
+gl_nlc: hex.vec 2, '\n'

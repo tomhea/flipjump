@@ -1,0 +1,31 @@
+// Modular Arith Demo (#0897)
+
+// Reads three decimals `a`, `b`, `m` (each `0`-`50`, own line; `m >= 1`). Prints `(a+b) mod m\n(a*b) mod m\n` on two lines.
+
+main
+
+def main @ err < a, b, m, s, p, q, r {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.input_dec_uint 4, b, err
+    hex.input_dec_uint 4, m, err
+    hex.mov 4, s, a
+    hex.add 4, s, b
+    hex.div 4, 4, q, r, s, m, err
+    hex.print_dec_uint 4, r
+    stl.output '\n'
+    hex.mul 4, p, a, b
+    hex.div 4, 4, q, r, p, m, err
+    hex.print_dec_uint 4, r
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+b: hex.vec 4
+m: hex.vec 4
+s: hex.vec 4
+p: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4

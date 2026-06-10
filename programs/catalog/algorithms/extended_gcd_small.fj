@@ -1,4 +1,4 @@
-// Extended Gcd Small (#1200)
+// Extended Gcd Small (#0563)
 
 // Reads two positive decimals `a`, `b` each `1`-`30` (own lines). Prints `g x y\n` such that `a*x + b*y = g = gcd(a, b)`, where `x`, `y` may be signed integers.
 

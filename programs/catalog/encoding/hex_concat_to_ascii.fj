@@ -1,0 +1,25 @@
+// Hex Concat To Ascii (#0521)
+
+// Reads a `\n`-terminated lowercase-hex string ≤ 40 chars (even length). Prints decoded bytes + `\n`.
+
+main
+
+def main @ err, loop, fin, done < bytebuf, hinib, lonib {
+    stl.startup_and_init_all
+  loop:
+    hex.input_as_hex hinib, fin
+    hex.input_as_hex lonib, err
+    hex.mov 1, bytebuf, lonib
+    hex.mov 1, bytebuf + dw, hinib
+    hex.print bytebuf
+    ;loop
+  fin:
+    stl.output '\n'
+  done:
+  err:
+    stl.loop
+}
+
+bytebuf: hex.vec 2
+hinib: hex.vec 1
+lonib: hex.vec 1

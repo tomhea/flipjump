@@ -1,0 +1,11 @@
+// Print Christmas Tree 7 (#0806)
+
+// No input. Same shape as `print_christmas_tree_5` but with 7 rows (widths 1,3,5,7,9,11,13 in a 13-col field).
+
+main
+
+def main {
+    stl.startup
+    stl.output "      *\n     ***\n    *****\n   *******\n  *********\n ***********\n*************\n"
+    stl.loop
+}

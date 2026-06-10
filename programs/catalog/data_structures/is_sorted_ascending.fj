@@ -1,4 +1,4 @@
-// Is Sorted Ascending (#1131)
+// Is Sorted Ascending (#0378)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `1\n` if the sequence is non-decreasing, else `0\n`.
 

@@ -1,4 +1,4 @@
-// Lazy Caterers First 8 (#0457)
+// Lazy Caterers First 8 (#0720)
 
 // No input. Prints the first 8 lazy caterer's numbers (max regions with N cuts of a disc): `1 2 4 7 11 16 22 29` space-separated + `\n`.
 

@@ -1,0 +1,34 @@
+// Sum To N Recursive (#0417)
+
+// Reads decimal N in `0`-`10` and prints `1+2+...+N` using a recursive macro. Same I/O as `arithmetic/sum_to_n`; demonstrates the recursive accumulator pattern.
+
+main
+
+def main @ err < r_nval, sum_arg, sum_result, sum_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, sum_arg, r_nval
+    stl.call sum_fn
+    hex.print_dec_uint 4, sum_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Reads sum_arg, writes sum_result = 1+2+...+sum_arg
+sum_fn:
+    hex.if0 4, sum_arg, sum_base
+    hex.push 4, sum_arg
+    hex.dec 4, sum_arg
+    stl.call sum_fn
+    hex.pop 4, sum_saved
+    hex.add 4, sum_result, sum_saved
+    stl.return
+  sum_base:
+    hex.zero 4, sum_result
+    stl.return
+
+r_nval: hex.vec 4
+sum_arg: hex.vec 4
+sum_result: hex.vec 4
+sum_saved: hex.vec 4

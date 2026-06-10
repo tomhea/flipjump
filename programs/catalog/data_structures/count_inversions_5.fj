@@ -1,4 +1,4 @@
-// Count Inversions 5 (#1146)
+// Count Inversions 5 (#0393)
 
 // Reads exactly 5 decimals and prints the count of inversions (pairs `(i, j)` with `i < j` and `a_i > a_j`) as decimal + `\n`.
 

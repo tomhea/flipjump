@@ -1,0 +1,69 @@
+// Memcmp Short (#0927)
+
+// Reads digit N `1`-`5` + `\n`, then N decimals (`0`-`255`, own line) for array A, then N decimals for array B. Prints `1\n` if all N pairs match, else `0\n`.
+
+main
+
+def main @ err, raloop, rabody, radone, rbloop, rbbody, rbdone, cmploop, cmpbody, cmpdone, neq, eq, equal, end < rn, rcnt, ra, rb, wpa, wpb, differ, abuf, bbuf {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 2, rn, err
+    // read array A
+    hex.set w/4, wpa, abuf
+    hex.zero 2, rcnt
+  raloop:
+    hex.cmp 2, rcnt, rn, rabody, radone, radone
+  rabody:
+    hex.input_dec_uint 2, ra, err
+    hex.write_byte_and_inc wpa, ra
+    hex.inc 2, rcnt
+    ;raloop
+  radone:
+    // read array B
+    hex.set w/4, wpb, bbuf
+    hex.zero 2, rcnt
+  rbloop:
+    hex.cmp 2, rcnt, rn, rbbody, rbdone, rbdone
+  rbbody:
+    hex.input_dec_uint 2, rb, err
+    hex.write_byte_and_inc wpb, rb
+    hex.inc 2, rcnt
+    ;rbloop
+  rbdone:
+    // compare A and B
+    hex.set w/4, wpa, abuf
+    hex.set w/4, wpb, bbuf
+    hex.zero 2, rcnt
+    hex.zero 2, differ
+  cmploop:
+    hex.cmp 2, rcnt, rn, cmpbody, cmpdone, cmpdone
+  cmpbody:
+    hex.read_byte_and_inc ra, wpa
+    hex.read_byte_and_inc rb, wpb
+    hex.cmp 2, ra, rb, neq, eq, neq
+  neq:
+    hex.set 2, differ, 1
+    ;cmpdone
+  eq:
+    hex.inc 2, rcnt
+    ;cmploop
+  cmpdone:
+    hex.if0 2, differ, equal
+    stl.output "0\n"
+    ;end
+  equal:
+    stl.output "1\n"
+  end:
+    stl.loop
+  err:
+    stl.loop
+}
+
+rn: hex.vec 2
+rcnt: hex.vec 2
+ra: hex.vec 2
+rb: hex.vec 2
+differ: hex.vec 2
+wpa: hex.vec w/4
+wpb: hex.vec w/4
+abuf: hex.vec 5, 0
+bbuf: hex.vec 5, 0

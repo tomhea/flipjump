@@ -1,0 +1,27 @@
+// Lucky Seven (#0446)
+
+// Reads exactly one byte. Prints `Lucky!\n` if `byte mod 7 == 0`, else `Try again\n`.
+
+main
+
+def main @ err, lucky, done < bytebuf, v, q, r, seven {
+    stl.startup_and_init_all
+    hex.input bytebuf
+    hex.zero 4, v
+    hex.mov 2, v, bytebuf
+    hex.div 4, 4, q, r, v, seven, err
+    hex.if0 4, r, lucky
+    stl.output "Try again\n"
+    ;done
+  lucky:
+    stl.output "Lucky!\n"
+  done:
+  err:
+    stl.loop
+}
+
+bytebuf: hex.vec 2
+v: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4
+seven: hex.vec 4, 7

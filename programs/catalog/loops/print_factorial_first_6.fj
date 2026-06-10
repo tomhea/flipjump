@@ -1,4 +1,4 @@
-// Print Factorial First 6 (#0258)
+// Print Factorial First 6 (#0298)
 
 // No input. Prints `1 2 6 24 120 720\n` (factorials 1..6).
 

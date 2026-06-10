@@ -1,4 +1,4 @@
-// Capitalize First Letter (#0471)
+// Capitalize First Letter (#0739)
 
 // Reads a `\n`-terminated line ≤ 80 chars. If the first byte is `a`-`z`, outputs it uppercased; the rest of the line is unchanged. Includes final `\n`.
 

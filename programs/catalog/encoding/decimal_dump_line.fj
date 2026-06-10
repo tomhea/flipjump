@@ -1,0 +1,35 @@
+// Decimal Dump Line (#0499)
+
+// Reads a `\n`-terminated line ≤ 16 chars. For each byte (excluding `\n`), prints its decimal value (1-3 chars, no zero padding), space-separated, then `\n`.
+
+main
+
+def main @ err, loop, go, fb, emit, done < b, nl, first, v {
+    stl.startup_and_init_all
+    bit.one first
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    bit.if1 first, fb
+    stl.output ' '
+    ;emit
+  fb:
+    bit.zero first
+  emit:
+    hex.zero 4, v
+    hex.mov 2, v, b
+    hex.print_dec_uint 4, v
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+first: bit.bit 1
+v: hex.vec 4

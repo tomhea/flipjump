@@ -1,4 +1,4 @@
-// Demo Hex Shr (#1247)
+// Demo Hex Shr (#0844)
 
 // Same as `demo_hex_shl` but uses `hex.shr`.
 

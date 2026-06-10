@@ -1,4 +1,4 @@
-// Byte Reverse Each Nibble (#0904)
+// Byte Reverse Each Nibble (#0226)
 
 // Reads exactly 1 byte. Reverses the bits within each nibble independently (high nibble reversed in place, low nibble reversed in place). Outputs the resulting byte as raw.
 

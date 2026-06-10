@@ -1,0 +1,65 @@
+// Moore Count State Mod4 (#0761)
+
+// Reads a `\n`-terminated sequence of bits `0`/`1` (≤ 20 chars). State starts at `0`; each input bit increments state modulo 4. After each input, prints the current state (`0`-`3`); states are space-separated on a single line + `\n`. (Moore machine: output depends on current state.)
+
+main
+
+def main @ err, loop, done, wrap0, do_space, skip_space, print_state, p0, p1, p2, p3 < state, ch, tmp, first_printed, nl_char, four_val, two_val_m {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+    hex.set 2, first_printed, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    // state = (state + 1) mod 4
+    hex.inc 2, state
+    hex.mov 2, tmp, state
+    hex.sub 2, tmp, four_val
+    hex.if0 2, tmp, wrap0
+    ;do_space
+  wrap0:
+    hex.set 2, state, 0
+  do_space:
+    // if first_printed==0: no space needed, set to 1
+    hex.if0 2, first_printed, skip_space
+    stl.output ' '
+    ;print_state
+  skip_space:
+    hex.set 2, first_printed, 1
+  print_state:
+    hex.if0 2, state, p0
+    hex.mov 2, tmp, state
+    hex.dec 2, tmp
+    hex.if0 2, tmp, p1
+    hex.mov 2, tmp, state
+    hex.sub 2, tmp, two_val_m
+    hex.if0 2, tmp, p2
+    ;p3
+  p0:
+    stl.output '0'
+    ;loop
+  p1:
+    stl.output '1'
+    ;loop
+  p2:
+    stl.output '2'
+    ;loop
+  p3:
+    stl.output '3'
+    ;loop
+  done:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+first_printed: hex.vec 2
+four_val: hex.vec 2, 4
+two_val_m: hex.vec 2, 2
+nl_char: hex.vec 2, '\n'

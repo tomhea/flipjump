@@ -1,0 +1,45 @@
+// Traffic Light Cycle (#0754)
+
+// Reads digit N `1`-`9` + `\n`. Prints the traffic-light states cycling `Red\nGreen\nYellow\n` (starting with Red), totaling exactly N lines.
+
+main
+
+def main @ err, loop, s0, s1, s2, done < state, ch, cnt, zero_char {
+    stl.startup_and_init_all 100
+    hex.input ch
+    // cnt = digit - '0'
+    hex.sub 2, ch, zero_char
+    hex.mov 2, cnt, ch
+    hex.set 2, state, 0
+  loop:
+    hex.if0 2, cnt, done
+    hex.dec 2, cnt
+    hex.if0 2, state, s0
+    hex.dec 2, state
+    hex.if0 2, state, s1
+    hex.dec 2, state
+    hex.if0 2, state, s2
+    hex.set 2, state, 0
+    ;loop
+  s0:
+    stl.output "Red\n"
+    hex.set 2, state, 1
+    ;loop
+  s1:
+    stl.output "Green\n"
+    hex.set 2, state, 2
+    ;loop
+  s2:
+    stl.output "Yellow\n"
+    hex.set 2, state, 0
+    ;loop
+  done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+cnt: hex.vec 2
+zero_char: hex.vec 2, '0'

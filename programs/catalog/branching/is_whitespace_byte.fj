@@ -1,4 +1,4 @@
-// Is Whitespace Byte (#0209)
+// Is Whitespace Byte (#0336)
 
 // Reads exactly one byte and prints `1\n` if it's space/tab/newline (`0x20`, `0x09`, `0x0A`), else `0\n`.
 

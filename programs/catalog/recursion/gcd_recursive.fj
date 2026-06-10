@@ -1,0 +1,38 @@
+// Gcd Recursive (#0421)
+
+// Reads two decimals `a`, `b` (each ≤ 50, own line). Prints `gcd(a,b)` using the recursive Euclidean algorithm.
+
+main
+
+def main @ err < r_a, r_b, gcd_a, gcd_b, gcd_result, gcd_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_a, err
+    hex.input_dec_uint 4, r_b, err
+    hex.mov 4, gcd_a, r_a
+    hex.mov 4, gcd_b, r_b
+    stl.call gcd_fn
+    hex.print_dec_uint 4, gcd_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// gcd(gcd_a, gcd_b) -> gcd_result
+gcd_fn:
+    hex.if0 4, gcd_b, gcd_base
+    hex.div 4, 4, gcd_q, gcd_r, gcd_a, gcd_b, gcd_fn
+    hex.mov 4, gcd_a, gcd_b
+    hex.mov 4, gcd_b, gcd_r
+    stl.call gcd_fn
+    stl.return
+  gcd_base:
+    hex.mov 4, gcd_result, gcd_a
+    stl.return
+
+r_a: hex.vec 4
+r_b: hex.vec 4
+gcd_a: hex.vec 4
+gcd_b: hex.vec 4
+gcd_result: hex.vec 4
+gcd_q: hex.vec 4
+gcd_r: hex.vec 4

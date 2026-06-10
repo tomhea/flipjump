@@ -1,4 +1,4 @@
-// Mergesort 5 (#1229)
+// Mergesort 5 (#0592)
 
 // Reads exactly 5 decimals and prints them sorted ascending (one per line). Implementation: merge sort (recursive split + merge).
 

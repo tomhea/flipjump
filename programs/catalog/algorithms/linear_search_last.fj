@@ -1,4 +1,4 @@
-// Linear Search Last (#1169)
+// Linear Search Last (#0533)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals, then target. Prints the 0-based index of the LAST occurrence + `\n`, or `not found\n` if absent.
 

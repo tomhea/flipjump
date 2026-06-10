@@ -1,4 +1,4 @@
-// Octal To Dec (#0344)
+// Octal To Dec (#0471)
 
 // Reads exactly two octal digits + `\n` and prints the decimal `0`-`63` + `\n`.
 

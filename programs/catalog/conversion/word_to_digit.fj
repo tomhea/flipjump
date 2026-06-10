@@ -1,4 +1,4 @@
-// Word To Digit (#1073)
+// Word To Digit (#0494)
 
 // Reads one of the English number words `zero`, `one`, `two`, ..., `nine` (terminated by `\n`) and prints the corresponding ASCII digit `0`-`9` + `\n`.
 

@@ -1,4 +1,4 @@
-// Days To Next Weekday (#0868)
+// Days To Next Weekday (#0993)
 
 // Reads day-of-week `0`-`6` (Sun=0) + `\n`, then target day-of-week `0`-`6` + `\n`. Prints `(target - today + 7) mod 7` as decimal `0`-`6` + `\n` (the number of days from today to the next occurrence of target; `0` if target equals today).
 

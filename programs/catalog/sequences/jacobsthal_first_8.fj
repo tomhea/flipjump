@@ -1,4 +1,4 @@
-// Jacobsthal First 8 (#0443)
+// Jacobsthal First 8 (#0708)
 
 // No input. Prints the first 8 Jacobsthal numbers `J(n)` starting `0 1 1 3 5 11 21 43\n`.
 

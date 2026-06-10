@@ -1,4 +1,4 @@
-// Min Product Pair (#1191)
+// Min Product Pair (#0555)
 
 // Reads digit N `2`-`9` + `\n`, then N signed decimals. Prints the minimum product of any two distinct-indexed elements + `\n`.
 

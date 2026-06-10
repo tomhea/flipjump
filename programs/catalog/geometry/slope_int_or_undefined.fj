@@ -1,4 +1,4 @@
-// Slope Int Or Undefined (#0595)
+// Slope Int Or Undefined (#0619)
 
 // Reads 4 decimals `x1 y1 x2 y2` (each own line, signed). If `x1 == x2`, prints `undefined\n`. Otherwise prints `(y2 - y1) / (x2 - x1)` as signed integer division + `\n`.
 

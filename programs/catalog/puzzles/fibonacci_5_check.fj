@@ -1,0 +1,39 @@
+// Fibonacci 5 Check (#0672)
+
+// Reads exactly 5 decimals (each own line). Prints `1\n` if they match the first 5 Fibonacci values `0 1 1 2 3` exactly in order, else `0\n`.
+
+main
+
+def main @ err, no, yes, ok0, ok1, ok2, ok3, ok4 < val, c0, c1, c2, c3, c4 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c0, no, ok0, no
+  ok0:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c1, no, ok1, no
+  ok1:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c2, no, ok2, no
+  ok2:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c3, no, ok3, no
+  ok3:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c4, no, ok4, no
+  ok4:
+    ;yes
+  no:
+    stl.output "0\n"
+    ;err
+  yes:
+    stl.output "1\n"
+  err:
+    stl.loop
+}
+
+val: hex.vec 8
+c0: hex.vec 8, 0
+c1: hex.vec 8, 1
+c2: hex.vec 8, 1
+c3: hex.vec 8, 2
+c4: hex.vec 8, 3

@@ -1,0 +1,47 @@
+// King Attack Check (#0687)
+
+// Reads 4 decimals `r1 c1 r2 c2` (each `0`-`7`, own line). Prints `1\n` if `max(|r1-r2|, |c1-c2|) == 1` (king's move neighbors), else `0\n`.
+
+main
+
+def main @ err, yes, no, done < r1, c1, r2, c2, dr, dc, mx, one {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, r1, err
+    hex.input_dec_uint 4, c1, err
+    hex.input_dec_uint 4, r2, err
+    hex.input_dec_uint 4, c2, err
+    abs_diff r1, r2, dr
+    abs_diff c1, c2, dc
+    hex.max 4, mx, dr, dc
+    hex.cmp 4, mx, one, no, yes, no
+  yes:
+    stl.output "1\n"
+    ;done
+  no:
+    stl.output "0\n"
+  done:
+  err:
+    stl.loop
+}
+
+// out[:4] = |a - b| (a, b small unsigned).
+def abs_diff a, b, out @ blt, doge, done {
+    hex.cmp 4, a, b, blt, doge, doge
+  blt:
+    hex.mov 4, out, b
+    hex.sub 4, out, a
+    ;done
+  doge:
+    hex.mov 4, out, a
+    hex.sub 4, out, b
+  done:
+}
+
+r1: hex.vec 4
+c1: hex.vec 4
+r2: hex.vec 4
+c2: hex.vec 4
+dr: hex.vec 4
+dc: hex.vec 4
+mx: hex.vec 4
+one: hex.vec 4, 1

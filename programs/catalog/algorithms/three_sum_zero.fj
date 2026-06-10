@@ -1,4 +1,4 @@
-// Three Sum Zero (#1189)
+// Three Sum Zero (#0553)
 
 // Reads digit N `3`-`9` + `\n`, then N signed decimals. Prints `i j k\n` (0-based, `i < j < k`) of any triple summing to 0, or `none\n`.
 

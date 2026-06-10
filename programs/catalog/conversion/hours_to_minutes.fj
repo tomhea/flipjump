@@ -1,4 +1,4 @@
-// Hours To Minutes (#0353)
+// Hours To Minutes (#0480)
 
 // Reads decimal hours `0`-`24` + `\n` and prints `hours * 60` as decimal + `\n`.
 

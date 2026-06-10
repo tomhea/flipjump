@@ -1,4 +1,4 @@
-// Z Score Compare 5 (#1211)
+// Z Score Compare 5 (#0574)
 
 // Reads exactly 5 decimals `0`-`99` (population), then 1 additional decimal `0`-`99` (test value). Computes `mean` and `std_dev_5_floor_sqrt` of the 5 population values. Prints `floor((test - mean) / max(std_dev, 1))` as a signed decimal + `\n`.
 

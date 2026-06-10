@@ -1,4 +1,4 @@
-// Bottles Of Beer N (#0870)
+// Bottles Of Beer N (#0997)
 
 // Reads digit N `1`-`9` + `\n`. Prints N verses counting down from N to 1 (same per-verse format as `bottles_of_beer_5`).
 

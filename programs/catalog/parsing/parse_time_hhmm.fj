@@ -1,0 +1,20 @@
+// Parse Time Hhmm (#0786)
+
+// Reads `HH:MM\n` (5 bytes + `\n`). Prints `<H>:<M>\n` with no leading zeros (e.g. `09:05` → `9:5\n`).
+
+main
+
+def main < h, m, sb {
+    stl.startup_and_init_all
+    hex.input_dec_uint_until 8, h, sb
+    hex.input_dec_uint_until 8, m, sb
+    hex.print_dec_uint 8, h
+    stl.output ':'
+    hex.print_dec_uint 8, m
+    stl.output '\n'
+    stl.loop
+}
+
+h: hex.vec 8
+m: hex.vec 8
+sb: hex.vec 2

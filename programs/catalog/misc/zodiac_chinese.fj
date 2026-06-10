@@ -1,4 +1,4 @@
-// Zodiac Chinese (#0872)
+// Zodiac Chinese (#0999)
 
 // Reads year `1900`-`2099` + `\n`. Prints the corresponding Chinese zodiac animal (`Rat`, `Ox`, ..., `Pig`) + `\n`.
 

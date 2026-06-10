@@ -1,4 +1,4 @@
-// Diagonal Stars (#0239)
+// Diagonal Stars (#0279)
 
 // Reads digit N `1`-`9` + `\n`. Prints an N-by-N grid where cell (i,j) is `*` if `i == j` else `.`, rows separated by `\n`.
 

@@ -1,4 +1,4 @@
-// Only Letters (#0039)
+// Only Letters (#0038)
 
 // Reads stdin and outputs only `A`-`Z` and `a`-`z` bytes.
 

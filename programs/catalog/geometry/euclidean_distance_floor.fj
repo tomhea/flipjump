@@ -1,4 +1,4 @@
-// Euclidean Distance Floor (#1056)
+// Euclidean Distance Floor (#0622)
 
 // Reads 4 decimals `x1 y1 x2 y2` (each `0`-`9`, own line). Prints `floor(sqrt((x2-x1)^2 + (y2-y1)^2))` as decimal + `\n`. Squared distance ≤ 162, so integer sqrt via linear scan (`k` while `k² <= d`) stays trivially within compile budget.
 

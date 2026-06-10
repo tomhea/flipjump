@@ -105,16 +105,23 @@ pip install flipjump
 And jump right into the neat [**FlipJump Docs**](https://fjdocs.tomhe.app) site!
 
 You can also install it with its extras:
-- flipjump[**stats**]: support for viewing macro usage in an interactive graph.
-- flipjump[**tests**]: all the testing libraries needed.
+- `flipjump[stats]`: support for viewing macro usage in an interactive graph.
+- `flipjump[tests]`: all the testing libraries needed.
 ```shell
 pip install flipjump[stats,tests]
 ```
 
 
-Pycharm Extensions:
-- Add <span style="color:orange">syntax highlighting</span> support for *.fj files - just import the [PycharmHighlighting.zip](ide-extensions/pycharm/PycharmHighlighting.zip) settings.
-- Add a ctrl+shift+click (find fj-macro definition) functionality by using the [AutoHotKey script](ide-extensions/pycharm/fj-pycharm-def-finder.ahk).
+**IDE Plugins:**  
+FlipJump has official plugins for [JetBrains IDEs](https://plugins.jetbrains.com/plugin/32134-flipjump) and [VS Code](https://marketplace.visualstudio.com/items?itemName=flipjump.flipjump). Both offer full FlipJump syntax highlighting, and "jump to definition" functionality with ctrl+click on a macro name.
+
+**Claude Skill** ([repo](https://github.com/tomhea/skills)):  
+Write FlipJump programs — correct, efficient, and tested. Knows the STL's macros and idioms, the gotchas, and verifies every program through the fj toolchain.
+```
+/plugin marketplace add tomhea/skills
+/plugin install flipjump@tomhe
+``` 
+
 
 # How to run?
 

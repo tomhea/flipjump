@@ -1,0 +1,90 @@
+// Game 2048 One Merge Row (#0959)
+
+// Reads exactly 4 single-digit decimals `0`-`9` (each own line) representing 4 values in a row. Applies one 2048 merge step (slide non-zero values left, merge adjacent equal pairs once left-to-right, then slide again). Prints the resulting 4 values on one line, space-separated, + `\n`.
+
+main
+
+def main @ err, g2_s0, g2_s1, g2_s2, g2_s3, g2_mloop, g2_mbody, g2_set_prev, g2_match, g2_no_match, g2_flush, g2_flush_done, g2_ploop, g2_pbody, g2_nospace, g2_pdone < g2_v0, g2_v1, g2_v2, g2_v3, g2_c, g2_out, g2_rptr, g2_wptr, g2_b, g2_prev, g2_clen, g2_ri, g2_pi, g2_four {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 2, g2_v0, err
+    hex.input_dec_uint 2, g2_v1, err
+    hex.input_dec_uint 2, g2_v2, err
+    hex.input_dec_uint 2, g2_v3, err
+    hex.set w/4, g2_wptr, g2_c
+    hex.zero 4, g2_clen
+    hex.if0 2, g2_v0, g2_s0
+    hex.write_byte_and_inc g2_wptr, g2_v0
+    hex.inc 4, g2_clen
+  g2_s0:
+    hex.if0 2, g2_v1, g2_s1
+    hex.write_byte_and_inc g2_wptr, g2_v1
+    hex.inc 4, g2_clen
+  g2_s1:
+    hex.if0 2, g2_v2, g2_s2
+    hex.write_byte_and_inc g2_wptr, g2_v2
+    hex.inc 4, g2_clen
+  g2_s2:
+    hex.if0 2, g2_v3, g2_s3
+    hex.write_byte_and_inc g2_wptr, g2_v3
+    hex.inc 4, g2_clen
+  g2_s3:
+    hex.set w/4, g2_rptr, g2_c
+    hex.set w/4, g2_wptr, g2_out
+    hex.zero 2, g2_prev
+    hex.zero 4, g2_ri
+  g2_mloop:
+    hex.cmp 4, g2_ri, g2_clen, g2_mbody, g2_flush, g2_flush
+  g2_mbody:
+    hex.read_byte_and_inc g2_b, g2_rptr
+    hex.inc 4, g2_ri
+    hex.if0 2, g2_prev, g2_set_prev
+    hex.cmp 2, g2_prev, g2_b, g2_no_match, g2_match, g2_no_match
+  g2_match:
+    hex.add 2, g2_prev, g2_b
+    hex.write_byte_and_inc g2_wptr, g2_prev
+    hex.zero 2, g2_prev
+    ;g2_mloop
+  g2_no_match:
+    hex.write_byte_and_inc g2_wptr, g2_prev
+    hex.mov 2, g2_prev, g2_b
+    ;g2_mloop
+  g2_set_prev:
+    hex.mov 2, g2_prev, g2_b
+    ;g2_mloop
+  g2_flush:
+    hex.if0 2, g2_prev, g2_flush_done
+    hex.write_byte_and_inc g2_wptr, g2_prev
+  g2_flush_done:
+    hex.set w/4, g2_rptr, g2_out
+    hex.zero 4, g2_pi
+  g2_ploop:
+    hex.cmp 4, g2_pi, g2_four, g2_pbody, g2_pdone, g2_pdone
+  g2_pbody:
+    hex.if0 4, g2_pi, g2_nospace
+    stl.output ' '
+  g2_nospace:
+    hex.read_byte_and_inc g2_b, g2_rptr
+    hex.print_dec_uint 2, g2_b
+    hex.inc 4, g2_pi
+    ;g2_ploop
+  g2_pdone:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+g2_v0: hex.vec 2
+g2_v1: hex.vec 2
+g2_v2: hex.vec 2
+g2_v3: hex.vec 2
+g2_c: hex.vec 4, 0
+g2_out: hex.vec 4, 0
+g2_rptr: hex.vec w/4
+g2_wptr: hex.vec w/4
+g2_b: hex.vec 2
+g2_prev: hex.vec 2
+g2_clen: hex.vec 4
+g2_ri: hex.vec 4
+g2_pi: hex.vec 4
+g2_four: hex.vec 4, 4

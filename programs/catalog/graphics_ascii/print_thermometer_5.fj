@@ -1,0 +1,32 @@
+// Print Thermometer 5 (#0833)
+
+// Reads decimal `0`-`5` + `\n`. Prints a 5-row vertical thermometer: row `i` (counted from top) is `|` if `i >= 5 - input`, else ` `; then `\n` after each row.
+
+main
+
+def main @ err < val, thr {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, val, err
+    hex.set 4, thr, 5
+    hex.sub 4, thr, val
+    rep(5, ri) trow ri, thr
+  err:
+    stl.loop
+}
+
+// Print '|' if ri >= thr, else ' '; then a newline.
+def trow ri, thr @ space, bar, done < ireg {
+    hex.set 4, ireg, ri
+    hex.cmp 4, ireg, thr, space, bar, bar
+  space:
+    stl.output ' '
+    ;done
+  bar:
+    stl.output '|'
+  done:
+    stl.output '\n'
+}
+
+val: hex.vec 4
+thr: hex.vec 4
+ireg: hex.vec 4

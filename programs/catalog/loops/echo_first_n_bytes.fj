@@ -1,4 +1,4 @@
-// Echo First N Bytes (#0277)
+// Echo First N Bytes (#0315)
 
 // Reads digit N `0`-`9` + `\n`, then reads N more bytes from stdin and outputs them verbatim.
 

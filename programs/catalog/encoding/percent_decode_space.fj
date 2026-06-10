@@ -1,0 +1,31 @@
+// Percent Decode Space (#0504)
+
+// Reads a `\n`-terminated line ≤ 60 chars (may contain `%20` sequences). Replaces each `%20` triplet with a single space. Other bytes unchanged. Prints result + `\n`.
+
+main
+
+def main @ err, loop, go, ispct, echo, done < b, nl, pct {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, pct, echo, ispct, echo
+  ispct:
+    hex.input b
+    hex.input b
+    stl.output ' '
+    ;loop
+  echo:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+pct: hex.vec 2, '%'

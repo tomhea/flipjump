@@ -1,4 +1,4 @@
-// V Pattern (#0242)
+// V Pattern (#0282)
 
 // Reads digit N `1`-`9` + `\n`. Prints N rows on a `(2N-1)`-wide grid. For row `i` (1-indexed, 1..N), the cell at column `j` (1-indexed) is `*` if `j == i` or `j == 2N - i`, else `.`. Each row ends with `\n`. Example for N=3: row 1 = `*...*\n`, row 2 = `.*.*.\n`, row 3 = `..*..\n`.
 

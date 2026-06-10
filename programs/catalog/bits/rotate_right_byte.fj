@@ -1,4 +1,4 @@
-// Rotate Right Byte (#0381)
+// Rotate Right Byte (#0215)
 
 // Reads one byte and outputs the byte rotated right by 1 bit (LSB wraps around to MSB), as one raw byte.
 

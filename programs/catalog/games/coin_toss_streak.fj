@@ -1,0 +1,43 @@
+// Coin Toss Streak (#0954)
+
+// Reads a `\n`-terminated string of `H`/`T` chars (≤ 20). Prints the length of the longest run of consecutive identical results as decimal + `\n`.
+
+main
+
+def main @ ct_first_ok, ct_zero_out, ct_loop, ct_body, ct_same, ct_upd, ct_diff, ct_done < ct_prev, ct_cur, ct_best, ct_run, ct_nlc {
+    stl.startup_and_init_all 100
+    hex.input ct_cur
+    hex.cmp 2, ct_cur, ct_nlc, ct_first_ok, ct_zero_out, ct_first_ok
+  ct_first_ok:
+    hex.mov 2, ct_prev, ct_cur
+    hex.set 4, ct_best, 1
+    hex.set 4, ct_run, 1
+  ct_loop:
+    hex.input ct_cur
+    hex.cmp 2, ct_cur, ct_nlc, ct_body, ct_done, ct_body
+  ct_body:
+    hex.cmp 2, ct_prev, ct_cur, ct_diff, ct_same, ct_diff
+  ct_same:
+    hex.inc 4, ct_run
+    hex.cmp 4, ct_run, ct_best, ct_loop, ct_loop, ct_upd
+  ct_upd:
+    hex.mov 4, ct_best, ct_run
+    ;ct_loop
+  ct_diff:
+    hex.set 4, ct_run, 1
+    hex.mov 2, ct_prev, ct_cur
+    ;ct_loop
+  ct_zero_out:
+    stl.output "0\n"
+    stl.loop
+  ct_done:
+    hex.print_dec_uint 4, ct_best
+    stl.output '\n'
+    stl.loop
+}
+
+ct_prev: hex.vec 2
+ct_cur: hex.vec 2
+ct_best: hex.vec 4
+ct_run: hex.vec 4
+ct_nlc: hex.vec 2, '\n'

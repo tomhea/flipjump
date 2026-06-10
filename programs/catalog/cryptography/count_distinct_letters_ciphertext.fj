@@ -1,0 +1,74 @@
+// Count Distinct Letters Ciphertext (#0896)
+
+// Reads a `\n`-terminated line ≤ 80 chars. Prints the count of distinct LETTER bytes (case-insensitive; `A` and `a` count as one) as decimal + `\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, loop, go, toup, dolow, lcheck, lin, mark, notletter, cloop, cbody, ccont, cdone, done < b, nl, seen, sptr, idx, cnt, one, sval, la, lz, ua, uz, c20b, c26 {
+    stl.startup_and_init_all
+    hex.set hw, sptr, seen
+    rep(26, i) clear_cell sptr
+    hex.set hw, sptr, seen
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, ua, lcheck, toup, toup
+  toup:
+    hex.cmp 2, b, uz, dolow, dolow, lcheck
+  dolow:
+    hex.add 2, b, c20b
+  lcheck:
+    hex.cmp 2, b, la, notletter, lin, lin
+  lin:
+    hex.cmp 2, b, lz, mark, mark, notletter
+  mark:
+    hex.zero hw, idx
+    hex.mov 2, idx, b
+    hex.sub 2, idx, la
+    hex.write_nth_byte sptr, idx, one
+  notletter:
+    ;loop
+  done:
+    hex.zero 4, cnt
+    hex.set hw, sptr, seen
+    hex.zero hw, idx
+  cloop:
+    hex.cmp hw, idx, c26, cbody, cdone, cdone
+  cbody:
+    hex.read_nth_byte sval, sptr, idx
+    hex.if0 2, sval, ccont
+    hex.inc 4, cnt
+  ccont:
+    hex.inc hw, idx
+    ;cloop
+  cdone:
+    hex.print_dec_uint 4, cnt
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Zero one buffer cell and advance the pointer.
+def clear_cell wptr < zb {
+    hex.write_byte_and_inc wptr, zb
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+seen: hex.vec 26
+sptr: hex.vec hw
+idx: hex.vec hw
+cnt: hex.vec 4
+one: hex.vec 2, 1
+sval: hex.vec 2
+zb: hex.vec 2
+la: hex.vec 2, 'a'
+lz: hex.vec 2, 'z'
+ua: hex.vec 2, 'A'
+uz: hex.vec 2, 'Z'
+c20b: hex.vec 2, 0x20
+c26: hex.vec hw, 26

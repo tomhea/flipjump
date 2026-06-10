@@ -1,0 +1,31 @@
+// Count Up Recursive (#0419)
+
+// Reads decimal N in `0`-`9` + `\n`. Prints `1\n2\n...\nN\n` using a recursive macro that recurses on N-1 then prints.
+
+main
+
+def main @ err < r_nval, cu_arg, cu_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, cu_arg, r_nval
+    stl.call cu_fn
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Prints 1 2 ... cu_arg by recursing first then printing
+cu_fn:
+    hex.if0 4, cu_arg, cu_done
+    hex.push 4, cu_arg
+    hex.dec 4, cu_arg
+    stl.call cu_fn
+    hex.pop 4, cu_arg
+    hex.print_dec_uint 4, cu_arg
+    stl.output ' '
+    stl.return
+  cu_done:
+    stl.return
+
+r_nval: hex.vec 4
+cu_arg: hex.vec 4

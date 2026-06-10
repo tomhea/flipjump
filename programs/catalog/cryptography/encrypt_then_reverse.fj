@@ -1,0 +1,90 @@
+// Encrypt Then Reverse (#0892)
+
+// Reads a `\n`-terminated plaintext ≤ 20 chars. Applies Caesar shift of `+3` (ROT3) then reverses the result. Prints the final string + `\n`.
+
+hw = w / 4
+
+main
+
+def main @ setloop, setdone, ploop, pdone < buf, bptr, slen, rp, cnt, bb, out, nn3 {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    hex.set 4, nn3, 3
+    hex.if0 hw, slen, pdone
+    hex.set hw, rp, buf
+    hex.mov hw, cnt, slen
+    hex.dec hw, cnt
+  setloop:
+    hex.if0 hw, cnt, setdone
+    hex.ptr_inc rp
+    hex.dec hw, cnt
+    ;setloop
+  setdone:
+    hex.mov hw, cnt, slen
+  ploop:
+    hex.if0 hw, cnt, pdone
+    hex.read_byte bb, rp
+    shift_byte bb, nn3, out
+    hex.print out
+    hex.ptr_dec rp
+    hex.dec hw, cnt
+    ;ploop
+  pdone:
+    stl.output '\n'
+    stl.loop
+}
+
+// out[:2] = byte b shifted forward by nn (0..25) within its letter case; else b.
+def shift_byte b, nn, out @ low_in, do_low, ge26_l, prn_l, up_chk, up_in, do_up, ge26_u, prn_u, plain, done < sv, st, la, lz, ua, uz, c26 {
+    hex.zero 4, sv
+    hex.mov 2, sv, b
+    hex.cmp 4, sv, la, up_chk, low_in, low_in
+  low_in:
+    hex.cmp 4, sv, lz, do_low, do_low, up_chk
+  do_low:
+    hex.mov 4, st, sv
+    hex.sub 4, st, la
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_l, ge26_l, ge26_l
+  ge26_l:
+    hex.sub 4, st, c26
+  prn_l:
+    hex.add 4, st, la
+    hex.mov 2, out, st
+    ;done
+  up_chk:
+    hex.cmp 4, sv, ua, plain, up_in, up_in
+  up_in:
+    hex.cmp 4, sv, uz, do_up, do_up, plain
+  do_up:
+    hex.mov 4, st, sv
+    hex.sub 4, st, ua
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_u, ge26_u, ge26_u
+  ge26_u:
+    hex.sub 4, st, c26
+  prn_u:
+    hex.add 4, st, ua
+    hex.mov 2, out, st
+    ;done
+  plain:
+    hex.mov 2, out, b
+  done:
+}
+
+buf: hex.vec 42
+bptr: hex.vec hw
+slen: hex.vec hw
+rp: hex.vec hw
+cnt: hex.vec hw
+bb: hex.vec 2
+out: hex.vec 2
+nn3: hex.vec 4
+sv: hex.vec 4
+st: hex.vec 4
+la: hex.vec 4, 'a'
+lz: hex.vec 4, 'z'
+ua: hex.vec 4, 'A'
+uz: hex.vec 4, 'Z'
+c26: hex.vec 4, 26

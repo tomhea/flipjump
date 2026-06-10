@@ -1,4 +1,4 @@
-// Only Vowels (#0040)
+// Only Vowels (#0039)
 
 // Reads stdin and outputs only `a/e/i/o/u/A/E/I/O/U` bytes.
 

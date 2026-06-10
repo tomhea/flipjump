@@ -1,4 +1,4 @@
-// Is Prime Or One (#0894)
+// Is Prime Or One (#1010)
 
 // Reads decimal `1`-`50` + `\n`. Prints `prime\n` if N is prime OR equals 1, else `composite\n`. (Variant: treats 1 as "kind of prime" for fun.)
 

@@ -1,4 +1,4 @@
-// Exponential Search Sorted (#1173)
+// Exponential Search Sorted (#0537)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals sorted ascending, then target. Prints the 0-based index of any match + `\n`, or `not found\n`. Implementation: exponential search (find range by doubling i, then binary search within range).
 

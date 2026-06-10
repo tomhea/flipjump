@@ -1,4 +1,4 @@
-// Hex Char To Nibble (#0367)
+// Hex Char To Nibble (#0492)
 
 // Reads exactly one byte that's a lowercase hex char (`0`-`9` or `a`-`f`) + `\n` and prints the decimal `0`-`15` + `\n`.
 

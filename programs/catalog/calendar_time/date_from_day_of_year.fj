@@ -1,4 +1,4 @@
-// Date From Day Of Year (#0860)
+// Date From Day Of Year (#0986)
 
 // Reads year `1900`-`2099` + `\n`, then day-of-year `1`-`366` + `\n`. Prints `<month> <day>\n` (no zero padding) for the date.
 

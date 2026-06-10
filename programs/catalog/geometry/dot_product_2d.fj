@@ -1,4 +1,4 @@
-// Dot Product 2D (#0573)
+// Dot Product 2D (#0600)
 
 // Reads 4 decimals `a b c d` (each own line) representing vectors `(a,b)` and `(c,d)`. Prints `a*c + b*d` as signed decimal + `\n`.
 

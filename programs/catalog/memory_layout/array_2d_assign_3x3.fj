@@ -1,0 +1,92 @@
+// Array 2D Assign 3X3 (#0930)
+
+// Reads 9 decimals (3×3 grid), then row `0`-`2`, col `0`-`2`, value (each own line). Updates the cell, then prints the new grid as 3 lines of 3 decimals space-separated + `\n` each.
+
+main
+
+def main @ err, w0, w1, w2, w3, w4, w5, w6, w7, print < grid, three, rrow, rcol, rval, widx, tmp {
+    stl.startup_and_init_all 100
+    rep(9, i) hex.input_dec_uint 4, grid + i*dw*4, err
+    hex.input_dec_uint 4, rrow, err
+    hex.input_dec_uint 4, rcol, err
+    hex.input_dec_uint 4, rval, err
+    // widx = row*3 + col
+    hex.mul 4, widx, rrow, three
+    hex.add 4, widx, rcol
+    // dispatch write on widx (0..8)
+    hex.if0 4, widx, w0
+    hex.mov 4, tmp, widx
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w1
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w2
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w3
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w4
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w5
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w6
+    hex.dec 4, tmp
+    hex.if0 4, tmp, w7
+    hex.mov 4, grid + 8*dw*4, rval
+    ;print
+  w0:
+    hex.mov 4, grid + 0*dw*4, rval
+    ;print
+  w1:
+    hex.mov 4, grid + 1*dw*4, rval
+    ;print
+  w2:
+    hex.mov 4, grid + 2*dw*4, rval
+    ;print
+  w3:
+    hex.mov 4, grid + 3*dw*4, rval
+    ;print
+  w4:
+    hex.mov 4, grid + 4*dw*4, rval
+    ;print
+  w5:
+    hex.mov 4, grid + 5*dw*4, rval
+    ;print
+  w6:
+    hex.mov 4, grid + 6*dw*4, rval
+    ;print
+  w7:
+    hex.mov 4, grid + 7*dw*4, rval
+    ;print
+  print:
+    // print row 0
+    hex.print_dec_uint 4, grid + 0*dw*4
+    stl.output ' '
+    hex.print_dec_uint 4, grid + 1*dw*4
+    stl.output ' '
+    hex.print_dec_uint 4, grid + 2*dw*4
+    stl.output '\n'
+    // print row 1
+    hex.print_dec_uint 4, grid + 3*dw*4
+    stl.output ' '
+    hex.print_dec_uint 4, grid + 4*dw*4
+    stl.output ' '
+    hex.print_dec_uint 4, grid + 5*dw*4
+    stl.output '\n'
+    // print row 2
+    hex.print_dec_uint 4, grid + 6*dw*4
+    stl.output ' '
+    hex.print_dec_uint 4, grid + 7*dw*4
+    stl.output ' '
+    hex.print_dec_uint 4, grid + 8*dw*4
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+grid: hex.vec 4*9
+rrow: hex.vec 4
+rcol: hex.vec 4
+rval: hex.vec 4
+widx: hex.vec 4
+tmp: hex.vec 4
+three: hex.vec 4, 3

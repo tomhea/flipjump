@@ -1,4 +1,4 @@
-// Demo Rep 5 Stars (#1261)
+// Demo Rep 5 Stars (#0858)
 
 // No input. Uses `rep(5, i) stl.output('*')` then `stl.output('\n')` to print `*****\n`.
 

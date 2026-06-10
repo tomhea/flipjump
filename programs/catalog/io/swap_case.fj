@@ -1,4 +1,4 @@
-// Swap Case (#0036)
+// Swap Case (#0035)
 
 // Reads stdin and swaps upper/lower for letter bytes; other bytes unchanged.
 

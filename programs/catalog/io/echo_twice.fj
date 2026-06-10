@@ -1,4 +1,4 @@
-// Echo Twice (#0033)
+// Echo Twice (#0032)
 
 // Reads each byte of stdin and outputs it twice.
 

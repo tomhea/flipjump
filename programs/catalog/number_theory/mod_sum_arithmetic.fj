@@ -1,4 +1,4 @@
-// Mod Sum Arithmetic (#1043)
+// Mod Sum Arithmetic (#0154)
 
 // Reads decimals `N` `m` (`N` `1`-`30`, `m` `1`-`30`). Prints `((1 + 2 + ... + N) mod m)` as decimal + `\n`.
 

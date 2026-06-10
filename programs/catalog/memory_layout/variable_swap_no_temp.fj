@@ -1,0 +1,24 @@
+// Variable Swap No Temp (#0916)
+
+// Reads two decimals `a` `b` (each `0`-`99`, own line). Swaps using XOR trick (no temporary variable): `a ^= b; b ^= a; a ^= b;`. Prints `<new_a>\n<new_b>\n`.
+
+main
+
+def main @ err < va, vb {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, va, err
+    hex.input_dec_uint 4, vb, err
+    hex.xor 4, va, vb
+    hex.xor 4, vb, va
+    hex.xor 4, va, vb
+    hex.print_dec_uint 4, va
+    stl.output '\n'
+    hex.print_dec_uint 4, vb
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+va: hex.vec 4
+vb: hex.vec 4

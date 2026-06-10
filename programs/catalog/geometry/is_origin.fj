@@ -1,4 +1,4 @@
-// Is Origin (#0576)
+// Is Origin (#0603)
 
 // Reads 2 decimals `x y` (each own line). Prints `1\n` if both are `0`, else `0\n`.
 

@@ -1,0 +1,31 @@
+// Clock Set (#0458)
+
+// Reads two decimals on separate lines: hour `0`-`23` then minute `0`-`59`. Prints `Time set to <HH>:<MM>\n` (each zero-padded to 2 digits).
+
+main
+
+def main @ err < hour, minute {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, hour, err
+    hex.input_dec_uint 4, minute, err
+    stl.output "Time set to "
+    print2 hour
+    stl.output ":"
+    print2 minute
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Print a 0-23/0-59 value zero-padded to 2 digits.
+def print2 val @ small, big < ten {
+    hex.cmp 4, val, ten, small, big, big
+  small:
+    stl.output "0"
+  big:
+    hex.print_dec_uint 4, val
+}
+
+hour: hex.vec 4
+minute: hex.vec 4
+ten: hex.vec 4, 10

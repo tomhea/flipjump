@@ -1,0 +1,23 @@
+// Is Chessboard Color (#0689)
+
+// Reads 2 decimals `r c` (each `0`-`7`, own line). Prints `0\n` if the square is "white" (i.e. `(r + c)` is even with a8/`r=0,c=0` treated as white), else `1\n`.
+
+main
+
+def main @ err < r, c, q, rem, two {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, r, err
+    hex.input_dec_uint 4, c, err
+    hex.add 4, r, c
+    hex.div 4, 4, q, rem, r, two, err
+    hex.print_dec_uint 4, rem
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+r: hex.vec 4
+c: hex.vec 4
+q: hex.vec 4
+rem: hex.vec 4
+two: hex.vec 4, 2

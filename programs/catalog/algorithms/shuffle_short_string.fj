@@ -1,4 +1,4 @@
-// Shuffle Short String (#1225)
+// Shuffle Short String (#0588)
 
 // Reads a `\n`-terminated line of exactly 5 chars, then 5 raw bytes (PRNG). Applies Fisher-Yates shuffle on the 5 chars using the PRNG bytes (same indexing rule as `fisher_yates_shuffle_5`). Prints shuffled string + `\n`.
 

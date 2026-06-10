@@ -1,4 +1,4 @@
-// Inverted Right Triangle (#0234)
+// Inverted Right Triangle (#0274)
 
 // Reads digit N `1`-`9` + `\n`. Prints rows of `*`: row i has (N+1-i) stars + `\n`.
 

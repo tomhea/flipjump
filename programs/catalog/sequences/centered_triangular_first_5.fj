@@ -1,4 +1,4 @@
-// Centered Triangular First 5 (#0458)
+// Centered Triangular First 5 (#0721)
 
 // No input. Prints the first 5 centered triangular numbers: `1 4 10 19 31` space-separated + `\n`.
 

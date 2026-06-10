@@ -1,4 +1,4 @@
-// Shift Right Zero Fill 5 (#1139)
+// Shift Right Zero Fill 5 (#0386)
 
 // Reads exactly 5 decimals and prints them shifted right by 1 with 0-fill on the left (input `a b c d e` → output `0\na\nb\nc\nd\n`).
 

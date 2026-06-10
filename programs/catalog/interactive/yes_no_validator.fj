@@ -1,0 +1,27 @@
+// Yes No Validator (#0436)
+
+// Reads `y` or `n` + `\n` (any case is treated as exact byte). Prints `Affirmative\n` for `y`, `Negative\n` for `n`, otherwise `Please answer y or n\n`.
+
+main
+
+def main @ n1, no2, affirm, negate, done < ch, yc, nc {
+    stl.startup_and_init_all
+    hex.input ch
+    hex.cmp 2, ch, yc, n1, affirm, n1
+  n1:
+    hex.cmp 2, ch, nc, no2, negate, no2
+  no2:
+    stl.output "Please answer y or n\n"
+    ;done
+  affirm:
+    stl.output "Affirmative\n"
+    ;done
+  negate:
+    stl.output "Negative\n"
+  done:
+    stl.loop
+}
+
+ch: hex.vec 2, 0
+yc: hex.vec 2, 'y'
+nc: hex.vec 2, 'n'

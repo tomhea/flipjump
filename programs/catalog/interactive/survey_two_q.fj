@@ -1,0 +1,39 @@
+// Survey Two Q (#0454)
+
+// Reads two `\n`-terminated `y`/`n` answers. Prints `Definitely\n` for `y/y`, `Maybe\n` for `y/n`, `Probably not\n` for `n/y`, `Definitely not\n` for `n/n`.
+
+main
+
+def main @ an, bb1, m1, d1, definitely, maybe, probnot, defnot, done < a, b, skip, yc {
+    stl.startup_and_init_all
+    hex.input a
+    hex.input skip
+    hex.input b
+    hex.cmp 2, a, yc, an, bb1, an
+  bb1:
+    hex.cmp 2, b, yc, m1, definitely, m1
+  m1:
+    ;maybe
+  an:
+    hex.cmp 2, b, yc, d1, probnot, d1
+  d1:
+    ;defnot
+  definitely:
+    stl.output "Definitely\n"
+    ;done
+  maybe:
+    stl.output "Maybe\n"
+    ;done
+  probnot:
+    stl.output "Probably not\n"
+    ;done
+  defnot:
+    stl.output "Definitely not\n"
+  done:
+    stl.loop
+}
+
+a: hex.vec 2, 0
+b: hex.vec 2, 0
+skip: hex.vec 2, 0
+yc: hex.vec 2, 'y'

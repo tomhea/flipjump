@@ -1,0 +1,27 @@
+// Greeting User Age (#0459)
+
+// Reads a `\n`-terminated name (≤ 20 chars) then a decimal age `0`-`120` + `\n`. Prints `Hello, <name>! You are <age> years old.\n`.
+
+hw = w / 4
+
+main
+
+def main @ err < buf, bptr, slen, age {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    stl.output "Hello, "
+    hex.set hw, bptr, buf
+    hex.print_ptr_text bptr, slen
+    stl.output "! You are "
+    hex.input_dec_uint 4, age, err
+    hex.print_dec_uint 4, age
+    stl.output " years old.\n"
+  err:
+    stl.loop
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw
+age: hex.vec 4

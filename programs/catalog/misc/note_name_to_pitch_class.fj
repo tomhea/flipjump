@@ -1,4 +1,4 @@
-// Note Name To Pitch Class (#1023)
+// Note Name To Pitch Class (#1011)
 
 // Reads a `\n`-terminated note name (one of `C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`). Prints the pitch class `0`-`11` as decimal + `\n` (`C` = 0).
 

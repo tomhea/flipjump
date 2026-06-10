@@ -1,4 +1,4 @@
-// Abs Diff (#0137)
+// Abs Diff (#0112)
 
 // Reads two decimals and prints `|a - b|` as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Count Emoji Pairs (#1080)
+// Count Emoji Pairs (#1020)
 
 // Reads `\n`-terminated line ≤ 40 chars. Prints `<smileys> <frowns>\n` where smileys is the count of `:)` and frowns is the count of `:(` substrings (non-overlapping, scanning left-to-right).
 

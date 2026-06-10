@@ -1,4 +1,4 @@
-// All Positive Three (#0222)
+// All Positive Three (#0349)
 
 // Reads three signed decimals and prints `1\n` if all are `> 0`, else `0\n`.
 

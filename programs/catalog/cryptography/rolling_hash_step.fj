@@ -1,0 +1,34 @@
+// Rolling Hash Step (#0904)
+
+// Reads decimal state `0`-`255` + `\n`, then one byte. Updates state via `state = ((state * 31) + byte) mod 256` and prints the new state as 2 lowercase hex chars + `\n`.
+
+main
+
+def main @ err < st, b, h, c31 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, st, err
+    hex.input b
+    hex.zero 2, h
+    hex.mov 2, h, st
+    mulmod h, c31
+    hex.add 2, h, b
+    hex.print_as_digit 2, h, 0
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+st: hex.vec 4
+b: hex.vec 2
+h: hex.vec 2
+c31: hex.vec 4, 31
+mh4: hex.vec 4
+mt4: hex.vec 4

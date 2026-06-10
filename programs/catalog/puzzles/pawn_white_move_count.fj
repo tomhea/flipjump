@@ -1,0 +1,30 @@
+// Pawn White Move Count (#0688)
+
+// Reads 2 decimals `r c` (each `0`-`7`, own line) — a white pawn's position. Prints the number of legal forward moves (`1` from a non-starting row, `2` from row 6, `0` from row 0).
+
+main
+
+def main @ err, chk0, mv2, mv0, mv1, done < r, c, c6 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, r, err
+    hex.input_dec_uint 4, c, err
+    hex.cmp 4, r, c6, chk0, mv2, chk0
+  chk0:
+    hex.if0 4, r, mv0
+    ;mv1
+  mv2:
+    stl.output "2\n"
+    ;done
+  mv0:
+    stl.output "0\n"
+    ;done
+  mv1:
+    stl.output "1\n"
+  done:
+  err:
+    stl.loop
+}
+
+r: hex.vec 4
+c: hex.vec 4
+c6: hex.vec 4, 6

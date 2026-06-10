@@ -1,0 +1,26 @@
+// Print Compile Time Fibonacci 8 (#0940)
+
+// No input. Internally computes `F(8) = 21` at compile time. Prints `21\n`.
+
+main
+
+FIB0 = 0
+FIB1 = 1
+FIB2 = FIB0 + FIB1
+FIB3 = FIB1 + FIB2
+FIB4 = FIB2 + FIB3
+FIB5 = FIB3 + FIB4
+FIB6 = FIB4 + FIB5
+FIB7 = FIB5 + FIB6
+FIB8 = FIB6 + FIB7
+
+def main @ err < result {
+    stl.startup_and_init_all
+    hex.set 4, result, FIB8
+    hex.print_dec_uint 4, result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+result: hex.vec 4

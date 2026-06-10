@@ -1,4 +1,4 @@
-// Bits To Emoji Face (#1088)
+// Bits To Emoji Face (#1028)
 
 // Reads two bits `e1 e2` (eye states, each `0` closed or `1` open, own line), then one bit `m` (mouth state, `0` frown / `1` smile, own line). Prints a 3-char emoji face combining these: e.g. `1 1 1` → `:)\n`; `0 0 1` → `XD\n`; `1 1 0` → `:(\n`; `0 0 0` → `XO\n`.
 

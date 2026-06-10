@@ -1,4 +1,4 @@
-// Pascal Row N (#1053)
+// Pascal Row N (#0164)
 
 // Reads decimal `N` `0`-`8` + `\n`. Prints the `N`-th row of Pascal's triangle as `N+1` decimals space-separated + `\n`.
 

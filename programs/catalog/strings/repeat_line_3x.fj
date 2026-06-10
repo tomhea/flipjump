@@ -1,4 +1,4 @@
-// Repeat Line 3X (#1093)
+// Repeat Line 3X (#0192)
 
 // Reads a `\n`-terminated line ≤ 30 chars and prints its content three times concatenated, followed by `\n`.
 

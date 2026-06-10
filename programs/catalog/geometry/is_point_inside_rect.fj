@@ -1,4 +1,4 @@
-// Is Point Inside Rect (#0587)
+// Is Point Inside Rect (#0611)
 
 // Reads 6 decimals (each own line): point `x y` then rect `xmin ymin xmax ymax`. Prints `1\n` if `xmin <= x <= xmax` and `ymin <= y <= ymax`, else `0\n`.
 

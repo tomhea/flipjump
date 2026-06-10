@@ -1,4 +1,4 @@
-// Zigzag Array Check (#1182)
+// Zigzag Array Check (#0546)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `1\n` if the sequence strictly alternates `a[0] < a[1] > a[2] < a[3] > ...` (starting with rise), else `0\n`.
 

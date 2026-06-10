@@ -1,4 +1,4 @@
-// Cycle Sort 5 (#1234)
+// Cycle Sort 5 (#0597)
 
 // Reads exactly 5 decimals and prints them sorted ascending. Implementation: cycle sort (minimum-write sort — find each element's correct position and place via cycle following).
 

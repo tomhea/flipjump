@@ -1,4 +1,4 @@
-// Or Three Bytes (#0901)
+// Or Three Bytes (#0223)
 
 // Reads exactly 3 bytes. Outputs `b1 OR b2 OR b3` as one raw byte.
 

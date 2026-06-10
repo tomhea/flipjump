@@ -1,0 +1,23 @@
+// Snake Eat Food (#0972)
+
+// Reads two decimals `pos_snake` `pos_food` (each `0`-`9`, own line). Prints `1\n` if equal (snake eats food), else `0\n`.
+
+main
+
+def main @ err, se_yes, se_no < se_a, se_b {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, se_a, err
+    hex.input_dec_uint 4, se_b, err
+    hex.cmp 4, se_a, se_b, se_no, se_yes, se_no
+  se_yes:
+    stl.output "1\n"
+    stl.loop
+  se_no:
+    stl.output "0\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+se_a: hex.vec 4
+se_b: hex.vec 4

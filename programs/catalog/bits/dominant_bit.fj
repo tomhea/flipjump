@@ -1,4 +1,4 @@
-// Dominant Bit (#0385)
+// Dominant Bit (#0217)
 
 // Reads one byte. Prints `1\n` if it has more 1-bits than 0-bits (popcount > 4), `0\n` if more 0-bits than 1-bits (popcount < 4), or `tie\n` if popcount equals 4.
 

@@ -1,4 +1,4 @@
-// Print Progress Bar 10 (#1087)
+// Print Progress Bar 10 (#1027)
 
 // Reads digit `0`-`10` + `\n`. Prints a 10-char progress bar: `<percent>` `#` characters followed by `(10 - percent)` `.` characters, then `\n`. (e.g. `3` → `###.......\n`.)
 

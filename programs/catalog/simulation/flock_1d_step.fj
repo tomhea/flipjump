@@ -1,0 +1,81 @@
+// Flock 1D Step (#0653)
+
+// Reads digit N `2`-`5` + `\n`, then N decimals `0`-`9` (each own line) representing positions on a 1D line. Computes the mean position (floor). Then each cell moves +1 if it's below mean, -1 if above, unchanged if equal. Prints the new positions, one per line.
+
+main
+
+def main @ err, fl_read_loop, fl_read_done, fl_move_loop, fl_move_done, fl_lt, fl_gt, fl_eq, fl_write, fl_print_loop, fl_print_done < fl_N, fl_cnt, fl_sum, fl_mean, fl_r, fl_p, fl_arr, fl_wptr, fl_rptr, fl_tmp, fl_n4, zero_char {
+    stl.startup_and_init_all 100
+    hex.input fl_N
+    hex.sub 2, fl_N, zero_char
+    hex.input fl_p
+    hex.zero 4, fl_sum
+    hex.zero 4, fl_cnt
+    hex.mov 2, fl_cnt, fl_N
+    hex.set w/4, fl_wptr, fl_arr
+  fl_read_loop:
+    hex.if0 4, fl_cnt, fl_read_done
+    hex.input_dec_uint 2, fl_p, err
+    hex.zero 4, fl_tmp
+    hex.mov 2, fl_tmp, fl_p
+    hex.add 4, fl_sum, fl_tmp
+    hex.write_byte_and_inc fl_wptr, fl_p
+    hex.dec 4, fl_cnt
+    ;fl_read_loop
+  fl_read_done:
+    // mean = sum / N
+    hex.zero 4, fl_n4
+    hex.mov 2, fl_n4, fl_N
+    hex.div 4, 4, fl_mean, fl_r, fl_sum, fl_n4, err
+    // adjust each position
+    hex.set w/4, fl_wptr, fl_arr
+    hex.set w/4, fl_rptr, fl_arr
+    hex.zero 4, fl_cnt
+    hex.mov 2, fl_cnt, fl_N
+  fl_move_loop:
+    hex.if0 4, fl_cnt, fl_move_done
+    hex.read_byte_and_inc fl_p, fl_rptr
+    hex.zero 4, fl_tmp
+    hex.mov 2, fl_tmp, fl_p
+    hex.cmp 4, fl_tmp, fl_mean, fl_lt, fl_eq, fl_gt
+  fl_lt:
+    hex.inc 2, fl_p
+    ;fl_write
+  fl_gt:
+    hex.dec 2, fl_p
+    ;fl_write
+  fl_eq:
+  fl_write:
+    hex.write_byte_and_inc fl_wptr, fl_p
+    hex.dec 4, fl_cnt
+    ;fl_move_loop
+  fl_move_done:
+    // print results
+    hex.set w/4, fl_rptr, fl_arr
+    hex.zero 4, fl_cnt
+    hex.mov 2, fl_cnt, fl_N
+  fl_print_loop:
+    hex.if0 4, fl_cnt, fl_print_done
+    hex.read_byte_and_inc fl_p, fl_rptr
+    hex.print_dec_uint 2, fl_p
+    stl.output '\n'
+    hex.dec 4, fl_cnt
+    ;fl_print_loop
+  fl_print_done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+fl_N: hex.vec 2
+fl_cnt: hex.vec 4
+fl_sum: hex.vec 4
+fl_mean: hex.vec 4
+fl_r: hex.vec 4
+fl_p: hex.vec 2
+fl_arr: hex.vec 8, 0
+fl_wptr: hex.vec w/4
+fl_rptr: hex.vec w/4
+fl_tmp: hex.vec 4
+fl_n4: hex.vec 4
+zero_char: hex.vec 2, '0'

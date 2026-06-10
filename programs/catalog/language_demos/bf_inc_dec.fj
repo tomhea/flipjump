@@ -1,4 +1,4 @@
-// Bf Inc Dec (#1267)
+// Bf Inc Dec (#0864)
 
 // Reads a `\n`-terminated string ≤ 30 chars containing `+` and `-` (other bytes ignored). Interprets on a single cell (initially 0, mod 256). Prints final cell value as decimal + `\n`.
 

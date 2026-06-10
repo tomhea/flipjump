@@ -1,4 +1,4 @@
-// Is Permutation 1 To N (#1179)
+// Is Permutation 1 To N (#0543)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `1\n` if the sequence is a permutation of `{1, 2, ..., N}`, else `0\n`.
 

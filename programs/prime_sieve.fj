@@ -35,7 +35,7 @@ def prime_sieve_main @ prime_loop_if, prime_loop, next_prime, end, \
   prime_loop:
     if1_ptr primes_ptr, next_prime
   // if p is prime:
-    print_int hw, p  // TODO #196 - save ton of times by declaring p "dec", with dec.vec, dec.set, dec.add and dec.print
+    print_int hw, p
     hex.inc hw, num_of_primes
     mark_primes mark_primes_ptr, primes_ptr_n, is_add_4, p_2dw_offset, p_4dw_offset
   next_prime:

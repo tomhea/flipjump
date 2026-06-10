@@ -1,4 +1,4 @@
-// First N Primes (#0139)
+// First N Primes (#0114)
 
 // Reads decimal N in `1`-`10` and prints the first N prime numbers in ascending order, one per line.
 

@@ -1,4 +1,4 @@
-// Dollars To Cents (#0364)
+// Dollars To Cents (#0489)
 
 // Reads decimal dollars `0`-`99` + `\n` and prints `dollars * 100` as decimal + `\n`.
 

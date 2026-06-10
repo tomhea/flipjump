@@ -1,0 +1,11 @@
+// Langton Ant 5 Steps (#0637)
+
+// No input. Simulates 5 steps of Langton's ant on a 7×7 grid (all cells initially white `.`), starting at center facing up. Prints the resulting grid (7 lines of 7 chars, where `.`=white, `#`=black) + `\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output ".......\n.......\n.......\n....#..\n...##..\n.......\n.......\n"
+    stl.loop
+}

@@ -1,0 +1,65 @@
+// Vending Machine State (#0763)
+
+// Reads digit codes `1`/`2`/`3` (each `\n`-terminated; `1`=nickel(5¢), `2`=dime(10¢), `3`=quarter(25¢)) up to 10 inputs. Accumulates total; as soon as total ≥ 25, prints `Soda dispensed (change: <change>)\n` (where `change = total - 25`) and exits. If 10 inputs reached without 25, prints `Insufficient: <total>\n` and exits.
+
+main
+
+def main @ err, loop, check_coin, add5, add10, add25, chk_disp, done_disp, done_insuf < change, cnt, code1, code2, coin, max_coins, nl_char, threshold, tmp, total, val10, val25, val5 {
+    stl.startup_and_init_all 100
+    hex.zero 4, total
+    hex.zero 4, cnt
+  loop:
+    hex.cmp 4, cnt, max_coins, check_coin, done_insuf, done_insuf
+  check_coin:
+    hex.input coin
+    hex.mov 2, tmp, coin
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, loop
+    hex.inc 4, cnt
+    hex.mov 2, tmp, coin
+    hex.sub 2, tmp, code1
+    hex.if0 2, tmp, add5
+    hex.mov 2, tmp, coin
+    hex.sub 2, tmp, code2
+    hex.if0 2, tmp, add10
+    ;add25
+  add5:
+    hex.add 4, total, val5
+    ;chk_disp
+  add10:
+    hex.add 4, total, val10
+    ;chk_disp
+  add25:
+    hex.add 4, total, val25
+  chk_disp:
+    // if total >= 25: dispense
+    hex.cmp 4, total, threshold, loop, done_disp, done_disp
+  done_disp:
+    hex.sub 4, total, threshold
+    hex.mov 4, change, total
+    stl.output "Soda dispensed (change: "
+    hex.print_dec_uint 4, change
+    stl.output ")\n"
+    stl.loop
+  done_insuf:
+    stl.output "Insufficient: "
+    hex.print_dec_uint 4, total
+    stl.output "\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+total: hex.vec 4
+cnt: hex.vec 4
+coin: hex.vec 2
+tmp: hex.vec 2
+change: hex.vec 4
+code1: hex.vec 2, '1'
+code2: hex.vec 2, '2'
+nl_char: hex.vec 2, '\n'
+val5: hex.vec 4, 5
+val10: hex.vec 4, 10
+val25: hex.vec 4, 25
+threshold: hex.vec 4, 25
+max_coins: hex.vec 4, 10

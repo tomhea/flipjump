@@ -1,0 +1,11 @@
+// N Queens 4 Count (#0654)
+
+// No input. Prints the number of distinct solutions to the 4-queens problem (`2`) + `\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "2\n"
+    stl.loop
+}

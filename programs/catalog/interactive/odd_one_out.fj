@@ -1,0 +1,38 @@
+// Odd One Out (#0463)
+
+// Reads three decimals (each `\n`-terminated). If exactly two are equal, prints the third (unique) value + `\n`. Otherwise prints `none\n` (covers both all-equal and all-different cases).
+
+main
+
+def main @ err, ab_eq, ac_chk, bc_chk, p_a, p_b, p_c, none, fin < a, b, c {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.input_dec_uint 4, b, err
+    hex.input_dec_uint 4, c, err
+    hex.cmp 4, a, b, ac_chk, ab_eq, ac_chk
+  ab_eq:
+    hex.cmp 4, b, c, p_c, none, p_c       // a==b: if b==c all-equal->none else print c
+  ac_chk:
+    hex.cmp 4, a, c, bc_chk, p_b, bc_chk  // a!=b: if a==c print b
+  bc_chk:
+    hex.cmp 4, b, c, none, p_a, none      // if b==c print a, else all-different->none
+  p_a:
+    hex.print_dec_uint 4, a
+    ;fin
+  p_b:
+    hex.print_dec_uint 4, b
+    ;fin
+  p_c:
+    hex.print_dec_uint 4, c
+    ;fin
+  none:
+    stl.output "none"
+  fin:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+b: hex.vec 4
+c: hex.vec 4

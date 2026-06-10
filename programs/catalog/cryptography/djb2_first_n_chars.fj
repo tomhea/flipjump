@@ -1,0 +1,46 @@
+// Djb2 First N Chars (#0911)
+
+// Reads digit N `1`-`9` + `\n`, then a `\n`-terminated line ≥ N chars. Computes djb2 hash mod 256 of only the first N bytes of the line. Prints hash as 2 lowercase hex chars + `\n`.
+
+main
+
+def main @ err, loop, go, body, stop, done < nval, idx, h, b, nl, c33 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, nval, err
+    hex.set 2, h, 5
+    hex.zero 4, idx
+  loop:
+    hex.cmp 4, idx, nval, go, stop, stop
+  go:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, body, done, body
+  body:
+    mulmod h, c33
+    hex.add 2, h, b
+    hex.inc 4, idx
+    ;loop
+  stop:
+  done:
+    hex.print_as_digit 2, h, 0
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+nval: hex.vec 4
+idx: hex.vec 4
+h: hex.vec 2
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+c33: hex.vec 4, 33
+mh4: hex.vec 4
+mt4: hex.vec 4

@@ -1,0 +1,22 @@
+// Parse Simple Assignment (#0799)
+
+// Reads `<var>=<value>\n` where `var` is a single lowercase letter and `value` is a decimal `0`-`999`. Prints `<var> is <value>\n`.
+
+main
+
+def main < vbyte, eqb, val, sb {
+    stl.startup_and_init_all
+    hex.input vbyte
+    hex.input eqb
+    hex.input_dec_uint_until 8, val, sb
+    hex.print vbyte
+    stl.output " is "
+    hex.print_dec_uint 8, val
+    stl.output '\n'
+    stl.loop
+}
+
+vbyte: hex.vec 2
+eqb: hex.vec 2
+val: hex.vec 8
+sb: hex.vec 2

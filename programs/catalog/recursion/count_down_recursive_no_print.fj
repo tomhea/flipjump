@@ -1,0 +1,28 @@
+// Count Down Recursive No Print (#0429)
+
+// Reads digit N `1`-`9` + `\n`. Recursive macro that counts down without printing intermediate steps; at base case (N=0) prints `done\n`. Demonstrates pure recursion without side effects in the chain.
+
+main
+
+def main @ err < r_nval, cdnp_arg, cdnp_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, cdnp_arg, r_nval
+    stl.call cdnp_fn
+    stl.output "done\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+// Silently counts down cdnp_arg to 0
+cdnp_fn:
+    hex.if0 4, cdnp_arg, cdnp_base
+    hex.dec 4, cdnp_arg
+    stl.call cdnp_fn
+    stl.return
+  cdnp_base:
+    stl.return
+
+r_nval: hex.vec 4
+cdnp_arg: hex.vec 4

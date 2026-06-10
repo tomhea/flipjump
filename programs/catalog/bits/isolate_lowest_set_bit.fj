@@ -1,4 +1,4 @@
-// Isolate Lowest Set Bit (#0934)
+// Isolate Lowest Set Bit (#0237)
 
 // Reads one byte and outputs `byte AND (-byte mod 256)` (keeps only the lowest set bit) as one raw byte. For `byte = 0` outputs `0`.
 

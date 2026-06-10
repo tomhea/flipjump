@@ -1,4 +1,4 @@
-// Count Local Maxima (#1185)
+// Count Local Maxima (#0549)
 
 // Reads digit N `3`-`9` + `\n`, then N decimals. Prints the count of strict local maxima (positions `i` with `0 < i < N-1` and `a[i-1] < a[i] > a[i+1]`) + `\n`.
 

@@ -1,4 +1,4 @@
-// Triangle Classify (#0218)
+// Triangle Classify (#0345)
 
 // Reads three positive decimals `a`,`b`,`c` (each ≤ 99, on own line) as triangle side lengths. Prints `equilateral\n`, `isosceles\n`, `scalene\n`, or `not\n` (if no valid triangle).
 

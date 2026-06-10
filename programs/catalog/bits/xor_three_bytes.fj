@@ -1,4 +1,4 @@
-// Xor Three Bytes (#0899)
+// Xor Three Bytes (#0221)
 
 // Reads exactly 3 bytes. Outputs `b1 XOR b2 XOR b3` as one raw byte.
 

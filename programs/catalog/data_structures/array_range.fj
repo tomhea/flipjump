@@ -1,4 +1,4 @@
-// Array Range (#1123)
+// Array Range (#0370)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `max - min` + `\n`.
 

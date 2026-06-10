@@ -1,4 +1,4 @@
-// Day Of Week From Date (#0847)
+// Day Of Week From Date (#0974)
 
 // Reads year `1900`-`2099`, month `1`-`12`, day `1`-`31` (each on own line). Computes day-of-week via Zeller's congruence. Prints `0`-`6` + `\n` (Sunday=0).
 

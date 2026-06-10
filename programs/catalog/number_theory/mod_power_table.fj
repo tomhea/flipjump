@@ -1,4 +1,4 @@
-// Mod Power Table (#1034)
+// Mod Power Table (#0145)
 
 // Reads decimals `base` `mod` (`base` `1`-`9`, `mod` `2`-`9`, on own lines). Prints `base^0 mod mod`, `base^1 mod mod`, ..., `base^(mod-1) mod mod` space-separated on one line + `\n`.
 

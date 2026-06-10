@@ -363,7 +363,6 @@ def update_breakpoints_from_breakpoint_contains_set(
     add breakpoints generated with breakpoint_contains_labels.
     param breakpoints[in,out] - adds breakpoints to it
     """
-    # TODO #248 - improve the speed of this part with suffix trees
     if breakpoint_contains_labels:
         for label in tuple(label_to_address)[::-1]:
             for bcl in breakpoint_contains_labels:

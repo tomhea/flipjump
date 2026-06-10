@@ -1,4 +1,4 @@
-// Coprime Check (#0144)
+// Coprime Check (#0119)
 
 // Reads two decimals (each ≤ 100) and prints `1\n` if their GCD is 1, else `0\n`.
 

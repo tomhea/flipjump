@@ -1,4 +1,4 @@
-// Tortoise Hare Cycle (#1196)
+// Tortoise Hare Cycle (#0559)
 
 // Reads `start` `0`-`15` (own line). Iterates `x = (2*x + 1) mod 16` starting from `start`. Uses Floyd's tortoise-and-hare to detect when the sequence enters a cycle, then prints the cycle length as decimal + `\n`.
 

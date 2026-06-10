@@ -1,4 +1,4 @@
-// Sieve Of Eratosthenes 50 (#1198)
+// Sieve Of Eratosthenes 50 (#0561)
 
 // No input. Prints the primes in `[2, 50]` space-separated + `\n`. Implementation: sieve of Eratosthenes.
 

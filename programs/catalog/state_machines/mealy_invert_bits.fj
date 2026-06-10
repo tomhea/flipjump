@@ -1,0 +1,32 @@
+// Mealy Invert Bits (#0760)
+
+// Reads a `\n`-terminated sequence of bits `0`/`1` (≤ 30 chars). For each input bit, outputs the inverted bit (Mealy machine: output depends on input transition). Prints all output bits as one concatenated string + `\n`.
+
+main
+
+def main @ err, loop, done, is0m < ch, tmp, nl_char, zero_char {
+    stl.startup_and_init_all 100
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, zero_char
+    hex.if0 2, tmp, is0m
+    stl.output '0'
+    ;loop
+  is0m:
+    stl.output '1'
+    ;loop
+  done:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+ch: hex.vec 2
+tmp: hex.vec 2
+zero_char: hex.vec 2, '0'
+nl_char: hex.vec 2, '\n'

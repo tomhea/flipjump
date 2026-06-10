@@ -1,4 +1,4 @@
-// Signed Triangle Area 2X (#1057)
+// Signed Triangle Area 2X (#0623)
 
 // Reads 6 decimals (3 vertices, each coord own line). Prints `x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)` as signed decimal + `\n` (this is exactly 2× the signed area).
 

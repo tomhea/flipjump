@@ -1,0 +1,11 @@
+// Tower Of Hanoi Print Moves 3 (#0666)
+
+// No input. Prints all 7 moves for the 3-disk Tower of Hanoi (from peg `A` to peg `C` using `B`), one per line, formatted `<disk>: <src>-><dst>\n`. Example first move: `1: A->C\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "1: A->C\n2: A->B\n1: C->B\n3: A->C\n1: B->A\n2: B->C\n1: A->C\n"
+    stl.loop
+}

@@ -1,4 +1,4 @@
-// Unset Lowest Set Bit (#0933)
+// Unset Lowest Set Bit (#0236)
 
 // Reads one byte and outputs `byte AND (byte - 1)` (clears the lowest set bit) as one raw byte. For `byte = 0` outputs `0`.
 

@@ -1,4 +1,4 @@
-// Dollar Amount To Words (#1084)
+// Dollar Amount To Words (#1024)
 
 // Reads decimal `0`-`99` + `\n`. Prints the English-words form `<tens_word> <ones_word>\n` (e.g. `42` → `forty two\n`; `7` → `seven\n`; `10` → `ten\n`; `20` → `twenty\n`).
 

@@ -1,4 +1,4 @@
-// Word Zero To Nine (#0356)
+// Word Zero To Nine (#0483)
 
 // Reads a single ASCII digit `0`-`9` + `\n` and prints its English word (`zero`, `one`, `two`, ..., `nine`) + `\n`.
 

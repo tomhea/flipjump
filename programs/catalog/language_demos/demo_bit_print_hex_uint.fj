@@ -1,4 +1,4 @@
-// Demo Bit Print Hex Uint (#1259)
+// Demo Bit Print Hex Uint (#0856)
 
 // No input. Declares an internal 8-bit value `255`. Uses `bit.print_hex_uint` to print it as `ff\n`.
 

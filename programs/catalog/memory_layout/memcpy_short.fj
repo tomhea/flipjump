@@ -1,0 +1,60 @@
+// Memcpy Short (#0925)
+
+// Reads digit N `1`-`8` + `\n`, then N source bytes (each on own line as decimal `0`-`255`). Copies the bytes into a destination buffer of size N, then prints the destination as N decimals space-separated + `\n`.
+
+main
+
+def main @ err, rloop, rbody, rdone, cloop, cbody, cdone, ploop, pbody, pdone, no_sp < rn, rcnt, rval, rptr, pptr, pbyte, src, dst {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 2, rn, err
+    hex.zero 2, rcnt
+    hex.set w/4, rptr, src
+    // read N bytes into src
+  rloop:
+    hex.cmp 2, rcnt, rn, rbody, rdone, rdone
+  rbody:
+    hex.input_dec_uint 2, rval, err
+    hex.write_byte_and_inc rptr, rval
+    hex.inc 2, rcnt
+    ;rloop
+  rdone:
+    // copy src to dst
+    hex.set w/4, rptr, src
+    hex.set w/4, pptr, dst
+    hex.zero 2, rcnt
+  cloop:
+    hex.cmp 2, rcnt, rn, cbody, cdone, cdone
+  cbody:
+    hex.read_byte_and_inc pbyte, rptr
+    hex.write_byte_and_inc pptr, pbyte
+    hex.inc 2, rcnt
+    ;cloop
+  cdone:
+    // print dst: N bytes space-separated
+    hex.set w/4, pptr, dst
+    hex.zero 2, rcnt
+  ploop:
+    hex.cmp 2, rcnt, rn, pbody, pdone, pdone
+  pbody:
+    hex.if0 2, rcnt, no_sp
+    stl.output ' '
+  no_sp:
+    hex.read_byte_and_inc pbyte, pptr
+    hex.print_dec_uint 2, pbyte
+    hex.inc 2, rcnt
+    ;ploop
+  pdone:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+rn: hex.vec 2
+rcnt: hex.vec 2
+rval: hex.vec 2
+pbyte: hex.vec 2
+rptr: hex.vec w/4
+pptr: hex.vec w/4
+src: hex.vec 8, 0
+dst: hex.vec 8, 0

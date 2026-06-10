@@ -1,4 +1,4 @@
-// Coin Until First Head (#1210)
+// Coin Until First Head (#0573)
 
 // Reads up to 20 raw bytes one at a time. Stops as soon as a byte with even value is read ("heads"). Prints the count of bytes read up to and including that first head as decimal + `\n`. If no head appears in 20 bytes, prints `-1\n`.
 

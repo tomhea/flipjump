@@ -1,4 +1,4 @@
-// Echo With Suffix (#0049)
+// Echo With Suffix (#0048)
 
 // Reads stdin and prints each input byte followed by `!`.
 

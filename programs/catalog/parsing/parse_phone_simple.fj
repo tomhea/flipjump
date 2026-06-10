@@ -1,0 +1,27 @@
+// Parse Phone Simple (#0787)
+
+// Reads `XXX-XXX-XXXX\n` (12 bytes + `\n`, dashes at positions 3 and 7). Prints the 10 digits concatenated (no dashes) + `\n`.
+
+main
+
+def main @ loop, go, dash, echo, done < b, nl, dashc {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, dashc, echo, dash, echo
+  dash:
+    ;loop
+  echo:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+dashc: hex.vec 2, '-'

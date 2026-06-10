@@ -1,0 +1,50 @@
+// Lexer Digit Letter Other (#0762)
+
+// Reads a `\n`-terminated ASCII string ≤ 40 chars. For each byte, prints `D` if digit, `L` if letter, `O` otherwise. All output chars on one line, then `\n`.
+
+main
+
+def main @ err, loop, done, chk_dig_hi, is_digit, chk_upA, chk_upZ, is_letter, chk_loA, chk_loZ, is_other < ch, dig0, dig9, loA, loZ, nl_char, tmp_lex, upA, upZ {
+    stl.startup_and_init_all 100
+  loop:
+    hex.input ch
+    hex.mov 2, tmp_lex, ch
+    hex.sub 2, tmp_lex, nl_char
+    hex.if0 2, tmp_lex, done
+    // check digit: ch < '0' -> not digit; else ch > '9' -> not digit; else digit
+    hex.cmp 2, ch, dig0, is_other, is_digit, chk_dig_hi
+  chk_dig_hi:
+    hex.cmp 2, ch, dig9, is_digit, is_digit, chk_upA
+  is_digit:
+    stl.output 'D'
+    ;loop
+  chk_upA:
+    hex.cmp 2, ch, upA, is_other, is_letter, chk_upZ
+  chk_upZ:
+    hex.cmp 2, ch, upZ, is_letter, is_letter, chk_loA
+  chk_loA:
+    hex.cmp 2, ch, loA, is_other, is_letter, chk_loZ
+  chk_loZ:
+    hex.cmp 2, ch, loZ, is_letter, is_letter, is_other
+  is_letter:
+    stl.output 'L'
+    ;loop
+  is_other:
+    stl.output 'O'
+    ;loop
+  done:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+ch: hex.vec 2
+tmp_lex: hex.vec 2
+dig0: hex.vec 2, '0'
+dig9: hex.vec 2, '9'
+upA: hex.vec 2, 'A'
+upZ: hex.vec 2, 'Z'
+loA: hex.vec 2, 'a'
+loZ: hex.vec 2, 'z'
+nl_char: hex.vec 2, '\n'

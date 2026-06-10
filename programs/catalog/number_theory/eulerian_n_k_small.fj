@@ -1,4 +1,4 @@
-// Eulerian N K Small (#1051)
+// Eulerian N K Small (#0162)
 
 // Reads decimals `N` `K` (`N` `1`-`6`, `K` `0`-`N-1`). Prints the Eulerian number `<N, K>` as decimal + `\n`.
 

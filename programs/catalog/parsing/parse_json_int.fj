@@ -1,0 +1,22 @@
+// Parse Json Int (#0791)
+
+// Reads `{"x":<num>}\n` where `<num>` is a decimal `0`-`9999`. Prints `<num>` + `\n`.
+
+main
+
+def main @ skip, afterskip < b, colon, num, sb {
+    stl.startup_and_init_all
+  skip:
+    hex.input b
+    hex.cmp 2, b, colon, skip, afterskip, skip
+  afterskip:
+    hex.input_dec_uint_until 8, num, sb
+    hex.print_dec_uint 8, num
+    stl.output '\n'
+    stl.loop
+}
+
+b: hex.vec 2
+colon: hex.vec 2, ':'
+num: hex.vec 8
+sb: hex.vec 2

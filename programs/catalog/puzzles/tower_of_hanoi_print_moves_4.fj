@@ -1,0 +1,11 @@
+// Tower Of Hanoi Print Moves 4 (#0667)
+
+// No input. Same format as `tower_of_hanoi_print_moves_3` but for 4 disks (15 moves total).
+
+main
+
+def main {
+    stl.startup
+    stl.output "1: A->B\n2: A->C\n1: B->C\n3: A->B\n1: C->A\n2: C->B\n1: A->B\n4: A->C\n1: B->C\n2: B->A\n1: C->A\n3: B->C\n1: A->B\n2: A->C\n1: B->C\n"
+    stl.loop
+}

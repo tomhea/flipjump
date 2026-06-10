@@ -1,0 +1,41 @@
+// Rail Fence 3 Rails (#0882)
+
+// Same I/O as `rail_fence_2_rails` but with 3 rails.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    emit_stride buf, slen, 0, 4
+    emit_stride buf, slen, 1, 2
+    emit_stride buf, slen, 2, 4
+    stl.output '\n'
+    stl.loop
+}
+
+// Print buf[start], buf[start+step], ... while the index is < slen.
+def emit_stride buf, slen, start, step @ loop, body, done < eptr, pos, bb, stepr {
+    hex.set w/4, eptr, buf
+    hex.set w/4, pos, start
+    hex.set w/4, stepr, step
+  loop:
+    hex.cmp w/4, pos, slen, body, done, done
+  body:
+    hex.read_nth_byte bb, eptr, pos
+    hex.print bb
+    hex.add w/4, pos, stepr
+    ;loop
+  done:
+}
+
+buf: hex.vec 42
+bptr: hex.vec hw
+slen: hex.vec hw
+eptr: hex.vec hw
+pos: hex.vec hw
+bb: hex.vec 2
+stepr: hex.vec hw

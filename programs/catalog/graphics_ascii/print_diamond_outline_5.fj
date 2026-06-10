@@ -1,0 +1,11 @@
+// Print Diamond Outline 5 (#0815)
+
+// No input. Prints a 5-row outline-only diamond: rows ` * `, `* *`, ` * ` for top half mirrored... wait the precise pattern: row 1 `  *  `, row 2 ` * * `, row 3 `*   *`, row 4 ` * * `, row 5 `  *  ` (5×5 grid, only outline cells are `*`, others are space).
+
+main
+
+def main {
+    stl.startup
+    stl.output "  *  \n * * \n*   *\n * * \n  *  \n"
+    stl.loop
+}

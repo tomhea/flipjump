@@ -1,0 +1,27 @@
+// Card Blackjack Value (#0956)
+
+// Reads exactly one card-value char (`A`, `2`-`9`, `T`, `J`, `Q`, `K`). Prints the blackjack value: `A` → `1`, `2`-`9` → that digit, `T`/`J`/`Q`/`K` → `10`. Output is decimal + `\n`.
+
+main
+
+def main @ cv_is_A, cv_not_A, cv_is_dig, cv_is_face < cv_c, cv_Ac, cv_9c {
+    stl.startup_and_init_all 100
+    hex.input cv_c
+    hex.cmp 2, cv_c, cv_Ac, cv_not_A, cv_is_A, cv_not_A
+  cv_is_A:
+    stl.output "1\n"
+    stl.loop
+  cv_not_A:
+    hex.cmp 2, cv_c, cv_9c, cv_is_dig, cv_is_dig, cv_is_face
+  cv_is_dig:
+    hex.print cv_c
+    stl.output '\n'
+    stl.loop
+  cv_is_face:
+    stl.output "10\n"
+    stl.loop
+}
+
+cv_c: hex.vec 2
+cv_Ac: hex.vec 2, 'A'
+cv_9c: hex.vec 2, '9'

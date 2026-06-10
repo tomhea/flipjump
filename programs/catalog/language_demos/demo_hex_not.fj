@@ -1,4 +1,4 @@
-// Demo Hex Not (#1242)
+// Demo Hex Not (#0839)
 
 // Reads one lowercase hex char + `\n`. Uses `hex.not` (XOR with `f`). Prints result hex + `\n`.
 

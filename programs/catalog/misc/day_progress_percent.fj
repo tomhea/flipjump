@@ -1,4 +1,4 @@
-// Day Progress Percent (#0892)
+// Day Progress Percent (#1009)
 
 // Reads decimal hour `0`-`23` + `\n`, minute `0`-`59` + `\n`. Prints `(hour * 60 + minute) * 100 / 1440` (floor) as decimal + `\n` (= percent of day elapsed).
 

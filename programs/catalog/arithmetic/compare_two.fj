@@ -1,4 +1,4 @@
-// Compare Two (#0103)
+// Compare Two (#0078)
 
 // Reads two decimal integers and prints `<` if `a < b`, `=` if `a == b`, `>` if `a > b`, followed by `\n`.
 

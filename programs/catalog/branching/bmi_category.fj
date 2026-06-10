@@ -1,4 +1,4 @@
-// Bmi Category (#0229)
+// Bmi Category (#0356)
 
 // Reads two decimals: weight-kg `1`-`200` then height-cm `100`-`250` (each own line). Computes BMI = weight*10000/(height*height) and prints `under\n` (BMI<18), `normal\n` (18-24), `over\n` (25-29), `obese\n` (≥30).
 

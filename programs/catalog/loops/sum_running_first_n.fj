@@ -1,4 +1,4 @@
-// Sum Running First N (#0272)
+// Sum Running First N (#0310)
 
 // Reads digit N `1`-`9` + `\n`. Prints running sums on separate lines: `1\n3\n6\n10\n...\n` for the first N partial sums of `1+2+3+...`.
 

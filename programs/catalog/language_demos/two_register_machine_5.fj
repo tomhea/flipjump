@@ -1,4 +1,4 @@
-// Two Register Machine 5 (#1273)
+// Two Register Machine 5 (#0870)
 
 // Reads decimal `R0` `R1` (each `0`-`9`, on own lines). Then 5 instructions on own lines, each one of `ADD0` (`R0 = R0 + R1`), `SUB0` (`R0 = R0 - R1`), `SWAP` (`R0 ↔ R1`), `INC0`, `INC1`. After all 5, prints `<R0> <R1>\n`.
 

@@ -1,4 +1,4 @@
-// Linear Search (#1153)
+// Linear Search (#0400)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals, then `target`. Prints the 0-based index of the first match + `\n`, or `not found\n` if absent.
 

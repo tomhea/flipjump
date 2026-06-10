@@ -1,0 +1,89 @@
+// Word Anagram Check (#0668)
+
+// Reads two `\n`-terminated lowercase words (each ≤ 10 chars). Prints `1\n` if they are anagrams (same multiset of letters), else `0\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, clr, cbody, cdone, scan, sbody, sgood, sdone, no, yes < cnt, mptr, mi, mcell, zb, c26, incflag, decflag {
+    stl.startup_and_init_all
+    hex.set hw, mptr, cnt
+    hex.zero hw, mi
+  clr:
+    hex.cmp hw, mi, c26, cbody, cdone, cdone
+  cbody:
+    hex.write_byte_and_inc mptr, zb
+    hex.inc hw, mi
+    ;clr
+  cdone:
+    hex.zero 4, incflag
+    tally incflag
+    hex.set 4, decflag, 1
+    tally decflag
+    hex.set hw, mptr, cnt
+    hex.zero hw, mi
+  scan:
+    hex.cmp hw, mi, c26, sbody, sdone, sdone
+  sbody:
+    hex.read_byte mcell, mptr
+    hex.if0 2, mcell, sgood
+    ;no
+  sgood:
+    hex.ptr_inc mptr
+    hex.inc hw, mi
+    ;scan
+  sdone:
+    stl.output "1\n"
+    ;yes
+  no:
+    stl.output "0\n"
+  yes:
+  err:
+    stl.loop
+}
+
+// Read a line; for each lowercase letter, add (or, if dec, subtract) 1 from cnt[letter].
+def tally dec @ loop, go, isl, doit, incr, wr, skip, done < cnt, tptr, b, ti, tcell, nlt, la, lz {
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nlt, go, done, go
+  go:
+    hex.cmp 2, b, la, skip, isl, isl
+  isl:
+    hex.cmp 2, b, lz, doit, doit, skip
+  doit:
+    hex.set hw, tptr, cnt
+    hex.zero hw, ti
+    hex.mov 2, ti, b
+    hex.sub 2, ti, la
+    hex.read_nth_byte tcell, tptr, ti
+    hex.if0 2, dec, incr
+    hex.dec 2, tcell
+    ;wr
+  incr:
+    hex.inc 2, tcell
+  wr:
+    hex.write_nth_byte tptr, ti, tcell
+    ;loop
+  skip:
+    ;loop
+  done:
+}
+
+cnt: hex.vec 26
+mptr: hex.vec hw
+mi: hex.vec hw
+mcell: hex.vec 2
+zb: hex.vec 2
+incflag: hex.vec 4
+decflag: hex.vec 4
+tptr: hex.vec hw
+b: hex.vec 2
+ti: hex.vec hw
+tcell: hex.vec 2
+nlt: hex.vec 2, '\n'
+la: hex.vec 2, 'a'
+lz: hex.vec 2, 'z'
+c26: hex.vec hw, 26

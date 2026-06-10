@@ -1,0 +1,16 @@
+// Parse Integer Echo (#0774)
+
+// Reads a `\n`-terminated unsigned decimal `0`-`999999` and prints it back as decimal + `\n`. Round-trip parse → integer → print.
+
+main
+
+def main @ err < v {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, v, err
+    hex.print_dec_uint 8, v
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+v: hex.vec 8

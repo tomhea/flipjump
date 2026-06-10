@@ -145,3 +145,4 @@ tests/compiled/catalog/
 .claude/
 .ai/
 .claude-flow/
+scripts/

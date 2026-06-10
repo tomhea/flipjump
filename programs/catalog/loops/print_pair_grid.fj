@@ -1,4 +1,4 @@
-// Print Pair Grid (#0262)
+// Print Pair Grid (#0301)
 
 // No input. Prints all pairs `(i, j)` for `i, j` in `0`-`2` in row-major order, each formatted as `i j\n`. Output is 9 lines total.
 

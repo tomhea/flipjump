@@ -1,4 +1,4 @@
-// Pow Base 3 (#0134)
+// Pow Base 3 (#0109)
 
 // Reads decimal N in `0`-`5` and prints `3^N` as decimal + `\n`.
 

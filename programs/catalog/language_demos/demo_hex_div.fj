@@ -1,4 +1,4 @@
-// Demo Hex Div (#1249)
+// Demo Hex Div (#0846)
 
 // Reads two hex chars (dividend then divisor, divisor non-zero). Uses `hex.div`. Prints quotient hex + `\n`.
 

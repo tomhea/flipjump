@@ -1,4 +1,4 @@
-// Swap Case Line (#0182)
+// Swap Case Line (#0178)
 
 // Reads a `\n`-terminated line ≤ 80 chars and prints it with each letter's case toggled (others unchanged), ending with `\n`.
 

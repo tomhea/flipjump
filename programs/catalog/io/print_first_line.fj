@@ -1,4 +1,4 @@
-// Print First Line (#0050)
+// Print First Line (#0049)
 
 // Reads stdin up to the first `\n` and prints only that line (including the `\n`).
 

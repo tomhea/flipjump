@@ -1,4 +1,4 @@
-// Demo Segment Reserve (#1263)
+// Demo Segment Reserve (#0860)
 
 // Uses `segment` + `reserve` to set up a small memory region of 8 bytes initialized to zero. Reads no input. Prints the first byte's value (which is `0`) + `\n`.
 

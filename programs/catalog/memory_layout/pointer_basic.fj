@@ -1,0 +1,27 @@
+// Pointer Basic (#0914)
+
+// Reads decimal address `0`-`15` + `\n`, then decimal value `0`-`255` + `\n`. Writes the value at the address (in a 16-byte array initially zeroed), then reads it back and prints the value + `\n`.
+
+main
+
+def main @ err < arr, raddr, rval, rbyte, wptr {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint w/4, raddr, err
+    hex.input_dec_uint 2, rval, err
+    hex.set w/4, wptr, arr
+    // write value at arr[raddr]
+    hex.write_nth_byte wptr, raddr, rval
+    // read it back
+    hex.read_nth_byte rbyte, wptr, raddr
+    hex.print_dec_uint 2, rbyte
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+raddr: hex.vec w/4
+rval: hex.vec 2
+rbyte: hex.vec 2
+wptr: hex.vec w/4
+arr: hex.vec 16, 0

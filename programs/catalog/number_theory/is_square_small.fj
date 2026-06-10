@@ -1,4 +1,4 @@
-// Is Square Small (#0164)
+// Is Square Small (#0139)
 
 // Reads decimal N in `0`-`100` and prints `1\n` if N is a perfect square, else `0\n`.
 

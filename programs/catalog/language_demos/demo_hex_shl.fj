@@ -1,4 +1,4 @@
-// Demo Hex Shl (#1246)
+// Demo Hex Shl (#0843)
 
 // Reads one hex char + `\n`, then shift count `0`-`3` + `\n`. Uses `hex.shl`. Prints result hex + `\n`.
 

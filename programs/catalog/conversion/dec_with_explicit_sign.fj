@@ -1,4 +1,4 @@
-// Dec With Explicit Sign (#0368)
+// Dec With Explicit Sign (#0493)
 
 // Reads a signed decimal `-9999`..`9999` + `\n` and prints it with an always-explicit sign byte (`+` or `-`) prefix, followed by `\n`. Examples: `5` → `+5\n`, `0` → `+0\n`, `-3` → `-3\n`.
 

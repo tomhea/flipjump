@@ -1,0 +1,48 @@
+// Parse Signed Hex (#0801)
+
+// Reads `[+-]?0x<HH>\n` (optional sign byte then `0x` then exactly 2 lowercase hex chars). Prints the signed decimal value `-255`..`255` + `\n`.
+
+main
+
+def main @ chkm, sgn, sgnneg, nosign, readval, pos < b, val, neg, pc, mc {
+    stl.startup_and_init_all
+    bit.zero neg
+    hex.input b
+    hex.cmp 2, b, pc, chkm, sgn, chkm
+  chkm:
+    hex.cmp 2, b, mc, nosign, sgnneg, nosign
+  sgnneg:
+    bit.not neg
+  sgn:
+    hex.input b
+    hex.input b
+    ;readval
+  nosign:
+    hex.input b
+  readval:
+    read_byte_hex val
+    bit.if0 neg, pos
+    hex.neg 8, val
+  pos:
+    hex.print_dec_int 8, val
+    stl.output '\n'
+    stl.loop
+}
+
+// Read 2 lowercase-hex chars and store the byte value (0-255) in dst[:8].
+def read_byte_hex dst @ err < hi, lo {
+    hex.input_as_hex hi, err
+    hex.input_as_hex lo, err
+    hex.zero 8, dst
+    hex.mov 1, dst, lo
+    hex.mov 1, dst + dw, hi
+  err:
+}
+
+b: hex.vec 2
+val: hex.vec 8
+neg: bit.bit
+pc: hex.vec 2, '+'
+mc: hex.vec 2, '-'
+hi: hex.vec 1
+lo: hex.vec 1

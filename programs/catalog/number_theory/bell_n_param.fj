@@ -1,4 +1,4 @@
-// Bell N Param (#1048)
+// Bell N Param (#0159)
 
 // Reads decimal `N` `0`-`6` + `\n`. Prints the `N`-th Bell number `B(N)` as decimal + `\n`.
 

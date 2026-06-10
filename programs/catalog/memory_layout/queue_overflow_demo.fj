@@ -1,0 +1,77 @@
+// Queue Overflow Demo (#0913)
+
+// Same shape as `stack_overflow_demo` but with a queue of capacity 5. Prints `Queue overflow at item <N>!\n` or `Enqueued <N> items.\n`.
+
+main
+
+def main @ err, enq_loop, enq_next, overflow, done, end, do_q0, do_q1, do_q2, do_q3 < zero_char, five_val, ch, orig_n, cnt, val, tail, tmp, q0, q1, q2, q3, q4 {
+    stl.startup_and_init_all 100
+    hex.input ch
+    hex.sub 2, ch, zero_char
+    hex.mov 2, orig_n, ch
+    hex.mov 2, cnt, ch
+    hex.zero 4, tail
+    hex.zero 4, val
+  enq_loop:
+    hex.if0 2, cnt, done
+    hex.inc 4, val
+    hex.dec 2, cnt
+    // check tail >= 5: overflow if tail >= 5
+    hex.cmp 4, tail, five_val, enq_next, overflow, overflow
+  enq_next:
+    // dispatch on tail (0..4)
+    hex.if0 4, tail, do_q0
+    hex.mov 4, tmp, tail
+    hex.dec 4, tmp
+    hex.if0 4, tmp, do_q1
+    hex.dec 4, tmp
+    hex.if0 4, tmp, do_q2
+    hex.dec 4, tmp
+    hex.if0 4, tmp, do_q3
+    hex.mov 4, q4, val
+    hex.inc 4, tail
+    ;enq_loop
+  do_q0:
+    hex.mov 4, q0, val
+    hex.inc 4, tail
+    ;enq_loop
+  do_q1:
+    hex.mov 4, q1, val
+    hex.inc 4, tail
+    ;enq_loop
+  do_q2:
+    hex.mov 4, q2, val
+    hex.inc 4, tail
+    ;enq_loop
+  do_q3:
+    hex.mov 4, q3, val
+    hex.inc 4, tail
+    ;enq_loop
+  overflow:
+    stl.output "Queue overflow at item "
+    hex.print_dec_uint 4, val
+    stl.output "!\n"
+    ;end
+  done:
+    stl.output "Enqueued "
+    hex.print_dec_uint 2, orig_n
+    stl.output " items.\n"
+  end:
+    stl.loop
+  err:
+    stl.loop
+}
+
+zero_char: hex.vec 2, '0'
+five_val: hex.vec 4, 5
+ch: hex.vec 2
+orig_n: hex.vec 2
+cnt: hex.vec 2
+val: hex.vec 4
+tail: hex.vec 4
+tmp: hex.vec 4
+q0: hex.vec 4
+q1: hex.vec 4
+q2: hex.vec 4
+q3: hex.vec 4
+q4: hex.vec 4

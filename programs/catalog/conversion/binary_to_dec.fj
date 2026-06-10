@@ -1,4 +1,4 @@
-// Binary To Dec (#0342)
+// Binary To Dec (#0469)
 
 // Reads an 8-char binary string of `0`/`1` + `\n` and prints the decimal `0`-`255` + `\n`.
 

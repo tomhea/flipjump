@@ -1,4 +1,4 @@
-// Is Deficient Small (#0150)
+// Is Deficient Small (#0125)
 
 // Reads decimal N in `1`-`30` and prints `1\n` if N is deficient (sum of proper divisors < N), else `0\n`.
 

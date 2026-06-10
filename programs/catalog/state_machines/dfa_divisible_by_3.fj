@@ -1,0 +1,43 @@
+// Dfa Divisible By 3 (#0767)
+
+// Reads a `\n`-terminated decimal-digit string ≤ 6 chars representing a non-negative integer N. Prints `1\n` if N is divisible by 3, else `0\n`. Implementation: 3-state DFA on digit stream (state = current N mod 3).
+
+main
+
+def main @ err, loop, done, mod3_loop, sub3, print1f, done_f < ch, dval, nl_char, state, three_v3, tmp, zero_char {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, dval, ch
+    hex.sub 2, dval, zero_char
+    hex.add 2, state, dval
+    // reduce state mod 3
+  mod3_loop:
+    hex.cmp 2, state, three_v3, loop, sub3, sub3
+  sub3:
+    hex.sub 2, state, three_v3
+    ;mod3_loop
+  done:
+    // state==0 means divisible by 3
+    hex.if0 2, state, print1f
+    stl.output "0\n"
+    ;done_f
+  print1f:
+    stl.output "1\n"
+  done_f:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+dval: hex.vec 2
+zero_char: hex.vec 2, '0'
+nl_char: hex.vec 2, '\n'
+three_v3: hex.vec 2, 3

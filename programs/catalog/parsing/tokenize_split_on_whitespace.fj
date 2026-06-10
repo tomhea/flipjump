@@ -1,0 +1,38 @@
+// Tokenize Split On Whitespace (#0782)
+
+// Reads a `\n`-terminated line ≤ 40 chars. Splits on runs of whitespace (`' '`, `'\t'`) and prints each non-empty token on its own line.
+
+main
+
+def main @ loop, go, c2, isws, nonws, end, fin < b, nl, spc, tab, intok {
+    stl.startup
+    bit.zero intok
+  loop:
+    bit.input b
+    bit.if0 8, b, end
+    bit.cmp 8, b, nl, go, end, go
+  go:
+    bit.cmp 8, b, spc, c2, isws, c2
+  c2:
+    bit.cmp 8, b, tab, nonws, isws, nonws
+  isws:
+    bit.if0 intok, loop
+    stl.output '\n'
+    bit.zero intok
+    ;loop
+  nonws:
+    bit.one intok
+    bit.print b
+    ;loop
+  end:
+    bit.if0 intok, fin
+    stl.output '\n'
+  fin:
+    stl.loop
+}
+
+b: bit.vec 8, 0
+nl: bit.vec 8, '\n'
+spc: bit.vec 8, ' '
+tab: bit.vec 8, '\t'
+intok: bit.bit

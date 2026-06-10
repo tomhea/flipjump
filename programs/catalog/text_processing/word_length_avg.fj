@@ -1,4 +1,4 @@
-// Word Length Avg (#0463)
+// Word Length Avg (#0735)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Computes lengths of whitespace-separated tokens (space/tab/newline whitespace, runs collapse). Prints the floor of (sum of word lengths) / (word count) as decimal + `\n`. If no words, prints `0\n`.
 

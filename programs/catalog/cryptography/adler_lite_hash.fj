@@ -1,0 +1,45 @@
+// Adler Lite Hash (#0903)
+
+// Reads a `\n`-terminated line ≤ 30 chars. Computes an Adler-32-style hash with small modulus: `a = 1; b = 0; for each byte: a = (a + byte) mod 251; b = (b + a) mod 251;` then prints `b * 256 + a` as 4 lowercase hex chars + `\n`.
+
+main
+
+def main @ err, loop, go, done < b, nl, av, bv, bx, q, r, val, c251 {
+    stl.startup_and_init_all
+    hex.set 4, av, 1
+    hex.zero 4, bv
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.zero 4, bx
+    hex.mov 2, bx, b
+    hex.add 4, av, bx
+    hex.div 4, 4, q, r, av, c251, err
+    hex.mov 4, av, r
+    hex.add 4, bv, av
+    hex.div 4, 4, q, r, bv, c251, err
+    hex.mov 4, bv, r
+    ;loop
+  done:
+    hex.zero 4, val
+    hex.mov 1, val, av
+    hex.mov 1, val + dw, av + dw
+    hex.mov 1, val + 2*dw, bv
+    hex.mov 1, val + 3*dw, bv + dw
+    hex.print_as_digit 4, val, 0
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+av: hex.vec 4
+bv: hex.vec 4
+bx: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4
+val: hex.vec 4
+c251: hex.vec 4, 251

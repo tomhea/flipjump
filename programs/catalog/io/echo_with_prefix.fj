@@ -1,4 +1,4 @@
-// Echo With Prefix (#0048)
+// Echo With Prefix (#0047)
 
 // Reads stdin and prints each input byte preceded by `>`.
 

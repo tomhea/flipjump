@@ -1,0 +1,28 @@
+// Tetris Piece Rotate (#0973)
+
+// Reads a 2×2 piece description (2 lines of 2 chars `*`/`.`). Prints the piece rotated 90° clockwise (still 2×2).
+
+main
+
+def main < tr_a, tr_b, tr_c, tr_d, tr_nl {
+    stl.startup_and_init_all 100
+    hex.input tr_a
+    hex.input tr_b
+    hex.input tr_nl
+    hex.input tr_c
+    hex.input tr_d
+    hex.input tr_nl
+    hex.print tr_c
+    hex.print tr_a
+    stl.output '\n'
+    hex.print tr_d
+    hex.print tr_b
+    stl.output '\n'
+    stl.loop
+}
+
+tr_a: hex.vec 2
+tr_b: hex.vec 2
+tr_c: hex.vec 2
+tr_d: hex.vec 2
+tr_nl: hex.vec 2

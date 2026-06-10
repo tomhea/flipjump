@@ -1,0 +1,271 @@
+// Mastermind Feedback (#0970)
+
+// Reads a `\n`-terminated 4-char secret code (each char `1`-`6`) and a `\n`-terminated 4-char guess. Prints `<black> <white>\n` where `black` = exact position matches, `white` = right color wrong position (with proper multiplicity per Mastermind rules).
+
+main
+
+def main @ mm_yb0, mm_nb0, mm_yb1, mm_nb1, mm_yb2, mm_nb2, mm_yb3, mm_nb3, mm_ys00, mm_ns00, mm_ys01, mm_ns01, mm_ys02, mm_ns02, mm_ys03, mm_ns03, mm_yg00, mm_ng00, mm_yg01, mm_ng01, mm_yg02, mm_ng02, mm_yg03, mm_ng03, mm_ys10, mm_ns10, mm_ys11, mm_ns11, mm_ys12, mm_ns12, mm_ys13, mm_ns13, mm_yg10, mm_ng10, mm_yg11, mm_ng11, mm_yg12, mm_ng12, mm_yg13, mm_ng13, mm_ys20, mm_ns20, mm_ys21, mm_ns21, mm_ys22, mm_ns22, mm_ys23, mm_ns23, mm_yg20, mm_ng20, mm_yg21, mm_ng21, mm_yg22, mm_ng22, mm_yg23, mm_ng23, mm_ys30, mm_ns30, mm_ys31, mm_ns31, mm_ys32, mm_ns32, mm_ys33, mm_ns33, mm_yg30, mm_ng30, mm_yg31, mm_ng31, mm_yg32, mm_ng32, mm_yg33, mm_ng33, mm_ys40, mm_ns40, mm_ys41, mm_ns41, mm_ys42, mm_ns42, mm_ys43, mm_ns43, mm_yg40, mm_ng40, mm_yg41, mm_ng41, mm_yg42, mm_ng42, mm_yg43, mm_ng43, mm_ys50, mm_ns50, mm_ys51, mm_ns51, mm_ys52, mm_ns52, mm_ys53, mm_ns53, mm_yg50, mm_ng50, mm_yg51, mm_ng51, mm_yg52, mm_ng52, mm_yg53, mm_ng53 < mm_sec, mm_gue, mm_scount, mm_gcount, mm_black, mm_total, mm_tmp, mm_min2, mm_nlc, mm_1c, mm_2c, mm_3c, mm_4c, mm_5c, mm_6c {
+    stl.startup_and_init_all 100
+    rep(4, i) hex.input mm_sec + i*dw*2
+    hex.input mm_nlc
+    rep(4, i) hex.input mm_gue + i*dw*2
+    hex.input mm_nlc
+    hex.zero 4, mm_black
+    hex.cmp 2, mm_sec + 0*dw*2, mm_gue + 0*dw*2, mm_nb0, mm_yb0, mm_nb0
+  mm_yb0:
+    hex.inc 4, mm_black
+  mm_nb0:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_gue + 1*dw*2, mm_nb1, mm_yb1, mm_nb1
+  mm_yb1:
+    hex.inc 4, mm_black
+  mm_nb1:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_gue + 2*dw*2, mm_nb2, mm_yb2, mm_nb2
+  mm_yb2:
+    hex.inc 4, mm_black
+  mm_nb2:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_gue + 3*dw*2, mm_nb3, mm_yb3, mm_nb3
+  mm_yb3:
+    hex.inc 4, mm_black
+  mm_nb3:
+    hex.zero 2*6, mm_scount
+    hex.zero 2*6, mm_gcount
+    hex.cmp 2, mm_sec + 0*dw*2, mm_1c, mm_ns00, mm_ys00, mm_ns00
+  mm_ys00:
+    hex.inc 2, mm_scount + 0*dw*2
+  mm_ns00:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_1c, mm_ns01, mm_ys01, mm_ns01
+  mm_ys01:
+    hex.inc 2, mm_scount + 0*dw*2
+  mm_ns01:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_1c, mm_ns02, mm_ys02, mm_ns02
+  mm_ys02:
+    hex.inc 2, mm_scount + 0*dw*2
+  mm_ns02:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_1c, mm_ns03, mm_ys03, mm_ns03
+  mm_ys03:
+    hex.inc 2, mm_scount + 0*dw*2
+  mm_ns03:
+    hex.cmp 2, mm_gue + 0*dw*2, mm_1c, mm_ng00, mm_yg00, mm_ng00
+  mm_yg00:
+    hex.inc 2, mm_gcount + 0*dw*2
+  mm_ng00:
+    hex.cmp 2, mm_gue + 1*dw*2, mm_1c, mm_ng01, mm_yg01, mm_ng01
+  mm_yg01:
+    hex.inc 2, mm_gcount + 0*dw*2
+  mm_ng01:
+    hex.cmp 2, mm_gue + 2*dw*2, mm_1c, mm_ng02, mm_yg02, mm_ng02
+  mm_yg02:
+    hex.inc 2, mm_gcount + 0*dw*2
+  mm_ng02:
+    hex.cmp 2, mm_gue + 3*dw*2, mm_1c, mm_ng03, mm_yg03, mm_ng03
+  mm_yg03:
+    hex.inc 2, mm_gcount + 0*dw*2
+  mm_ng03:
+    hex.cmp 2, mm_sec + 0*dw*2, mm_2c, mm_ns10, mm_ys10, mm_ns10
+  mm_ys10:
+    hex.inc 2, mm_scount + 1*dw*2
+  mm_ns10:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_2c, mm_ns11, mm_ys11, mm_ns11
+  mm_ys11:
+    hex.inc 2, mm_scount + 1*dw*2
+  mm_ns11:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_2c, mm_ns12, mm_ys12, mm_ns12
+  mm_ys12:
+    hex.inc 2, mm_scount + 1*dw*2
+  mm_ns12:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_2c, mm_ns13, mm_ys13, mm_ns13
+  mm_ys13:
+    hex.inc 2, mm_scount + 1*dw*2
+  mm_ns13:
+    hex.cmp 2, mm_gue + 0*dw*2, mm_2c, mm_ng10, mm_yg10, mm_ng10
+  mm_yg10:
+    hex.inc 2, mm_gcount + 1*dw*2
+  mm_ng10:
+    hex.cmp 2, mm_gue + 1*dw*2, mm_2c, mm_ng11, mm_yg11, mm_ng11
+  mm_yg11:
+    hex.inc 2, mm_gcount + 1*dw*2
+  mm_ng11:
+    hex.cmp 2, mm_gue + 2*dw*2, mm_2c, mm_ng12, mm_yg12, mm_ng12
+  mm_yg12:
+    hex.inc 2, mm_gcount + 1*dw*2
+  mm_ng12:
+    hex.cmp 2, mm_gue + 3*dw*2, mm_2c, mm_ng13, mm_yg13, mm_ng13
+  mm_yg13:
+    hex.inc 2, mm_gcount + 1*dw*2
+  mm_ng13:
+    hex.cmp 2, mm_sec + 0*dw*2, mm_3c, mm_ns20, mm_ys20, mm_ns20
+  mm_ys20:
+    hex.inc 2, mm_scount + 2*dw*2
+  mm_ns20:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_3c, mm_ns21, mm_ys21, mm_ns21
+  mm_ys21:
+    hex.inc 2, mm_scount + 2*dw*2
+  mm_ns21:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_3c, mm_ns22, mm_ys22, mm_ns22
+  mm_ys22:
+    hex.inc 2, mm_scount + 2*dw*2
+  mm_ns22:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_3c, mm_ns23, mm_ys23, mm_ns23
+  mm_ys23:
+    hex.inc 2, mm_scount + 2*dw*2
+  mm_ns23:
+    hex.cmp 2, mm_gue + 0*dw*2, mm_3c, mm_ng20, mm_yg20, mm_ng20
+  mm_yg20:
+    hex.inc 2, mm_gcount + 2*dw*2
+  mm_ng20:
+    hex.cmp 2, mm_gue + 1*dw*2, mm_3c, mm_ng21, mm_yg21, mm_ng21
+  mm_yg21:
+    hex.inc 2, mm_gcount + 2*dw*2
+  mm_ng21:
+    hex.cmp 2, mm_gue + 2*dw*2, mm_3c, mm_ng22, mm_yg22, mm_ng22
+  mm_yg22:
+    hex.inc 2, mm_gcount + 2*dw*2
+  mm_ng22:
+    hex.cmp 2, mm_gue + 3*dw*2, mm_3c, mm_ng23, mm_yg23, mm_ng23
+  mm_yg23:
+    hex.inc 2, mm_gcount + 2*dw*2
+  mm_ng23:
+    hex.cmp 2, mm_sec + 0*dw*2, mm_4c, mm_ns30, mm_ys30, mm_ns30
+  mm_ys30:
+    hex.inc 2, mm_scount + 3*dw*2
+  mm_ns30:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_4c, mm_ns31, mm_ys31, mm_ns31
+  mm_ys31:
+    hex.inc 2, mm_scount + 3*dw*2
+  mm_ns31:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_4c, mm_ns32, mm_ys32, mm_ns32
+  mm_ys32:
+    hex.inc 2, mm_scount + 3*dw*2
+  mm_ns32:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_4c, mm_ns33, mm_ys33, mm_ns33
+  mm_ys33:
+    hex.inc 2, mm_scount + 3*dw*2
+  mm_ns33:
+    hex.cmp 2, mm_gue + 0*dw*2, mm_4c, mm_ng30, mm_yg30, mm_ng30
+  mm_yg30:
+    hex.inc 2, mm_gcount + 3*dw*2
+  mm_ng30:
+    hex.cmp 2, mm_gue + 1*dw*2, mm_4c, mm_ng31, mm_yg31, mm_ng31
+  mm_yg31:
+    hex.inc 2, mm_gcount + 3*dw*2
+  mm_ng31:
+    hex.cmp 2, mm_gue + 2*dw*2, mm_4c, mm_ng32, mm_yg32, mm_ng32
+  mm_yg32:
+    hex.inc 2, mm_gcount + 3*dw*2
+  mm_ng32:
+    hex.cmp 2, mm_gue + 3*dw*2, mm_4c, mm_ng33, mm_yg33, mm_ng33
+  mm_yg33:
+    hex.inc 2, mm_gcount + 3*dw*2
+  mm_ng33:
+    hex.cmp 2, mm_sec + 0*dw*2, mm_5c, mm_ns40, mm_ys40, mm_ns40
+  mm_ys40:
+    hex.inc 2, mm_scount + 4*dw*2
+  mm_ns40:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_5c, mm_ns41, mm_ys41, mm_ns41
+  mm_ys41:
+    hex.inc 2, mm_scount + 4*dw*2
+  mm_ns41:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_5c, mm_ns42, mm_ys42, mm_ns42
+  mm_ys42:
+    hex.inc 2, mm_scount + 4*dw*2
+  mm_ns42:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_5c, mm_ns43, mm_ys43, mm_ns43
+  mm_ys43:
+    hex.inc 2, mm_scount + 4*dw*2
+  mm_ns43:
+    hex.cmp 2, mm_gue + 0*dw*2, mm_5c, mm_ng40, mm_yg40, mm_ng40
+  mm_yg40:
+    hex.inc 2, mm_gcount + 4*dw*2
+  mm_ng40:
+    hex.cmp 2, mm_gue + 1*dw*2, mm_5c, mm_ng41, mm_yg41, mm_ng41
+  mm_yg41:
+    hex.inc 2, mm_gcount + 4*dw*2
+  mm_ng41:
+    hex.cmp 2, mm_gue + 2*dw*2, mm_5c, mm_ng42, mm_yg42, mm_ng42
+  mm_yg42:
+    hex.inc 2, mm_gcount + 4*dw*2
+  mm_ng42:
+    hex.cmp 2, mm_gue + 3*dw*2, mm_5c, mm_ng43, mm_yg43, mm_ng43
+  mm_yg43:
+    hex.inc 2, mm_gcount + 4*dw*2
+  mm_ng43:
+    hex.cmp 2, mm_sec + 0*dw*2, mm_6c, mm_ns50, mm_ys50, mm_ns50
+  mm_ys50:
+    hex.inc 2, mm_scount + 5*dw*2
+  mm_ns50:
+    hex.cmp 2, mm_sec + 1*dw*2, mm_6c, mm_ns51, mm_ys51, mm_ns51
+  mm_ys51:
+    hex.inc 2, mm_scount + 5*dw*2
+  mm_ns51:
+    hex.cmp 2, mm_sec + 2*dw*2, mm_6c, mm_ns52, mm_ys52, mm_ns52
+  mm_ys52:
+    hex.inc 2, mm_scount + 5*dw*2
+  mm_ns52:
+    hex.cmp 2, mm_sec + 3*dw*2, mm_6c, mm_ns53, mm_ys53, mm_ns53
+  mm_ys53:
+    hex.inc 2, mm_scount + 5*dw*2
+  mm_ns53:
+    hex.cmp 2, mm_gue + 0*dw*2, mm_6c, mm_ng50, mm_yg50, mm_ng50
+  mm_yg50:
+    hex.inc 2, mm_gcount + 5*dw*2
+  mm_ng50:
+    hex.cmp 2, mm_gue + 1*dw*2, mm_6c, mm_ng51, mm_yg51, mm_ng51
+  mm_yg51:
+    hex.inc 2, mm_gcount + 5*dw*2
+  mm_ng51:
+    hex.cmp 2, mm_gue + 2*dw*2, mm_6c, mm_ng52, mm_yg52, mm_ng52
+  mm_yg52:
+    hex.inc 2, mm_gcount + 5*dw*2
+  mm_ng52:
+    hex.cmp 2, mm_gue + 3*dw*2, mm_6c, mm_ng53, mm_yg53, mm_ng53
+  mm_yg53:
+    hex.inc 2, mm_gcount + 5*dw*2
+  mm_ng53:
+    hex.zero 4, mm_total
+    hex.min 2, mm_min2, mm_scount + 0*dw*2, mm_gcount + 0*dw*2
+    hex.zero 4, mm_tmp
+    hex.mov 2, mm_tmp, mm_min2
+    hex.add 4, mm_total, mm_tmp
+    hex.min 2, mm_min2, mm_scount + 1*dw*2, mm_gcount + 1*dw*2
+    hex.zero 4, mm_tmp
+    hex.mov 2, mm_tmp, mm_min2
+    hex.add 4, mm_total, mm_tmp
+    hex.min 2, mm_min2, mm_scount + 2*dw*2, mm_gcount + 2*dw*2
+    hex.zero 4, mm_tmp
+    hex.mov 2, mm_tmp, mm_min2
+    hex.add 4, mm_total, mm_tmp
+    hex.min 2, mm_min2, mm_scount + 3*dw*2, mm_gcount + 3*dw*2
+    hex.zero 4, mm_tmp
+    hex.mov 2, mm_tmp, mm_min2
+    hex.add 4, mm_total, mm_tmp
+    hex.min 2, mm_min2, mm_scount + 4*dw*2, mm_gcount + 4*dw*2
+    hex.zero 4, mm_tmp
+    hex.mov 2, mm_tmp, mm_min2
+    hex.add 4, mm_total, mm_tmp
+    hex.min 2, mm_min2, mm_scount + 5*dw*2, mm_gcount + 5*dw*2
+    hex.zero 4, mm_tmp
+    hex.mov 2, mm_tmp, mm_min2
+    hex.add 4, mm_total, mm_tmp
+    hex.sub 4, mm_total, mm_black
+    hex.print_dec_uint 4, mm_black
+    stl.output ' '
+    hex.print_dec_uint 4, mm_total
+    stl.output '\n'
+    stl.loop
+}
+
+mm_sec: hex.vec 2*4
+mm_gue: hex.vec 2*4
+mm_scount: hex.vec 2*6, 0
+mm_gcount: hex.vec 2*6, 0
+mm_black: hex.vec 4
+mm_total: hex.vec 4
+mm_tmp: hex.vec 4
+mm_min2: hex.vec 2
+mm_nlc: hex.vec 2, '\n'
+mm_1c: hex.vec 2, '1'
+mm_2c: hex.vec 2, '2'
+mm_3c: hex.vec 2, '3'
+mm_4c: hex.vec 2, '4'
+mm_5c: hex.vec 2, '5'
+mm_6c: hex.vec 2, '6'

@@ -1,0 +1,38 @@
+// Mutual Recursion Ping Pong (#0428)
+
+// No input. Two mutually-recursive macros: `ping(N) { stl.output "ping\n"; if N>0: pong(N-1) }` and `pong(N) { stl.output "pong\n"; if N>0: ping(N-1) }`. Top-level invokes `ping(3)`. Output: `ping\npong\nping\npong\n`.
+
+main
+
+def main @ err < r_nval, pp_arg, ping_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, pp_arg, r_nval
+    stl.call ping_fn
+    stl.loop
+  err:
+    stl.loop
+}
+
+// ping: print "ping", dec, call pong
+ping_fn:
+    hex.if0 4, pp_arg, pp_done
+    stl.output "ping\n"
+    hex.dec 4, pp_arg
+    stl.call pong_fn
+    stl.return
+  pp_done:
+    stl.return
+
+// pong: print "pong", dec, call ping
+pong_fn:
+    hex.if0 4, pp_arg, pp_done2
+    stl.output "pong\n"
+    hex.dec 4, pp_arg
+    stl.call ping_fn
+    stl.return
+  pp_done2:
+    stl.return
+
+r_nval: hex.vec 4
+pp_arg: hex.vec 4

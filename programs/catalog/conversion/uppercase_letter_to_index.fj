@@ -1,4 +1,4 @@
-// Uppercase Letter To Index (#0363)
+// Uppercase Letter To Index (#0488)
 
 // Reads exactly one byte `A`-`Z` and prints its 0-based alphabet index (`A`→`0`, ..., `Z`→`25`) as decimal + `\n`.
 

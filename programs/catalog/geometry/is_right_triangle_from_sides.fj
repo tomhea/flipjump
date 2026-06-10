@@ -1,4 +1,4 @@
-// Is Right Triangle From Sides (#0589)
+// Is Right Triangle From Sides (#0613)
 
 // Reads 3 decimals `a b c` (each own line, each `1`-`50`) representing triangle side lengths in any order. Prints `1\n` if some permutation satisfies `a^2 + b^2 == c^2`, else `0\n`.
 

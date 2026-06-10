@@ -1,4 +1,4 @@
-// Fermat First 4 (#0455)
+// Fermat First 4 (#0719)
 
 // No input. Prints the first 4 Fermat numbers `F(n) = 2^(2^n) + 1` for `n = 0..3`: `3 5 17 257` space-separated + `\n`.
 

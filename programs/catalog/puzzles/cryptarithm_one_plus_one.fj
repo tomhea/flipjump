@@ -1,0 +1,26 @@
+// Cryptarithm One Plus One (#0681)
+
+// Reads exactly 3 decimal digits `a b c` (each `0`-`9`, own line). Prints `1\n` if `a + b == c` (i.e. the cryptarithm `a + b = c` is satisfied), else `0\n`.
+
+main
+
+def main @ err, yes, no, done < a, b, c {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.input_dec_uint 4, b, err
+    hex.input_dec_uint 4, c, err
+    hex.add 4, a, b
+    hex.cmp 4, a, c, no, yes, no
+  yes:
+    stl.output "1\n"
+    ;done
+  no:
+    stl.output "0\n"
+  done:
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+b: hex.vec 4
+c: hex.vec 4

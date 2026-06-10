@@ -1,4 +1,4 @@
-// Switch On Digit (#0217)
+// Switch On Digit (#0344)
 
 // Reads one ASCII digit `0`-`9` and prints `a\n` for 0, `b\n` for 1, …, `j\n` for 9.
 

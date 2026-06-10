@@ -1,4 +1,4 @@
-// Boolean Majority Three (#0907)
+// Boolean Majority Three (#0260)
 
 // Reads three ASCII bits. Prints `1\n` if at least 2 of them are `1`, else `0\n`.
 

@@ -1,0 +1,77 @@
+// Bouncing Ball 2D (#0642)
+
+// Same as `bouncing_ball_1d` but in 2D: reads `x` `y` `vx` `vy` `steps`. Both axes bounce independently at `[0,9]`. Prints `<x> <y>\n` after each step.
+
+main
+
+def main @ err, b2_loop, b2_done, b2_xhi, b2_xlo, b2_xlo_c, b2_xok, b2_yhi, b2_ylo, b2_ylo_c, b2_yok < b2_x, b2_y, b2_vx, b2_vy, b2_steps, b2_cnt, b2_tmp, b2_nine, b2_zero4 {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, b2_x, err
+    hex.input_dec_uint 4, b2_y, err
+    hex.input_dec_int 4, b2_vx, err
+    hex.input_dec_int 4, b2_vy, err
+    hex.input_dec_uint 4, b2_steps, err
+    hex.mov 4, b2_cnt, b2_steps
+  b2_loop:
+    hex.if0 4, b2_cnt, b2_done
+    hex.add 4, b2_x, b2_vx
+    hex.scmp 4, b2_x, b2_nine, b2_xlo, b2_xok, b2_xhi
+  b2_xhi:
+    hex.set 4, b2_tmp, 18
+    hex.sub 4, b2_tmp, b2_x
+    hex.mov 4, b2_x, b2_tmp
+    hex.zero 4, b2_tmp
+    hex.sub 4, b2_tmp, b2_vx
+    hex.mov 4, b2_vx, b2_tmp
+    ;b2_xok
+  b2_xlo:
+    hex.scmp 4, b2_x, b2_zero4, b2_xlo_c, b2_xok, b2_xok
+  b2_xlo_c:
+    hex.zero 4, b2_tmp
+    hex.sub 4, b2_tmp, b2_x
+    hex.mov 4, b2_x, b2_tmp
+    hex.zero 4, b2_tmp
+    hex.sub 4, b2_tmp, b2_vx
+    hex.mov 4, b2_vx, b2_tmp
+  b2_xok:
+    hex.add 4, b2_y, b2_vy
+    hex.scmp 4, b2_y, b2_nine, b2_ylo, b2_yok, b2_yhi
+  b2_yhi:
+    hex.set 4, b2_tmp, 18
+    hex.sub 4, b2_tmp, b2_y
+    hex.mov 4, b2_y, b2_tmp
+    hex.zero 4, b2_tmp
+    hex.sub 4, b2_tmp, b2_vy
+    hex.mov 4, b2_vy, b2_tmp
+    ;b2_yok
+  b2_ylo:
+    hex.scmp 4, b2_y, b2_zero4, b2_ylo_c, b2_yok, b2_yok
+  b2_ylo_c:
+    hex.zero 4, b2_tmp
+    hex.sub 4, b2_tmp, b2_y
+    hex.mov 4, b2_y, b2_tmp
+    hex.zero 4, b2_tmp
+    hex.sub 4, b2_tmp, b2_vy
+    hex.mov 4, b2_vy, b2_tmp
+  b2_yok:
+    hex.print_dec_uint 4, b2_x
+    stl.output ' '
+    hex.print_dec_uint 4, b2_y
+    stl.output '\n'
+    hex.dec 4, b2_cnt
+    ;b2_loop
+  b2_done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+b2_x: hex.vec 4
+b2_y: hex.vec 4
+b2_vx: hex.vec 4
+b2_vy: hex.vec 4
+b2_steps: hex.vec 4
+b2_cnt: hex.vec 4
+b2_tmp: hex.vec 4
+b2_nine: hex.vec 4, 9
+b2_zero4: hex.vec 4, 0

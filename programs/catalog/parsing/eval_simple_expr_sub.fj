@@ -1,0 +1,30 @@
+// Eval Simple Expr Sub (#0777)
+
+// Reads `<a>-<b>` + `\n` (single digits). Prints `a - b` (signed) + `\n`.
+
+main
+
+def main < a, b, op {
+    stl.startup_and_init_all
+    read_digit a
+    hex.input op
+    read_digit b
+    hex.sub 8, a, b
+    hex.print_dec_int 8, a
+    stl.output '\n'
+    stl.loop
+}
+
+// Read one ASCII digit and store its value (0-9) in dst[:8].
+def read_digit dst < db, c0 {
+    hex.input db
+    hex.zero 8, dst
+    hex.mov 2, dst, db
+    hex.sub 8, dst, c0
+}
+
+a: hex.vec 8
+b: hex.vec 8
+op: hex.vec 2
+db: hex.vec 2
+c0: hex.vec 8, '0'

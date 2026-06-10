@@ -1,0 +1,54 @@
+// Parse Signed Integer Echo (#0775)
+
+// Reads a `\n`-terminated signed decimal `-9999`..`9999` (may have leading `-` or `+`) and prints the canonical signed form + `\n` (no leading `+`).
+
+main
+
+def main < v {
+    stl.startup_and_init_all
+    read_signed_dec v
+    hex.print_dec_int 8, v
+    stl.output '\n'
+    stl.loop
+}
+
+// Read an optional +/- sign then digits (until a non-digit) into v[:8], signed.
+def read_signed_dec dst @ plus_seen, have_sign, minus_seen, loop, ge0, isdig, done_sign, done < b, digval, neg, c0, c9, pc, mc {
+    hex.zero 8, dst
+    bit.zero neg
+    hex.input b
+    hex.cmp 2, b, pc, have_sign, plus_seen, have_sign
+  plus_seen:
+    hex.input b
+    ;loop
+  have_sign:
+    hex.cmp 2, b, mc, loop, minus_seen, loop
+  minus_seen:
+    bit.not neg
+    hex.input b
+  loop:
+    hex.zero 8, digval
+    hex.mov 2, digval, b
+    hex.cmp 8, digval, c0, done_sign, ge0, ge0
+  ge0:
+    hex.cmp 8, digval, c9, isdig, isdig, done_sign
+  isdig:
+    hex.mul10 8, dst
+    hex.sub 8, digval, c0
+    hex.add 8, dst, digval
+    hex.input b
+    ;loop
+  done_sign:
+    bit.if0 neg, done
+    hex.neg 8, dst
+  done:
+}
+
+v: hex.vec 8
+b: hex.vec 2
+digval: hex.vec 8
+neg: bit.bit
+c0: hex.vec 8, '0'
+c9: hex.vec 8, '9'
+pc: hex.vec 2, '+'
+mc: hex.vec 2, '-'

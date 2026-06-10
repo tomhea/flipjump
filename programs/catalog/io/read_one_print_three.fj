@@ -1,4 +1,4 @@
-// Read One Print Three (#0054)
+// Read One Print Three (#0053)
 
 // Reads one byte from stdin and prints the literal sequence `<byte><byte><byte>\n`.
 

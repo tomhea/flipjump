@@ -1,0 +1,11 @@
+// Game Of Life Blinker 3 (#0635)
+
+// No input. Prints 3 successive generations of a fixed blinker pattern on a 5×5 grid (initial state: middle row `00100\n00100\n00100\n` framed by blank rows). Each generation is 5 lines of 5 chars + `\n`; generations separated by an empty line `\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "00000\n00000\n01110\n00000\n00000\n\n00000\n00100\n00100\n00100\n00000\n\n00000\n00000\n01110\n00000\n00000\n\n"
+    stl.loop
+}

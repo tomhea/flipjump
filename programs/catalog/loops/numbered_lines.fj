@@ -1,4 +1,4 @@
-// Numbered Lines (#1097)
+// Numbered Lines (#0320)
 
 // Reads digit N `1`-`9` + `\n` then a `\n`-terminated line ≤ 20 chars. Prints N lines, each prefixed with `<i>: ` (1-based) and then the line.
 

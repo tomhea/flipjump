@@ -1,0 +1,46 @@
+// Dfa Divisible By 2 (#0768)
+
+// Reads a `\n`-terminated decimal-digit string ≤ 6 chars. Prints `1\n` if the represented N is divisible by 2, else `0\n`. Implementation: track last-digit parity (no need for multi-state).
+
+main
+
+def main @ err, loop, done, even_loop, sub2g, chk_zero, print1g, print0g, done_g < ch, last, nl_char, tmp, two_v2, zero_char {
+    stl.startup_and_init_all 100
+    hex.zero 2, last
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, last, ch
+    ;loop
+  done:
+    // val = last - '0', reduce mod 2
+    hex.mov 2, tmp, last
+    hex.sub 2, tmp, zero_char
+    // tmp = 0..9; subtract 2 while >=2
+  even_loop:
+    hex.cmp 2, tmp, two_v2, chk_zero, sub2g, sub2g
+  sub2g:
+    hex.sub 2, tmp, two_v2
+    ;even_loop
+  chk_zero:
+    // tmp is 0 or 1 now
+    hex.if0 2, tmp, print1g
+  print0g:
+    stl.output "0\n"
+    ;done_g
+  print1g:
+    stl.output "1\n"
+  done_g:
+    stl.loop
+  err:
+    stl.loop
+}
+
+last: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+zero_char: hex.vec 2, '0'
+nl_char: hex.vec 2, '\n'
+two_v2: hex.vec 2, 2

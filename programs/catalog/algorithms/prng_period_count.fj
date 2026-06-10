@@ -1,4 +1,4 @@
-// Prng Period Count (#1226)
+// Prng Period Count (#0589)
 
 // Reads one byte (seed). Applies LCG steps with constants `5`, `3`, mod 256, counting steps until the state returns to the seed value. Prints the period as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Demo Hex Add (#1237)
+// Demo Hex Add (#0834)
 
 // Reads two lowercase hex chars (each on own line). Uses `hex.add`. Prints the result hex + `\n` (mod 16, carry discarded).
 

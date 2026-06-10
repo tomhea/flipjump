@@ -1,4 +1,4 @@
-// Is Perfect Small (#0147)
+// Is Perfect Small (#0122)
 
 // Reads decimal N in `1`-`30` and prints `1\n` if N equals the sum of its proper divisors (divisors excluding N), else `0\n`.
 

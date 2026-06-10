@@ -1,4 +1,4 @@
-// Centered Hexagonal First 5 (#0460)
+// Centered Hexagonal First 5 (#0723)
 
 // No input. Prints the first 5 centered hexagonal numbers: `1 7 19 37 61` space-separated + `\n`.
 

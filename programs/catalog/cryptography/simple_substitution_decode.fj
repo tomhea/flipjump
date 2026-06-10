@@ -1,0 +1,67 @@
+// Simple Substitution Decode (#0880)
+
+// Reads the same 26-char mapping then ciphertext. Inverts the mapping (build inverse table) and applies to decode. Prints plaintext + `\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, bloop, bbody, bdone, loop, go, in_l, sub, plain, done < b, nl, mapbuf, invbuf, maplen, mapptr, invptr, idx, jdx, mc, ic, la, lz, c25 {
+    stl.startup_and_init_all
+    hex.set hw, mapptr, mapbuf
+    hex.input_ptr_line mapptr, maplen
+    hex.set hw, mapptr, mapbuf
+    hex.set hw, invptr, invbuf
+    hex.zero hw, idx
+  bloop:
+    hex.cmp hw, idx, c25, bbody, bbody, bdone
+  bbody:
+    hex.read_nth_byte mc, mapptr, idx
+    hex.zero hw, jdx
+    hex.mov 2, jdx, mc
+    hex.sub 2, jdx, la
+    hex.zero 2, ic
+    hex.mov 2, ic, idx
+    hex.add 2, ic, la
+    hex.write_nth_byte invptr, jdx, ic
+    hex.inc hw, idx
+    hex.cmp hw, idx, c25, bloop, bloop, bdone
+  bdone:
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, la, plain, in_l, in_l
+  in_l:
+    hex.cmp 2, b, lz, sub, sub, plain
+  sub:
+    hex.zero hw, idx
+    hex.mov 2, idx, b
+    hex.sub 2, idx, la
+    hex.read_nth_byte ic, invptr, idx
+    hex.print ic
+    ;loop
+  plain:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+mapbuf: hex.vec 30
+invbuf: hex.vec 30
+maplen: hex.vec hw
+mapptr: hex.vec hw
+invptr: hex.vec hw
+idx: hex.vec hw
+jdx: hex.vec hw
+mc: hex.vec 2
+ic: hex.vec 2
+la: hex.vec 2, 'a'
+lz: hex.vec 2, 'z'
+c25: hex.vec hw, 25

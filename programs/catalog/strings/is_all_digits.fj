@@ -1,4 +1,4 @@
-// Is All Digits (#0188)
+// Is All Digits (#0184)
 
 // Reads a non-empty `\n`-terminated line ≤ 80 chars and prints `1\n` if every byte is `0`-`9`, else `0\n`.
 

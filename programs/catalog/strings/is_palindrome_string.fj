@@ -1,4 +1,4 @@
-// Is Palindrome String (#1091)
+// Is Palindrome String (#0190)
 
 // Reads a `\n`-terminated line ≤ 30 chars and prints `1\n` if the line (excluding `\n`) is a palindrome, else `0\n`.
 

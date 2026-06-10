@@ -1,0 +1,38 @@
+// Parse Hex Color (#0784)
+
+// Reads `#RRGGBB\n` (exactly 7 bytes + `\n`, lowercase hex). Prints `R: <r>\nG: <g>\nB: <b>\n` where `r`, `g`, `b` are decimal values `0`-`255`.
+
+main
+
+def main < r, g, b, hashb {
+    stl.startup_and_init_all
+    hex.input hashb
+    read_byte_hex r
+    read_byte_hex g
+    read_byte_hex b
+    stl.output "R: "
+    hex.print_dec_uint 8, r
+    stl.output "\nG: "
+    hex.print_dec_uint 8, g
+    stl.output "\nB: "
+    hex.print_dec_uint 8, b
+    stl.output '\n'
+    stl.loop
+}
+
+// Read 2 lowercase-hex chars and store the byte value (0-255) in dst[:8].
+def read_byte_hex dst @ err < hi, lo {
+    hex.input_as_hex hi, err
+    hex.input_as_hex lo, err
+    hex.zero 8, dst
+    hex.mov 1, dst, lo
+    hex.mov 1, dst + dw, hi
+  err:
+}
+
+r: hex.vec 8
+g: hex.vec 8
+b: hex.vec 8
+hashb: hex.vec 2
+hi: hex.vec 1
+lo: hex.vec 1

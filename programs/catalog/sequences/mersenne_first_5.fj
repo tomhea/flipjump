@@ -1,4 +1,4 @@
-// Mersenne First 5 (#0453)
+// Mersenne First 5 (#0717)
 
 // No input. Prints the first 5 Mersenne numbers `M(n) = 2^n - 1` for `n = 1..5`: `1 3 7 15 31` space-separated + `\n`.
 

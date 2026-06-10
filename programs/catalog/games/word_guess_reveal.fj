@@ -1,0 +1,38 @@
+// Word Guess Reveal (#0964)
+
+// Reads a `\n`-terminated secret word ≤ 8 chars (lowercase) and a `\n`-terminated guess char (single lowercase letter). Prints the secret with un-revealed letters as `_` (only the guess char is "revealed"; others stay as `_`). E.g. secret `apple`, guess `p` → `_pp__\n`.
+
+ww = w/4
+
+main
+
+def main @ wr_pl, wr_pl_body, wr_match, wr_nomatch, wr_pl_done < wr_sec, wr_sptr, wr_sb, wr_gc, wr_slen, wr_si {
+    stl.startup_and_init_all 100
+    hex.set ww, wr_sptr, wr_sec
+    hex.input_ptr_line wr_sptr, wr_slen
+    hex.input wr_gc
+    hex.set ww, wr_sptr, wr_sec
+    hex.zero ww, wr_si
+  wr_pl:
+    hex.cmp ww, wr_si, wr_slen, wr_pl_body, wr_pl_done, wr_pl_done
+  wr_pl_body:
+    hex.read_byte_and_inc wr_sb, wr_sptr
+    hex.inc ww, wr_si
+    hex.cmp 2, wr_sb, wr_gc, wr_nomatch, wr_match, wr_nomatch
+  wr_match:
+    hex.print wr_sb
+    ;wr_pl
+  wr_nomatch:
+    stl.output '_'
+    ;wr_pl
+  wr_pl_done:
+    stl.output '\n'
+    stl.loop
+}
+
+wr_sec: hex.vec 8, 0
+wr_sptr: hex.vec ww
+wr_sb: hex.vec 2
+wr_gc: hex.vec 2
+wr_slen: hex.vec ww
+wr_si: hex.vec ww

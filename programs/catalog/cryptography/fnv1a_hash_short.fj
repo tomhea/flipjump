@@ -1,0 +1,39 @@
+// Fnv1A Hash Short (#0899)
+
+// Reads a `\n`-terminated line ≤ 30 chars. Computes FNV-1a hash modulo 256: `h = 0; for each byte b: h = ((h XOR b) * 0x93) mod 256` (`0x93` = FNV prime `16777619 mod 256`). Prints `h` as 2 lowercase hex chars + `\n`. (Distinct from `fnv1_hash_short` by operation order — XOR then multiply vs multiply then XOR.)
+
+main
+
+def main @ err, loop, go, done < b, nl, h, cp {
+    stl.startup_and_init_all
+    hex.zero 2, h
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.xor 2, h, b
+    mulmod h, cp
+    ;loop
+  done:
+    hex.print_as_digit 2, h, 0
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+h: hex.vec 2
+mh4: hex.vec 4
+mt4: hex.vec 4
+cp: hex.vec 4, 0x93

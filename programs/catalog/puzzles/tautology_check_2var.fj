@@ -1,0 +1,225 @@
+// Tautology Check 2Var (#0696)
+
+// Reads a formula string `\n`-terminated (same syntax as `propositional_eval_2var`, ≤ 15 chars). Prints `1\n` if the formula is true for all 4 assignments of `x`, `y`, else `0\n`.
+
+hw = w / 4
+
+main
+
+def main < fbuf, fptr2, flen, xreg, yreg, res, evres {
+    stl.startup_and_init_all
+    hex.set hw, fptr2, fbuf
+    hex.input_ptr_line fptr2, flen
+    hex.set 4, res, 1
+    hex.set 4, xreg, 0
+    hex.set 4, yreg, 0
+    eval_formula xreg, yreg
+    hex.and 4, res, evres
+    hex.set 4, xreg, 0
+    hex.set 4, yreg, 1
+    eval_formula xreg, yreg
+    hex.and 4, res, evres
+    hex.set 4, xreg, 1
+    hex.set 4, yreg, 0
+    eval_formula xreg, yreg
+    hex.and 4, res, evres
+    hex.set 4, xreg, 1
+    hex.set 4, yreg, 1
+    eval_formula xreg, yreg
+    hex.and 4, res, evres
+    hex.print_dec_uint 4, res
+    stl.output '\n'
+    stl.loop
+}
+
+// --- value/operator stacks (byte buffers indexed by vsp/osp) ---
+def push_val v < vptr, vsp {
+    hex.write_nth_byte vptr, vsp, v
+    hex.inc w/4, vsp
+}
+def pop_val dst < vptr, vsp {
+    hex.dec w/4, vsp
+    hex.read_nth_byte dst, vptr, vsp
+}
+def push_op c < optr, osp {
+    hex.write_nth_byte optr, osp, c
+    hex.inc w/4, osp
+}
+def pop_op dst < optr, osp {
+    hex.dec w/4, osp
+    hex.read_nth_byte dst, optr, osp
+}
+def peek_op dst < optr, osp, tidx {
+    hex.mov w/4, tidx, osp
+    hex.dec w/4, tidx
+    hex.read_nth_byte dst, optr, tidx
+}
+
+// out[:4] = precedence of op: '!'=3, '&'=2, '|'=1, else 0.
+def prec_of op, out @ chka, chko, p3, p2, p1, p0, done < bangc, ampc, pipec {
+    hex.cmp 2, op, bangc, chka, p3, chka
+  chka:
+    hex.cmp 2, op, ampc, chko, p2, chko
+  chko:
+    hex.cmp 2, op, pipec, p0, p1, p0
+  p3:
+    hex.set 4, out, 3
+    ;done
+  p2:
+    hex.set 4, out, 2
+    ;done
+  p1:
+    hex.set 4, out, 1
+    ;done
+  p0:
+    hex.zero 4, out
+  done:
+}
+
+// Pop one operator and apply it to the value stack.
+def apply @ chkb, doand, isor, unary, uset1, upush, done < opc, av, bv, rv, ampc, bangc {
+    pop_op opc
+    hex.cmp 2, opc, bangc, chkb, unary, chkb
+  chkb:
+    pop_val bv
+    pop_val av
+    hex.cmp 2, opc, ampc, isor, doand, isor
+  doand:
+    hex.mov 4, rv, av
+    hex.and 4, rv, bv
+    push_val rv
+    ;done
+  isor:
+    hex.mov 4, rv, av
+    hex.or 4, rv, bv
+    push_val rv
+    ;done
+  unary:
+    pop_val av
+    hex.if0 4, av, uset1
+    hex.zero 4, rv
+    ;upush
+  uset1:
+    hex.set 4, rv, 1
+  upush:
+    push_val rv
+  done:
+}
+
+// While the operator stack top is not '(' and has precedence >= thisprec, apply.
+def reduce_ge thisprec @ loop, chk, doapply, done < osp, ptop, pval, tpr, lpc {
+  loop:
+    hex.if0 w/4, osp, done
+    peek_op ptop
+    hex.cmp 2, ptop, lpc, chk, done, chk
+  chk:
+    prec_of ptop, pval
+    hex.set 4, tpr, thisprec
+    hex.cmp 4, pval, tpr, done, doapply, doapply
+  doapply:
+    apply
+    ;loop
+  done:
+}
+
+// Apply until a '(' is on top, then discard the '('.
+def reduce_rparen @ loop, notlp, done < ptop, lpc {
+  loop:
+    peek_op ptop
+    hex.cmp 2, ptop, lpc, notlp, done, notlp
+  notlp:
+    apply
+    ;loop
+  done:
+    pop_op ptop
+}
+
+// Evaluate the buffered formula under (xreg, yreg); result -> evres.
+def eval_formula xreg, yreg @ scanloop, sdone, p_x, p_y, p_bang, op_and, op_or, p_lp, do_rp, next, d1, d2, d3, d4, d5, d6, raloop, radone < fbuf, flen, vptr, vstk, optr, ostk, vsp, osp, fptr, fcnt, fch, evres, xc, yc, bangc, ampc, pipec, lpc, rpc {
+    hex.set w/4, vptr, vstk
+    hex.set w/4, optr, ostk
+    hex.zero w/4, vsp
+    hex.zero w/4, osp
+    hex.set w/4, fptr, fbuf
+    hex.mov w/4, fcnt, flen
+  scanloop:
+    hex.if0 w/4, fcnt, sdone
+    hex.read_byte_and_inc fch, fptr
+    hex.cmp 2, fch, xc, d1, p_x, d1
+  p_x:
+    push_val xreg
+    ;next
+  d1:
+    hex.cmp 2, fch, yc, d2, p_y, d2
+  p_y:
+    push_val yreg
+    ;next
+  d2:
+    hex.cmp 2, fch, bangc, d3, p_bang, d3
+  p_bang:
+    push_op fch
+    ;next
+  d3:
+    hex.cmp 2, fch, ampc, d4, op_and, d4
+  op_and:
+    reduce_ge 2
+    push_op fch
+    ;next
+  d4:
+    hex.cmp 2, fch, pipec, d5, op_or, d5
+  op_or:
+    reduce_ge 1
+    push_op fch
+    ;next
+  d5:
+    hex.cmp 2, fch, lpc, d6, p_lp, d6
+  p_lp:
+    push_op fch
+    ;next
+  d6:
+    hex.cmp 2, fch, rpc, next, do_rp, next
+  do_rp:
+    reduce_rparen
+  next:
+    hex.dec w/4, fcnt
+    ;scanloop
+  sdone:
+  raloop:
+    hex.if0 w/4, osp, radone
+    apply
+    ;raloop
+  radone:
+    pop_val evres
+}
+
+fbuf: hex.vec 24
+fptr2: hex.vec hw
+flen: hex.vec hw
+xreg: hex.vec 4
+yreg: hex.vec 4
+res: hex.vec 4
+vstk: hex.vec 24
+ostk: hex.vec 24
+vptr: hex.vec w/4
+optr: hex.vec w/4
+vsp: hex.vec w/4
+osp: hex.vec w/4
+tidx: hex.vec w/4
+fptr: hex.vec w/4
+fcnt: hex.vec w/4
+fch: hex.vec 2
+evres: hex.vec 4
+opc: hex.vec 2
+av: hex.vec 4
+bv: hex.vec 4
+rv: hex.vec 4
+ptop: hex.vec 2
+pval: hex.vec 4
+tpr: hex.vec 4
+xc: hex.vec 2, 'x'
+yc: hex.vec 2, 'y'
+bangc: hex.vec 2, '!'
+ampc: hex.vec 2, '&'
+pipec: hex.vec 2, '|'
+lpc: hex.vec 2, '('
+rpc: hex.vec 2, ')'

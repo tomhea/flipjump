@@ -1,4 +1,4 @@
-// Weekday Or Weekend (#0211)
+// Weekday Or Weekend (#0338)
 
 // Reads decimal day-of-week `0`-`6` (Sunday=0) and prints `weekend\n` (Sat/Sun) or `weekday\n` (Mon-Fri).
 

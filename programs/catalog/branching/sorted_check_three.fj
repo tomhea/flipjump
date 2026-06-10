@@ -1,4 +1,4 @@
-// Sorted Check Three (#0225)
+// Sorted Check Three (#0352)
 
 // Reads three decimals and prints `1\n` if they are in non-decreasing order, else `0\n`.
 

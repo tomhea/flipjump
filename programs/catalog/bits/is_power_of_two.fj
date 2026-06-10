@@ -1,4 +1,4 @@
-// Is Power Of Two (#0090)
+// Is Power Of Two (#0204)
 
 // Reads one byte and prints `1\n` if it has exactly one 1-bit (and is nonzero), else `0\n`.
 

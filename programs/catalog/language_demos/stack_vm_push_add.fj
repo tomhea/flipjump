@@ -1,4 +1,4 @@
-// Stack Vm Push Add (#1270)
+// Stack Vm Push Add (#0867)
 
 // Reads a `\n`-terminated program string of tokens separated by spaces: `PUSH <d>` (push single digit `0`-`9`) and `ADD` (pop two values, push their sum). After interpreting all tokens, prints the final top of stack as decimal + `\n`. ≤ 10 tokens total.
 

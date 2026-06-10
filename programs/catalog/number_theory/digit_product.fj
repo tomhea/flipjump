@@ -1,4 +1,4 @@
-// Digit Product (#0159)
+// Digit Product (#0134)
 
 // Reads decimal N in `0`-`999` and prints the product of its base-10 digits as decimal + `\n`.
 

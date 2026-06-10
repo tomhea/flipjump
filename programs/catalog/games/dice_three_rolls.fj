@@ -1,0 +1,26 @@
+// Dice Three Rolls (#0955)
+
+// Reads exactly 3 bytes (no separators). For each byte `b`, prints `(b mod 6) + 1` as decimal on its own line (3 lines of output).
+
+main
+
+def dr_roll err < dr_b, dr_q, dr_r, dr_six {
+    hex.input dr_b
+    hex.div 2, 2, dr_q, dr_r, dr_b, dr_six, err
+    hex.inc 2, dr_r
+    hex.print_dec_uint 2, dr_r
+    stl.output '\n'
+}
+
+def main @ err {
+    stl.startup_and_init_all 100
+    rep(3, i) dr_roll err
+    stl.loop
+  err:
+    stl.loop
+}
+
+dr_b: hex.vec 2
+dr_q: hex.vec 2
+dr_r: hex.vec 2
+dr_six: hex.vec 2, 6

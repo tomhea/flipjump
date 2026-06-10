@@ -1,4 +1,4 @@
-// Bf Tape 4 (#1269)
+// Bf Tape 4 (#0866)
 
 // Reads a `\n`-terminated BF program ≤ 30 chars using `+`, `-`, `<`, `>`, `.` (other bytes ignored). Interprets on a 4-cell tape (cells initially 0, mod 256). Each `.` outputs the current cell as one raw byte. The tape pointer stays in `[0, 3]` (out-of-bounds moves are silently ignored). Final newline after all output.
 

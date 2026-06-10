@@ -1,4 +1,4 @@
-// Hollow Box (#0236)
+// Hollow Box (#0276)
 
 // Reads digit N `2`-`9` + `\n`. Prints an N-by-N hollow box: top and bottom rows are N `*`; middle rows are `*` + (N-2) spaces + `*`, each + `\n`.
 

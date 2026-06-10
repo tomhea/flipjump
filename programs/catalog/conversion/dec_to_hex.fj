@@ -1,4 +1,4 @@
-// Dec To Hex (#0339)
+// Dec To Hex (#0466)
 
 // Reads decimal `0`-`255` + `\n` and prints exactly two lowercase hex digits (no `0x` prefix), followed by `\n`.
 

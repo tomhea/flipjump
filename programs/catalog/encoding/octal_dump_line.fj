@@ -1,0 +1,50 @@
+// Octal Dump Line (#0498)
+
+// Reads a `\n`-terminated line ≤ 16 chars. For each byte (excluding `\n`), prints its 3-char octal representation (zero-padded), space-separated, then `\n`.
+
+main
+
+def main @ err, loop, go, fb, emit, done < b, nl, first {
+    stl.startup_and_init_all
+    bit.one first
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    bit.if1 first, fb
+    stl.output ' '
+    ;emit
+  fb:
+    bit.zero first
+  emit:
+    print_octal b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Print byte b (hex.vec 2) as 3 zero-padded octal digits.
+def print_octal b @ err < v, r, o0, o1, o2, c8, c64 {
+    hex.zero 4, v
+    hex.mov 2, v, b
+    hex.div 4, 4, o0, r, v, c64, err
+    hex.div 4, 4, o1, o2, r, c8, err
+    hex.print_dec_uint 4, o0
+    hex.print_dec_uint 4, o1
+    hex.print_dec_uint 4, o2
+  err:
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+first: bit.bit 1
+v: hex.vec 4
+r: hex.vec 4
+o0: hex.vec 4
+o1: hex.vec 4
+o2: hex.vec 4
+c8: hex.vec 4, 8
+c64: hex.vec 4, 64

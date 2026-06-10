@@ -1,0 +1,49 @@
+// Chess Piece Count (#0966)
+
+// Reads exactly 8 lines, each 8 chars, where each char is a chess piece (`P`/`R`/`N`/`B`/`Q`/`K` for white, lowercase for black, `.` for empty). Prints `white: <w>\nblack: <b>\n` with counts.
+
+main
+
+def main @ cp_loop, cp_body, cp_is_nl, cp_not_nl, cp_is_dot, cp_not_dot, cp_white, cp_black, cp_done < cp_c, cp_cells, cp_w, cp_b, cp_c64, cp_nlc, cp_dotc, cp_ac {
+    stl.startup_and_init_all 100
+    hex.zero 4, cp_cells
+    hex.zero 4, cp_w
+    hex.zero 4, cp_b
+  cp_loop:
+    hex.cmp 4, cp_cells, cp_c64, cp_body, cp_done, cp_done
+  cp_body:
+    hex.input cp_c
+    hex.cmp 2, cp_c, cp_nlc, cp_not_nl, cp_is_nl, cp_not_nl
+  cp_is_nl:
+    ;cp_loop
+  cp_not_nl:
+    hex.inc 4, cp_cells
+    hex.cmp 2, cp_c, cp_dotc, cp_not_dot, cp_is_dot, cp_not_dot
+  cp_is_dot:
+    ;cp_loop
+  cp_not_dot:
+    hex.cmp 2, cp_c, cp_ac, cp_white, cp_black, cp_black
+  cp_white:
+    hex.inc 4, cp_w
+    ;cp_loop
+  cp_black:
+    hex.inc 4, cp_b
+    ;cp_loop
+  cp_done:
+    stl.output "white: "
+    hex.print_dec_uint 4, cp_w
+    stl.output '\n'
+    stl.output "black: "
+    hex.print_dec_uint 4, cp_b
+    stl.output '\n'
+    stl.loop
+}
+
+cp_c: hex.vec 2
+cp_cells: hex.vec 4
+cp_w: hex.vec 4
+cp_b: hex.vec 4
+cp_c64: hex.vec 4, 64
+cp_nlc: hex.vec 2, '\n'
+cp_dotc: hex.vec 2, '.'
+cp_ac: hex.vec 2, 'a'

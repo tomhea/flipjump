@@ -1,4 +1,4 @@
-// Zodiac Western (#0871)
+// Zodiac Western (#0998)
 
 // Reads month `1`-`12` then day `1`-`31` (each own line). Prints the corresponding western zodiac sign (`Aries`, `Taurus`, ..., `Pisces`) + `\n`.
 

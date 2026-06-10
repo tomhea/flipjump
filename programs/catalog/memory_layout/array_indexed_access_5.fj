@@ -1,0 +1,44 @@
+// Array Indexed Access 5 (#0918)
+
+// Reads 5 decimals (each `0`-`99`, own line), then a decimal index `0`-`4` (own line). Prints the array element at that index + `\n`.
+
+main
+
+def main @ err, get0, get1, get2, get3, print < arr, ridx, result, tmp {
+    stl.startup_and_init_all 100
+    rep(5, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    hex.input_dec_uint 4, ridx, err
+    // dispatch on ridx: 0..4
+    hex.if0 4, ridx, get0
+    hex.mov 4, tmp, ridx
+    hex.dec 4, tmp
+    hex.if0 4, tmp, get1
+    hex.dec 4, tmp
+    hex.if0 4, tmp, get2
+    hex.dec 4, tmp
+    hex.if0 4, tmp, get3
+    hex.mov 4, result, arr + 4*dw*4
+    ;print
+  get0:
+    hex.mov 4, result, arr + 0*dw*4
+    ;print
+  get1:
+    hex.mov 4, result, arr + 1*dw*4
+    ;print
+  get2:
+    hex.mov 4, result, arr + 2*dw*4
+    ;print
+  get3:
+    hex.mov 4, result, arr + 3*dw*4
+  print:
+    hex.print_dec_uint 4, result
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+arr: hex.vec 4*5
+ridx: hex.vec 4
+result: hex.vec 4
+tmp: hex.vec 4

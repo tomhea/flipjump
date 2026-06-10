@@ -1,0 +1,36 @@
+// Geometric Progression Check 4 (#0671)
+
+// Reads exactly 4 decimals each `1`-`50` (own line). Prints `1\n` if they form a geometric progression with integer common ratio `>= 2` (i.e. `a[i+1] = a[i] * r` for some integer `r >= 2`), else `0\n`.
+
+main
+
+def main @ err, no, yes, ratio_ok, chk2, chk3, done < arr, r, rem, prod, two {
+    stl.startup_and_init_all
+    rep(4, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    hex.if0 4, arr + 0*dw*4, no
+    hex.div 4, 4, r, rem, arr + 1*dw*4, arr + 0*dw*4, no
+    hex.if0 4, rem, ratio_ok
+    ;no
+  ratio_ok:
+    hex.cmp 4, r, two, no, chk2, chk2
+  chk2:
+    hex.mul 4, prod, arr + 1*dw*4, r
+    hex.cmp 4, prod, arr + 2*dw*4, no, chk3, no
+  chk3:
+    hex.mul 4, prod, arr + 2*dw*4, r
+    hex.cmp 4, prod, arr + 3*dw*4, no, yes, no
+  yes:
+    stl.output "1\n"
+    ;done
+  no:
+    stl.output "0\n"
+  done:
+  err:
+    stl.loop
+}
+
+arr: hex.vec 4*4
+r: hex.vec 4
+rem: hex.vec 4
+prod: hex.vec 4
+two: hex.vec 4, 2

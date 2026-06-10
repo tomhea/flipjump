@@ -1,0 +1,60 @@
+// Pearson Hash Byte (#0902)
+
+// Reads a `\n`-terminated line ≤ 30 chars. Applies Pearson's 8-bit hash using a fixed 256-byte permutation table (defined in code). Prints hash as 2 lowercase hex chars + `\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, loop, go, done < b, nl, h, idxw, newh, tptr, ptable {
+    stl.startup_and_init_all
+    build_table
+    hex.set hw, tptr, ptable
+    hex.zero 2, h
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.xor 2, h, b
+    hex.zero hw, idxw
+    hex.mov 2, idxw, h
+    hex.read_nth_byte newh, tptr, idxw
+    hex.mov 2, h, newh
+    ;loop
+  done:
+    hex.print_as_digit 2, h, 0
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Fill ptable[idx] = (167*idx + 13) mod 256 for idx = 0..255 (a fixed permutation).
+def build_table @ bloop, bbody, bdone < wp, idx, prod, c167, c13, c256, ptable {
+    hex.set w/4, wp, ptable
+    hex.zero 4, idx
+  bloop:
+    hex.cmp 4, idx, c256, bbody, bdone, bdone
+  bbody:
+    hex.mul 4, prod, idx, c167
+    hex.add 4, prod, c13
+    hex.write_byte wp, prod
+    hex.ptr_inc wp
+    hex.inc 4, idx
+    ;bloop
+  bdone:
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+h: hex.vec 2
+idxw: hex.vec hw
+newh: hex.vec 2
+tptr: hex.vec hw
+wp: hex.vec hw
+idx: hex.vec 4
+prod: hex.vec 4
+c167: hex.vec 4, 167
+c13: hex.vec 4, 13
+c256: hex.vec 4, 256
+ptable: hex.vec 256

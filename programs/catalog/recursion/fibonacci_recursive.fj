@@ -1,0 +1,46 @@
+// Fibonacci Recursive (#0416)
+
+// Reads decimal N in `0`-`10` and prints `F(N)` using a recursive macro. The purpose is to demonstrate naive double-recursion (not iteration).
+
+main
+
+def main @ err < r_nval, fib_arg, fib_result, fib_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, fib_arg, r_nval
+    stl.call fib_fn
+    hex.print_dec_uint 4, fib_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Reads fib_arg, writes fib_result = F(fib_arg)
+fib_fn:
+    hex.if0 4, fib_arg, fib_base0
+    hex.dec 4, fib_arg
+    hex.if0 4, fib_arg, fib_base1
+    // N >= 2: compute F(N-1) + F(N-2)
+    hex.push 4, fib_arg
+    stl.call fib_fn
+    hex.push 4, fib_result
+    hex.pop 4, fib_saved_f
+    hex.pop 4, fib_arg
+    hex.dec 4, fib_arg
+    hex.push 4, fib_saved_f
+    stl.call fib_fn
+    hex.pop 4, fib_prev
+    hex.add 4, fib_result, fib_prev
+    stl.return
+  fib_base0:
+    hex.set 4, fib_result, 0
+    stl.return
+  fib_base1:
+    hex.set 4, fib_result, 1
+    stl.return
+
+r_nval: hex.vec 4
+fib_arg: hex.vec 4
+fib_result: hex.vec 4
+fib_saved_f: hex.vec 4
+fib_prev: hex.vec 4

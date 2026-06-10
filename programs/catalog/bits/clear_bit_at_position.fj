@@ -1,4 +1,4 @@
-// Clear Bit At Position (#1063)
+// Clear Bit At Position (#0241)
 
 // Reads one byte then one digit `0`-`7` + `\n` and outputs the byte with that bit cleared to 0. Convention: position `0` is the LSB; matches `bit_at_position`.
 

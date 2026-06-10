@@ -1,0 +1,23 @@
+// Print Macro Call Count Static (#0943)
+
+// No input. The program defines a macro `count()` that increments a runtime variable and calls itself nothing further (just bumps a counter). The macro is invoked 5 times at top level. After the 5th call, the program prints the final counter value as decimal + `\n` (i.e. `5\n`).
+
+main
+
+def count < ctr {
+    hex.inc 4, ctr
+}
+
+def main < ctr {
+    stl.startup_and_init_all
+    count
+    count
+    count
+    count
+    count
+    hex.print_dec_uint 4, ctr
+    stl.output '\n'
+    stl.loop
+}
+
+ctr: hex.vec 4

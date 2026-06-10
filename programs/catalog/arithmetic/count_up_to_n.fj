@@ -1,4 +1,4 @@
-// Count Up To N (#0117)
+// Count Up To N (#0092)
 
 // Reads decimal N in `0`-`9` and prints `1\n2\n...\nN\n` (one per line). For N=0 prints nothing.
 

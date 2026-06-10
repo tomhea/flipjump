@@ -1,0 +1,11 @@
+// Print Sin Wave One Period (#0827)
+
+// No input. Prints a 5-row × 20-column ASCII approximation of one full sine wave period using `*` for plot points and `.` for empty. Use the formula `y = round(2 * sin(2π * x / 20)) + 2` for `x = 0..19` and plot `*` at `(y, x)`.
+
+main
+
+def main {
+    stl.startup
+    stl.output ".............*****..\n...........**.....**\n*.........*.........\n.**.....**..........\n...*****............\n"
+    stl.loop
+}

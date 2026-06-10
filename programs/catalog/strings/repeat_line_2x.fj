@@ -1,4 +1,4 @@
-// Repeat Line 2X (#1092)
+// Repeat Line 2X (#0191)
 
 // Reads a `\n`-terminated line ≤ 40 chars and prints its content twice (concatenated, no internal separator), followed by `\n`.
 

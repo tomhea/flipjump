@@ -1,0 +1,11 @@
+// Counting Rectangles 3X3 (#0677)
+
+// No input. Prints `36\n` (number of rectangles in a 3×3 lattice grid).
+
+main
+
+def main {
+    stl.startup
+    stl.output "36\n"
+    stl.loop
+}

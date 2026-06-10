@@ -1,4 +1,4 @@
-// Parens Matched (#1157)
+// Parens Matched (#0404)
 
 // Reads a `\n`-terminated string ≤ 40 chars containing only `(` and `)`. Prints `1\n` if the parentheses are balanced (every `(` has a matching `)` in order), else `0\n`.
 

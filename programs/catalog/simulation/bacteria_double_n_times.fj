@@ -1,0 +1,26 @@
+// Bacteria Double N Times (#0649)
+
+// Reads `pop` `1`-`99` (own line), `N` `0`-`6` (own line). Prints `pop * 2^N` as decimal + `\n`.
+
+main
+
+def main @ err, bd_loop, bd_done < bd_pop, bd_N, bd_cnt {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, bd_pop, err
+    hex.input_dec_uint 4, bd_N, err
+    hex.mov 4, bd_cnt, bd_N
+  bd_loop:
+    hex.if0 4, bd_cnt, bd_done
+    hex.shl_bit 4, bd_pop
+    hex.dec 4, bd_cnt
+    ;bd_loop
+  bd_done:
+    hex.print_dec_uint 4, bd_pop
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+bd_pop: hex.vec 4
+bd_N: hex.vec 4
+bd_cnt: hex.vec 4

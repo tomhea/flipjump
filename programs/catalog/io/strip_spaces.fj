@@ -1,4 +1,4 @@
-// Strip Spaces (#0052)
+// Strip Spaces (#0051)
 
 // Reads stdin and outputs all bytes except space (` `).
 

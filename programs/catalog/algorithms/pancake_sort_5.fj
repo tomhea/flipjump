@@ -1,4 +1,4 @@
-// Pancake Sort 5 (#1235)
+// Pancake Sort 5 (#0598)
 
 // Reads exactly 5 decimals and prints them sorted ascending. Implementation: pancake sort — only prefix reversals (no swaps).
 

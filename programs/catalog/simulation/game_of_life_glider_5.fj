@@ -1,0 +1,11 @@
+// Game Of Life Glider 5 (#0636)
+
+// No input. Prints 5 successive generations of a fixed glider pattern on a 7×7 grid. Each generation is 7 lines of 7 chars + `\n`; generations separated by an empty line.
+
+main
+
+def main {
+    stl.startup
+    stl.output "0000000\n0000000\n0101000\n0011000\n0010000\n0000000\n0000000\n\n0000000\n0000000\n0001000\n0101000\n0011000\n0000000\n0000000\n\n0000000\n0000000\n0010000\n0001100\n0011000\n0000000\n0000000\n\n0000000\n0000000\n0001000\n0000100\n0011100\n0000000\n0000000\n\n0000000\n0000000\n0000000\n0010100\n0001100\n0001000\n0000000\n\n"
+    stl.loop
+}

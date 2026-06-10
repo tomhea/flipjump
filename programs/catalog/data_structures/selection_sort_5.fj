@@ -1,4 +1,4 @@
-// Selection Sort 5 (#1144)
+// Selection Sort 5 (#0391)
 
 // Reads exactly 5 decimals and prints them sorted ascending (one per line), implemented as selection sort (find-min-and-swap each pass).
 

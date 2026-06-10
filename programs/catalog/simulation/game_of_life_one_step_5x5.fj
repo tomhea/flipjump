@@ -1,0 +1,747 @@
+// Game Of Life One Step 5X5 (#0634)
+
+// Reads a 5×5 binary grid: 5 lines, each 5 chars of `0`/`1` + `\n`. Applies one Conway's Game of Life step with dead-boundary (cells outside grid treated as 0). Prints the resulting 5×5 grid in the same format.
+
+main
+
+def main @ err, p00_s3, p00_chk2, p00_alive, p00_dead, p00_done, p01_s3, p01_chk2, p01_alive, p01_dead, p01_done, p02_s3, p02_chk2, p02_alive, p02_dead, p02_done, p03_s3, p03_chk2, p03_alive, p03_dead, p03_done, p04_s3, p04_chk2, p04_alive, p04_dead, p04_done, p10_s3, p10_chk2, p10_alive, p10_dead, p10_done, p11_s3, p11_chk2, p11_alive, p11_dead, p11_done, p12_s3, p12_chk2, p12_alive, p12_dead, p12_done, p13_s3, p13_chk2, p13_alive, p13_dead, p13_done, p14_s3, p14_chk2, p14_alive, p14_dead, p14_done, p20_s3, p20_chk2, p20_alive, p20_dead, p20_done, p21_s3, p21_chk2, p21_alive, p21_dead, p21_done, p22_s3, p22_chk2, p22_alive, p22_dead, p22_done, p23_s3, p23_chk2, p23_alive, p23_dead, p23_done, p24_s3, p24_chk2, p24_alive, p24_dead, p24_done, p30_s3, p30_chk2, p30_alive, p30_dead, p30_done, p31_s3, p31_chk2, p31_alive, p31_dead, p31_done, p32_s3, p32_chk2, p32_alive, p32_dead, p32_done, p33_s3, p33_chk2, p33_alive, p33_dead, p33_done, p34_s3, p34_chk2, p34_alive, p34_dead, p34_done, p40_s3, p40_chk2, p40_alive, p40_dead, p40_done, p41_s3, p41_chk2, p41_alive, p41_dead, p41_done, p42_s3, p42_chk2, p42_alive, p42_dead, p42_done, p43_s3, p43_chk2, p43_alive, p43_dead, p43_done, p44_s3, p44_chk2, p44_alive, p44_dead, p44_done < g00, g01, g02, g03, g04, g10, g11, g12, g13, g14, g20, g21, g22, g23, g24, g30, g31, g32, g33, g34, g40, g41, g42, g43, g44, n00, n01, n02, n03, n04, n10, n11, n12, n13, n14, n20, n21, n22, n23, n24, n30, n31, n32, n33, n34, n40, n41, n42, n43, n44, gol_tmp, gol_eol, zero_char, gol_sum, gol_two, gol_three {
+    stl.startup_and_init_all 100
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g00, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g01, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g02, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g03, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g04, gol_tmp
+    hex.input gol_eol
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g10, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g11, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g12, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g13, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g14, gol_tmp
+    hex.input gol_eol
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g20, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g21, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g22, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g23, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g24, gol_tmp
+    hex.input gol_eol
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g30, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g31, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g32, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g33, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g34, gol_tmp
+    hex.input gol_eol
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g40, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g41, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g42, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g43, gol_tmp
+    hex.input gol_tmp
+    hex.sub 2, gol_tmp, zero_char
+    hex.mov 2, g44, gol_tmp
+    hex.input gol_eol
+    // cell (0,0)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g01
+    hex.add 2, gol_sum, g10
+    hex.add 2, gol_sum, g11
+    hex.cmp 2, gol_sum, gol_three, p00_chk2, p00_s3, p00_chk2
+  p00_s3:
+    hex.set 2, n00, 1
+    ;p00_done
+  p00_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g00, p00_dead
+    hex.cmp 2, gol_sum, gol_two, p00_dead, p00_alive, p00_dead
+  p00_alive:
+    hex.set 2, n00, 1
+    ;p00_done
+  p00_dead:
+    hex.set 2, n00, 0
+  p00_done:
+    // cell (0,1)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g00
+    hex.add 2, gol_sum, g02
+    hex.add 2, gol_sum, g10
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g12
+    hex.cmp 2, gol_sum, gol_three, p01_chk2, p01_s3, p01_chk2
+  p01_s3:
+    hex.set 2, n01, 1
+    ;p01_done
+  p01_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g01, p01_dead
+    hex.cmp 2, gol_sum, gol_two, p01_dead, p01_alive, p01_dead
+  p01_alive:
+    hex.set 2, n01, 1
+    ;p01_done
+  p01_dead:
+    hex.set 2, n01, 0
+  p01_done:
+    // cell (0,2)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g01
+    hex.add 2, gol_sum, g03
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g13
+    hex.cmp 2, gol_sum, gol_three, p02_chk2, p02_s3, p02_chk2
+  p02_s3:
+    hex.set 2, n02, 1
+    ;p02_done
+  p02_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g02, p02_dead
+    hex.cmp 2, gol_sum, gol_two, p02_dead, p02_alive, p02_dead
+  p02_alive:
+    hex.set 2, n02, 1
+    ;p02_done
+  p02_dead:
+    hex.set 2, n02, 0
+  p02_done:
+    // cell (0,3)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g02
+    hex.add 2, gol_sum, g04
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g14
+    hex.cmp 2, gol_sum, gol_three, p03_chk2, p03_s3, p03_chk2
+  p03_s3:
+    hex.set 2, n03, 1
+    ;p03_done
+  p03_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g03, p03_dead
+    hex.cmp 2, gol_sum, gol_two, p03_dead, p03_alive, p03_dead
+  p03_alive:
+    hex.set 2, n03, 1
+    ;p03_done
+  p03_dead:
+    hex.set 2, n03, 0
+  p03_done:
+    // cell (0,4)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g03
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g14
+    hex.cmp 2, gol_sum, gol_three, p04_chk2, p04_s3, p04_chk2
+  p04_s3:
+    hex.set 2, n04, 1
+    ;p04_done
+  p04_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g04, p04_dead
+    hex.cmp 2, gol_sum, gol_two, p04_dead, p04_alive, p04_dead
+  p04_alive:
+    hex.set 2, n04, 1
+    ;p04_done
+  p04_dead:
+    hex.set 2, n04, 0
+  p04_done:
+    // cell (1,0)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g00
+    hex.add 2, gol_sum, g01
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g20
+    hex.add 2, gol_sum, g21
+    hex.cmp 2, gol_sum, gol_three, p10_chk2, p10_s3, p10_chk2
+  p10_s3:
+    hex.set 2, n10, 1
+    ;p10_done
+  p10_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g10, p10_dead
+    hex.cmp 2, gol_sum, gol_two, p10_dead, p10_alive, p10_dead
+  p10_alive:
+    hex.set 2, n10, 1
+    ;p10_done
+  p10_dead:
+    hex.set 2, n10, 0
+  p10_done:
+    // cell (1,1)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g00
+    hex.add 2, gol_sum, g01
+    hex.add 2, gol_sum, g02
+    hex.add 2, gol_sum, g10
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g20
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g22
+    hex.cmp 2, gol_sum, gol_three, p11_chk2, p11_s3, p11_chk2
+  p11_s3:
+    hex.set 2, n11, 1
+    ;p11_done
+  p11_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g11, p11_dead
+    hex.cmp 2, gol_sum, gol_two, p11_dead, p11_alive, p11_dead
+  p11_alive:
+    hex.set 2, n11, 1
+    ;p11_done
+  p11_dead:
+    hex.set 2, n11, 0
+  p11_done:
+    // cell (1,2)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g01
+    hex.add 2, gol_sum, g02
+    hex.add 2, gol_sum, g03
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g23
+    hex.cmp 2, gol_sum, gol_three, p12_chk2, p12_s3, p12_chk2
+  p12_s3:
+    hex.set 2, n12, 1
+    ;p12_done
+  p12_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g12, p12_dead
+    hex.cmp 2, gol_sum, gol_two, p12_dead, p12_alive, p12_dead
+  p12_alive:
+    hex.set 2, n12, 1
+    ;p12_done
+  p12_dead:
+    hex.set 2, n12, 0
+  p12_done:
+    // cell (1,3)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g02
+    hex.add 2, gol_sum, g03
+    hex.add 2, gol_sum, g04
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g14
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g24
+    hex.cmp 2, gol_sum, gol_three, p13_chk2, p13_s3, p13_chk2
+  p13_s3:
+    hex.set 2, n13, 1
+    ;p13_done
+  p13_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g13, p13_dead
+    hex.cmp 2, gol_sum, gol_two, p13_dead, p13_alive, p13_dead
+  p13_alive:
+    hex.set 2, n13, 1
+    ;p13_done
+  p13_dead:
+    hex.set 2, n13, 0
+  p13_done:
+    // cell (1,4)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g03
+    hex.add 2, gol_sum, g04
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g24
+    hex.cmp 2, gol_sum, gol_three, p14_chk2, p14_s3, p14_chk2
+  p14_s3:
+    hex.set 2, n14, 1
+    ;p14_done
+  p14_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g14, p14_dead
+    hex.cmp 2, gol_sum, gol_two, p14_dead, p14_alive, p14_dead
+  p14_alive:
+    hex.set 2, n14, 1
+    ;p14_done
+  p14_dead:
+    hex.set 2, n14, 0
+  p14_done:
+    // cell (2,0)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g10
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g30
+    hex.add 2, gol_sum, g31
+    hex.cmp 2, gol_sum, gol_three, p20_chk2, p20_s3, p20_chk2
+  p20_s3:
+    hex.set 2, n20, 1
+    ;p20_done
+  p20_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g20, p20_dead
+    hex.cmp 2, gol_sum, gol_two, p20_dead, p20_alive, p20_dead
+  p20_alive:
+    hex.set 2, n20, 1
+    ;p20_done
+  p20_dead:
+    hex.set 2, n20, 0
+  p20_done:
+    // cell (2,1)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g10
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g20
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g30
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g32
+    hex.cmp 2, gol_sum, gol_three, p21_chk2, p21_s3, p21_chk2
+  p21_s3:
+    hex.set 2, n21, 1
+    ;p21_done
+  p21_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g21, p21_dead
+    hex.cmp 2, gol_sum, gol_two, p21_dead, p21_alive, p21_dead
+  p21_alive:
+    hex.set 2, n21, 1
+    ;p21_done
+  p21_dead:
+    hex.set 2, n21, 0
+  p21_done:
+    // cell (2,2)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g11
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g33
+    hex.cmp 2, gol_sum, gol_three, p22_chk2, p22_s3, p22_chk2
+  p22_s3:
+    hex.set 2, n22, 1
+    ;p22_done
+  p22_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g22, p22_dead
+    hex.cmp 2, gol_sum, gol_two, p22_dead, p22_alive, p22_dead
+  p22_alive:
+    hex.set 2, n22, 1
+    ;p22_done
+  p22_dead:
+    hex.set 2, n22, 0
+  p22_done:
+    // cell (2,3)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g12
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g14
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g24
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g34
+    hex.cmp 2, gol_sum, gol_three, p23_chk2, p23_s3, p23_chk2
+  p23_s3:
+    hex.set 2, n23, 1
+    ;p23_done
+  p23_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g23, p23_dead
+    hex.cmp 2, gol_sum, gol_two, p23_dead, p23_alive, p23_dead
+  p23_alive:
+    hex.set 2, n23, 1
+    ;p23_done
+  p23_dead:
+    hex.set 2, n23, 0
+  p23_done:
+    // cell (2,4)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g13
+    hex.add 2, gol_sum, g14
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g34
+    hex.cmp 2, gol_sum, gol_three, p24_chk2, p24_s3, p24_chk2
+  p24_s3:
+    hex.set 2, n24, 1
+    ;p24_done
+  p24_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g24, p24_dead
+    hex.cmp 2, gol_sum, gol_two, p24_dead, p24_alive, p24_dead
+  p24_alive:
+    hex.set 2, n24, 1
+    ;p24_done
+  p24_dead:
+    hex.set 2, n24, 0
+  p24_done:
+    // cell (3,0)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g20
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g40
+    hex.add 2, gol_sum, g41
+    hex.cmp 2, gol_sum, gol_three, p30_chk2, p30_s3, p30_chk2
+  p30_s3:
+    hex.set 2, n30, 1
+    ;p30_done
+  p30_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g30, p30_dead
+    hex.cmp 2, gol_sum, gol_two, p30_dead, p30_alive, p30_dead
+  p30_alive:
+    hex.set 2, n30, 1
+    ;p30_done
+  p30_dead:
+    hex.set 2, n30, 0
+  p30_done:
+    // cell (3,1)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g20
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g30
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g40
+    hex.add 2, gol_sum, g41
+    hex.add 2, gol_sum, g42
+    hex.cmp 2, gol_sum, gol_three, p31_chk2, p31_s3, p31_chk2
+  p31_s3:
+    hex.set 2, n31, 1
+    ;p31_done
+  p31_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g31, p31_dead
+    hex.cmp 2, gol_sum, gol_two, p31_dead, p31_alive, p31_dead
+  p31_alive:
+    hex.set 2, n31, 1
+    ;p31_done
+  p31_dead:
+    hex.set 2, n31, 0
+  p31_done:
+    // cell (3,2)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g21
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g41
+    hex.add 2, gol_sum, g42
+    hex.add 2, gol_sum, g43
+    hex.cmp 2, gol_sum, gol_three, p32_chk2, p32_s3, p32_chk2
+  p32_s3:
+    hex.set 2, n32, 1
+    ;p32_done
+  p32_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g32, p32_dead
+    hex.cmp 2, gol_sum, gol_two, p32_dead, p32_alive, p32_dead
+  p32_alive:
+    hex.set 2, n32, 1
+    ;p32_done
+  p32_dead:
+    hex.set 2, n32, 0
+  p32_done:
+    // cell (3,3)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g22
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g24
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g34
+    hex.add 2, gol_sum, g42
+    hex.add 2, gol_sum, g43
+    hex.add 2, gol_sum, g44
+    hex.cmp 2, gol_sum, gol_three, p33_chk2, p33_s3, p33_chk2
+  p33_s3:
+    hex.set 2, n33, 1
+    ;p33_done
+  p33_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g33, p33_dead
+    hex.cmp 2, gol_sum, gol_two, p33_dead, p33_alive, p33_dead
+  p33_alive:
+    hex.set 2, n33, 1
+    ;p33_done
+  p33_dead:
+    hex.set 2, n33, 0
+  p33_done:
+    // cell (3,4)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g23
+    hex.add 2, gol_sum, g24
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g43
+    hex.add 2, gol_sum, g44
+    hex.cmp 2, gol_sum, gol_three, p34_chk2, p34_s3, p34_chk2
+  p34_s3:
+    hex.set 2, n34, 1
+    ;p34_done
+  p34_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g34, p34_dead
+    hex.cmp 2, gol_sum, gol_two, p34_dead, p34_alive, p34_dead
+  p34_alive:
+    hex.set 2, n34, 1
+    ;p34_done
+  p34_dead:
+    hex.set 2, n34, 0
+  p34_done:
+    // cell (4,0)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g30
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g41
+    hex.cmp 2, gol_sum, gol_three, p40_chk2, p40_s3, p40_chk2
+  p40_s3:
+    hex.set 2, n40, 1
+    ;p40_done
+  p40_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g40, p40_dead
+    hex.cmp 2, gol_sum, gol_two, p40_dead, p40_alive, p40_dead
+  p40_alive:
+    hex.set 2, n40, 1
+    ;p40_done
+  p40_dead:
+    hex.set 2, n40, 0
+  p40_done:
+    // cell (4,1)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g30
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g40
+    hex.add 2, gol_sum, g42
+    hex.cmp 2, gol_sum, gol_three, p41_chk2, p41_s3, p41_chk2
+  p41_s3:
+    hex.set 2, n41, 1
+    ;p41_done
+  p41_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g41, p41_dead
+    hex.cmp 2, gol_sum, gol_two, p41_dead, p41_alive, p41_dead
+  p41_alive:
+    hex.set 2, n41, 1
+    ;p41_done
+  p41_dead:
+    hex.set 2, n41, 0
+  p41_done:
+    // cell (4,2)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g31
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g41
+    hex.add 2, gol_sum, g43
+    hex.cmp 2, gol_sum, gol_three, p42_chk2, p42_s3, p42_chk2
+  p42_s3:
+    hex.set 2, n42, 1
+    ;p42_done
+  p42_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g42, p42_dead
+    hex.cmp 2, gol_sum, gol_two, p42_dead, p42_alive, p42_dead
+  p42_alive:
+    hex.set 2, n42, 1
+    ;p42_done
+  p42_dead:
+    hex.set 2, n42, 0
+  p42_done:
+    // cell (4,3)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g32
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g34
+    hex.add 2, gol_sum, g42
+    hex.add 2, gol_sum, g44
+    hex.cmp 2, gol_sum, gol_three, p43_chk2, p43_s3, p43_chk2
+  p43_s3:
+    hex.set 2, n43, 1
+    ;p43_done
+  p43_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g43, p43_dead
+    hex.cmp 2, gol_sum, gol_two, p43_dead, p43_alive, p43_dead
+  p43_alive:
+    hex.set 2, n43, 1
+    ;p43_done
+  p43_dead:
+    hex.set 2, n43, 0
+  p43_done:
+    // cell (4,4)
+    hex.zero 2, gol_sum
+    hex.add 2, gol_sum, g33
+    hex.add 2, gol_sum, g34
+    hex.add 2, gol_sum, g43
+    hex.cmp 2, gol_sum, gol_three, p44_chk2, p44_s3, p44_chk2
+  p44_s3:
+    hex.set 2, n44, 1
+    ;p44_done
+  p44_chk2:
+    // sum != 3; alive only if cell=1 and sum=2
+    hex.if0 2, g44, p44_dead
+    hex.cmp 2, gol_sum, gol_two, p44_dead, p44_alive, p44_dead
+  p44_alive:
+    hex.set 2, n44, 1
+    ;p44_done
+  p44_dead:
+    hex.set 2, n44, 0
+  p44_done:
+    hex.add 2, n00, zero_char
+    hex.print n00
+    hex.add 2, n01, zero_char
+    hex.print n01
+    hex.add 2, n02, zero_char
+    hex.print n02
+    hex.add 2, n03, zero_char
+    hex.print n03
+    hex.add 2, n04, zero_char
+    hex.print n04
+    stl.output '\n'
+    hex.add 2, n10, zero_char
+    hex.print n10
+    hex.add 2, n11, zero_char
+    hex.print n11
+    hex.add 2, n12, zero_char
+    hex.print n12
+    hex.add 2, n13, zero_char
+    hex.print n13
+    hex.add 2, n14, zero_char
+    hex.print n14
+    stl.output '\n'
+    hex.add 2, n20, zero_char
+    hex.print n20
+    hex.add 2, n21, zero_char
+    hex.print n21
+    hex.add 2, n22, zero_char
+    hex.print n22
+    hex.add 2, n23, zero_char
+    hex.print n23
+    hex.add 2, n24, zero_char
+    hex.print n24
+    stl.output '\n'
+    hex.add 2, n30, zero_char
+    hex.print n30
+    hex.add 2, n31, zero_char
+    hex.print n31
+    hex.add 2, n32, zero_char
+    hex.print n32
+    hex.add 2, n33, zero_char
+    hex.print n33
+    hex.add 2, n34, zero_char
+    hex.print n34
+    stl.output '\n'
+    hex.add 2, n40, zero_char
+    hex.print n40
+    hex.add 2, n41, zero_char
+    hex.print n41
+    hex.add 2, n42, zero_char
+    hex.print n42
+    hex.add 2, n43, zero_char
+    hex.print n43
+    hex.add 2, n44, zero_char
+    hex.print n44
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+g00: hex.vec 2
+g01: hex.vec 2
+g02: hex.vec 2
+g03: hex.vec 2
+g04: hex.vec 2
+g10: hex.vec 2
+g11: hex.vec 2
+g12: hex.vec 2
+g13: hex.vec 2
+g14: hex.vec 2
+g20: hex.vec 2
+g21: hex.vec 2
+g22: hex.vec 2
+g23: hex.vec 2
+g24: hex.vec 2
+g30: hex.vec 2
+g31: hex.vec 2
+g32: hex.vec 2
+g33: hex.vec 2
+g34: hex.vec 2
+g40: hex.vec 2
+g41: hex.vec 2
+g42: hex.vec 2
+g43: hex.vec 2
+g44: hex.vec 2
+n00: hex.vec 2
+n01: hex.vec 2
+n02: hex.vec 2
+n03: hex.vec 2
+n04: hex.vec 2
+n10: hex.vec 2
+n11: hex.vec 2
+n12: hex.vec 2
+n13: hex.vec 2
+n14: hex.vec 2
+n20: hex.vec 2
+n21: hex.vec 2
+n22: hex.vec 2
+n23: hex.vec 2
+n24: hex.vec 2
+n30: hex.vec 2
+n31: hex.vec 2
+n32: hex.vec 2
+n33: hex.vec 2
+n34: hex.vec 2
+n40: hex.vec 2
+n41: hex.vec 2
+n42: hex.vec 2
+n43: hex.vec 2
+n44: hex.vec 2
+gol_tmp: hex.vec 2
+gol_eol: hex.vec 2
+zero_char: hex.vec 2, '0'
+gol_sum: hex.vec 2
+gol_two: hex.vec 2, 2
+gol_three: hex.vec 2, 3

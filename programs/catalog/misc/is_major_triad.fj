@@ -1,4 +1,4 @@
-// Is Major Triad (#1029)
+// Is Major Triad (#1016)
 
 // Reads 3 decimal MIDI numbers `m1 m2 m3` (each `0`-`127`, on own lines). Sorts them. Prints `1\n` if the intervals between consecutive sorted notes are `4, 3` semitones (i.e. major triad in root position), else `0\n`.
 

@@ -1,4 +1,4 @@
-// Reverse Digits (#0161)
+// Reverse Digits (#0136)
 
 // Reads decimal N in `0`-`999` and prints the decimal with its digits reversed (e.g. `123` → `321`, `100` → `001` becomes `1`).
 

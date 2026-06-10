@@ -1,4 +1,4 @@
-// Kv Lookup 5 (#1162)
+// Kv Lookup 5 (#0409)
 
 // Reads 5 key-value pairs: each as decimal `key` `0`-`9` + `\n`, then decimal `value` `0`-`99` + `\n` (total 10 lines). Then reads a query key + `\n`. Prints the value for that key as decimal + `\n`, or `not found\n` if the key wasn't among the 5. (Latest write wins on duplicates.)
 

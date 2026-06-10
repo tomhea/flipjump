@@ -1,0 +1,44 @@
+// Columnar Transposition 3X3 (#0883)
+
+// Reads a `\n`-terminated plaintext of exactly 9 chars. Writes them into a 3×3 grid row-major, then reads out column-by-column. Prints the result + `\n`.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, idx, bb {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    rep(9, i) read_one bptr
+    hex.set hw, bptr, buf
+    print_at bptr, idx, bb, 0
+    print_at bptr, idx, bb, 3
+    print_at bptr, idx, bb, 6
+    print_at bptr, idx, bb, 1
+    print_at bptr, idx, bb, 4
+    print_at bptr, idx, bb, 7
+    print_at bptr, idx, bb, 2
+    print_at bptr, idx, bb, 5
+    print_at bptr, idx, bb, 8
+    stl.output '\n'
+    stl.loop
+}
+
+// Read one input byte and append it to the buffer (advancing wptr).
+def read_one wptr < onebyte {
+    hex.input onebyte
+    hex.write_byte_and_inc wptr, onebyte
+}
+
+// Print the k-th byte of the buffer (k a compile-time constant).
+def print_at bptr, idx, bb, k {
+    hex.set w/4, idx, k
+    hex.read_nth_byte bb, bptr, idx
+    hex.print bb
+}
+
+buf: hex.vec 12
+bptr: hex.vec hw
+idx: hex.vec hw
+bb: hex.vec 2
+onebyte: hex.vec 2

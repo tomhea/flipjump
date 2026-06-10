@@ -1,4 +1,4 @@
-// Mean Abs Deviation 5 (#1208)
+// Mean Abs Deviation 5 (#0571)
 
 // Reads exactly 5 decimals `0`-`99`. Computes `mean = floor(sum/5)`, then prints `floor(sum(|x_i - mean|) / 5)` as decimal + `\n`.
 

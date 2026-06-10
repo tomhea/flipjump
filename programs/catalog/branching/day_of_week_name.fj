@@ -1,4 +1,4 @@
-// Day Of Week Name (#0201)
+// Day Of Week Name (#0328)
 
 // Reads decimal `0`-`6` and prints `Sunday`/`Monday`/`Tuesday`/`Wednesday`/`Thursday`/`Friday`/`Saturday` followed by `\n` (Sunday=0).
 

@@ -1,4 +1,4 @@
-// Running Min (#1130)
+// Running Min (#0377)
 
 // Reads digit N `1`-`9` + `\n`, then N signed decimals. After each input, prints the running minimum so far on its own line.
 

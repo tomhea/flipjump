@@ -1,0 +1,33 @@
+// Run Length Decode Simple (#0502)
+
+// Reads a `\n`-terminated RLE string of alternating `<letter><digit 1-9>` ≤ 30 chars. Prints decoded string + `\n`. Example: `a2b1c5` → `aabccccc\n`.
+
+main
+
+def main @ err, loop, go, emit, done < b, nl, db, cntv, c0 {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.input db
+    hex.zero 4, cntv
+    hex.mov 2, cntv, db
+    hex.sub 4, cntv, c0
+  emit:
+    hex.if0 4, cntv, loop
+    hex.print b
+    hex.dec 4, cntv
+    ;emit
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+db: hex.vec 2
+cntv: hex.vec 4
+c0: hex.vec 4, '0'

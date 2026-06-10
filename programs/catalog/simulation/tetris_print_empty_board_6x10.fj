@@ -1,0 +1,11 @@
+// Tetris Print Empty Board 6X10 (#0644)
+
+// No input. Prints an empty 6-row × 10-column Tetris board: 6 lines of `..........\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "..........\n..........\n..........\n..........\n..........\n..........\n"
+    stl.loop
+}

@@ -1,0 +1,28 @@
+// Print Arrow With Label (#0832)
+
+// Reads a `\n`-terminated line ≤ 20 chars. Prints `--> <line>\n`.
+
+main
+
+def main {
+    stl.startup_and_init_all
+    stl.output "--> "
+    echo_line
+    stl.output '\n'
+    stl.loop
+}
+
+// Echo input bytes until '\n' or EOF (0-byte); the terminator is not printed.
+def echo_line @ loop, prnt, done < ch, nlc {
+  loop:
+    hex.input ch
+    hex.if0 2, ch, done
+    hex.cmp 2, ch, nlc, prnt, done, prnt
+  prnt:
+    hex.print ch
+    ;loop
+  done:
+}
+
+ch: hex.vec 2, 0
+nlc: hex.vec 2, '\n'

@@ -6,6 +6,7 @@ covers round-trips across all versions and memory-widths, the relative-jump tran
 and reading corrupt files.
 """
 
+import struct
 from pathlib import Path
 from typing import List
 
@@ -183,3 +184,28 @@ def test_read_unsupported_version_raises(tmp_path: Path) -> None:
 
 def test_magic_constant_matches_fj() -> None:
     assert FJ_MAGIC == ord('F') + (ord('J') << 8)
+
+
+# --- malformed-input robustness (security-audit findings) ---
+
+
+def _v1_header(magic: int = FJ_MAGIC, word_size: int = 64, segment_num: int = 0) -> bytes:
+    """Build a raw version-1 (NormalVersion) header with the given fields."""
+    return struct.pack('<HHQQ', magic, word_size, 1, segment_num) + struct.pack('<QL', 0, 0)
+
+
+@pytest.mark.parametrize('bad_width', [0, 3, 7, 12, 24, 33, 128])
+def test_read_unsupported_memory_width_raises(tmp_path: Path, bad_width: int) -> None:
+    bad = tmp_path / 'bad_width.fjm'
+    bad.write_bytes(_v1_header(word_size=bad_width))
+    with pytest.raises(FlipJumpReadFjmException):
+        Reader(bad)
+
+
+def test_read_segment_data_out_of_bounds_raises(tmp_path: Path) -> None:
+    bad = tmp_path / 'bad_seg.fjm'
+    # segment claims 4 words starting at data offset 0, but the data pool is empty
+    segment = struct.pack('<QQQQ', 0, 4, 0, 4)
+    bad.write_bytes(_v1_header(segment_num=1) + segment)
+    with pytest.raises(FlipJumpReadFjmException):
+        Reader(bad)

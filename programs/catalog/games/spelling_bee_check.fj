@@ -1,0 +1,51 @@
+// Spelling Bee Check (#0968)
+
+// Reads a `\n`-terminated set of 7 lowercase letters (the allowed letters), then a `\n`-terminated candidate word ≤ 10 chars. Prints `1\n` if every letter of the word is in the allowed set, else `0\n`.
+
+sw = w/4
+
+main
+
+def main @ sb_pl, sb_pl_body, sb_find, sb_find_body, sb_found, sb_not_found, sb_pl_done, sb_fail < sb_allowed, sb_word, sb_aptr, sb_wptr, sb_ab, sb_wb, sb_alen, sb_wlen, sb_ai, sb_wi {
+    stl.startup_and_init_all 100
+    hex.set sw, sb_aptr, sb_allowed
+    hex.input_ptr_line sb_aptr, sb_alen
+    hex.set sw, sb_wptr, sb_word
+    hex.input_ptr_line sb_wptr, sb_wlen
+    hex.set sw, sb_wptr, sb_word
+    hex.zero sw, sb_wi
+  sb_pl:
+    hex.cmp sw, sb_wi, sb_wlen, sb_pl_body, sb_pl_done, sb_pl_done
+  sb_pl_body:
+    hex.read_byte_and_inc sb_wb, sb_wptr
+    hex.inc sw, sb_wi
+    hex.set sw, sb_aptr, sb_allowed
+    hex.zero sw, sb_ai
+  sb_find:
+    hex.cmp sw, sb_ai, sb_alen, sb_find_body, sb_not_found, sb_not_found
+  sb_find_body:
+    hex.read_byte_and_inc sb_ab, sb_aptr
+    hex.inc sw, sb_ai
+    hex.cmp 2, sb_wb, sb_ab, sb_find, sb_found, sb_find
+  sb_found:
+    ;sb_pl
+  sb_not_found:
+    ;sb_fail
+  sb_pl_done:
+    stl.output "1\n"
+    stl.loop
+  sb_fail:
+    stl.output "0\n"
+    stl.loop
+}
+
+sb_allowed: hex.vec 7, 0
+sb_word: hex.vec 10, 0
+sb_aptr: hex.vec sw
+sb_wptr: hex.vec sw
+sb_ab: hex.vec 2
+sb_wb: hex.vec 2
+sb_alen: hex.vec sw
+sb_wlen: hex.vec sw
+sb_ai: hex.vec sw
+sb_wi: hex.vec sw

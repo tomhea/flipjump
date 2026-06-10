@@ -1,0 +1,41 @@
+// Gcd Recursive With Steps (#0424)
+
+// Reads two decimals `a`, `b` (each `1`-`50`, own line). Computes `gcd(a, b)` via recursive macro and prints each step `a b\n` (current pair after `a = b, b = a % b`), terminating with `<gcd> 0\n`. (Different from `gcd_recursive` which prints only final value.)
+
+main
+
+def main @ err < r_a, r_b, gst_a, gst_b, gst_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_a, err
+    hex.input_dec_uint 4, r_b, err
+    hex.mov 4, gst_a, r_a
+    hex.mov 4, gst_b, r_b
+    stl.call gst_fn
+    stl.output "gcd="
+    hex.print_dec_uint 4, gst_a
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Prints each (a, b) pair; when b=0 gst_a holds the gcd
+gst_fn:
+    hex.print_dec_uint 4, gst_a
+    stl.output ' '
+    hex.print_dec_uint 4, gst_b
+    stl.output '\n'
+    hex.if0 4, gst_b, gst_done
+    hex.div 4, 4, gst_q, gst_r, gst_a, gst_b, gst_fn
+    hex.mov 4, gst_a, gst_b
+    hex.mov 4, gst_b, gst_r
+    stl.call gst_fn
+    stl.return
+  gst_done:
+    stl.return
+
+r_a: hex.vec 4
+r_b: hex.vec 4
+gst_a: hex.vec 4
+gst_b: hex.vec 4
+gst_q: hex.vec 4
+gst_r: hex.vec 4

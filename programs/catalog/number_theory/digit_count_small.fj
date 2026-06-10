@@ -1,4 +1,4 @@
-// Digit Count Small (#0160)
+// Digit Count Small (#0135)
 
 // Reads decimal N in `0`-`999` and prints the number of base-10 digits (`1`, `2`, or `3`; `0` itself counts as 1 digit) + `\n`.
 

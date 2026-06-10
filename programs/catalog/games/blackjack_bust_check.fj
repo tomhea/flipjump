@@ -1,0 +1,59 @@
+// Blackjack Bust Check (#0953)
+
+// Reads digit N `1`-`9` + `\n`, then N card-value codes (same alphabet as `blackjack_hand_value`). Prints `1\n` if minimum total (treating all aces as 1) exceeds 21, else `0\n`.
+
+main
+
+def bbc_add @ is_a, not_a, is_digit, is_face, end < bbc_c, bbc_total, bbc_tmp, bbc_ten, bbc_0c, bbc_Ac, bbc_9c {
+    hex.cmp 2, bbc_c, bbc_Ac, not_a, is_a, not_a
+  is_a:
+    hex.inc 4, bbc_total
+    ;end
+  not_a:
+    hex.cmp 2, bbc_c, bbc_9c, is_digit, is_digit, is_face
+  is_digit:
+    hex.zero 4, bbc_tmp
+    hex.mov 2, bbc_tmp, bbc_c
+    hex.sub 4, bbc_tmp, bbc_0c
+    hex.add 4, bbc_total, bbc_tmp
+    ;end
+  is_face:
+    hex.add 4, bbc_total, bbc_ten
+  end:
+}
+
+def main @ err, bbc_loop, bbc_done, bbc_no_bust, bbc_bust < bbc_N, bbc_cnt, bbc_total, bbc_c, bbc_nl, bbc_21 {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, bbc_N, err
+    hex.zero 4, bbc_total
+    hex.mov 4, bbc_cnt, bbc_N
+  bbc_loop:
+    hex.if0 4, bbc_cnt, bbc_done
+    hex.input bbc_c
+    hex.input bbc_nl
+    bbc_add
+    hex.dec 4, bbc_cnt
+    ;bbc_loop
+  bbc_done:
+    hex.cmp 4, bbc_total, bbc_21, bbc_no_bust, bbc_no_bust, bbc_bust
+  bbc_no_bust:
+    stl.output "0\n"
+    stl.loop
+  bbc_bust:
+    stl.output "1\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+bbc_N: hex.vec 4
+bbc_cnt: hex.vec 4
+bbc_total: hex.vec 4
+bbc_c: hex.vec 2
+bbc_nl: hex.vec 2
+bbc_tmp: hex.vec 4
+bbc_ten: hex.vec 4, 10
+bbc_21: hex.vec 4, 21
+bbc_0c: hex.vec 4, '0'
+bbc_Ac: hex.vec 2, 'A'
+bbc_9c: hex.vec 2, '9'

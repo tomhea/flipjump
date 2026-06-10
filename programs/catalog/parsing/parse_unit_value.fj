@@ -1,0 +1,54 @@
+// Parse Unit Value (#0802)
+
+// Reads `<num><unit>\n` where `num` is decimal `0`-`99` and `unit` is exactly one byte `s` (seconds), `m` (minutes), or `h` (hours). Prints `num` converted to seconds as decimal + `\n`.
+
+main
+
+def main @ chkm, secs, mins, hours, pr < num, res, sch, mch, c60, c3600, lastbyte {
+    stl.startup_and_init_all
+    read_num num
+    hex.cmp 2, lastbyte, sch, chkm, secs, chkm
+  chkm:
+    hex.cmp 2, lastbyte, mch, hours, mins, hours
+  secs:
+    hex.mov 8, res, num
+    ;pr
+  mins:
+    hex.mul 8, res, num, c60
+    ;pr
+  hours:
+    hex.mul 8, res, num, c3600
+  pr:
+    hex.print_dec_uint 8, res
+    stl.output '\n'
+    stl.loop
+}
+
+// Read decimal digits into dst[:8] until a non-digit; that byte is left in `lastbyte`.
+def read_num dst @ loop, ge0, isdig, stop < lastbyte, digval, c0, c9 {
+    hex.zero 8, dst
+  loop:
+    hex.input lastbyte
+    hex.zero 8, digval
+    hex.mov 2, digval, lastbyte
+    hex.cmp 8, digval, c0, stop, ge0, ge0
+  ge0:
+    hex.cmp 8, digval, c9, isdig, isdig, stop
+  isdig:
+    hex.mul10 8, dst
+    hex.sub 8, digval, c0
+    hex.add 8, dst, digval
+    ;loop
+  stop:
+}
+
+num: hex.vec 8
+res: hex.vec 8
+sch: hex.vec 2, 's'
+mch: hex.vec 2, 'm'
+c60: hex.vec 8, 60
+c3600: hex.vec 8, 3600
+lastbyte: hex.vec 2
+digval: hex.vec 8
+c0: hex.vec 8, '0'
+c9: hex.vec 8, '9'

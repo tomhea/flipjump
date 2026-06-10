@@ -1,0 +1,25 @@
+// Magic Constant For N (#0659)
+
+// Reads digit N `3`-`9` + `\n`. Prints `N * (N^2 + 1) / 2` (the magic constant for an N×N magic square containing `1..N²`) + `\n`.
+
+main
+
+def main @ err < nval, nsq, t, res, r, two {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, nval, err
+    hex.mul 8, nsq, nval, nval
+    hex.inc 8, nsq
+    hex.mul 8, t, nval, nsq
+    hex.div 8, 8, res, r, t, two, err
+    hex.print_dec_uint 8, res
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+nval: hex.vec 8
+nsq: hex.vec 8
+t: hex.vec 8
+res: hex.vec 8
+r: hex.vec 8
+two: hex.vec 8, 2

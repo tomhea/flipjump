@@ -1,0 +1,50 @@
+// Hangman State Print (#0950)
+
+// Reads a `\n`-terminated secret word ≤ 10 chars (lowercase letters), then a `\n`-terminated string of guessed letters ≤ 26 chars. Prints the secret with un-guessed letters as `_` (e.g. secret `hello`, guesses `el` → `_ell_\n`).
+
+hh = w/4
+
+main
+
+def main @ hs_pl, hs_pl_body, hs_find, hs_find_body, hs_found, hs_not_found, hs_pl_done < hs_sec, hs_gue, hs_sptr, hs_gptr, hs_sb, hs_gb, hs_slen, hs_glen, hs_si, hs_gi {
+    stl.startup_and_init_all 100
+    hex.set hh, hs_sptr, hs_sec
+    hex.input_ptr_line hs_sptr, hs_slen
+    hex.set hh, hs_gptr, hs_gue
+    hex.input_ptr_line hs_gptr, hs_glen
+    hex.set hh, hs_sptr, hs_sec
+    hex.zero hh, hs_si
+  hs_pl:
+    hex.cmp hh, hs_si, hs_slen, hs_pl_body, hs_pl_done, hs_pl_done
+  hs_pl_body:
+    hex.read_byte_and_inc hs_sb, hs_sptr
+    hex.inc hh, hs_si
+    hex.set hh, hs_gptr, hs_gue
+    hex.zero hh, hs_gi
+  hs_find:
+    hex.cmp hh, hs_gi, hs_glen, hs_find_body, hs_not_found, hs_not_found
+  hs_find_body:
+    hex.read_byte_and_inc hs_gb, hs_gptr
+    hex.inc hh, hs_gi
+    hex.cmp 2, hs_sb, hs_gb, hs_find, hs_found, hs_find
+  hs_found:
+    hex.print hs_sb
+    ;hs_pl
+  hs_not_found:
+    stl.output '_'
+    ;hs_pl
+  hs_pl_done:
+    stl.output '\n'
+    stl.loop
+}
+
+hs_sec: hex.vec 10, 0
+hs_gue: hex.vec 26, 0
+hs_sptr: hex.vec hh
+hs_gptr: hex.vec hh
+hs_sb: hex.vec 2
+hs_gb: hex.vec 2
+hs_slen: hex.vec hh
+hs_glen: hex.vec hh
+hs_si: hex.vec hh
+hs_gi: hex.vec hh

@@ -1,4 +1,4 @@
-// Demo Bit Print Dec Uint (#1258)
+// Demo Bit Print Dec Uint (#0855)
 
 // No input. Declares an internal 8-bit value `123`. Uses `bit.print_dec_uint` to print it as `123\n`.
 

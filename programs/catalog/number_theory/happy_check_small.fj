@@ -1,4 +1,4 @@
-// Happy Check Small (#0163)
+// Happy Check Small (#0138)
 
 // Reads decimal N in `1`-`30` and prints `1\n` if N is a happy number (iterated sum of squared digits reaches 1), else `0\n`.
 

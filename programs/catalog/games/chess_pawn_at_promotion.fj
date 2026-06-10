@@ -1,0 +1,22 @@
+// Chess Pawn At Promotion (#0967)
+
+// Reads 2 decimals `r c` (each `0`-`7`, own line) — a white pawn's position. Prints `1\n` if `r == 0` (white pawn at promotion row), else `0\n`.
+
+main
+
+def main @ err, cpa_yes < cpa_r, cpa_c {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, cpa_r, err
+    hex.input_dec_uint 4, cpa_c, err
+    hex.if0 4, cpa_r, cpa_yes
+    stl.output "0\n"
+    stl.loop
+  cpa_yes:
+    stl.output "1\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+cpa_r: hex.vec 4
+cpa_c: hex.vec 4

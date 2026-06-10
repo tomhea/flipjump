@@ -1,4 +1,4 @@
-// And Gate (#0091)
+// And Gate (#0248)
 
 // Reads two ASCII bits (each is `0` or `1`, separated by `\n`) and prints their AND as `0` or `1` + `\n`.
 

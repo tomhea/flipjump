@@ -1,4 +1,4 @@
-// Array Count Zeros (#1118)
+// Array Count Zeros (#0365)
 
 // Reads digit N `1`-`9` + `\n`, then N decimal integers each own line. Prints the count of zeros as decimal + `\n`.
 

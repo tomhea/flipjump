@@ -1,0 +1,94 @@
+// Tic Tac Toe Status (#0949)
+
+// Reads 3 lines of 3 chars each (board state with `X`, `O`, `.`). Prints exactly one of `X wins\n`, `O wins\n`, `Draw\n` (board full, no winner), or `In progress\n` (no winner, board not full).
+
+main
+
+// Jump `win` if the three cells (each a 2-hex byte) all equal target.
+def line_is a, b, c, target, win @ t1, t2, no {
+    hex.cmp 2, a, target, no, t1, no
+  t1:
+    hex.cmp 2, b, target, no, t2, no
+  t2:
+    hex.cmp 2, c, target, no, win, no
+  no:
+}
+
+def main @ tts_xwin, tts_owin, tts_draw, tts_inprog, tts_f0, tts_f1, tts_f2, tts_f3, tts_f4, tts_f5, tts_f6, tts_f7, tts_f8, tts_g0, tts_g1, tts_g2, tts_g3, tts_g4, tts_g5, tts_g6, tts_g7, tts_g8, tts_done < tts_arr, tts_nl, tts_xc, tts_oc, tts_dc {
+    stl.startup_and_init_all 100
+    hex.input tts_arr + 0*dw*2
+    hex.input tts_arr + 1*dw*2
+    hex.input tts_arr + 2*dw*2
+    hex.input tts_nl
+    hex.input tts_arr + 3*dw*2
+    hex.input tts_arr + 4*dw*2
+    hex.input tts_arr + 5*dw*2
+    hex.input tts_nl
+    hex.input tts_arr + 6*dw*2
+    hex.input tts_arr + 7*dw*2
+    hex.input tts_arr + 8*dw*2
+    hex.input tts_nl
+    line_is tts_arr+0*dw*2, tts_arr+1*dw*2, tts_arr+2*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+3*dw*2, tts_arr+4*dw*2, tts_arr+5*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+6*dw*2, tts_arr+7*dw*2, tts_arr+8*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+0*dw*2, tts_arr+3*dw*2, tts_arr+6*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+1*dw*2, tts_arr+4*dw*2, tts_arr+7*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+2*dw*2, tts_arr+5*dw*2, tts_arr+8*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+0*dw*2, tts_arr+4*dw*2, tts_arr+8*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+2*dw*2, tts_arr+4*dw*2, tts_arr+6*dw*2, tts_xc, tts_xwin
+    line_is tts_arr+0*dw*2, tts_arr+1*dw*2, tts_arr+2*dw*2, tts_oc, tts_owin
+    line_is tts_arr+3*dw*2, tts_arr+4*dw*2, tts_arr+5*dw*2, tts_oc, tts_owin
+    line_is tts_arr+6*dw*2, tts_arr+7*dw*2, tts_arr+8*dw*2, tts_oc, tts_owin
+    line_is tts_arr+0*dw*2, tts_arr+3*dw*2, tts_arr+6*dw*2, tts_oc, tts_owin
+    line_is tts_arr+1*dw*2, tts_arr+4*dw*2, tts_arr+7*dw*2, tts_oc, tts_owin
+    line_is tts_arr+2*dw*2, tts_arr+5*dw*2, tts_arr+8*dw*2, tts_oc, tts_owin
+    line_is tts_arr+0*dw*2, tts_arr+4*dw*2, tts_arr+8*dw*2, tts_oc, tts_owin
+    line_is tts_arr+2*dw*2, tts_arr+4*dw*2, tts_arr+6*dw*2, tts_oc, tts_owin
+    ;tts_f0
+  tts_f0:
+    hex.cmp 2, tts_arr + 0*dw*2, tts_dc, tts_g0, tts_inprog, tts_g0
+  tts_g0:
+  tts_f1:
+    hex.cmp 2, tts_arr + 1*dw*2, tts_dc, tts_g1, tts_inprog, tts_g1
+  tts_g1:
+  tts_f2:
+    hex.cmp 2, tts_arr + 2*dw*2, tts_dc, tts_g2, tts_inprog, tts_g2
+  tts_g2:
+  tts_f3:
+    hex.cmp 2, tts_arr + 3*dw*2, tts_dc, tts_g3, tts_inprog, tts_g3
+  tts_g3:
+  tts_f4:
+    hex.cmp 2, tts_arr + 4*dw*2, tts_dc, tts_g4, tts_inprog, tts_g4
+  tts_g4:
+  tts_f5:
+    hex.cmp 2, tts_arr + 5*dw*2, tts_dc, tts_g5, tts_inprog, tts_g5
+  tts_g5:
+  tts_f6:
+    hex.cmp 2, tts_arr + 6*dw*2, tts_dc, tts_g6, tts_inprog, tts_g6
+  tts_g6:
+  tts_f7:
+    hex.cmp 2, tts_arr + 7*dw*2, tts_dc, tts_g7, tts_inprog, tts_g7
+  tts_g7:
+  tts_f8:
+    hex.cmp 2, tts_arr + 8*dw*2, tts_dc, tts_g8, tts_inprog, tts_g8
+  tts_g8:
+  tts_draw:
+    stl.output "Draw\n"
+    ;tts_done
+  tts_xwin:
+    stl.output "X wins\n"
+    ;tts_done
+  tts_owin:
+    stl.output "O wins\n"
+    ;tts_done
+  tts_inprog:
+    stl.output "In progress\n"
+  tts_done:
+    stl.loop
+}
+
+tts_arr: hex.vec 2*9
+tts_nl: hex.vec 2
+tts_xc: hex.vec 2, 'X'
+tts_oc: hex.vec 2, 'O'
+tts_dc: hex.vec 2, '.'

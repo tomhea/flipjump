@@ -1,4 +1,4 @@
-// Substring Last 3 (#0192)
+// Substring Last 3 (#0188)
 
 // Reads a `\n`-terminated line of at least 3 chars and prints just its last 3 bytes (the 3 chars immediately before the `\n`) + `\n`.
 

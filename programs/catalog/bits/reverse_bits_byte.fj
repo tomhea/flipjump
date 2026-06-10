@@ -1,4 +1,4 @@
-// Reverse Bits Byte (#0081)
+// Reverse Bits Byte (#0198)
 
 // Reads one byte and outputs the byte with its 8 bits reversed (bit 0 ↔ bit 7, etc.).
 

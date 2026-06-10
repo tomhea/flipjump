@@ -1,0 +1,38 @@
+// Sum Of Digits Recursive (#0425)
+
+// Reads decimal N in `0`-`999` + `\n`. Computes sum of digits via recursive macro `digit_sum(N) = (N == 0) ? 0 : (N % 10) + digit_sum(N / 10)`. Prints decimal sum + `\n`.
+
+main
+
+def main @ err < r_nval, ds_n, ds_result, ds_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, ds_n, r_nval
+    stl.call ds_fn
+    hex.print_dec_uint 4, ds_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// sum_of_digits(ds_n) -> ds_result
+ds_fn:
+    hex.if0 4, ds_n, ds_base
+    hex.div 4, 4, ds_q, ds_r, ds_n, ds_ten, ds_fn
+    hex.push 2, ds_r
+    hex.mov 4, ds_n, ds_q
+    stl.call ds_fn
+    hex.pop 2, ds_digit
+    hex.add 2, ds_result, ds_digit
+    stl.return
+  ds_base:
+    hex.zero 4, ds_result
+    stl.return
+
+r_nval: hex.vec 4
+ds_n: hex.vec 4
+ds_result: hex.vec 4
+ds_q: hex.vec 4
+ds_r: hex.vec 4
+ds_digit: hex.vec 2
+ds_ten: hex.vec 4, 10

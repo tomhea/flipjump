@@ -1,4 +1,4 @@
-// Midpoint 2D (#0575)
+// Midpoint 2D (#0602)
 
 // Reads 4 decimals `x1 y1 x2 y2` (each own line). Prints `<mx> <my>\n` where `mx = (x1+x2)/2` and `my = (y1+y2)/2` (floor division).
 

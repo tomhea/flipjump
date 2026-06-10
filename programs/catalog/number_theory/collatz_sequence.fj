@@ -1,4 +1,4 @@
-// Collatz Sequence (#0156)
+// Collatz Sequence (#0131)
 
 // Reads decimal N in `1`-`15` and prints the Collatz sequence starting at N, terminating with 1, one number per line.
 

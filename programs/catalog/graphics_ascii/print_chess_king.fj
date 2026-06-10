@@ -1,0 +1,11 @@
+// Print Chess King (#0819)
+
+// No input. Prints a multi-line ASCII chess king (4 lines, with `+`, `|`, `_`).
+
+main
+
+def main {
+    stl.startup
+    stl.output " + \n | \n|_|\n|_|\n"
+    stl.loop
+}

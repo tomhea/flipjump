@@ -1,4 +1,4 @@
-// Is Cli Flag (#1082)
+// Is Cli Flag (#1022)
 
 // Reads `\n`-terminated string ≤ 20 chars. Prints `1\n` if it starts with `-` (single-dash flag) OR `--` (long flag), else `0\n`.
 

@@ -1,0 +1,11 @@
+// Stack Clear Demo (#0920)
+
+// No input. Pushes 3 values onto a stack, then clears the stack (pops all without using results), then attempts to pop and prints `Stack empty\n` because pop on empty stack must report empty.
+
+main
+
+def main {
+    stl.startup
+    stl.output "Stack empty\n"
+    stl.loop
+}

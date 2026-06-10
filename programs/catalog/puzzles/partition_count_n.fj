@@ -1,0 +1,59 @@
+// Partition Count N (#0692)
+
+// Reads digit N `1`-`9` + `\n`. Prints the number of integer partitions of N (e.g. `p(4) = 5`) + `\n`.
+
+main
+
+def main @ err, done, p0, p1, p2, p3, p4, p5, p6, p7, p8 < nval {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, nval, err
+    hex.dec 4, nval
+        hex.if0 4, nval, p0
+    hex.dec 4, nval
+    hex.if0 4, nval, p1
+    hex.dec 4, nval
+    hex.if0 4, nval, p2
+    hex.dec 4, nval
+    hex.if0 4, nval, p3
+    hex.dec 4, nval
+    hex.if0 4, nval, p4
+    hex.dec 4, nval
+    hex.if0 4, nval, p5
+    hex.dec 4, nval
+    hex.if0 4, nval, p6
+    hex.dec 4, nval
+    hex.if0 4, nval, p7
+    hex.dec 4, nval
+    ;p8
+  p0:
+    stl.output "1\n"
+    ;done
+  p1:
+    stl.output "2\n"
+    ;done
+  p2:
+    stl.output "3\n"
+    ;done
+  p3:
+    stl.output "5\n"
+    ;done
+  p4:
+    stl.output "7\n"
+    ;done
+  p5:
+    stl.output "11\n"
+    ;done
+  p6:
+    stl.output "15\n"
+    ;done
+  p7:
+    stl.output "22\n"
+    ;done
+  p8:
+    stl.output "30\n"
+  done:
+  err:
+    stl.loop
+}
+
+nval: hex.vec 4

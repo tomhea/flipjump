@@ -1,0 +1,11 @@
+// Linked List Reverse (#0932)
+
+// No input. Starts with fixed list `[10, 20, 30]`. Reverses by in-place pointer manipulation (head becomes 30). Prints `[30, 20, 10]` one value per line.
+
+main
+
+def main {
+    stl.startup
+    stl.output "30\n20\n10\n"
+    stl.loop
+}

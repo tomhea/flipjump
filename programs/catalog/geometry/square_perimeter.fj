@@ -1,4 +1,4 @@
-// Square Perimeter (#0585)
+// Square Perimeter (#0609)
 
 // Reads decimal side `0`-`100` + `\n`. Prints `4 * side` + `\n`.
 

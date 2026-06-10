@@ -1,4 +1,4 @@
-// Inv Mod Via Fermat (#1040)
+// Inv Mod Via Fermat (#0151)
 
 // Reads decimals `a` `p` (`p` prime `2`-`19`, `a` `1`-`p-1`). Computes `a^(p-2) mod p` (modular inverse via Fermat's little theorem). Prints inverse as decimal + `\n`.
 

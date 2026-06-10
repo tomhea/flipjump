@@ -1,4 +1,4 @@
-// Roman To Arabic 30 (#0873)
+// Roman To Arabic 30 (#1000)
 
 // Reads Roman numeral string (one of `I`-`XXX`, valid up to 30) + `\n`. Prints decimal `1`-`30` + `\n`.
 

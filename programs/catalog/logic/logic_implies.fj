@@ -1,4 +1,4 @@
-// Logic Implies (#0905)
+// Logic Implies (#0258)
 
 // Reads two `0`/`1` ASCII bits (each on own line). Prints `(NOT A) OR B` as `0` or `1` + `\n` (A → B).
 

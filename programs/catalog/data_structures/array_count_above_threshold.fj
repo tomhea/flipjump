@@ -1,4 +1,4 @@
-// Array Count Above Threshold (#1128)
+// Array Count Above Threshold (#0375)
 
 // Reads digit N `1`-`9` + `\n`, then `threshold` (signed decimal) + `\n`, then N signed decimals. Prints the count of values strictly greater than threshold + `\n`.
 

@@ -1,0 +1,44 @@
+// Memset Short (#0926)
+
+// Reads digit N `1`-`9` + `\n`, then decimal value V `0`-`255` + `\n`. Fills an N-byte buffer with V, then prints all N bytes as decimals space-separated + `\n`.
+
+main
+
+def main @ err, sloop, sbody, sdone, ploop, pbody, pdone, no_sp < rn, rv, cnt, wptr, pbyte, buf {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 2, rn, err
+    hex.input_dec_uint 2, rv, err
+    hex.set w/4, wptr, buf
+    hex.zero 2, cnt
+  sloop:
+    hex.cmp 2, cnt, rn, sbody, sdone, sdone
+  sbody:
+    hex.write_byte_and_inc wptr, rv
+    hex.inc 2, cnt
+    ;sloop
+  sdone:
+    hex.set w/4, wptr, buf
+    hex.zero 2, cnt
+  ploop:
+    hex.cmp 2, cnt, rn, pbody, pdone, pdone
+  pbody:
+    hex.if0 2, cnt, no_sp
+    stl.output ' '
+  no_sp:
+    hex.read_byte_and_inc pbyte, wptr
+    hex.print_dec_uint 2, pbyte
+    hex.inc 2, cnt
+    ;ploop
+  pdone:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+rn: hex.vec 2
+rv: hex.vec 2
+cnt: hex.vec 2
+pbyte: hex.vec 2
+wptr: hex.vec w/4
+buf: hex.vec 9, 0

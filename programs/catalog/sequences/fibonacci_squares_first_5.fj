@@ -1,4 +1,4 @@
-// Fibonacci Squares First 5 (#0450)
+// Fibonacci Squares First 5 (#0715)
 
 // No input. Prints `F(1)² F(2)² ... F(5)²` = `1 1 4 9 25` space-separated + `\n`.
 

@@ -1,0 +1,272 @@
+// Minesweeper Count Grid (#0958)
+
+// Reads 3 lines of 3 chars each (chars are `M` for mine, `.` for empty). Prints a 3×3 output grid where each cell shows the number of mine-neighbors (`0`-`8`) if not a mine, or `*` if it is a mine. 3 lines of 3 chars each + `\n`.
+
+main
+
+def main @ mg_cnt0, mg_star0, mg_after0, mg_y0_1, mg_nc0_1, mg_y0_3, mg_nc0_3, mg_y0_4, mg_nc0_4, mg_cnt1, mg_star1, mg_after1, mg_y1_0, mg_nc1_0, mg_y1_2, mg_nc1_2, mg_y1_3, mg_nc1_3, mg_y1_4, mg_nc1_4, mg_y1_5, mg_nc1_5, mg_cnt2, mg_star2, mg_after2, mg_y2_1, mg_nc2_1, mg_y2_4, mg_nc2_4, mg_y2_5, mg_nc2_5, mg_cnt3, mg_star3, mg_after3, mg_y3_0, mg_nc3_0, mg_y3_1, mg_nc3_1, mg_y3_4, mg_nc3_4, mg_y3_6, mg_nc3_6, mg_y3_7, mg_nc3_7, mg_cnt4, mg_star4, mg_after4, mg_y4_0, mg_nc4_0, mg_y4_1, mg_nc4_1, mg_y4_2, mg_nc4_2, mg_y4_3, mg_nc4_3, mg_y4_5, mg_nc4_5, mg_y4_6, mg_nc4_6, mg_y4_7, mg_nc4_7, mg_y4_8, mg_nc4_8, mg_cnt5, mg_star5, mg_after5, mg_y5_1, mg_nc5_1, mg_y5_2, mg_nc5_2, mg_y5_4, mg_nc5_4, mg_y5_7, mg_nc5_7, mg_y5_8, mg_nc5_8, mg_cnt6, mg_star6, mg_after6, mg_y6_3, mg_nc6_3, mg_y6_4, mg_nc6_4, mg_y6_7, mg_nc6_7, mg_cnt7, mg_star7, mg_after7, mg_y7_3, mg_nc7_3, mg_y7_4, mg_nc7_4, mg_y7_5, mg_nc7_5, mg_y7_6, mg_nc7_6, mg_y7_8, mg_nc7_8, mg_cnt8, mg_star8, mg_after8, mg_y8_4, mg_nc8_4, mg_y8_5, mg_nc8_5, mg_y8_7, mg_nc8_7 < mg_arr, mg_nl, mg_tmp, mg_Mc, mg_0c {
+    stl.startup_and_init_all 100
+    hex.input mg_arr + 0*dw*2
+    hex.input mg_arr + 1*dw*2
+    hex.input mg_arr + 2*dw*2
+    hex.input mg_nl
+    hex.input mg_arr + 3*dw*2
+    hex.input mg_arr + 4*dw*2
+    hex.input mg_arr + 5*dw*2
+    hex.input mg_nl
+    hex.input mg_arr + 6*dw*2
+    hex.input mg_arr + 7*dw*2
+    hex.input mg_arr + 8*dw*2
+    hex.input mg_nl
+    hex.cmp 2, mg_arr + 0*dw*2, mg_Mc, mg_cnt0, mg_star0, mg_cnt0
+  mg_cnt0:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 1*dw*2, mg_Mc, mg_nc0_1, mg_y0_1, mg_nc0_1
+  mg_y0_1:
+    hex.inc 4, mg_tmp
+  mg_nc0_1:
+    hex.cmp 2, mg_arr + 3*dw*2, mg_Mc, mg_nc0_3, mg_y0_3, mg_nc0_3
+  mg_y0_3:
+    hex.inc 4, mg_tmp
+  mg_nc0_3:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc0_4, mg_y0_4, mg_nc0_4
+  mg_y0_4:
+    hex.inc 4, mg_tmp
+  mg_nc0_4:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after0
+  mg_star0:
+    stl.output '*'
+  mg_after0:
+    hex.cmp 2, mg_arr + 1*dw*2, mg_Mc, mg_cnt1, mg_star1, mg_cnt1
+  mg_cnt1:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 0*dw*2, mg_Mc, mg_nc1_0, mg_y1_0, mg_nc1_0
+  mg_y1_0:
+    hex.inc 4, mg_tmp
+  mg_nc1_0:
+    hex.cmp 2, mg_arr + 2*dw*2, mg_Mc, mg_nc1_2, mg_y1_2, mg_nc1_2
+  mg_y1_2:
+    hex.inc 4, mg_tmp
+  mg_nc1_2:
+    hex.cmp 2, mg_arr + 3*dw*2, mg_Mc, mg_nc1_3, mg_y1_3, mg_nc1_3
+  mg_y1_3:
+    hex.inc 4, mg_tmp
+  mg_nc1_3:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc1_4, mg_y1_4, mg_nc1_4
+  mg_y1_4:
+    hex.inc 4, mg_tmp
+  mg_nc1_4:
+    hex.cmp 2, mg_arr + 5*dw*2, mg_Mc, mg_nc1_5, mg_y1_5, mg_nc1_5
+  mg_y1_5:
+    hex.inc 4, mg_tmp
+  mg_nc1_5:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after1
+  mg_star1:
+    stl.output '*'
+  mg_after1:
+    hex.cmp 2, mg_arr + 2*dw*2, mg_Mc, mg_cnt2, mg_star2, mg_cnt2
+  mg_cnt2:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 1*dw*2, mg_Mc, mg_nc2_1, mg_y2_1, mg_nc2_1
+  mg_y2_1:
+    hex.inc 4, mg_tmp
+  mg_nc2_1:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc2_4, mg_y2_4, mg_nc2_4
+  mg_y2_4:
+    hex.inc 4, mg_tmp
+  mg_nc2_4:
+    hex.cmp 2, mg_arr + 5*dw*2, mg_Mc, mg_nc2_5, mg_y2_5, mg_nc2_5
+  mg_y2_5:
+    hex.inc 4, mg_tmp
+  mg_nc2_5:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after2
+  mg_star2:
+    stl.output '*'
+  mg_after2:
+    stl.output '\n'
+    hex.cmp 2, mg_arr + 3*dw*2, mg_Mc, mg_cnt3, mg_star3, mg_cnt3
+  mg_cnt3:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 0*dw*2, mg_Mc, mg_nc3_0, mg_y3_0, mg_nc3_0
+  mg_y3_0:
+    hex.inc 4, mg_tmp
+  mg_nc3_0:
+    hex.cmp 2, mg_arr + 1*dw*2, mg_Mc, mg_nc3_1, mg_y3_1, mg_nc3_1
+  mg_y3_1:
+    hex.inc 4, mg_tmp
+  mg_nc3_1:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc3_4, mg_y3_4, mg_nc3_4
+  mg_y3_4:
+    hex.inc 4, mg_tmp
+  mg_nc3_4:
+    hex.cmp 2, mg_arr + 6*dw*2, mg_Mc, mg_nc3_6, mg_y3_6, mg_nc3_6
+  mg_y3_6:
+    hex.inc 4, mg_tmp
+  mg_nc3_6:
+    hex.cmp 2, mg_arr + 7*dw*2, mg_Mc, mg_nc3_7, mg_y3_7, mg_nc3_7
+  mg_y3_7:
+    hex.inc 4, mg_tmp
+  mg_nc3_7:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after3
+  mg_star3:
+    stl.output '*'
+  mg_after3:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_cnt4, mg_star4, mg_cnt4
+  mg_cnt4:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 0*dw*2, mg_Mc, mg_nc4_0, mg_y4_0, mg_nc4_0
+  mg_y4_0:
+    hex.inc 4, mg_tmp
+  mg_nc4_0:
+    hex.cmp 2, mg_arr + 1*dw*2, mg_Mc, mg_nc4_1, mg_y4_1, mg_nc4_1
+  mg_y4_1:
+    hex.inc 4, mg_tmp
+  mg_nc4_1:
+    hex.cmp 2, mg_arr + 2*dw*2, mg_Mc, mg_nc4_2, mg_y4_2, mg_nc4_2
+  mg_y4_2:
+    hex.inc 4, mg_tmp
+  mg_nc4_2:
+    hex.cmp 2, mg_arr + 3*dw*2, mg_Mc, mg_nc4_3, mg_y4_3, mg_nc4_3
+  mg_y4_3:
+    hex.inc 4, mg_tmp
+  mg_nc4_3:
+    hex.cmp 2, mg_arr + 5*dw*2, mg_Mc, mg_nc4_5, mg_y4_5, mg_nc4_5
+  mg_y4_5:
+    hex.inc 4, mg_tmp
+  mg_nc4_5:
+    hex.cmp 2, mg_arr + 6*dw*2, mg_Mc, mg_nc4_6, mg_y4_6, mg_nc4_6
+  mg_y4_6:
+    hex.inc 4, mg_tmp
+  mg_nc4_6:
+    hex.cmp 2, mg_arr + 7*dw*2, mg_Mc, mg_nc4_7, mg_y4_7, mg_nc4_7
+  mg_y4_7:
+    hex.inc 4, mg_tmp
+  mg_nc4_7:
+    hex.cmp 2, mg_arr + 8*dw*2, mg_Mc, mg_nc4_8, mg_y4_8, mg_nc4_8
+  mg_y4_8:
+    hex.inc 4, mg_tmp
+  mg_nc4_8:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after4
+  mg_star4:
+    stl.output '*'
+  mg_after4:
+    hex.cmp 2, mg_arr + 5*dw*2, mg_Mc, mg_cnt5, mg_star5, mg_cnt5
+  mg_cnt5:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 1*dw*2, mg_Mc, mg_nc5_1, mg_y5_1, mg_nc5_1
+  mg_y5_1:
+    hex.inc 4, mg_tmp
+  mg_nc5_1:
+    hex.cmp 2, mg_arr + 2*dw*2, mg_Mc, mg_nc5_2, mg_y5_2, mg_nc5_2
+  mg_y5_2:
+    hex.inc 4, mg_tmp
+  mg_nc5_2:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc5_4, mg_y5_4, mg_nc5_4
+  mg_y5_4:
+    hex.inc 4, mg_tmp
+  mg_nc5_4:
+    hex.cmp 2, mg_arr + 7*dw*2, mg_Mc, mg_nc5_7, mg_y5_7, mg_nc5_7
+  mg_y5_7:
+    hex.inc 4, mg_tmp
+  mg_nc5_7:
+    hex.cmp 2, mg_arr + 8*dw*2, mg_Mc, mg_nc5_8, mg_y5_8, mg_nc5_8
+  mg_y5_8:
+    hex.inc 4, mg_tmp
+  mg_nc5_8:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after5
+  mg_star5:
+    stl.output '*'
+  mg_after5:
+    stl.output '\n'
+    hex.cmp 2, mg_arr + 6*dw*2, mg_Mc, mg_cnt6, mg_star6, mg_cnt6
+  mg_cnt6:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 3*dw*2, mg_Mc, mg_nc6_3, mg_y6_3, mg_nc6_3
+  mg_y6_3:
+    hex.inc 4, mg_tmp
+  mg_nc6_3:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc6_4, mg_y6_4, mg_nc6_4
+  mg_y6_4:
+    hex.inc 4, mg_tmp
+  mg_nc6_4:
+    hex.cmp 2, mg_arr + 7*dw*2, mg_Mc, mg_nc6_7, mg_y6_7, mg_nc6_7
+  mg_y6_7:
+    hex.inc 4, mg_tmp
+  mg_nc6_7:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after6
+  mg_star6:
+    stl.output '*'
+  mg_after6:
+    hex.cmp 2, mg_arr + 7*dw*2, mg_Mc, mg_cnt7, mg_star7, mg_cnt7
+  mg_cnt7:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 3*dw*2, mg_Mc, mg_nc7_3, mg_y7_3, mg_nc7_3
+  mg_y7_3:
+    hex.inc 4, mg_tmp
+  mg_nc7_3:
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc7_4, mg_y7_4, mg_nc7_4
+  mg_y7_4:
+    hex.inc 4, mg_tmp
+  mg_nc7_4:
+    hex.cmp 2, mg_arr + 5*dw*2, mg_Mc, mg_nc7_5, mg_y7_5, mg_nc7_5
+  mg_y7_5:
+    hex.inc 4, mg_tmp
+  mg_nc7_5:
+    hex.cmp 2, mg_arr + 6*dw*2, mg_Mc, mg_nc7_6, mg_y7_6, mg_nc7_6
+  mg_y7_6:
+    hex.inc 4, mg_tmp
+  mg_nc7_6:
+    hex.cmp 2, mg_arr + 8*dw*2, mg_Mc, mg_nc7_8, mg_y7_8, mg_nc7_8
+  mg_y7_8:
+    hex.inc 4, mg_tmp
+  mg_nc7_8:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after7
+  mg_star7:
+    stl.output '*'
+  mg_after7:
+    hex.cmp 2, mg_arr + 8*dw*2, mg_Mc, mg_cnt8, mg_star8, mg_cnt8
+  mg_cnt8:
+    hex.zero 4, mg_tmp
+    hex.cmp 2, mg_arr + 4*dw*2, mg_Mc, mg_nc8_4, mg_y8_4, mg_nc8_4
+  mg_y8_4:
+    hex.inc 4, mg_tmp
+  mg_nc8_4:
+    hex.cmp 2, mg_arr + 5*dw*2, mg_Mc, mg_nc8_5, mg_y8_5, mg_nc8_5
+  mg_y8_5:
+    hex.inc 4, mg_tmp
+  mg_nc8_5:
+    hex.cmp 2, mg_arr + 7*dw*2, mg_Mc, mg_nc8_7, mg_y8_7, mg_nc8_7
+  mg_y8_7:
+    hex.inc 4, mg_tmp
+  mg_nc8_7:
+    hex.add 2, mg_tmp, mg_0c
+    hex.print mg_tmp
+    ;mg_after8
+  mg_star8:
+    stl.output '*'
+  mg_after8:
+    stl.output '\n'
+    stl.loop
+}
+
+mg_arr: hex.vec 2*9
+mg_nl: hex.vec 2
+mg_tmp: hex.vec 4
+mg_Mc: hex.vec 2, 'M'
+mg_0c: hex.vec 2, '0'

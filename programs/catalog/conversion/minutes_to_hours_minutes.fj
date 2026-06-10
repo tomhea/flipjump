@@ -1,4 +1,4 @@
-// Minutes To Hours Minutes (#0351)
+// Minutes To Hours Minutes (#0478)
 
 // Reads decimal total minutes `0`-`999` + `\n` and prints `<H>:<MM>\n`, where `H` is `total / 60` (no leading zero) and `MM` is `total % 60` zero-padded to 2 digits.
 

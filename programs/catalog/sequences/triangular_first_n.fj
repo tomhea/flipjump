@@ -1,4 +1,4 @@
-// Triangular First N (#0431)
+// Triangular First N (#0697)
 
 // Reads digit N `1`-`9` + `\n`. Prints the first N triangular numbers `T(k) = k(k+1)/2` for `k = 1..N`, space-separated, ending with `\n`.
 

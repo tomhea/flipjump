@@ -1,4 +1,4 @@
-// Is Valid Username (#1079)
+// Is Valid Username (#1019)
 
 // Reads `\n`-terminated string ≤ 20 chars. Prints `1\n` if its length is `3`-`12` and every byte is alphanumeric (`A`-`Z`/`a`-`z`/`0`-`9`), else `0\n`.
 

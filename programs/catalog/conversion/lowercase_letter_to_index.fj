@@ -1,4 +1,4 @@
-// Lowercase Letter To Index (#0361)
+// Lowercase Letter To Index (#0486)
 
 // Reads exactly one byte `a`-`z` and prints its 0-based alphabet index (`a`→`0`, ..., `z`→`25`) as decimal + `\n`.
 

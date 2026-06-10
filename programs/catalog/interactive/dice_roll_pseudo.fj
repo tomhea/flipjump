@@ -1,0 +1,24 @@
+// Dice Roll Pseudo (#0445)
+
+// Reads exactly one byte. Prints decimal `(byte mod 6) + 1` + `\n` (range `1`-`6`).
+
+main
+
+def main @ err < bytebuf, v, q, r, six {
+    stl.startup_and_init_all
+    hex.input bytebuf
+    hex.zero 4, v
+    hex.mov 2, v, bytebuf
+    hex.div 4, 4, q, r, v, six, err
+    hex.inc 4, r
+    hex.print_dec_uint 4, r
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+bytebuf: hex.vec 2
+v: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4
+six: hex.vec 4, 6

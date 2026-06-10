@@ -1,4 +1,4 @@
-// Max Of N Inputs (#0129)
+// Max Of N Inputs (#0104)
 
 // Reads decimal N (`1`-`9`), then N decimal integers, prints the maximum + `\n`.
 

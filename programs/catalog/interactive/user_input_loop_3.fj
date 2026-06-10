@@ -1,0 +1,30 @@
+// User Input Loop 3 (#0443)
+
+// Reads exactly 3 `\n`-terminated lines (each ≤ 30 chars). Prints `1: <line1>\n2: <line2>\n3: <line3>\n`.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    show_line "1: ", buf, bptr, slen
+    show_line "2: ", buf, bptr, slen
+    show_line "3: ", buf, bptr, slen
+    stl.loop
+}
+
+// Print prefix, read a line into buf, echo it, then a newline.
+def show_line prefix, buf, bptr, slen @ p {
+    stl.output prefix
+    hex.set w/4, bptr, buf
+    hex.input_ptr_line bptr, slen
+    hex.set w/4, bptr, buf
+    hex.print_ptr_text bptr, slen
+    stl.output '\n'
+  p:
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw

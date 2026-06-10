@@ -1,4 +1,4 @@
-// Celsius To Fahrenheit (#0347)
+// Celsius To Fahrenheit (#0474)
 
 // Reads a signed decimal Celsius temperature (range `-100`..`100`) + `\n` and prints `floor(C * 9 / 5 + 32)` as a signed decimal + `\n`.
 

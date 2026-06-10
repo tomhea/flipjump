@@ -1,4 +1,4 @@
-// Multiplicative Order Small (#1035)
+// Multiplicative Order Small (#0146)
 
 // Reads decimals `a` `m` (each `2`-`20`, `gcd(a,m)=1`). Finds the smallest `k >= 1` such that `(a^k) mod m == 1`. Prints `k` as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Print First Then Repeat (#0278)
+// Print First Then Repeat (#0316)
 
 // Reads one byte, then a digit N `1`-`9` + `\n`. Outputs the byte once, then repeats it N times on a new line.
 

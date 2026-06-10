@@ -1,0 +1,77 @@
+// Tic Tac Toe Winner (#0662)
+
+// Reads 3 lines of 3 chars each (`X`, `O`, or `.`) representing a tic-tac-toe board. Prints `X\n` if X has won (three in a row/col/diag), `O\n` if O has won, else `none\n`. (Assume at most one side has won.)
+
+hw = w / 4
+
+main
+
+def main @ none, xwin, owin, done < arr, xc, oc {
+    stl.startup_and_init_all
+    read_board
+    line_is arr + 0*dw*4, arr + 1*dw*4, arr + 2*dw*4, xc, xwin
+    line_is arr + 3*dw*4, arr + 4*dw*4, arr + 5*dw*4, xc, xwin
+    line_is arr + 6*dw*4, arr + 7*dw*4, arr + 8*dw*4, xc, xwin
+    line_is arr + 0*dw*4, arr + 3*dw*4, arr + 6*dw*4, xc, xwin
+    line_is arr + 1*dw*4, arr + 4*dw*4, arr + 7*dw*4, xc, xwin
+    line_is arr + 2*dw*4, arr + 5*dw*4, arr + 8*dw*4, xc, xwin
+    line_is arr + 0*dw*4, arr + 4*dw*4, arr + 8*dw*4, xc, xwin
+    line_is arr + 2*dw*4, arr + 4*dw*4, arr + 6*dw*4, xc, xwin
+    line_is arr + 0*dw*4, arr + 1*dw*4, arr + 2*dw*4, oc, owin
+    line_is arr + 3*dw*4, arr + 4*dw*4, arr + 5*dw*4, oc, owin
+    line_is arr + 6*dw*4, arr + 7*dw*4, arr + 8*dw*4, oc, owin
+    line_is arr + 0*dw*4, arr + 3*dw*4, arr + 6*dw*4, oc, owin
+    line_is arr + 1*dw*4, arr + 4*dw*4, arr + 7*dw*4, oc, owin
+    line_is arr + 2*dw*4, arr + 5*dw*4, arr + 8*dw*4, oc, owin
+    line_is arr + 0*dw*4, arr + 4*dw*4, arr + 8*dw*4, oc, owin
+    line_is arr + 2*dw*4, arr + 4*dw*4, arr + 6*dw*4, oc, owin
+  none:
+    stl.output "none\n"
+    ;done
+  xwin:
+    stl.output "X\n"
+    ;done
+  owin:
+    stl.output "O\n"
+  done:
+    stl.loop
+}
+
+// Read 9 board cells (skipping newlines) into the 4-hex array arr.
+def read_board @ loop, body, store, done < arr, wptr, stored, rb, rb4, nlc, c9 {
+    hex.set hw, wptr, arr
+    hex.zero hw, stored
+  loop:
+    hex.cmp hw, stored, c9, body, done, done
+  body:
+    hex.input rb
+    hex.cmp 2, rb, nlc, store, loop, store
+  store:
+    hex.zero 4, rb4
+    hex.mov 2, rb4, rb
+    hex.write_hex 4, wptr, rb4
+    hex.ptr_add wptr, 4
+    hex.inc hw, stored
+    ;loop
+  done:
+}
+
+// Jump `win` if all three cells equal target.
+def line_is a, b, c, target, win @ t1, t2, no {
+    hex.cmp 4, a, target, no, t1, no
+  t1:
+    hex.cmp 4, b, target, no, t2, no
+  t2:
+    hex.cmp 4, c, target, no, win, no
+  no:
+}
+
+arr: hex.vec 4*9
+wptr: hex.vec hw
+stored: hex.vec hw
+rb: hex.vec 2
+rb4: hex.vec 4
+nlc: hex.vec 2, '\n'
+c9: hex.vec hw, 9
+xc: hex.vec 4, 'X'
+oc: hex.vec 4, 'O'

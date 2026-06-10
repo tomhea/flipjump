@@ -1,4 +1,4 @@
-// Count Word Occurrences (#1102)
+// Count Word Occurrences (#0746)
 
 // Reads a `\n`-terminated target word (no whitespace), then a `\n`-terminated line ≤ 80 chars. Prints the count of whitespace-separated tokens in the line that exactly equal the target (case-sensitive) + `\n`.
 

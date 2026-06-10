@@ -1,4 +1,4 @@
-// Lcg Steps N 8bit (#1215)
+// Lcg Steps N 8bit (#0578)
 
 // Reads one byte (seed), then one decimal digit N `1`-`9` + `\n`. Applies N LCG steps (constants `5` and `3`, mod 256) and prints each successive state as decimal on its own line (N lines total).
 

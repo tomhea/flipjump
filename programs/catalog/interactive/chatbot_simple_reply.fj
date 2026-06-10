@@ -1,0 +1,65 @@
+// Chatbot Simple Reply (#0464)
+
+// Reads a `\n`-terminated line ≤ 40 chars. If equals `hi`, prints `Hello!\n`. If equals `bye`, prints `Goodbye!\n`. Otherwise prints `I don't understand.\n`.
+
+hw = w / 4
+
+main
+
+def main @ try_bye, sayhi, saybye, dunno, done < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    equals_hi buf, slen, sayhi, try_bye
+  try_bye:
+    equals_bye buf, slen, saybye, dunno
+  sayhi:
+    stl.output "Hello!\n"
+    ;done
+  saybye:
+    stl.output "Goodbye!\n"
+    ;done
+  dunno:
+    stl.output "I don't understand.\n"
+  done:
+    stl.loop
+}
+
+// Jump `yes` if buf[:slen] equals "hi", else `no`.
+def equals_hi buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 2
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, 'h', no
+    next_byte_is eqptr, 'i', no
+    ;yes
+}
+
+// Jump `yes` if buf[:slen] equals "bye", else `no`.
+def equals_bye buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 3
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, 'b', no
+    next_byte_is eqptr, 'y', no
+    next_byte_is eqptr, 'e', no
+    ;yes
+}
+
+// Read the next buffer byte through ptr (advancing it); jump `no` if it differs from c.
+def next_byte_is ptr, c, no @ ok < cb, cc {
+    hex.read_byte_and_inc cb, ptr
+    hex.set 2, cc, c
+    hex.cmp 2, cb, cc, no, ok, no
+  ok:
+}
+
+buf: hex.vec 84
+bptr: hex.vec w/4
+slen: hex.vec w/4
+eqptr: hex.vec w/4
+lenreg: hex.vec w/4
+cb: hex.vec 2
+cc: hex.vec 2

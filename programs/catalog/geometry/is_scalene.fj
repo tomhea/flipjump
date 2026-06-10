@@ -1,4 +1,4 @@
-// Is Scalene (#0592)
+// Is Scalene (#0616)
 
 // Reads 3 decimals. Prints `1\n` if all three sides are distinct, else `0\n`.
 

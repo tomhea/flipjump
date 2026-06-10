@@ -1,4 +1,4 @@
-// Is On Y Axis (#0578)
+// Is On Y Axis (#0605)
 
 // Reads 2 decimals (each own line). Prints `1\n` if `x == 0`, else `0\n`.
 

@@ -1,0 +1,28 @@
+// Ascii Offset Encode N (#0885)
+
+// Reads a signed decimal shift `-128`..`127` + `\n`, then a `\n`-terminated line ≤ 30 chars. For each input byte, outputs `(byte + n) mod 256` as a raw byte. Final `\n`.
+
+main
+
+def main @ err, loop, go, done < b, nl, nval, nbyte {
+    stl.startup_and_init_all
+    hex.input_dec_int 4, nval, err
+    hex.mov 2, nbyte, nval
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.add 2, b, nbyte
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+nval: hex.vec 4
+nbyte: hex.vec 2

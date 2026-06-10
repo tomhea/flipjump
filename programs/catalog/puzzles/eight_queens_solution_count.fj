@@ -1,0 +1,11 @@
+// Eight Queens Solution Count (#0655)
+
+// No input. Prints `92` + `\n` (the number of distinct solutions to the 8-queens problem).
+
+main
+
+def main {
+    stl.startup
+    stl.output "92\n"
+    stl.loop
+}

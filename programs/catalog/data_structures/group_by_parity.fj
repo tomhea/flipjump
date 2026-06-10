@@ -1,4 +1,4 @@
-// Group By Parity (#1133)
+// Group By Parity (#0380)
 
 // Reads `N` `1`-`9` + `\n`, then N decimals on own lines. Prints `even: <e>\nodd: <o>\n` with the counts.
 

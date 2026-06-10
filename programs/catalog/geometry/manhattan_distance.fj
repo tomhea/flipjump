@@ -1,4 +1,4 @@
-// Manhattan Distance (#1054)
+// Manhattan Distance (#0620)
 
 // Reads 4 decimals `x1 y1 x2 y2` (each own line). Prints `|x2-x1| + |y2-y1|` as decimal + `\n`.
 

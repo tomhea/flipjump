@@ -1,0 +1,83 @@
+// Tic Tac Toe Simulate Moves (#0664)
+
+// Reads digit N `1`-`9` + `\n`, then N moves (each one digit `0`-`8` on its own line, indicating cell position 0=top-left, row-major). Players alternate starting with `X`. Prints the final 3×3 board (3 lines of 3 chars each, `.` for unmoved cells).
+
+hw = w / 4
+
+main
+
+def main @ err, init, ibody, idone, mloop, mbody, mdone, isx, setp, prow, pcell, done < board, bptr, nval, k, mv, player, bi, cellv, xc, oc, dotc, c9, two, q, par {
+    stl.startup_and_init_all
+    hex.set hw, bptr, board
+    hex.zero hw, bi
+  init:
+    hex.cmp hw, bi, c9, ibody, idone, idone
+  ibody:
+    hex.write_byte_and_inc bptr, dotc
+    hex.inc hw, bi
+    ;init
+  idone:
+    hex.input_dec_uint 4, nval, err
+    hex.zero hw, k
+  mloop:
+    hex.cmp hw, k, nval, mbody, mdone, mdone
+  mbody:
+    hex.input_dec_uint 4, mv, err
+    hex.set hw, bptr, board
+    hex.zero hw, bi
+    hex.mov 4, bi, mv
+    hex.div 4, 4, q, par, k, two, err
+    hex.if0 4, par, isx
+    hex.mov 2, player, oc
+    ;setp
+  isx:
+    hex.mov 2, player, xc
+  setp:
+    hex.write_nth_byte bptr, bi, player
+    hex.inc hw, k
+    ;mloop
+  mdone:
+    hex.set hw, bptr, board
+    hex.zero hw, bi
+  prow:
+    hex.cmp hw, bi, c9, pcell, done, done
+  pcell:
+    hex.read_byte_and_inc cellv, bptr
+    hex.print cellv
+    hex.inc hw, bi
+    print_sep bi
+    ;prow
+  done:
+  err:
+    stl.loop
+}
+
+// After printing cell `bi`, emit a newline when bi is a multiple of 3.
+def print_sep bi @ nl, no, dverr < q2, rem3, three {
+    hex.div w/4, w/4, q2, rem3, bi, three, dverr
+    hex.if0 w/4, rem3, nl
+    ;no
+  nl:
+    stl.output '\n'
+  no:
+  dverr:
+}
+
+board: hex.vec 9
+bptr: hex.vec hw
+nval: hex.vec hw
+k: hex.vec hw
+mv: hex.vec 4
+player: hex.vec 2
+bi: hex.vec hw
+cellv: hex.vec 2
+q: hex.vec 4
+par: hex.vec 4
+q2: hex.vec hw
+rem3: hex.vec hw
+three: hex.vec hw, 3
+xc: hex.vec 2, 'X'
+oc: hex.vec 2, 'O'
+dotc: hex.vec 2, '.'
+c9: hex.vec hw, 9
+two: hex.vec 4, 2

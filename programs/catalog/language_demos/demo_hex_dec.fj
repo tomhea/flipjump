@@ -1,4 +1,4 @@
-// Demo Hex Dec (#1244)
+// Demo Hex Dec (#0841)
 
 // Same as `demo_hex_inc` but uses `hex.dec` (`0` wraps to `f`).
 

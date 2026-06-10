@@ -1,0 +1,32 @@
+// Arithmetic Progression Check 5 (#0670)
+
+// Reads exactly 5 signed decimals (each own line). Prints `1\n` if they form an arithmetic progression (constant difference between consecutive elements), else `0\n`.
+
+main
+
+def main @ err, no, yes < arr, d {
+    stl.startup_and_init_all
+    rep(5, i) hex.input_dec_int 4, arr + i*dw*4, err
+    hex.mov 4, d, arr + 1*dw*4
+    hex.sub 4, d, arr + 0*dw*4
+    rep(3, k) check_step arr + (k+1)*dw*4, arr + (k+2)*dw*4, d, no
+    stl.output "1\n"
+    ;yes
+  no:
+    stl.output "0\n"
+  yes:
+  err:
+    stl.loop
+}
+
+// Jump `no` unless (hi - lo) == d.
+def check_step lo, hi, d, no @ ok < di {
+    hex.mov 4, di, hi
+    hex.sub 4, di, lo
+    hex.cmp 4, di, d, no, ok, no
+  ok:
+}
+
+arr: hex.vec 4*5
+d: hex.vec 4
+di: hex.vec 4

@@ -1,0 +1,11 @@
+// Print Chess Rook (#0823)
+
+// No input. Prints a multi-line ASCII chess rook (4 lines, like a tower).
+
+main
+
+def main {
+    stl.startup
+    stl.output "|_|_|\n |_| \n |_| \n|___|\n"
+    stl.loop
+}

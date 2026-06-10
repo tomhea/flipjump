@@ -1,0 +1,28 @@
+// Balance Check (#0450)
+
+// Reads decimal `0`-`9999` + `\n`. Prints `low\n` if `<100`, `ok\n` if `100`-`999`, `high\n` if `>=1000`.
+
+main
+
+def main @ err, mid, low, ok, high, done < val, c100, c1000 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, val, err
+    hex.cmp 4, val, c100, low, mid, mid
+  mid:
+    hex.cmp 4, val, c1000, ok, high, high
+  low:
+    stl.output "low\n"
+    ;done
+  ok:
+    stl.output "ok\n"
+    ;done
+  high:
+    stl.output "high\n"
+  done:
+  err:
+    stl.loop
+}
+
+val: hex.vec 4
+c100: hex.vec 4, 100
+c1000: hex.vec 4, 1000

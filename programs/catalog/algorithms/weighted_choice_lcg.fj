@@ -1,4 +1,4 @@
-// Weighted Choice Lcg (#1222)
+// Weighted Choice Lcg (#0585)
 
 // Reads three decimal weights `w0 w1 w2` (each `0`-`9`, on own lines; sum >= 1), then one byte (seed). Generates one LCG sample `r`, then picks bucket `i` such that `r mod (w0+w1+w2) < w0+w1+...+wi`. Prints `i` as decimal `0`-`2` + `\n`.
 

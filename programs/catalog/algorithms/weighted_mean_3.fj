@@ -1,4 +1,4 @@
-// Weighted Mean 3 (#1213)
+// Weighted Mean 3 (#0576)
 
 // Reads 3 decimals (values `0`-`99` on own lines) then 3 decimals (weights `1`-`9` on own lines). Prints `floor(sum(v_i * w_i) / sum(w_i))` as decimal + `\n`.
 

@@ -1,0 +1,49 @@
+// Polynomial Hash Mod 256 (#0900)
+
+// Reads a `\n`-terminated line ≤ 30 chars. Computes `sum(byte[i] * 31^i) mod 256` for `i = 0..n-1`. Prints `h` as 2 lowercase hex chars + `\n`.
+
+main
+
+def main @ err, loop, go, done < b, nl, h, p, bx, px, bp, c31 {
+    stl.startup_and_init_all
+    hex.zero 2, h
+    hex.set 2, p, 1
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.zero 4, bx
+    hex.mov 2, bx, b
+    hex.zero 4, px
+    hex.mov 2, px, p
+    hex.mul 4, bp, bx, px
+    hex.add 2, h, bp
+    mulmod p, c31
+    ;loop
+  done:
+    hex.print_as_digit 2, h, 0
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+h: hex.vec 2
+mh4: hex.vec 4
+mt4: hex.vec 4
+p: hex.vec 2
+bx: hex.vec 4
+px: hex.vec 4
+bp: hex.vec 4
+c31: hex.vec 4, 31

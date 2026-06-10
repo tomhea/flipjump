@@ -1,0 +1,11 @@
+// Print Chess Pawn (#0818)
+
+// No input. Prints a multi-line ASCII chess pawn (3 lines, e.g. ` ○ \n /_\\\n |_|`).
+
+main
+
+def main {
+    stl.startup
+    stl.output " o \n/_\\\n|_|\n"
+    stl.loop
+}

@@ -1,0 +1,43 @@
+// Percolation 2X2 (#0652)
+
+// Reads a 2×2 binary grid: 2 lines of 2 chars `0`/`1` each (1 = open, 0 = blocked). Prints `1\n` if there's a 4-connected path from any top-row open cell to any bottom-row open cell, else `0\n`.
+
+main
+
+def main @ err, pc_bd, pc_one, pc_zero < pc_a, pc_b, pc_c, pc_d, pc_eol, zero_char {
+    stl.startup_and_init_all 100
+    hex.input pc_a
+    hex.sub 2, pc_a, zero_char
+    hex.input pc_b
+    hex.sub 2, pc_b, zero_char
+    hex.input pc_eol
+    hex.input pc_c
+    hex.sub 2, pc_c, zero_char
+    hex.input pc_d
+    hex.sub 2, pc_d, zero_char
+    hex.input pc_eol
+    // check (a AND c)
+    hex.if0 2, pc_a, pc_bd
+    hex.if0 2, pc_c, pc_bd
+    ;pc_one
+  pc_bd:
+    // check (b AND d)
+    hex.if0 2, pc_b, pc_zero
+    hex.if0 2, pc_d, pc_zero
+  pc_one:
+    stl.output '1'
+    stl.output '\n'
+    stl.loop
+  pc_zero:
+    stl.output '0'
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+pc_a: hex.vec 2
+pc_b: hex.vec 2
+pc_c: hex.vec 2
+pc_d: hex.vec 2
+pc_eol: hex.vec 2
+zero_char: hex.vec 2, '0'

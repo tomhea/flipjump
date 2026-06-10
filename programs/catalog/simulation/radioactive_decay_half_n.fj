@@ -1,0 +1,26 @@
+// Radioactive Decay Half N (#0650)
+
+// Reads `count` `0`-`9999` (own line), `N` `0`-`9` (own line). Prints `count / 2^N` (integer halving N times) as decimal + `\n`.
+
+main
+
+def main @ err, rd_loop, rd_done < rd_count, rd_N, rd_cnt {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, rd_count, err
+    hex.input_dec_uint 4, rd_N, err
+    hex.mov 4, rd_cnt, rd_N
+  rd_loop:
+    hex.if0 4, rd_cnt, rd_done
+    hex.shr_bit 4, rd_count
+    hex.dec 4, rd_cnt
+    ;rd_loop
+  rd_done:
+    hex.print_dec_uint 4, rd_count
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+rd_count: hex.vec 4
+rd_N: hex.vec 4
+rd_cnt: hex.vec 4

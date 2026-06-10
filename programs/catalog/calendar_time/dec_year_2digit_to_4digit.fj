@@ -1,4 +1,4 @@
-// Dec Year 2Digit To 4Digit (#1075)
+// Dec Year 2Digit To 4Digit (#0994)
 
 // Reads 2-digit decimal `00`-`99` + `\n`. Interprets via "pivot 50" rule: `50`-`99` → `1950`-`1999`, `00`-`49` → `2000`-`2049`. Prints 4-digit year + `\n`.
 

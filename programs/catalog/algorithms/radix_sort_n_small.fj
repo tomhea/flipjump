@@ -1,4 +1,4 @@
-// Radix Sort N Small (#1232)
+// Radix Sort N Small (#0595)
 
 // Reads digit N `1`-`9` + `\n`, then N two-digit decimals `0`-`99`. Prints them sorted ascending (one per line) via radix sort (two passes: ones then tens).
 

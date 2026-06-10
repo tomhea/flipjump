@@ -1,4 +1,4 @@
-// Count Trailing Ones (#0930)
+// Count Trailing Ones (#0233)
 
 // Reads one byte and prints the count of consecutive `1` bits starting from the LSB (`0x07` → `3`, `0xFF` → `8`) as decimal `0`-`8` + `\n`.
 

@@ -1,0 +1,46 @@
+// Find Missing Arith Progression (#0673)
+
+// Reads exactly 4 decimals (each own line) with the value `0` representing a single missing element of a 4-element arithmetic progression. The remaining 3 values are in their correct AP positions; the `0` is the placeholder. Prints the missing value as decimal + `\n`.
+
+main
+
+def main @ err, m0, m1, m2, m3, done < arr, d, miss {
+    stl.startup_and_init_all
+    rep(4, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    hex.if0 4, arr + 0*dw*4, m0
+    hex.if0 4, arr + 1*dw*4, m1
+    hex.if0 4, arr + 2*dw*4, m2
+    ;m3
+  m0:
+    hex.mov 4, d, arr + 2*dw*4
+    hex.sub 4, d, arr + 1*dw*4
+    hex.mov 4, miss, arr + 1*dw*4
+    hex.sub 4, miss, d
+    ;done
+  m1:
+    hex.mov 4, d, arr + 3*dw*4
+    hex.sub 4, d, arr + 2*dw*4
+    hex.mov 4, miss, arr + 0*dw*4
+    hex.add 4, miss, d
+    ;done
+  m2:
+    hex.mov 4, d, arr + 1*dw*4
+    hex.sub 4, d, arr + 0*dw*4
+    hex.mov 4, miss, arr + 1*dw*4
+    hex.add 4, miss, d
+    ;done
+  m3:
+    hex.mov 4, d, arr + 1*dw*4
+    hex.sub 4, d, arr + 0*dw*4
+    hex.mov 4, miss, arr + 2*dw*4
+    hex.add 4, miss, d
+  done:
+    hex.print_dec_uint 4, miss
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+arr: hex.vec 4*4
+d: hex.vec 4
+miss: hex.vec 4

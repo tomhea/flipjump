@@ -1,4 +1,4 @@
-// Min Index 5 (#1140)
+// Min Index 5 (#0387)
 
 // Reads exactly 5 decimals and prints the 0-based index of the minimum value + `\n`. Ties: prints the smallest index among tied positions.
 

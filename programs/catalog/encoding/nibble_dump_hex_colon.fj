@@ -1,0 +1,34 @@
+// Nibble Dump Hex Colon (#0514)
+
+// Reads a `\n`-terminated line ≤ 16 chars. For each byte (excluding `\n`), prints `<high>:<low>` where `<high>` is the high nibble's hex char and `<low>` is the low nibble's. Entries are space-separated; final `\n`. Example: input `Aa\n` → output `4:1 6:1\n`.
+
+main
+
+def main @ err, loop, go, fb, emit, done < b, nl, first {
+    stl.startup_and_init_all
+    bit.one first
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    bit.if1 first, fb
+    stl.output ' '
+    ;emit
+  fb:
+    bit.zero first
+  emit:
+    hex.print_as_digit b + dw, 0
+    stl.output ':'
+    hex.print_as_digit b, 0
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+first: bit.bit 1

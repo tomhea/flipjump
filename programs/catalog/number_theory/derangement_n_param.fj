@@ -1,4 +1,4 @@
-// Derangement N Param (#1050)
+// Derangement N Param (#0161)
 
 // Reads decimal `N` `0`-`8` + `\n`. Prints the `N`-th derangement number `D(N)` as decimal + `\n`.
 

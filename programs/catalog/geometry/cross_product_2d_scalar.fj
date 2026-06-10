@@ -1,4 +1,4 @@
-// Cross Product 2D Scalar (#0574)
+// Cross Product 2D Scalar (#0601)
 
 // Reads 4 decimals (each own line) representing two 2D vectors. Prints the scalar cross product `a*d - b*c` as signed decimal + `\n`.
 

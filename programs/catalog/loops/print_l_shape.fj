@@ -1,4 +1,4 @@
-// Print L Shape (#0268)
+// Print L Shape (#0306)
 
 // Reads digit N `2`-`9` + `\n`. Prints an L-shape: N-1 rows of `*\n` (left bar), then one row of N `*`s + `\n` (bottom bar).
 

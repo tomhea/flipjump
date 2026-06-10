@@ -1,4 +1,4 @@
-// Is Negative (#0107)
+// Is Negative (#0082)
 
 // Reads one signed decimal integer and prints `1\n` if `< 0`, else `0\n`.
 

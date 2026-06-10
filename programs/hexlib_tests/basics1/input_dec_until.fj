@@ -1,0 +1,45 @@
+// Tests hex.input_dec_uint_until / hex.input_dec_int_until: read a decimal field,
+// stop at the first non-digit (left in the output stop_byte), no error path; plus
+// the empty-field case and that input_dec_uint (the wrapper) still works.
+
+main
+
+def main @ err < a, sb {
+    stl.startup_and_init_all
+
+    // digits then a delimiter -> value, and the delimiter byte in sb
+    stl.output "u: "
+    hex.input_dec_uint_until 4, a, sb
+    hex.print_dec_uint 4, a
+    stl.output ' '
+    hex.print sb
+    stl.output '\n'
+
+    // signed, with a different delimiter
+    stl.output "i: "
+    hex.input_dec_int_until 4, a, sb
+    hex.print_dec_int 4, a
+    stl.output ' '
+    hex.print sb
+    stl.output '\n'
+
+    // empty field: first byte is a non-digit -> value 0, that byte in sb
+    stl.output "e: "
+    hex.input_dec_uint_until 4, a, sb
+    hex.print_dec_uint 4, a
+    stl.output ' '
+    hex.print sb
+    stl.output '\n'
+
+    // the plain reader (now a thin wrapper over _until) still enforces '\n'/'\0'
+    stl.output "w: "
+    hex.input_dec_uint 4, a, err
+    hex.print_dec_uint 4, a
+    stl.output '\n'
+
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+sb: hex.vec 2

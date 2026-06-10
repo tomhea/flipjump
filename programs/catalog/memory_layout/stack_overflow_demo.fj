@@ -1,0 +1,78 @@
+// Stack Overflow Demo (#0912)
+
+// Reads digit N `0`-`9` + `\n`. Allocates a fixed-size stack of capacity 5. Pushes N items (values 1..N); if N > 5, prints `Stack overflow at item <N>!\n` and exits when the 6th push would happen. If N ≤ 5, pushes all N then prints `Pushed <N> items.\n`.
+
+main
+
+def main @ err, push_loop, push_next, overflow, done, end, do_s0, do_s1, do_s2, do_s3 < zero_char, five_val, ch, orig_n, cnt, val, top, tmp, s0, s1, s2, s3, s4 {
+    stl.startup_and_init_all 100
+    hex.input ch
+    hex.sub 2, ch, zero_char
+    hex.mov 2, orig_n, ch
+    hex.mov 2, cnt, ch
+    hex.zero 4, top
+    hex.zero 4, val
+  push_loop:
+    hex.if0 2, cnt, done
+    hex.inc 4, val
+    hex.dec 2, cnt
+    // check top >= 5: overflow if top >= 5
+    hex.cmp 4, top, five_val, push_next, overflow, overflow
+  push_next:
+    // dispatch on top (0..4)
+    hex.if0 4, top, do_s0
+    hex.mov 4, tmp, top
+    hex.dec 4, tmp
+    hex.if0 4, tmp, do_s1
+    hex.dec 4, tmp
+    hex.if0 4, tmp, do_s2
+    hex.dec 4, tmp
+    hex.if0 4, tmp, do_s3
+    hex.mov 4, s4, val
+    hex.inc 4, top
+    ;push_loop
+  do_s0:
+    hex.mov 4, s0, val
+    hex.inc 4, top
+    ;push_loop
+  do_s1:
+    hex.mov 4, s1, val
+    hex.inc 4, top
+    ;push_loop
+  do_s2:
+    hex.mov 4, s2, val
+    hex.inc 4, top
+    ;push_loop
+  do_s3:
+    hex.mov 4, s3, val
+    hex.inc 4, top
+    ;push_loop
+  overflow:
+    // val is the item that caused overflow
+    stl.output "Stack overflow at item "
+    hex.print_dec_uint 4, val
+    stl.output "!\n"
+    ;end
+  done:
+    stl.output "Pushed "
+    hex.print_dec_uint 2, orig_n
+    stl.output " items.\n"
+  end:
+    stl.loop
+  err:
+    stl.loop
+}
+
+zero_char: hex.vec 2, '0'
+five_val: hex.vec 4, 5
+ch: hex.vec 2
+orig_n: hex.vec 2
+cnt: hex.vec 2
+val: hex.vec 4
+top: hex.vec 4
+tmp: hex.vec 4
+s0: hex.vec 4
+s1: hex.vec 4
+s2: hex.vec 4
+s3: hex.vec 4
+s4: hex.vec 4

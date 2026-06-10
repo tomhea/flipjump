@@ -1,0 +1,255 @@
+// Sudoku Full Validation (#0661)
+
+// Reads 9 lines, each 9 decimals (separated by spaces) representing a 9×9 Sudoku grid filled with `1`-`9`. Prints `1\n` if all 9 rows AND all 9 columns AND all 9 3×3 boxes contain `1..9` (every row/col/box has 9 distinct values), else `0\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, rdloop, rdbody, rddone, offloop, offbody, offdone, rowl, rowb, rowd, coll, colb, cold, brl, brb, brd, bcl, bcb, bcd, good, bad < board, boxoff, bptr0, woff, ridx, val, ri, base, t1, t2, br, bc, c81, c9, c3, c27, zoff {
+    stl.startup_and_init_all
+    hex.set hw, bptr0, board
+    hex.zero hw, ridx
+  rdloop:
+    hex.cmp hw, ridx, c81, rdbody, rddone, rddone
+  rdbody:
+    read_num val
+    hex.write_byte_and_inc bptr0, val
+    hex.inc hw, ridx
+    ;rdloop
+  rddone:
+    hex.set hw, woff, boxoff
+    hex.zero hw, ri
+  offloop:
+    hex.cmp hw, ri, c9, offbody, offdone, offdone
+  offbody:
+    box_offset ri, zoff
+    hex.write_byte_and_inc woff, zoff
+    hex.inc hw, ri
+    ;offloop
+  offdone:
+    hex.set hw, bptr0, board
+    hex.zero hw, br
+  rowl:
+    hex.cmp hw, br, c9, rowb, rowd, rowd
+  rowb:
+    reset_seen
+    hex.mul hw, base, br, c9
+    check_strided base, 1, bad
+    hex.inc hw, br
+    ;rowl
+  rowd:
+    hex.zero hw, bc
+  coll:
+    hex.cmp hw, bc, c9, colb, cold, cold
+  colb:
+    reset_seen
+    hex.mov hw, base, bc
+    check_strided base, 9, bad
+    hex.inc hw, bc
+    ;coll
+  cold:
+    hex.zero hw, br
+  brl:
+    hex.cmp hw, br, c3, brb, brd, brd
+  brb:
+    hex.zero hw, bc
+  bcl:
+    hex.cmp hw, bc, c3, bcb, bcd, bcd
+  bcb:
+    reset_seen
+    hex.mul hw, t1, br, c27
+    hex.mul hw, t2, bc, c3
+    hex.mov hw, base, t1
+    hex.add hw, base, t2
+    check_box base, bad
+    hex.inc hw, bc
+    ;bcl
+  bcd:
+    hex.inc hw, br
+    ;brl
+  brd:
+    stl.output "1\n"
+    ;good
+  bad:
+    stl.output "0\n"
+  good:
+  err:
+    stl.loop
+}
+
+// out[:hw] = the k-th 3x3-box cell offset: (k/3)*9 + (k%3).
+def box_offset k, out @ err < q, r3, c3l, c9l {
+    hex.div hw, hw, q, r3, k, c3l, err
+    hex.mul hw, out, q, c9l
+    hex.add hw, out, r3
+  err:
+}
+
+// Read decimal digits into val[:2] until a non-digit; discard the terminator.
+def read_num val @ loop, ge0, isdig, stop < lastb, dv, c0c, c9c, c0b {
+    hex.zero 2, val
+  loop:
+    hex.input lastb
+    hex.zero 4, dv
+    hex.mov 2, dv, lastb
+    hex.cmp 4, dv, c0c, stop, ge0, ge0
+  ge0:
+    hex.cmp 4, dv, c9c, isdig, isdig, stop
+  isdig:
+    hex.mul10 2, val
+    hex.sub 2, val, c0b
+    hex.add 2, val, lastb
+    ;loop
+  stop:
+}
+
+// Clear the 9 seen-bits before validating a line.
+def reset_seen < seen1, seen2, seen3, seen4, seen5, seen6, seen7, seen8, seen9 {
+    bit.zero seen1
+    bit.zero seen2
+    bit.zero seen3
+    bit.zero seen4
+    bit.zero seen5
+    bit.zero seen6
+    bit.zero seen7
+    bit.zero seen8
+    bit.zero seen9
+}
+
+// Validate 9 cells base, base+stride, ... (stride a compile-time constant).
+def check_strided base, stride, bad @ loop, body, done < cur, kk, strg, c9w {
+    hex.mov w/4, cur, base
+    hex.set w/4, strg, stride
+    hex.zero w/4, kk
+  loop:
+    hex.cmp w/4, kk, c9w, body, done, done
+  body:
+    check_cell cur, bad
+    hex.add w/4, cur, strg
+    hex.inc w/4, kk
+    ;loop
+  done:
+}
+
+// Validate the 9 cells of the box at `base` using the boxoff table.
+def check_box base, bad @ loop, body, done < boxoff, op, kk, off, bidx, c9w {
+    hex.set w/4, op, boxoff
+    hex.zero w/4, kk
+  loop:
+    hex.cmp w/4, kk, c9w, body, done, done
+  body:
+    hex.read_byte_and_inc off, op
+    hex.mov w/4, bidx, base
+    hex.add 2, bidx, off
+    check_cell bidx, bad
+    hex.inc w/4, kk
+    ;loop
+  done:
+}
+
+// Read board[bidx] (a value 1-9); jump `bad` if that value was already seen
+// this line, else mark it seen. One seen-bit per value avoids a second nth op.
+def check_cell bidx, bad @ s1, s2, s3, s4, s5, s6, s7, s8, s9, ok < bptr0, vv, vd, seen1, seen2, seen3, seen4, seen5, seen6, seen7, seen8, seen9 {
+    hex.read_nth_byte vv, bptr0, bidx
+    hex.zero 4, vd
+    hex.mov 2, vd, vv
+    hex.dec 4, vd
+    hex.if0 4, vd, s1
+    hex.dec 4, vd
+    hex.if0 4, vd, s2
+    hex.dec 4, vd
+    hex.if0 4, vd, s3
+    hex.dec 4, vd
+    hex.if0 4, vd, s4
+    hex.dec 4, vd
+    hex.if0 4, vd, s5
+    hex.dec 4, vd
+    hex.if0 4, vd, s6
+    hex.dec 4, vd
+    hex.if0 4, vd, s7
+    hex.dec 4, vd
+    hex.if0 4, vd, s8
+    ;s9
+  s1:
+    bit.if1 seen1, bad
+    bit.one seen1
+    ;ok
+  s2:
+    bit.if1 seen2, bad
+    bit.one seen2
+    ;ok
+  s3:
+    bit.if1 seen3, bad
+    bit.one seen3
+    ;ok
+  s4:
+    bit.if1 seen4, bad
+    bit.one seen4
+    ;ok
+  s5:
+    bit.if1 seen5, bad
+    bit.one seen5
+    ;ok
+  s6:
+    bit.if1 seen6, bad
+    bit.one seen6
+    ;ok
+  s7:
+    bit.if1 seen7, bad
+    bit.one seen7
+    ;ok
+  s8:
+    bit.if1 seen8, bad
+    bit.one seen8
+    ;ok
+  s9:
+    bit.if1 seen9, bad
+    bit.one seen9
+  ok:
+}
+
+board: hex.vec 81
+boxoff: hex.vec 9
+bptr0: hex.vec hw
+woff: hex.vec hw
+op: hex.vec hw
+cur: hex.vec hw
+strg: hex.vec hw
+ridx: hex.vec hw
+ri: hex.vec hw
+kk: hex.vec hw
+base: hex.vec hw
+bidx: hex.vec hw
+t1: hex.vec hw
+t2: hex.vec hw
+br: hex.vec hw
+bc: hex.vec hw
+q: hex.vec hw
+r3: hex.vec hw
+val: hex.vec 2
+lastb: hex.vec 2
+dv: hex.vec 4
+off: hex.vec 2
+vv: hex.vec 2
+vd: hex.vec 4
+zoff: hex.vec hw
+seen1: bit.bit
+seen2: bit.bit
+seen3: bit.bit
+seen4: bit.bit
+seen5: bit.bit
+seen6: bit.bit
+seen7: bit.bit
+seen8: bit.bit
+seen9: bit.bit
+c81: hex.vec hw, 81
+c9: hex.vec hw, 9
+c9w: hex.vec hw, 9
+c3: hex.vec hw, 3
+c3l: hex.vec hw, 3
+c9l: hex.vec hw, 9
+c27: hex.vec hw, 27
+c0c: hex.vec 4, '0'
+c9c: hex.vec 4, '9'
+c0b: hex.vec 2, '0'

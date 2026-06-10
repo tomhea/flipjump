@@ -1,0 +1,57 @@
+// Eval Three Op Lr (#0780)
+
+// Reads `<a><op1><b><op2><c>` + `\n` (single digits, `op` ∈ `+`/`-`/`*`). Evaluates strictly left-to-right (no precedence) and prints the result + `\n`.
+
+main
+
+def main < a, b, c, op1, op2 {
+    stl.startup_and_init_all
+    read_digit a
+    hex.input op1
+    read_digit b
+    hex.input op2
+    read_digit c
+    apply_op a, op1, b
+    apply_op a, op2, c
+    hex.print_dec_int 8, a
+    stl.output '\n'
+    stl.loop
+}
+
+// Read one ASCII digit and store its value (0-9) in dst[:8].
+def read_digit dst < db, c0 {
+    hex.input db
+    hex.zero 8, dst
+    hex.mov 2, dst, db
+    hex.sub 8, dst, c0
+}
+
+// acc[:8] = acc <op> val, where op (hex.vec 2) is '+', '-', or '*'.
+def apply_op acc, op, val @ chkminus, chkmul, doadd, dosub, domul, done < pc, mc, prod {
+    hex.cmp 2, op, pc, chkminus, doadd, chkminus
+  chkminus:
+    hex.cmp 2, op, mc, chkmul, dosub, chkmul
+  chkmul:
+    ;domul
+  doadd:
+    hex.add 8, acc, val
+    ;done
+  dosub:
+    hex.sub 8, acc, val
+    ;done
+  domul:
+    hex.mul 8, prod, acc, val
+    hex.mov 8, acc, prod
+  done:
+}
+
+a: hex.vec 8
+b: hex.vec 8
+c: hex.vec 8
+op1: hex.vec 2
+op2: hex.vec 2
+db: hex.vec 2
+c0: hex.vec 8, '0'
+pc: hex.vec 2, '+'
+mc: hex.vec 2, '-'
+prod: hex.vec 8

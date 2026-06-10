@@ -1,4 +1,4 @@
-// Print Fibs First 10 (#0250)
+// Print Fibs First 10 (#0290)
 
 // No input. Prints `0 1 1 2 3 5 8 13 21 34\n` (the first 10 Fibonacci numbers, space-separated).
 

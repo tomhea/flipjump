@@ -1,0 +1,55 @@
+// Bouncing Ball 1D (#0641)
+
+// Reads `pos` `0`-`9`, `velo` `-3` to `3` (signed), `steps` `1`-`9` (each own line). The ball moves on positions `0..9`; on hitting position `0` or `9`, velocity reverses sign. Prints the position after each of the `steps` steps, one per line.
+
+main
+
+def main @ err, bb_loop, bb_done, bb_xhi, bb_xlo, bb_xlo_clamp, bb_xok < bb_pos, bb_velo, bb_steps, bb_cnt, bb_tmp, bb_nine, bb_zero4 {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, bb_pos, err
+    hex.input_dec_int 4, bb_velo, err
+    hex.input_dec_uint 4, bb_steps, err
+    hex.mov 4, bb_cnt, bb_steps
+  bb_loop:
+    hex.if0 4, bb_cnt, bb_done
+    hex.add 4, bb_pos, bb_velo
+    // check pos >= 9 (signed: pos can be negative after a negative-velocity step)
+    hex.scmp 4, bb_pos, bb_nine, bb_xlo, bb_xok, bb_xhi
+  bb_xhi:
+    // pos > 9: new = 18 - pos; flip velo
+    hex.set 4, bb_tmp, 18
+    hex.sub 4, bb_tmp, bb_pos
+    hex.mov 4, bb_pos, bb_tmp
+    hex.zero 4, bb_tmp
+    hex.sub 4, bb_tmp, bb_velo
+    hex.mov 4, bb_velo, bb_tmp
+    ;bb_xok
+  bb_xlo:
+    // pos < 9; check pos <= 0 (signed)
+    hex.scmp 4, bb_pos, bb_zero4, bb_xlo_clamp, bb_xok, bb_xok
+  bb_xlo_clamp:
+    // pos < 0: new = -pos; flip velo
+    hex.zero 4, bb_tmp
+    hex.sub 4, bb_tmp, bb_pos
+    hex.mov 4, bb_pos, bb_tmp
+    hex.zero 4, bb_tmp
+    hex.sub 4, bb_tmp, bb_velo
+    hex.mov 4, bb_velo, bb_tmp
+  bb_xok:
+    hex.print_dec_uint 4, bb_pos
+    stl.output '\n'
+    hex.dec 4, bb_cnt
+    ;bb_loop
+  bb_done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+bb_pos: hex.vec 4
+bb_velo: hex.vec 4
+bb_steps: hex.vec 4
+bb_cnt: hex.vec 4
+bb_tmp: hex.vec 4
+bb_nine: hex.vec 4, 9
+bb_zero4: hex.vec 4, 0

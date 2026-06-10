@@ -1,4 +1,4 @@
-// Stack Reverse Line (#1155)
+// Stack Reverse Line (#0402)
 
 // Reads a `\n`-terminated line ≤ 40 chars. Uses an explicit push-all-then-pop-all stack pattern (LIFO) to reverse the line; prints the reversed bytes followed by `\n`. The stack demonstration is the point.
 

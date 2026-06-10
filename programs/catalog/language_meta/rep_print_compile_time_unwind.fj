@@ -1,0 +1,12 @@
+// Rep Print Compile Time Unwind (#0946)
+
+// No input. Uses `rep(8, i) stl.output('0' + i)` to print `01234567\n`. Demonstrates compile-time loop expansion.
+
+main
+
+def main {
+    stl.startup
+    rep(8, k) stl.output('0' + k)
+    stl.output '\n'
+    stl.loop
+}

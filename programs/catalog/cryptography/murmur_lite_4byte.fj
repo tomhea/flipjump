@@ -1,0 +1,35 @@
+// Murmur Lite 4Byte (#0906)
+
+// Reads exactly 4 raw bytes. Computes a tiny Murmur-style hash: `h = 0x12345678; for each byte b: h = ((h XOR b) * 0x05) mod 256`. Prints `h` as 2 lowercase hex chars + `\n`.
+
+main
+
+def main < h {
+    stl.startup_and_init_all
+    hex.set 2, h, 0x78
+    rep(4, i) murmur_step
+    hex.print_as_digit 2, h, 0
+    stl.output '\n'
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+// Read one byte and fold it into h: h = ((h ^ b) * 5) mod 256.
+def murmur_step < b, h, c5 {
+    hex.input b
+    hex.xor 2, h, b
+    mulmod h, c5
+}
+
+b: hex.vec 2
+h: hex.vec 2
+c5: hex.vec 4, 5
+mh4: hex.vec 4
+mt4: hex.vec 4

@@ -24,6 +24,7 @@ from flipjump.fjm.fjm_consts import (
     _segment_format,
     _segment_size,
     SUPPORTED_VERSIONS_NAMES,
+    SUPPORTED_MEMORY_WIDTHS,
     _LZMA_FORMAT,
     _LZMA_DECOMPRESSION_FILTERS,
     _new_garbage_val,
@@ -110,6 +111,11 @@ class Reader:
             raise FlipJumpReadFjmException(
                 f'Error: unsupported version ({self.version}, this program supports {str(SUPPORTED_VERSIONS_NAMES)}).'
             )
+        if self.memory_width not in SUPPORTED_MEMORY_WIDTHS:
+            raise FlipJumpReadFjmException(
+                f'Error: unsupported memory width ({self.memory_width},'
+                f' this program supports {sorted(SUPPORTED_MEMORY_WIDTHS)}).'
+            )
         if self.reserved != 0:
             raise FlipJumpReadFjmException(f'Error: bad reserved value ({self.reserved}, should be 0).')
 
@@ -149,6 +155,11 @@ class Reader:
             if data_length % 2 != 0:
                 raise FlipJumpReadFjmException(
                     f"Bad .fjm file: segment data-length must be even (an integer number of ops), got {data_length}."
+                )
+            if data_start + data_length > len(data):
+                raise FlipJumpReadFjmException(
+                    f"Bad .fjm file: segment data range [{data_start}, {data_start + data_length})"
+                    f" exceeds data pool length {len(data)}."
                 )
             self.memory_segments.append(
                 MemorySegment(

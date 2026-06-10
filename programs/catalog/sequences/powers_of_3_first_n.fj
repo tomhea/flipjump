@@ -1,4 +1,4 @@
-// Powers Of 3 First N (#0920)
+// Powers Of 3 First N (#0727)
 
 // Reads digit N `1`-`5` + `\n`. Prints `3^0, 3^1, ..., 3^(N-1)` space-separated + `\n`.
 

@@ -1,4 +1,4 @@
-// Mod Factorial (#1032)
+// Mod Factorial (#0143)
 
 // Reads decimals `N` `m` (each `1`-`9` for N, `1`-`30` for m, on own lines). Prints `(N! mod m)` as decimal + `\n`.
 

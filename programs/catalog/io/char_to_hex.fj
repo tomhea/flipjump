@@ -1,4 +1,4 @@
-// Char To Hex (#0046)
+// Char To Hex (#0045)
 
 // Reads exactly one byte from stdin and prints `0xNN\n` where NN is its two-digit hex code (lowercase).
 

@@ -1,0 +1,50 @@
+// Hash To Bucket 10 (#0909)
+
+// Reads a `\n`-terminated line ≤ 20 chars. Computes djb2 hash, then takes `hash mod 10`. Prints the bucket index `0`-`9` as one decimal digit + `\n`.
+
+main
+
+def main @ err < h1, h4, q, r, c10 {
+    stl.startup_and_init_all
+    djb2_line h1
+    hex.zero 4, h4
+    hex.mov 2, h4, h1
+    hex.div 4, 4, q, r, h4, c10, err
+    hex.print_dec_uint 4, r
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// state[:2] = (state * factor) mod 256.
+def mulmod state, factor < mh4, mt4 {
+    hex.zero 4, mh4
+    hex.mov 2, mh4, state
+    hex.mul 4, mt4, mh4, factor
+    hex.mov 2, state, mt4
+}
+
+// Stream a line and compute its djb2 hash (mod 256) into target[:2].
+def djb2_line target @ loop, go, done < b2, nl2, c33 {
+    hex.set 2, target, 5
+  loop:
+    hex.input b2
+    hex.if0 2, b2, done
+    hex.cmp 2, b2, nl2, go, done, go
+  go:
+    mulmod target, c33
+    hex.add 2, target, b2
+    ;loop
+  done:
+}
+
+h1: hex.vec 2
+h4: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4
+c10: hex.vec 4, 10
+b2: hex.vec 2
+nl2: hex.vec 2, '\n'
+c33: hex.vec 4, 33
+mh4: hex.vec 4
+mt4: hex.vec 4

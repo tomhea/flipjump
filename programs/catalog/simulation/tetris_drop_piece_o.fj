@@ -1,0 +1,68 @@
+// Tetris Drop Piece O (#0645)
+
+// Reads column `0`-`8` + `\n`. Drops an O-piece (2×2 square) at that column into an otherwise empty 6×10 board. Prints the resulting board (6 lines of 10 chars each, `.` empty, `#` occupied).
+
+main
+
+def main @ err, tc_row4, tc_row5, tc_row_loop, tc_row_done, tc_hash, tc_dot, tc_pcont, tc_ck2, tc_row5_loop, tc_ck2b, tc_hash2, tc_dot2, tc_pcont2, tc_row5_done, tc_row5_done2 < tc_col, tc_col1, tc_c, tc_ten, zero_char {
+    stl.startup_and_init_all 100
+    hex.input tc_col
+    hex.sub 2, tc_col, zero_char
+    hex.mov 2, tc_col1, tc_col
+    hex.inc 2, tc_col1
+    // 4 empty rows
+    stl.output ".........."
+    stl.output '\n'
+    stl.output ".........."
+    stl.output '\n'
+    stl.output ".........."
+    stl.output '\n'
+    stl.output ".........."
+    stl.output '\n'
+    // row 4
+    hex.set 2, tc_c, 0
+  tc_row4:
+    hex.cmp 2, tc_c, tc_ten, tc_row_loop, tc_row_done, tc_row_done
+  tc_row_loop:
+    hex.cmp 2, tc_c, tc_col, tc_ck2, tc_hash, tc_ck2
+  tc_ck2:
+    hex.cmp 2, tc_c, tc_col1, tc_dot, tc_hash, tc_dot
+  tc_hash:
+    stl.output '#'
+    ;tc_pcont
+  tc_dot:
+    stl.output '.'
+  tc_pcont:
+    hex.inc 2, tc_c
+    ;tc_row4
+  tc_row_done:
+    stl.output '\n'
+    // row 5
+    hex.set 2, tc_c, 0
+  tc_row5:
+    hex.cmp 2, tc_c, tc_ten, tc_row5_loop, tc_row5_done, tc_row5_done
+  tc_row5_loop:
+    hex.cmp 2, tc_c, tc_col, tc_ck2b, tc_hash2, tc_ck2b
+  tc_ck2b:
+    hex.cmp 2, tc_c, tc_col1, tc_dot2, tc_hash2, tc_dot2
+  tc_hash2:
+    stl.output '#'
+    ;tc_pcont2
+  tc_dot2:
+    stl.output '.'
+  tc_pcont2:
+    hex.inc 2, tc_c
+    ;tc_row5
+  tc_row5_done:
+  tc_row5_done2:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+tc_col: hex.vec 2
+tc_col1: hex.vec 2
+tc_c: hex.vec 2
+tc_ten: hex.vec 2, 10
+zero_char: hex.vec 2, '0'

@@ -1,4 +1,4 @@
-// Perpendicular Vectors Check (#0593)
+// Perpendicular Vectors Check (#0617)
 
 // Reads 4 decimals (two 2D vectors). Prints `1\n` if their dot product is `0` (perpendicular), else `0\n`.
 

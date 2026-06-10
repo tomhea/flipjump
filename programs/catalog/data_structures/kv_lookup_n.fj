@@ -1,4 +1,4 @@
-// Kv Lookup N (#1163)
+// Kv Lookup N (#0410)
 
 // Reads decimal `N` `1`-`9` + `\n`, then N key-value pairs (same format as `kv_lookup_5`). Then reads a query key. Prints the value, or `not found\n`.
 

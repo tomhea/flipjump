@@ -1,0 +1,16 @@
+// Compile Time String Length (#0947)
+
+// No input. Internally has the string `"FlipJump"`. Uses `#"FlipJump"` or `strlen` macro to compute its length at compile time. Prints `8\n`.
+
+main
+
+def main @ err < slen {
+    stl.startup_and_init_all
+    hex.set 4, slen, (#"FlipJump" + 1) / 8
+    hex.print_dec_uint 4, slen
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+slen: hex.vec 4

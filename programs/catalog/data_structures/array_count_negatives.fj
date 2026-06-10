@@ -1,4 +1,4 @@
-// Array Count Negatives (#1126)
+// Array Count Negatives (#0373)
 
 // Reads digit N `1`-`9` + `\n`, then N signed decimal integers. Prints the count of values `< 0` + `\n`.
 

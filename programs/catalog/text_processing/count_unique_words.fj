@@ -1,4 +1,4 @@
-// Count Unique Words (#1104)
+// Count Unique Words (#0748)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Splits on whitespace (case-sensitive, runs collapse). Prints the count of distinct words as decimal + `\n`.
 

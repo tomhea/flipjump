@@ -1,0 +1,52 @@
+// Trivia Capital France (#0447)
+
+// First prints `What's the capital of France?\n` on stdout. Then reads a `\n`-terminated answer (≤ 20 chars). Prints `correct!\n` if the answer is exactly `Paris`, else `wrong\n`.
+
+hw = w / 4
+
+main
+
+def main @ ok, bad, done < buf, bptr, slen {
+    stl.startup_and_init_all
+    stl.output "What's the capital of France?\n"
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    equals_paris buf, slen, ok, bad
+  ok:
+    stl.output "correct!\n"
+    ;done
+  bad:
+    stl.output "wrong\n"
+  done:
+    stl.loop
+}
+
+// Jump `yes` if buf[:slen] equals "Paris", else `no`.
+def equals_paris buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, 'P', no
+    next_byte_is eqptr, 'a', no
+    next_byte_is eqptr, 'r', no
+    next_byte_is eqptr, 'i', no
+    next_byte_is eqptr, 's', no
+    ;yes
+}
+
+// Read the next buffer byte through ptr (advancing it); jump `no` if it differs from c.
+def next_byte_is ptr, c, no @ ok < cb, cc {
+    hex.read_byte_and_inc cb, ptr
+    hex.set 2, cc, c
+    hex.cmp 2, cb, cc, no, ok, no
+  ok:
+}
+
+buf: hex.vec 84
+bptr: hex.vec w/4
+slen: hex.vec w/4
+eqptr: hex.vec w/4
+lenreg: hex.vec w/4
+cb: hex.vec 2
+cc: hex.vec 2

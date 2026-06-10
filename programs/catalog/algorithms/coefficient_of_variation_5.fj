@@ -1,4 +1,4 @@
-// Coefficient Of Variation 5 (#1212)
+// Coefficient Of Variation 5 (#0575)
 
 // Reads exactly 5 decimals `1`-`99`. Computes `mean` and `std_dev_5_floor_sqrt`. Prints `floor(std_dev * 100 / mean)` as decimal percent + `\n`.
 

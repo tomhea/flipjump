@@ -1,0 +1,25 @@
+// Variable Swap With Temp (#0917)
+
+// Reads two decimals `a` `b` (each `0`-`99`, own line). Swaps using a temporary variable `t = a; a = b; b = t;`. Prints `<new_a>\n<new_b>\n`.
+
+main
+
+def main @ err < va, vb, tmp {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, va, err
+    hex.input_dec_uint 4, vb, err
+    hex.mov 4, tmp, va
+    hex.mov 4, va, vb
+    hex.mov 4, vb, tmp
+    hex.print_dec_uint 4, va
+    stl.output '\n'
+    hex.print_dec_uint 4, vb
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+va: hex.vec 4
+vb: hex.vec 4
+tmp: hex.vec 4

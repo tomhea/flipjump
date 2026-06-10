@@ -1,4 +1,4 @@
-// And With Constant 0f (#0377)
+// And With Constant 0f (#0211)
 
 // Reads one byte and outputs `byte AND 0x0F` (low nibble preserved, high nibble zeroed), as one raw byte.
 

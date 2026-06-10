@@ -1,4 +1,4 @@
-// Days Between Dates Same Year (#1076)
+// Days Between Dates Same Year (#0995)
 
 // Reads year, month1, day1, month2, day2 (each own line). Both dates in the same year; date2 ≥ date1. Prints absolute day difference as decimal + `\n`.
 

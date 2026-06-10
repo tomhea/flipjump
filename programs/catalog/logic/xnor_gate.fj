@@ -1,4 +1,4 @@
-// Xnor Gate (#0096)
+// Xnor Gate (#0253)
 
 // Reads two ASCII bits and prints their XNOR + `\n`.
 

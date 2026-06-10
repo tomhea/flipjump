@@ -1,4 +1,4 @@
-// Plus Pattern (#0241)
+// Plus Pattern (#0281)
 
 // Reads odd digit N `1`/`3`/`5`/`7`/`9` + `\n`. Prints an N-by-N grid with `*` along the middle row and the middle column, `.` elsewhere.
 

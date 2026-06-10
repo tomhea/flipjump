@@ -1,4 +1,4 @@
-// First Char Of Line (#0173)
+// First Char Of Line (#0171)
 
 // Reads a non-empty `\n`-terminated line and prints just its first byte followed by `\n`.
 

@@ -1,4 +1,4 @@
-// Half Adder (#0100)
+// Half Adder (#0257)
 
 // Reads two ASCII bits and prints the sum bit then the carry bit, both separated by `\n` (two lines).
 

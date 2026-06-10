@@ -1,4 +1,4 @@
-// Is Cube Small (#0165)
+// Is Cube Small (#0140)
 
 // Reads decimal N in `0`-`64` and prints `1\n` if N is a perfect cube, else `0\n`.
 

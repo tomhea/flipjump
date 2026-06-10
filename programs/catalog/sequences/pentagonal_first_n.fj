@@ -1,4 +1,4 @@
-// Pentagonal First N (#0433)
+// Pentagonal First N (#0699)
 
 // Reads digit N `1`-`9` + `\n`. Prints the first N pentagonal numbers `P(k) = k(3k - 1)/2`, space-separated, + `\n`.
 

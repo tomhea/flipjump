@@ -1,4 +1,4 @@
-// Mul By 10 (#0112)
+// Mul By 10 (#0087)
 
 // Reads one decimal in `0`-`100` and prints `a * 10` as decimal + `\n`.
 

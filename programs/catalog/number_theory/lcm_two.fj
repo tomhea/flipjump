@@ -1,4 +1,4 @@
-// Lcm Two (#0143)
+// Lcm Two (#0118)
 
 // Reads two decimals each in `1`-`20` and prints their LCM as decimal + `\n`.
 

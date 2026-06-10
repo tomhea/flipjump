@@ -1,4 +1,4 @@
-// Right Triangle Stars (#0233)
+// Right Triangle Stars (#0273)
 
 // Reads digit N `1`-`9` + `\n`. Prints a right triangle of `*`: row i (1..N) has i stars followed by `\n`.
 

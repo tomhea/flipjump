@@ -1,0 +1,49 @@
+// Regex Aa Repeated (#0772)
+
+// Reads a `\n`-terminated string of lowercase letters ≤ 30 chars. Prints `1\n` if the string matches `(aa)*` (zero or more `aa` pairs, even count of `a`s, no other characters), else `0\n`.
+
+main
+
+def main @ err, loop, done, is_a_k, set_par1, print0k, print1k, done_k < ch, char_a, nl_char, ok, parity, tmp {
+    stl.startup_and_init_all 100
+    hex.set 2, ok, 1
+    hex.set 2, parity, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, is_a_k
+    hex.set 2, ok, 0
+    ;loop
+  is_a_k:
+    // toggle parity
+    hex.if0 2, parity, set_par1
+    hex.set 2, parity, 0
+    ;loop
+  set_par1:
+    hex.set 2, parity, 1
+    ;loop
+  done:
+    // ok==1 (all a's) AND parity==0 (even count) -> print 1
+    hex.if0 2, ok, print0k
+    hex.if0 2, parity, print1k
+  print0k:
+    stl.output "0\n"
+    ;done_k
+  print1k:
+    stl.output "1\n"
+  done_k:
+    stl.loop
+  err:
+    stl.loop
+}
+
+ch: hex.vec 2
+tmp: hex.vec 2
+ok: hex.vec 2
+parity: hex.vec 2
+char_a: hex.vec 2, 'a'
+nl_char: hex.vec 2, '\n'

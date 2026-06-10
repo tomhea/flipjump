@@ -1,0 +1,53 @@
+// Battleship Hit Check (#0961)
+
+// Reads a 4×4 grid (`S` = ship, `.` = water): 4 lines of 4 chars each. Then reads a hit coordinate `r c` (each digit `0`-`3` on its own line). Prints `hit\n` if grid[r][c] is `S`, else `miss\n`.
+
+main
+
+def main @ err, bh_loop, bh_body, bh_store, bh_done, bh_hit, bh_miss < bh_arr, bh_wptr, bh_stored, bh_rb, bh_r, bh_c, bh_idx, bh_nptr, bh_bptr, bh_c16, bh_nlc, bh_Sc, bh_four {
+    stl.startup_and_init_all 100
+    hex.set w/4, bh_wptr, bh_arr
+    hex.zero 4, bh_stored
+  bh_loop:
+    hex.cmp 4, bh_stored, bh_c16, bh_body, bh_done, bh_done
+  bh_body:
+    hex.input bh_rb
+    hex.cmp 2, bh_rb, bh_nlc, bh_store, bh_loop, bh_store
+  bh_store:
+    hex.write_byte_and_inc bh_wptr, bh_rb
+    hex.inc 4, bh_stored
+    ;bh_loop
+  bh_done:
+    hex.input bh_rb
+    hex.input_dec_uint 4, bh_r, err
+    hex.input_dec_uint 4, bh_c, err
+    hex.mul 4, bh_idx, bh_r, bh_four
+    hex.add 4, bh_idx, bh_c
+    hex.zero w/4, bh_nptr
+    hex.mov 4, bh_nptr, bh_idx
+    hex.set w/4, bh_bptr, bh_arr
+    hex.read_nth_byte bh_rb, bh_bptr, bh_nptr
+    hex.cmp 2, bh_rb, bh_Sc, bh_miss, bh_hit, bh_miss
+  bh_hit:
+    stl.output "hit\n"
+    stl.loop
+  bh_miss:
+    stl.output "miss\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+bh_arr: hex.vec 16, 0
+bh_wptr: hex.vec w/4
+bh_stored: hex.vec 4
+bh_rb: hex.vec 2
+bh_r: hex.vec 4
+bh_c: hex.vec 4
+bh_idx: hex.vec 4
+bh_nptr: hex.vec w/4
+bh_bptr: hex.vec w/4
+bh_c16: hex.vec 4, 16
+bh_four: hex.vec 4, 4
+bh_nlc: hex.vec 2, '\n'
+bh_Sc: hex.vec 2, 'S'

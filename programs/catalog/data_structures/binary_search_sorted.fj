@@ -1,4 +1,4 @@
-// Binary Search Sorted (#1154)
+// Binary Search Sorted (#0401)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals already sorted ascending, then `target`. Prints the 0-based index of the match + `\n` (any if duplicates), or `not found\n`. Uses binary search.
 

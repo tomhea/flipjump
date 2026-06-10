@@ -1,4 +1,4 @@
-// Matrix Diagonal Sum 3x3 (#1203)
+// Matrix Diagonal Sum 3x3 (#0566)
 
 // Reads 9 decimals (3×3 row-major). Prints the sum of the main diagonal `a[0][0] + a[1][1] + a[2][2]` as decimal + `\n`.
 

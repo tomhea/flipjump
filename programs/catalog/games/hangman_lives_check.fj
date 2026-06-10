@@ -1,0 +1,25 @@
+// Hangman Lives Check (#0951)
+
+// Reads a digit `0`-`6` + `\n` (number of wrong guesses so far). Prints `<lives>\n` where `lives = 6 - wrong`. If `lives == 0`, additionally prints `Game over!\n` on a second line.
+
+main
+
+def main @ err, hl_over < hl_w, hl_lives, hl_six {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, hl_w, err
+    hex.mov 4, hl_lives, hl_six
+    hex.sub 4, hl_lives, hl_w
+    hex.print_dec_uint 4, hl_lives
+    stl.output '\n'
+    hex.if0 4, hl_lives, hl_over
+    stl.loop
+  hl_over:
+    stl.output "Game over!\n"
+    stl.loop
+  err:
+    stl.loop
+}
+
+hl_w: hex.vec 4
+hl_lives: hex.vec 4
+hl_six: hex.vec 4, 6

@@ -1,0 +1,11 @@
+// Print House 5 (#0804)
+
+// No input. Prints a fixed 5-line ASCII house (taller and wider than `print_house_3`): line 1 `  /\  `, line 2 ` /  \ `, line 3 `/____\`, line 4 `|    |`, line 5 `|____|`, each + `\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "  /\\  \n /  \\ \n/____\\\n|    |\n|____|\n"
+    stl.loop
+}

@@ -1,4 +1,4 @@
-// Max Two Bytes (#0898)
+// Max Two Bytes (#0220)
 
 // Reads exactly 2 bytes. Outputs the byte with larger numeric value as a raw byte.
 

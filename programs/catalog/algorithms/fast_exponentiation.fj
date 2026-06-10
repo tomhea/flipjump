@@ -1,4 +1,4 @@
-// Fast Exponentiation (#1201)
+// Fast Exponentiation (#0564)
 
 // Reads `base` `2`-`5`, `exp` `0`-`10`, `mod` `1`-`100` (each own line). Prints `(base^exp) mod mod` as decimal + `\n`. Implementation: exponentiation-by-squaring.
 

@@ -1,4 +1,4 @@
-// Cents To Dollars Cents (#0365)
+// Cents To Dollars Cents (#0490)
 
 // Reads decimal cents `0`-`9999` + `\n` and prints `<dollars>.<cc>\n`, where `cc` is `cents % 100` zero-padded to 2 digits.
 

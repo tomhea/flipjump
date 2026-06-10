@@ -1,0 +1,40 @@
+// Parse Currency Dollars Cents (#0800)
+
+// Reads `$<D>.<CC>\n` where `D` is decimal `0`-`99` (no zero pad) and `CC` is exactly 2 decimal digits. Prints `D * 100 + CC` (total cents) + `\n`.
+
+main
+
+def main < dollar, d, c1, c2, cc, total, c100, sb {
+    stl.startup_and_init_all
+    hex.input dollar
+    hex.input_dec_uint_until 8, d, sb
+    read_digit c1
+    read_digit c2
+    hex.mov 8, cc, c1
+    hex.mul10 8, cc
+    hex.add 8, cc, c2
+    hex.mul 8, total, d, c100
+    hex.add 8, total, cc
+    hex.print_dec_uint 8, total
+    stl.output '\n'
+    stl.loop
+}
+
+// Read one ASCII digit and store its value (0-9) in dst[:8].
+def read_digit dst < db, c0 {
+    hex.input db
+    hex.zero 8, dst
+    hex.mov 2, dst, db
+    hex.sub 8, dst, c0
+}
+
+dollar: hex.vec 2
+d: hex.vec 8
+c1: hex.vec 8
+c2: hex.vec 8
+cc: hex.vec 8
+total: hex.vec 8
+c100: hex.vec 8, 100
+sb: hex.vec 2
+db: hex.vec 2
+c0: hex.vec 8, '0'

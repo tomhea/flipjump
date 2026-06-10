@@ -1,4 +1,4 @@
-// Count Primes To N (#0141)
+// Count Primes To N (#0116)
 
 // Reads decimal N in `0`-`50` and prints the count of prime numbers in `[2..N]` as decimal + `\n`.
 

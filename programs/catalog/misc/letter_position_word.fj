@@ -1,4 +1,4 @@
-// Letter Position Word (#1085)
+// Letter Position Word (#1025)
 
 // Reads `\n`-terminated string ≤ 10 chars (letters only). Prints the 0-based alphabetic position of each letter (as decimal), space-separated, followed by `\n`. Example: `abc\n` → `0 1 2\n`.
 

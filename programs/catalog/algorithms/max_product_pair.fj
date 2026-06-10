@@ -1,4 +1,4 @@
-// Max Product Pair (#1190)
+// Max Product Pair (#0554)
 
 // Reads digit N `2`-`9` + `\n`, then N signed decimals. Prints the maximum product of any two distinct-indexed elements as signed decimal + `\n`.
 

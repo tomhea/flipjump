@@ -1,0 +1,51 @@
+// Atbash Cipher (#0507)
+
+// Reads a `\n`-terminated line ≤ 80 chars. For each letter, maps `a↔z`, `b↔y`, ..., `m↔n` (and the same within `A-Z`). Non-letters unchanged. Prints result + `\n`.
+
+main
+
+def main @ err, loop, go, low_in, do_low, up_chk, up_in, do_up, plain, done < b, nl, v, res, la, lz, ua, uz, lsum, usum {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.zero 4, v
+    hex.mov 2, v, b
+    hex.cmp 4, v, la, up_chk, low_in, low_in
+  low_in:
+    hex.cmp 4, v, lz, do_low, do_low, up_chk
+  do_low:
+    hex.mov 4, res, lsum
+    hex.sub 4, res, v
+    hex.print res
+    ;loop
+  up_chk:
+    hex.cmp 4, v, ua, plain, up_in, up_in
+  up_in:
+    hex.cmp 4, v, uz, do_up, do_up, plain
+  do_up:
+    hex.mov 4, res, usum
+    hex.sub 4, res, v
+    hex.print res
+    ;loop
+  plain:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+v: hex.vec 4
+res: hex.vec 4
+la: hex.vec 4, 'a'
+lz: hex.vec 4, 'z'
+ua: hex.vec 4, 'A'
+uz: hex.vec 4, 'Z'
+lsum: hex.vec 4, 219
+usum: hex.vec 4, 155

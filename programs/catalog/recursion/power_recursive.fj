@@ -1,0 +1,37 @@
+// Power Recursive (#0420)
+
+// Reads `base` `0`-`3` then `exp` `0`-`3` (each own line). Prints `base^exp` using a recursive macro `pow(b,e) = b * pow(b, e-1)`.
+
+main
+
+def main @ err < r_base, r_exp, pow_base, pow_exp, pow_result, pow_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_base, err
+    hex.input_dec_uint 4, r_exp, err
+    hex.mov 4, pow_base, r_base
+    hex.mov 4, pow_exp, r_exp
+    stl.call pow_fn
+    hex.print_dec_uint 4, pow_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// pow_result = pow_base ^ pow_exp
+pow_fn:
+    hex.if0 4, pow_exp, pow_base_case
+    hex.dec 4, pow_exp
+    stl.call pow_fn
+    hex.mul 4, pow_tmp, pow_base, pow_result
+    hex.mov 4, pow_result, pow_tmp
+    stl.return
+  pow_base_case:
+    hex.set 4, pow_result, 1
+    stl.return
+
+r_base: hex.vec 4
+r_exp: hex.vec 4
+pow_base: hex.vec 4
+pow_exp: hex.vec 4
+pow_result: hex.vec 4
+pow_tmp: hex.vec 4

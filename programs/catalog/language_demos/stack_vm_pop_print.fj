@@ -1,4 +1,4 @@
-// Stack Vm Pop Print (#1271)
+// Stack Vm Pop Print (#0868)
 
 // Reads a `\n`-terminated program: `PUSH <d>` and `POP` (pop top and print as decimal + `\n` for each POP). ≤ 10 tokens total.
 

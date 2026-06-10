@@ -1,0 +1,26 @@
+// Echo Bot (#0433)
+
+// Reads each `\n`-terminated input line until an empty line (just `\n`). For each non-empty line, prints `> <line>\n`.
+
+hw = w / 4
+
+main
+
+def main @ loop, done < buf, bptr, slen {
+    stl.startup_and_init_all
+  loop:
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    hex.if0 hw, slen, done
+    stl.output "> "
+    hex.set hw, bptr, buf
+    hex.print_ptr_text bptr, slen
+    stl.output '\n'
+    ;loop
+  done:
+    stl.loop
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw

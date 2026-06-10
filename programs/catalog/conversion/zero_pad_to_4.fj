@@ -1,4 +1,4 @@
-// Zero Pad To 4 (#0358)
+// Zero Pad To 4 (#0484)
 
 // Reads decimal `0`-`9999` + `\n` and prints a 4-character zero-padded representation + `\n`. Examples: `7` → `0007\n`, `1234` → `1234\n`.
 

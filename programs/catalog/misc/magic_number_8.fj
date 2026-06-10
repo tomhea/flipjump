@@ -1,4 +1,4 @@
-// Magic Number 8 (#0880)
+// Magic Number 8 (#1006)
 
 // Reads decimal N `0`-`999` + `\n`. Prints `magic!\n` if N mod 8 == 0, else `not magic\n`.
 

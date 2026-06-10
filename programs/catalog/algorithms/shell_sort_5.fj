@@ -1,4 +1,4 @@
-// Shell Sort 5 (#1233)
+// Shell Sort 5 (#0596)
 
 // Reads exactly 5 decimals and prints them sorted ascending. Implementation: shell sort with gap sequence `2, 1`.
 

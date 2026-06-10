@@ -1,4 +1,4 @@
-// Demo Macro One Arg (#1265)
+// Demo Macro One Arg (#0862)
 
 // Defines a macro `print_byte(b)` that calls `stl.output(b)`. The top-level invokes `print_byte('A')`. Prints `A\n`.
 

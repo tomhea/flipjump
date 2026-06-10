@@ -1,4 +1,4 @@
-// Not Gate (#0097)
+// Not Gate (#0254)
 
 // Reads one ASCII bit and prints its negation + `\n`.
 

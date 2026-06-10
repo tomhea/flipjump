@@ -1,4 +1,4 @@
-// Print T Shape (#0269)
+// Print T Shape (#0307)
 
 // Reads digit N `3`/`5`/`7`/`9` + `\n`. Prints a T-shape: row 0 is N `*`s; rows 1..N-1 each have (N-1)/2 leading spaces then `*` then `\n`.
 

@@ -1,0 +1,72 @@
+// Array 2D Access 3X3 (#0929)
+
+// Reads 9 decimals (3×3 grid, row-major, each on own line), then a row `0`-`2` + `\n`, then a col `0`-`2` + `\n`. Prints `grid[row][col]` as decimal + `\n`.
+
+main
+
+def main @ err, g0, g1, g2, g3, g4, g5, g6, g7, print < grid, three, rrow, rcol, ridx, result, tmp {
+    stl.startup_and_init_all 100
+    rep(9, i) hex.input_dec_uint 4, grid + i*dw*4, err
+    hex.input_dec_uint 4, rrow, err
+    hex.input_dec_uint 4, rcol, err
+    // ridx = row*3 + col
+    hex.mul 4, ridx, rrow, three
+    hex.add 4, ridx, rcol
+    // dispatch on ridx (0..8)
+    hex.if0 4, ridx, g0
+    hex.mov 4, tmp, ridx
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g1
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g2
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g3
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g4
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g5
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g6
+    hex.dec 4, tmp
+    hex.if0 4, tmp, g7
+    hex.mov 4, result, grid + 8*dw*4
+    ;print
+  g0:
+    hex.mov 4, result, grid + 0*dw*4
+    ;print
+  g1:
+    hex.mov 4, result, grid + 1*dw*4
+    ;print
+  g2:
+    hex.mov 4, result, grid + 2*dw*4
+    ;print
+  g3:
+    hex.mov 4, result, grid + 3*dw*4
+    ;print
+  g4:
+    hex.mov 4, result, grid + 4*dw*4
+    ;print
+  g5:
+    hex.mov 4, result, grid + 5*dw*4
+    ;print
+  g6:
+    hex.mov 4, result, grid + 6*dw*4
+    ;print
+  g7:
+    hex.mov 4, result, grid + 7*dw*4
+    ;print
+  print:
+    hex.print_dec_uint 4, result
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+grid: hex.vec 4*9
+rrow: hex.vec 4
+rcol: hex.vec 4
+ridx: hex.vec 4
+result: hex.vec 4
+tmp: hex.vec 4
+three: hex.vec 4, 3

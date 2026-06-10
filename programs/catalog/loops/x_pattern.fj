@@ -1,4 +1,4 @@
-// X Pattern (#0240)
+// X Pattern (#0280)
 
 // Reads digit N `1`-`9` + `\n` (N odd preferred). Prints an N-by-N grid where cell (i,j) is `*` if `i == j` or `i + j == N - 1` else `.`.
 

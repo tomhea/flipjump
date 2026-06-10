@@ -1,4 +1,4 @@
-// Circle Circumference Approx (#1059)
+// Circle Circumference Approx (#0625)
 
 // Reads decimal radius `0`-`9` + `\n`. Prints `(2 * r * 314) / 100` (integer approximation of 2πr) + `\n`.
 

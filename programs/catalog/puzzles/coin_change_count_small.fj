@@ -1,0 +1,44 @@
+// Coin Change Count Small (#0678)
+
+// Reads decimal amount `1`-`20` + `\n`. Prints the number of distinct ways to make `amount` cents using coins of denominations `{1, 5, 10}` (order doesn't matter) + `\n`.
+
+main
+
+def main @ err, oloop, ocont, odone, iloop, icont, idone < amount, tens, fives, t10, f5, rem, cnt, c10, c5 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, amount, err
+    hex.zero 8, cnt
+    hex.zero 8, tens
+  oloop:
+    hex.mul 8, t10, tens, c10
+    hex.cmp 8, t10, amount, ocont, ocont, odone
+  ocont:
+    hex.mov 8, rem, amount
+    hex.sub 8, rem, t10
+    hex.zero 8, fives
+  iloop:
+    hex.mul 8, f5, fives, c5
+    hex.cmp 8, f5, rem, icont, icont, idone
+  icont:
+    hex.inc 8, cnt
+    hex.inc 8, fives
+    ;iloop
+  idone:
+    hex.inc 8, tens
+    ;oloop
+  odone:
+    hex.print_dec_uint 8, cnt
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+amount: hex.vec 8
+tens: hex.vec 8
+fives: hex.vec 8
+t10: hex.vec 8
+f5: hex.vec 8
+rem: hex.vec 8
+cnt: hex.vec 8
+c10: hex.vec 8, 10
+c5: hex.vec 8, 5

@@ -1,4 +1,4 @@
-// Mul By 3 (#0109)
+// Mul By 3 (#0084)
 
 // Reads one decimal in `0`-`30` and prints `a * 3` as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Lucky Year Has 7 (#0879)
+// Lucky Year Has 7 (#1005)
 
 // Reads year `1900`-`2099` + `\n`. Prints `1\n` if its decimal representation contains the digit `7` anywhere, else `0\n`.
 

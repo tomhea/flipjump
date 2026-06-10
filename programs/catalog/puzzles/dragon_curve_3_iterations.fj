@@ -1,0 +1,11 @@
+// Dragon Curve 3 Iterations (#0691)
+
+// No input. Prints the heighway-dragon L/R turn sequence after exactly 3 paper-fold iterations, where `L` denotes a left turn and `R` denotes a right turn. The 3rd-iteration sequence has length `2^3 - 1 = 7`. Convention: start with a single `L` (1st iteration), and each next iteration appends `L` then the reverse-and-swap of the prior sequence. This yields iteration-3 = `LLRLLRR`. Output is exactly `LLRLLRR\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "LLRLLRR\n"
+    stl.loop
+}

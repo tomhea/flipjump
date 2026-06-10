@@ -1,4 +1,4 @@
-// Line Ends With Substring (#1108)
+// Line Ends With Substring (#0752)
 
 // Reads a `\n`-terminated suffix (≤ 20 chars), then a `\n`-terminated line (≤ 60 chars). Prints `1\n` if the line's content (excluding `\n`) ends with the suffix exactly, else `0\n`.
 

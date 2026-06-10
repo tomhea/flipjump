@@ -1,4 +1,4 @@
-// Demultiplexer 1to2 (#0911)
+// Demultiplexer 1to2 (#0264)
 
 // Reads a data bit + selector bit. Outputs two bits separated by space + `\n`: if selector is `0`, prints `<data> 0\n`; if `1`, prints `0 <data>\n`.
 

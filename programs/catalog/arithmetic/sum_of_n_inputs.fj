@@ -1,4 +1,4 @@
-// Sum Of N Inputs (#0128)
+// Sum Of N Inputs (#0103)
 
 // Reads decimal N (`1`-`9`) on first line, then N decimal integers (each own line), prints their sum + `\n`.
 

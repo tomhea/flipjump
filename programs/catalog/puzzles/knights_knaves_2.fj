@@ -1,0 +1,67 @@
+// Knights Knaves 2 (#0693)
+
+// Reads 2 decimals `s1` `s2` (each `0` or `1`, on own lines) representing two islanders' statements about each other: `s1`=0 means islander A says "B is a knight"; `s1`=1 means A says "B is a knave"; `s2` similarly is B's statement about A. Prints one of `AK BK\n`, `AK BN\n`, `AN BK\n`, `AN BN\n` (the consistent assignment) or `paradox\n` if no consistent assignment exists.
+
+main
+
+def main @ err, done, out0, out1, out2, out3 < s1, s2 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, s1, err
+    hex.input_dec_uint 4, s2, err
+    try_case 1, 1, out0
+    try_case 1, 0, out1
+    try_case 0, 1, out2
+    try_case 0, 0, out3
+    stl.output "paradox\n"
+    ;done
+  out0:
+    stl.output "AK BK\n"
+    ;done
+  out1:
+    stl.output "AK BN\n"
+    ;done
+  out2:
+    stl.output "AN BK\n"
+    ;done
+  out3:
+    stl.output "AN BN\n"
+    ;done
+  done:
+  err:
+    stl.loop
+}
+
+// If assignment (a,b) is consistent with s1,s2, jump `hit`.
+def try_case a, b, hit @ okA, fail < s1, s2, av, bv, claim {
+    hex.set 4, av, a
+    hex.set 4, bv, b
+    claim_truth s1, bv, claim
+    hex.cmp 4, av, claim, fail, okA, fail
+  okA:
+    claim_truth s2, av, claim
+    hex.cmp 4, bv, claim, fail, hit, fail
+  fail:
+}
+
+// claim[:4] = truth value of the speaker's statement about `target`.
+// s==0 -> claims target is knight(1); s==1 -> claims target is knave(0).
+def claim_truth s, target, claim @ s0, s1c, t_knave, done {
+    hex.if0 4, s, s0
+    ;s1c
+  s0:
+    hex.mov 4, claim, target
+    ;done
+  s1c:
+    hex.if0 4, target, t_knave
+    hex.zero 4, claim
+    ;done
+  t_knave:
+    hex.set 4, claim, 1
+  done:
+}
+
+s1: hex.vec 4
+s2: hex.vec 4
+av: hex.vec 4
+bv: hex.vec 4
+claim: hex.vec 4

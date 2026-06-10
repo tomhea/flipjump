@@ -1,4 +1,4 @@
-// Array Max 10 (#1113)
+// Array Max 10 (#0360)
 
 // Reads exactly 10 decimals (each own line) and prints the maximum + `\n`.
 

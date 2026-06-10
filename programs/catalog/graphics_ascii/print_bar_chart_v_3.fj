@@ -1,0 +1,34 @@
+// Print Bar Chart V 3 (#0828)
+
+// Reads 3 decimals each `0`-`5` (own line). Prints a 5-row × 3-col vertical bar chart: for each column `i`, `*` for rows ≥ `5 - input_i`, `.` otherwise.
+
+main
+
+def main @ err < arr {
+    stl.startup_and_init_all
+    rep(3, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    rep(5, r) brow r
+  err:
+    stl.loop
+}
+
+// Print one chart row r (3 columns) then a newline.
+def brow r {
+    rep(3, c) cell r, c
+    stl.output '\n'
+}
+
+// '*' if arr[c] >= 5 - r (column tall enough to reach this row), else '.'.
+def cell r, c @ dot, star, done < arr, kreg {
+    hex.set 4, kreg, 5 - r
+    hex.cmp 4, arr + c*dw*4, kreg, dot, star, star
+  dot:
+    stl.output '.'
+    ;done
+  star:
+    stl.output '*'
+  done:
+}
+
+arr: hex.vec 4*3
+kreg: hex.vec 4

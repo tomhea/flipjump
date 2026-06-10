@@ -1,4 +1,4 @@
-// Skip First Byte (#0035)
+// Skip First Byte (#0034)
 
 // Reads stdin and outputs every byte except the very first one.
 

@@ -1,0 +1,25 @@
+// Tic Tac Toe Board Full (#0663)
+
+// Reads 3 lines of 3 chars each. Prints `1\n` if no `.` chars remain (board is full), else `0\n`.
+
+main
+
+def main @ loop, go, full, dot, done < b, dotc {
+    stl.startup_and_init_all
+  loop:
+    hex.input b
+    hex.if0 2, b, full
+    hex.cmp 2, b, dotc, go, dot, go
+  go:
+    ;loop
+  dot:
+    stl.output "0\n"
+    ;done
+  full:
+    stl.output "1\n"
+  done:
+    stl.loop
+}
+
+b: hex.vec 2
+dotc: hex.vec 2, '.'

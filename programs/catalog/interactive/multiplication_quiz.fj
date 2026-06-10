@@ -1,0 +1,29 @@
+// Multiplication Quiz (#0441)
+
+// Same I/O shape as `addition_quiz` but for multiplication. Prints `correct\n` if the answer equals the product, else `wrong (expected <P>)\n`.
+
+main
+
+def main @ err, ok, bad, done < a, b, res, ans {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.input_dec_uint 4, b, err
+    hex.input_dec_uint 4, ans, err
+    hex.mul 4, res, a, b
+    hex.cmp 4, ans, res, bad, ok, bad
+  ok:
+    stl.output "correct\n"
+    ;done
+  bad:
+    stl.output "wrong (expected "
+    hex.print_dec_uint 4, res
+    stl.output ")\n"
+  done:
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+b: hex.vec 4
+res: hex.vec 4
+ans: hex.vec 4

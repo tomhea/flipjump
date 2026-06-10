@@ -1,4 +1,4 @@
-// Nand Universality Or (#0916)
+// Nand Universality Or (#0269)
 
 // Reads two ASCII bits `a b` (each own line). Computes `OR(a, b)` using ONLY `NAND` gates (no native AND/OR/NOT). Prints result + `\n`.
 

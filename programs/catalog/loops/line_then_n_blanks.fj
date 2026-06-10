@@ -1,4 +1,4 @@
-// Line Then N Blanks (#0260)
+// Line Then N Blanks (#0299)
 
 // Reads a digit N `0`-`9` + `\n` then a `\n`-terminated line ≤ 60 chars. Prints the line, then N additional `\n` characters.
 

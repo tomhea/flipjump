@@ -1,4 +1,4 @@
-// Rps Winner (#0227)
+// Rps Winner (#0354)
 
 // Reads two bytes (each on own line, terminated by `\n`): `r`/`p`/`s` (rock/paper/scissors) for player 1 and player 2. Prints `1\n` if P1 wins, `2\n` if P2 wins, `tie\n` if tie.
 

@@ -1,4 +1,4 @@
-// Ternary Search Sorted (#1174)
+// Ternary Search Sorted (#0538)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals sorted ascending, then target. Prints the 0-based index of any match + `\n`, or `not found\n`. Implementation: ternary search (divide range into thirds).
 

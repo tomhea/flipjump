@@ -1,4 +1,4 @@
-// Print Vertical Bar (#0270)
+// Print Vertical Bar (#0308)
 
 // Reads digit N `1`-`9` + `\n`. Prints N lines, each just `*\n`.
 

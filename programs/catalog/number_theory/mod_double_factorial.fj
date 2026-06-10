@@ -1,4 +1,4 @@
-// Mod Double Factorial (#1038)
+// Mod Double Factorial (#0149)
 
 // Reads decimals `N` `m` (`N` `0`-`9`, `m` `1`-`30`). Prints `(N!! mod m)` as decimal + `\n` (where `N!! = N*(N-2)*(N-4)*...` down to 1 or 2).
 

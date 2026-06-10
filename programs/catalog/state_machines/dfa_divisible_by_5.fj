@@ -1,0 +1,39 @@
+// Dfa Divisible By 5 (#0769)
+
+// Reads a `\n`-terminated decimal-digit string ≤ 6 chars. Prints `1\n` if the represented N is divisible by 5 (last digit is `0` or `5`), else `0\n`.
+
+main
+
+def main @ err, loop, done, print1h, done_h < ch, five_char, last, nl_char, tmp, zero_char {
+    stl.startup_and_init_all 100
+    hex.zero 2, last
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, last, ch
+    ;loop
+  done:
+    hex.mov 2, tmp, last
+    hex.sub 2, tmp, zero_char
+    hex.if0 2, tmp, print1h
+    hex.mov 2, tmp, last
+    hex.sub 2, tmp, five_char
+    hex.if0 2, tmp, print1h
+    stl.output "0\n"
+    ;done_h
+  print1h:
+    stl.output "1\n"
+  done_h:
+    stl.loop
+  err:
+    stl.loop
+}
+
+last: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+zero_char: hex.vec 2, '0'
+five_char: hex.vec 2, '5'
+nl_char: hex.vec 2, '\n'

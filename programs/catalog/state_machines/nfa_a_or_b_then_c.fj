@@ -1,0 +1,40 @@
+// Nfa A Or B Then C (#0770)
+
+// Reads a `\n`-terminated string of exactly 2 lowercase letters. Prints `1\n` if the string matches the regex `(a|b)c` (first byte is `a` or `b`, second byte is `c`), else `0\n`. Demonstrates a simple NFA / regex matcher.
+
+main
+
+def main @ err, done, chk2, print1i < c1, c2, char_a, char_b, char_c, tmp {
+    stl.startup_and_init_all 100
+    hex.input c1
+    hex.input c2
+    hex.input tmp
+    // check c1 == 'a' or 'b'
+    hex.mov 2, tmp, c1
+    hex.sub 2, tmp, char_a
+    hex.if0 2, tmp, chk2
+    hex.mov 2, tmp, c1
+    hex.sub 2, tmp, char_b
+    hex.if0 2, tmp, chk2
+    stl.output "0\n"
+    ;done
+  chk2:
+    hex.mov 2, tmp, c2
+    hex.sub 2, tmp, char_c
+    hex.if0 2, tmp, print1i
+    stl.output "0\n"
+    ;done
+  print1i:
+    stl.output "1\n"
+  done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+c1: hex.vec 2
+c2: hex.vec 2
+tmp: hex.vec 2
+char_a: hex.vec 2, 'a'
+char_b: hex.vec 2, 'b'
+char_c: hex.vec 2, 'c'

@@ -1,4 +1,4 @@
-// Demo Hex Mul (#1248)
+// Demo Hex Mul (#0845)
 
 // Reads two hex chars. Uses `hex.mul`. Prints product as 2 hex chars + `\n` (high then low nibble).
 

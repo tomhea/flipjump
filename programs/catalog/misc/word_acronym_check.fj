@@ -1,4 +1,4 @@
-// Word Acronym Check (#1078)
+// Word Acronym Check (#1018)
 
 // Reads two `\n`-terminated lines: first an acronym (uppercase, ≤ 6 chars), second a sentence (≤ 40 chars). Prints `1\n` if the acronym matches the uppercased first letter of each whitespace-separated word in the sentence (in order), else `0\n`.
 

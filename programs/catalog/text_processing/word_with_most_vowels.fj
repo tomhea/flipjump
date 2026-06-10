@@ -1,4 +1,4 @@
-// Word With Most Vowels (#1101)
+// Word With Most Vowels (#0745)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Prints the word with the most vowels (`aeiouAEIOU`) + `\n`. Ties: first such word. Empty input → empty line `\n`.
 

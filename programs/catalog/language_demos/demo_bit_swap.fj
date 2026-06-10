@@ -1,4 +1,4 @@
-// Demo Bit Swap (#1250)
+// Demo Bit Swap (#0847)
 
 // Reads two single bits `0`/`1` (each on own line). Uses `bit.swap` STL macro to swap them in place. Prints them in swapped order as `<b>\n<a>\n`.
 

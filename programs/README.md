@@ -9,8 +9,8 @@ or standard-library macro; they are compiled and run by the tests defined in
 Every `.fj` file begins with a `// ...` comment describing what it does, and
 every subdirectory has its own README with a per-file table.
 
-> The [`catalog/`](catalog) directory is documented separately (it has its own
-> `README.md` / `CATALOG.md`) and is not covered here.
+> The [`catalog/`](catalog) directory has its own
+> [`README.md`](catalog/README.md) and is not covered here.
 
 ## Standalone programs
 

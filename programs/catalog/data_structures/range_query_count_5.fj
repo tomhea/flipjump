@@ -1,4 +1,4 @@
-// Range Query Count 5 (#1160)
+// Range Query Count 5 (#0407)
 
 // Reads 5 decimals `0`-`99` (each on own line), then `lo` `hi` (`0`-`99`, on own lines). Prints the count of those values that satisfy `lo <= x <= hi` as decimal `0`-`5` + `\n`.
 

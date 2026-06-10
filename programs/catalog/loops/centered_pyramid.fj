@@ -1,4 +1,4 @@
-// Centered Pyramid (#0235)
+// Centered Pyramid (#0275)
 
 // Reads digit N `1`-`9` + `\n`. Prints N rows of width `2N-1`: row i has `N-i` leading spaces, then `2i-1` `*`, then `\n`.
 

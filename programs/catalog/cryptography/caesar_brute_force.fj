@@ -1,0 +1,85 @@
+// Caesar Brute Force (#0876)
+
+// Reads a `\n`-terminated ciphertext ≤ 20 chars (letters and spaces only). Prints all 26 possible Caesar-decrypts (shifts `0`-`25`), one per line.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    rep(26, s) brute_row buf, slen, (26 - s) % 26
+    stl.loop
+}
+
+// Print buf shifted by the constant sh (0..25), then a newline.
+def brute_row buf, slen, sh @ loop, done < rp, cnt, bb, out, nnreg {
+    hex.set w/4, nnreg, sh
+    hex.set w/4, rp, buf
+    hex.mov w/4, cnt, slen
+  loop:
+    hex.if0 w/4, cnt, done
+    hex.read_byte_and_inc bb, rp
+    shift_byte bb, nnreg, out
+    hex.print out
+    hex.dec w/4, cnt
+    ;loop
+  done:
+    stl.output '\n'
+}
+
+// out[:2] = byte b shifted forward by nn (0..25) within its letter case; else b.
+def shift_byte b, nn, out @ low_in, do_low, ge26_l, prn_l, up_chk, up_in, do_up, ge26_u, prn_u, plain, done < sv, st, la, lz, ua, uz, c26 {
+    hex.zero 4, sv
+    hex.mov 2, sv, b
+    hex.cmp 4, sv, la, up_chk, low_in, low_in
+  low_in:
+    hex.cmp 4, sv, lz, do_low, do_low, up_chk
+  do_low:
+    hex.mov 4, st, sv
+    hex.sub 4, st, la
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_l, ge26_l, ge26_l
+  ge26_l:
+    hex.sub 4, st, c26
+  prn_l:
+    hex.add 4, st, la
+    hex.mov 2, out, st
+    ;done
+  up_chk:
+    hex.cmp 4, sv, ua, plain, up_in, up_in
+  up_in:
+    hex.cmp 4, sv, uz, do_up, do_up, plain
+  do_up:
+    hex.mov 4, st, sv
+    hex.sub 4, st, ua
+    hex.add 4, st, nn
+    hex.cmp 4, st, c26, prn_u, ge26_u, ge26_u
+  ge26_u:
+    hex.sub 4, st, c26
+  prn_u:
+    hex.add 4, st, ua
+    hex.mov 2, out, st
+    ;done
+  plain:
+    hex.mov 2, out, b
+  done:
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw
+rp: hex.vec hw
+cnt: hex.vec hw
+bb: hex.vec 2
+out: hex.vec 2
+nnreg: hex.vec hw
+sv: hex.vec 4
+st: hex.vec 4
+la: hex.vec 4, 'a'
+lz: hex.vec 4, 'z'
+ua: hex.vec 4, 'A'
+uz: hex.vec 4, 'Z'
+c26: hex.vec 4, 26

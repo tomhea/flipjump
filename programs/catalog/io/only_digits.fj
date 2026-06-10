@@ -1,4 +1,4 @@
-// Only Digits (#0038)
+// Only Digits (#0037)
 
 // Reads stdin and outputs only `0`-`9` bytes, dropping all others.
 

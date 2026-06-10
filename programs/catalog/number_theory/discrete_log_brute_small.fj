@@ -1,4 +1,4 @@
-// Discrete Log Brute Small (#1042)
+// Discrete Log Brute Small (#0153)
 
 // Reads decimals `g` `h` `p` (`p` prime `3`-`19`, `g` `1`-`p-1` primitive root, `h` `1`-`p-1`). Brute-forces `x` in `0..p-2` such that `g^x mod p == h`. Prints `x` as decimal + `\n`.
 

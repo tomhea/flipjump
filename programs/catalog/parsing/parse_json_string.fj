@@ -1,0 +1,27 @@
+// Parse Json String (#0792)
+
+// Reads `{"s":"<str>"}\n` where `<str>` is any ASCII bytes (no escapes, no embedded `"`). Prints `<str>` + `\n`.
+
+main
+
+def main @ skip, afterskip, p, pprint, done < b, colon, quote {
+    stl.startup_and_init_all
+  skip:
+    hex.input b
+    hex.cmp 2, b, colon, skip, afterskip, skip
+  afterskip:
+    hex.input b
+  p:
+    hex.input b
+    hex.cmp 2, b, quote, pprint, done, pprint
+  pprint:
+    hex.print b
+    ;p
+  done:
+    stl.output '\n'
+    stl.loop
+}
+
+b: hex.vec 2
+colon: hex.vec 2, ':'
+quote: hex.vec 2, '"'

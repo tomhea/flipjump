@@ -1,0 +1,11 @@
+// Print Self Description Short (#0937)
+
+// No input. Prints `I am a FlipJump program.\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "I am a FlipJump program.\n"
+    stl.loop
+}

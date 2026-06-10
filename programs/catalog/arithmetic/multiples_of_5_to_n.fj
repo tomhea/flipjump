@@ -1,4 +1,4 @@
-// Multiples Of 5 To N (#0122)
+// Multiples Of 5 To N (#0097)
 
 // Reads decimal N in `0`-`50` and prints positive multiples of 5 `5,10,...` ≤ N, one per line.
 

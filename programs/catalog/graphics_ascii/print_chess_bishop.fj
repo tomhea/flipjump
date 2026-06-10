@@ -1,0 +1,11 @@
+// Print Chess Bishop (#0821)
+
+// No input. Prints a multi-line ASCII chess bishop (4 lines).
+
+main
+
+def main {
+    stl.startup
+    stl.output " o \n/^\\\n | \n|_|\n"
+    stl.loop
+}

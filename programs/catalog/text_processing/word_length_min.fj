@@ -1,4 +1,4 @@
-// Word Length Min (#0465)
+// Word Length Min (#0737)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Prints the length of the shortest whitespace-separated token as decimal + `\n`. Empty input → `0\n`.
 

@@ -1,4 +1,4 @@
-// Multiples Of 3 To N (#0121)
+// Multiples Of 3 To N (#0096)
 
 // Reads decimal N in `0`-`30` and prints positive multiples of 3 `3,6,...` ≤ N, one per line.
 

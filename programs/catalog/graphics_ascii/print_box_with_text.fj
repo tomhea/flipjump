@@ -1,0 +1,36 @@
+// Print Box With Text (#0816)
+
+// Reads a `\n`-terminated line ≤ 10 chars. Prints a 3-row box around the text: top row `+<dashes>+\n`, middle row `| <text padded to 10 chars> |\n`, bottom row `+<dashes>+\n`. Box width is fixed (text padded with trailing spaces to 10 chars, total width 14).
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    stl.output "+------------+\n| "
+    hex.set hw, bptr, buf
+    hex.print_ptr_text bptr, slen
+    pad_spaces slen
+    stl.output " |\n+------------+\n"
+    stl.loop
+}
+
+// Print (10 - count) spaces, padding the text field to 10 chars.
+def pad_spaces count @ loop, done < padcnt {
+    hex.set hw, padcnt, 10
+    hex.sub hw, padcnt, count
+  loop:
+    hex.if0 hw, padcnt, done
+    stl.output ' '
+    hex.dec hw, padcnt
+    ;loop
+  done:
+}
+
+buf: hex.vec 16
+bptr: hex.vec hw
+slen: hex.vec hw
+padcnt: hex.vec hw

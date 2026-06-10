@@ -1,4 +1,4 @@
-// String Length (#0166)
+// String Length (#0165)
 
 // Reads a single `\n`-terminated line of length ≤ 80 and prints the length of the line (excluding the `\n`) as decimal + `\n`.
 

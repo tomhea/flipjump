@@ -1,4 +1,4 @@
-// Char Freq Table (#1098)
+// Char Freq Table (#0742)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Prints each distinct byte value (excluding `\n`) and its count, one `<byte> <count>\n` per line, in ascending byte-value order.
 

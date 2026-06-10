@@ -1,0 +1,45 @@
+// Minesweeper Count Center (#0957)
+
+// Reads 3 lines of 3 chars each (each char `M` for mine or `.` for empty). Prints the count of mines (`M`) in the 8 cells around the center `(1,1)` (excluding center itself) as decimal + `\n`.
+
+main
+
+def mc_chk idx @ mc_no, mc_yes < mc_arr, mc_cnt, mc_Mc {
+    hex.cmp 2, mc_arr + idx*dw*2, mc_Mc, mc_no, mc_yes, mc_no
+  mc_yes:
+    hex.inc 4, mc_cnt
+  mc_no:
+}
+
+def main < mc_arr, mc_nl, mc_cnt {
+    stl.startup_and_init_all 100
+    hex.input mc_arr + 0*dw*2
+    hex.input mc_arr + 1*dw*2
+    hex.input mc_arr + 2*dw*2
+    hex.input mc_nl
+    hex.input mc_arr + 3*dw*2
+    hex.input mc_arr + 4*dw*2
+    hex.input mc_arr + 5*dw*2
+    hex.input mc_nl
+    hex.input mc_arr + 6*dw*2
+    hex.input mc_arr + 7*dw*2
+    hex.input mc_arr + 8*dw*2
+    hex.input mc_nl
+    hex.zero 4, mc_cnt
+    mc_chk 0
+    mc_chk 1
+    mc_chk 2
+    mc_chk 3
+    mc_chk 5
+    mc_chk 6
+    mc_chk 7
+    mc_chk 8
+    hex.print_dec_uint 4, mc_cnt
+    stl.output '\n'
+    stl.loop
+}
+
+mc_arr: hex.vec 2*9
+mc_nl: hex.vec 2
+mc_cnt: hex.vec 4
+mc_Mc: hex.vec 2, 'M'

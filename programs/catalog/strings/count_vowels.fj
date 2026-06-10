@@ -1,4 +1,4 @@
-// Count Vowels (#0168)
+// Count Vowels (#0166)
 
 // Reads a `\n`-terminated line ≤ 80 chars and prints the count of vowel letters (`aeiouAEIOU`) as decimal + `\n`.
 

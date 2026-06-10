@@ -1,4 +1,4 @@
-// Count Bits In Three Bytes (#0384)
+// Count Bits In Three Bytes (#0216)
 
 // Reads exactly 3 bytes and prints the total 1-bit count across all 24 bits as decimal `0`-`24` + `\n`.
 

@@ -1,0 +1,11 @@
+// Print Star 5 Point (#0807)
+
+// No input. Prints a fixed 5-row 5-pointed star ASCII art (centered on 9-col field, using `*` and spaces).
+
+main
+
+def main {
+    stl.startup
+    stl.output "    *    \n  *****  \n ******* \n  *   *  \n *     * \n"
+    stl.loop
+}

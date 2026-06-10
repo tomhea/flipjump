@@ -1,0 +1,43 @@
+// Matching Parens Depth Track (#0764)
+
+// Reads a `\n`-terminated string of `(` and `)` (≤ 30 chars). Tracks depth starting at 0. After each input char, prints depth as decimal, comma-separated entries on one line + `\n`. Example: `(())` → `1,2,1,0\n`.
+
+main
+
+def main @ err, loop, done, is_open, print_num, skip_comma < ch, depth, need_comma, nl_char, open_char, tmp {
+    stl.startup_and_init_all 100
+    hex.zero 4, depth
+    hex.set 2, need_comma, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, open_char
+    hex.if0 2, tmp, is_open
+    hex.dec 4, depth
+    ;print_num
+  is_open:
+    hex.inc 4, depth
+  print_num:
+    // if need_comma==1: print comma before number
+    hex.if0 2, need_comma, skip_comma
+    stl.output ','
+  skip_comma:
+    hex.set 2, need_comma, 1
+    hex.print_dec_uint 4, depth
+    ;loop
+  done:
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+depth: hex.vec 4
+ch: hex.vec 2
+tmp: hex.vec 2
+need_comma: hex.vec 2
+open_char: hex.vec 2, '('
+nl_char: hex.vec 2, '\n'

@@ -1,0 +1,43 @@
+// Byte Class Counts (#0527)
+
+// Reads a `\n`-terminated line ≤ 80 chars. Prints `printable: <P>\ncontrol: <C>\n` where `P` is the count of printable bytes (`0x20`-`0x7e`) and `C` is the count of control bytes (`<0x20` or `0x7f`), all excluding the terminating `\n`.
+
+main
+
+def main @ err, loop, go, done, gep, isprint, isctrl < b, nl, v, pcnt, ccnt, c20, c7e {
+    stl.startup_and_init_all
+    
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.zero 4, v
+    hex.mov 2, v, b
+    hex.cmp 4, v, c20, isctrl, gep, gep
+  gep:
+    hex.cmp 4, v, c7e, isprint, isprint, isctrl
+  isprint:
+    hex.inc 4, pcnt
+    ;loop
+  isctrl:
+    hex.inc 4, ccnt
+    ;loop
+  done:
+    stl.output "printable: "
+    hex.print_dec_uint 4, pcnt
+    stl.output "\ncontrol: "
+    hex.print_dec_uint 4, ccnt
+    stl.output '\n' 
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+v: hex.vec 4
+pcnt: hex.vec 4
+ccnt: hex.vec 4
+c20: hex.vec 4, 0x20
+c7e: hex.vec 4, 0x7e

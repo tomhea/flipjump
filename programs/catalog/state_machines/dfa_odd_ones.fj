@@ -1,0 +1,43 @@
+// Dfa Odd Ones (#0756)
+
+// Reads a `\n`-terminated binary string of `0`/`1` (≤ 30 chars). Prints `1\n` if the count of `1` bytes (excluding `\n`) is odd, else `0\n`.
+
+main
+
+def main @ err, loop, done, got1, set1b, print_zero_b, done_b < state, ch, tmp, nl_char, one_char {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, one_char
+    hex.if0 2, tmp, got1
+    ;loop
+  got1:
+    hex.if0 2, state, set1b
+    hex.set 2, state, 0
+    ;loop
+  set1b:
+    hex.set 2, state, 1
+    ;loop
+  done:
+    // state==1 means odd
+    hex.if0 2, state, print_zero_b
+    stl.output "1\n"
+    ;done_b
+  print_zero_b:
+    stl.output "0\n"
+  done_b:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+one_char: hex.vec 2, '1'
+nl_char: hex.vec 2, '\n'

@@ -1,4 +1,4 @@
-// Binary From Gray Code (#0925)
+// Binary From Gray Code (#0228)
 
 // Reads one byte interpreted as a Gray code value and outputs the corresponding standard-binary byte (running XOR of all higher bits).
 

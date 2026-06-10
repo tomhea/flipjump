@@ -1,0 +1,70 @@
+// Count Chars Per Class (#0516)
+
+// Reads a `\n`-terminated line ≤ 80 chars. Prints `digits: <D>\nletters: <L>\nspaces: <S>\nother: <O>\n` where `D`/`L`/`S`/`O` are the counts of digits, letters, spaces, and other byte classes respectively (excluding the terminating `\n`).
+
+main
+
+def main @ err, loop, go, done, ge0, chk_a, geA, chk_l, gea2, chk_sp, isdig, islet, issp, isoth < b, nl, v, dcnt, lcnt, scnt, ocnt, c_0, c_9, c_A, c_Z, c_a, c_z, c_sp {
+    stl.startup_and_init_all
+    
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.zero 4, v
+    hex.mov 2, v, b
+    hex.cmp 4, v, c_0, chk_sp, ge0, ge0
+  ge0:
+    hex.cmp 4, v, c_9, isdig, isdig, chk_a
+  chk_a:
+    hex.cmp 4, v, c_A, chk_sp, geA, geA
+  geA:
+    hex.cmp 4, v, c_Z, islet, islet, chk_l
+  chk_l:
+    hex.cmp 4, v, c_a, isoth, gea2, gea2
+  gea2:
+    hex.cmp 4, v, c_z, islet, islet, isoth
+  chk_sp:
+    hex.cmp 4, v, c_sp, isoth, issp, isoth
+  isdig:
+    hex.inc 4, dcnt
+    ;loop
+  islet:
+    hex.inc 4, lcnt
+    ;loop
+  issp:
+    hex.inc 4, scnt
+    ;loop
+  isoth:
+    hex.inc 4, ocnt
+    ;loop
+  done:
+    stl.output "digits: "
+    hex.print_dec_uint 4, dcnt
+    stl.output "\nletters: "
+    hex.print_dec_uint 4, lcnt
+    stl.output "\nspaces: "
+    hex.print_dec_uint 4, scnt
+    stl.output "\nother: "
+    hex.print_dec_uint 4, ocnt
+    stl.output '\n' 
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+v: hex.vec 4
+dcnt: hex.vec 4
+lcnt: hex.vec 4
+scnt: hex.vec 4
+ocnt: hex.vec 4
+c_0: hex.vec 4, '0'
+c_9: hex.vec 4, '9'
+c_A: hex.vec 4, 'A'
+c_Z: hex.vec 4, 'Z'
+c_a: hex.vec 4, 'a'
+c_z: hex.vec 4, 'z'
+c_sp: hex.vec 4, ' '

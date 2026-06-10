@@ -1,4 +1,4 @@
-// Set Bit At Position (#1062)
+// Set Bit At Position (#0240)
 
 // Reads one byte then one digit `0`-`7` + `\n` and outputs the byte with that bit set to 1. Convention: position `0` is the LSB; matches `bit_at_position`.
 

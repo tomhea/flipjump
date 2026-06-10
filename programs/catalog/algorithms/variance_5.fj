@@ -1,4 +1,4 @@
-// Variance 5 (#1205)
+// Variance 5 (#0568)
 
 // Reads exactly 5 decimals `0`-`99` (each on own line). Computes `mean = floor(sum/5)`, then `variance = sum((x_i - mean)^2) / 5` (floor). Prints variance as decimal + `\n`.
 

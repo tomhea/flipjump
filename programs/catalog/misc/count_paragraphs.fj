@@ -1,4 +1,4 @@
-// Count Paragraphs (#0885)
+// Count Paragraphs (#1007)
 
 // Reads multi-line input terminated by EOF (or two consecutive `\n` characters as the final paragraph terminator). A paragraph is a maximal run of non-empty lines separated from other paragraphs by one or more empty lines. Prints the count of paragraphs as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Running Max (#1129)
+// Running Max (#0376)
 
 // Reads digit N `1`-`9` + `\n`, then N signed decimals (each own line). After each input, prints the running maximum so far on its own line (N lines of output).
 

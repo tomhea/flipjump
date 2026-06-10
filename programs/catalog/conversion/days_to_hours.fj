@@ -1,4 +1,4 @@
-// Days To Hours (#0354)
+// Days To Hours (#0481)
 
 // Reads decimal days `0`-`30` + `\n` and prints `days * 24` as decimal + `\n`.
 

@@ -1,4 +1,4 @@
-// Moore Voting Majority (#1195)
+// Moore Voting Majority (#0558)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints the majority element (value appearing strictly more than N/2 times) + `\n`, or `none\n` if no majority. Implementation: Boyer-Moore voting (one-pass + verify).
 

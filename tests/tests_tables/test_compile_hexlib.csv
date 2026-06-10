@@ -53,3 +53,4 @@ hexlib-idiv-cases, programs/hexlib_tests/div/hexlib_div.fj | programs/hexlib_tes
 hexlib-strings, programs/hexlib_tests/basics1/strings.fj,tests/compiled/hexlib_tests/basics1/strings.fjm, 64,3,0, True,True
 hexlib-scmp, programs/hexlib_tests/basics1/scmp.fj,tests/compiled/hexlib_tests/basics1/scmp.fjm, 64,3,0, True,True
 hexlib-nth_pointers, programs/hexlib_tests/basics2/nth_pointers.fj,tests/compiled/hexlib_tests/basics2/nth_pointers.fjm, 64,3,0, True,True
+hexlib-input_dec_until, programs/hexlib_tests/basics1/input_dec_until.fj,tests/compiled/hexlib_tests/basics1/input_dec_until.fjm, 64,3,0, True,True

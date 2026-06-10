@@ -1,0 +1,76 @@
+// Xxd Style Dump (#0531)
+
+// Reads a `\n`-terminated line ≤ 16 chars. Prints one line: 4-digit zero-padded offset `0000`, two spaces, then hex bytes (lowercase, space-separated, max 16 bytes), then 2 spaces, then the printable ASCII (non-printables as `.`), then `\n`. Example: input `hi\n` → `0000  68 69  hi\n`.
+
+hw = w / 4
+
+main
+
+def main < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    stl.output "0000  "
+    print_hex_part buf, slen
+    stl.output "  "
+    print_ascii_part buf, slen
+    stl.output '\n'
+    stl.loop
+}
+
+// Print slen bytes from buf as space-separated lowercase hex.
+def print_hex_part buf, slen @ loop, fb, emit, done < hp, cnt, bb, first {
+    hex.set w/4, hp, buf
+    hex.mov w/4, cnt, slen
+    bit.one first
+  loop:
+    hex.if0 w/4, cnt, done
+    bit.if1 first, fb
+    stl.output ' '
+    ;emit
+  fb:
+    bit.zero first
+  emit:
+    hex.read_byte_and_inc bb, hp
+    hex.print_as_digit bb + dw, 0
+    hex.print_as_digit bb, 0
+    hex.dec w/4, cnt
+    ;loop
+  done:
+}
+
+// Print slen bytes from buf as ASCII, non-printables as '.'.
+def print_ascii_part buf, slen @ loop, prn, doprint, dot, cont, done < ap, cnt, bb, v, c20, c7e {
+    hex.set w/4, ap, buf
+    hex.mov w/4, cnt, slen
+  loop:
+    hex.if0 w/4, cnt, done
+    hex.read_byte_and_inc bb, ap
+    hex.zero 4, v
+    hex.mov 2, v, bb
+    hex.cmp 4, v, c20, dot, prn, prn
+  prn:
+    hex.cmp 4, v, c7e, doprint, doprint, dot
+  doprint:
+    hex.print bb
+    ;cont
+  dot:
+    stl.output '.'
+    ;cont
+  cont:
+    hex.dec w/4, cnt
+    ;loop
+  done:
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw
+hp: hex.vec hw
+ap: hex.vec hw
+cnt: hex.vec hw
+bb: hex.vec 2
+v: hex.vec 4
+first: bit.bit 1
+c20: hex.vec 4, 0x20
+c7e: hex.vec 4, 0x7e

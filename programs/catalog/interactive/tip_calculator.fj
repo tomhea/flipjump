@@ -1,0 +1,23 @@
+// Tip Calculator (#0451)
+
+// Reads decimal bill `0`-`99` + `\n`. Prints `(bill * 120) / 100` (20% tip, integer division) + `\n`.
+
+main
+
+def main @ err < val, res, q, r, mfac, hundred {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, val, err
+    hex.mul 8, res, val, mfac
+    hex.div 8, 8, q, r, res, hundred, err
+    hex.print_dec_uint 8, q
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+val: hex.vec 8
+res: hex.vec 8
+q: hex.vec 8
+r: hex.vec 8
+mfac: hex.vec 8, 120
+hundred: hex.vec 8, 100

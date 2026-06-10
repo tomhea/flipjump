@@ -1,0 +1,39 @@
+// Magic Square Fill Missing (#0658)
+
+// Reads 9 decimals (3×3 row-major, each on own line) representing a known-valid 3×3 magic square with EXACTLY ONE cell replaced by `0` (the missing value). Prints the missing value as decimal + `\n`.
+
+main
+
+def main @ err < arr, r0, r1, r2, m1, mx, n1, mn, miss {
+    stl.startup_and_init_all
+    rep(9, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    hex.mov 4, r0, arr + 0*dw*4
+    hex.add 4, r0, arr + 1*dw*4
+    hex.add 4, r0, arr + 2*dw*4
+    hex.mov 4, r1, arr + 3*dw*4
+    hex.add 4, r1, arr + 4*dw*4
+    hex.add 4, r1, arr + 5*dw*4
+    hex.mov 4, r2, arr + 6*dw*4
+    hex.add 4, r2, arr + 7*dw*4
+    hex.add 4, r2, arr + 8*dw*4
+    hex.max 4, m1, r0, r1
+    hex.max 4, mx, m1, r2
+    hex.min 4, n1, r0, r1
+    hex.min 4, mn, n1, r2
+    hex.mov 4, miss, mx
+    hex.sub 4, miss, mn
+    hex.print_dec_uint 4, miss
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+arr: hex.vec 4*9
+r0: hex.vec 4
+r1: hex.vec 4
+r2: hex.vec 4
+m1: hex.vec 4
+mx: hex.vec 4
+n1: hex.vec 4
+mn: hex.vec 4
+miss: hex.vec 4

@@ -1,0 +1,32 @@
+// Depth Of Recursion Proof (#0432)
+
+// Reads digit N `0`-`9` + `\n`. Recursive macro that just decrements N to 0, then prints `Reached depth <N>\n` from the deepest call. Output: `Reached depth N\n`.
+
+main
+
+def main @ err < r_nval, dep_arg, dep_orig, dep_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, dep_arg, r_nval
+    hex.mov 4, dep_orig, r_nval
+    stl.call dep_fn
+    stl.output "Reached depth "
+    hex.print_dec_uint 4, dep_orig
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+// Recurse dep_arg times silently
+dep_fn:
+    hex.if0 4, dep_arg, dep_base
+    hex.dec 4, dep_arg
+    stl.call dep_fn
+    stl.return
+  dep_base:
+    stl.return
+
+r_nval: hex.vec 4
+dep_arg: hex.vec 4
+dep_orig: hex.vec 4

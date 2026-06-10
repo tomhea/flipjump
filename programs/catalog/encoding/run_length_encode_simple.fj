@@ -1,0 +1,46 @@
+// Run Length Encode Simple (#0501)
+
+// Reads a `\n`-terminated lowercase-letter string ≤ 30 chars (runs of length ≤ 9). Prints run-length encoding as alternating `<letter><count>` concatenated, then `\n`. Example: `aabcccccaaa` → `a2b1c5a3\n`.
+
+main
+
+def main @ err, loop, go, start, samec, flush, done, fin < b, nl, cur, cnt, have {
+    stl.startup_and_init_all
+    bit.zero have
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    bit.if0 have, start
+    hex.cmp 2, b, cur, flush, samec, flush
+  samec:
+    hex.inc 4, cnt
+    ;loop
+  flush:
+    emit_run cur, cnt
+  start:
+    hex.mov 2, cur, b
+    hex.set 4, cnt, 1
+    bit.one have
+    ;loop
+  done:
+    bit.if0 have, fin
+    emit_run cur, cnt
+  fin:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Print the run: the letter then its count as a decimal digit.
+def emit_run cur, cnt {
+    hex.print cur
+    hex.print_dec_uint 4, cnt
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+cur: hex.vec 2
+cnt: hex.vec 4
+have: bit.bit

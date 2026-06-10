@@ -1,4 +1,4 @@
-// Count Leading Ones (#0929)
+// Count Leading Ones (#0232)
 
 // Reads one byte and prints the count of consecutive `1` bits starting from the MSB (`0xE0` → `3`, `0xFF` → `8`) as decimal `0`-`8` + `\n`.
 

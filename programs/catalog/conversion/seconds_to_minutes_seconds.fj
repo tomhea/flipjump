@@ -1,4 +1,4 @@
-// Seconds To Minutes Seconds (#0352)
+// Seconds To Minutes Seconds (#0479)
 
 // Reads decimal total seconds `0`-`3599` + `\n` and prints `<M>:<SS>\n`, with `MM` zero-padded to 2 digits.
 

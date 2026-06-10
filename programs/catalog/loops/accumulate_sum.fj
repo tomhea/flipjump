@@ -1,4 +1,4 @@
-// Accumulate Sum (#0261)
+// Accumulate Sum (#0300)
 
 // Reads up to 9 decimal integers, each followed by `\n`, terminated by an empty line (just `\n`). After each input, prints the running sum on its own line.
 

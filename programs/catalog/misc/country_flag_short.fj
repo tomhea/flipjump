@@ -1,4 +1,4 @@
-// Country Flag Short (#0875)
+// Country Flag Short (#1002)
 
 // Reads a 3-letter country code `USA`/`FRA`/`JPN` + `\n`. Prints a 2-line ASCII flag for that country (each row a string of pattern blocks). Hardcoded for 3 countries.
 

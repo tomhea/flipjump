@@ -1,0 +1,31 @@
+// Hex Dump Line (#0496)
+
+// Reads a `\n`-terminated line ≤ 16 chars. For each byte (excluding `\n`), prints its 2-char lowercase hex, with space separators between bytes, then `\n`. Example: input `hi\n` → output `68 69\n`. Empty input → just `\n`.
+
+main
+
+def main @ err, loop, go, fb, emit, done < b, nl, first {
+    stl.startup_and_init_all
+    bit.one first
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    bit.if1 first, fb
+    stl.output ' '
+    ;emit
+  fb:
+    bit.zero first
+  emit:
+    hex.print_as_digit 2, b, 0
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+first: bit.bit 1

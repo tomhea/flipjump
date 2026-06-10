@@ -1,4 +1,4 @@
-// Demo Bit Cmp 4bit (#1254)
+// Demo Bit Cmp 4bit (#0851)
 
 // Reads two 4-char binary strings (each on own line). Uses `bit.cmp`. Prints `<`, `=`, or `>` + `\n`.
 

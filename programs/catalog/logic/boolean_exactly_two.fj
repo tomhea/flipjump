@@ -1,4 +1,4 @@
-// Boolean Exactly Two (#0909)
+// Boolean Exactly Two (#0262)
 
 // Reads three ASCII bits. Prints `1\n` if exactly two are `1`, else `0\n`.
 

@@ -1,0 +1,40 @@
+// Reverse Digits Recursive (#0426)
+
+// Reads decimal N in `0`-`999` + `\n`. Computes the decimal reverse via recursive macro (each level extracts last digit and recurses on N/10). Prints reversed digits + `\n`.
+
+main
+
+def main @ err < r_nval, ra_n, ra_acc, ra_result, ra_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, ra_n, r_nval
+    hex.zero 4, ra_acc
+    stl.call ra_fn
+    hex.print_dec_uint 4, ra_result
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// reverse_digits(ra_n, acc=0) -> ra_result
+ra_fn:
+    hex.if0 4, ra_n, ra_base
+    hex.div 4, 4, ra_q, ra_r, ra_n, ra_ten, ra_fn
+    hex.mul 4, ra_tmp, ra_acc, ra_ten
+    hex.add 4, ra_tmp, ra_r
+    hex.mov 4, ra_acc, ra_tmp
+    hex.mov 4, ra_n, ra_q
+    stl.call ra_fn
+    stl.return
+  ra_base:
+    hex.mov 4, ra_result, ra_acc
+    stl.return
+
+r_nval: hex.vec 4
+ra_n: hex.vec 4
+ra_acc: hex.vec 4
+ra_result: hex.vec 4
+ra_q: hex.vec 4
+ra_r: hex.vec 4
+ra_tmp: hex.vec 4
+ra_ten: hex.vec 4, 10

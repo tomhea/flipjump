@@ -1,4 +1,4 @@
-// Rotate Left 5 (#1137)
+// Rotate Left 5 (#0384)
 
 // Reads exactly 5 decimals and prints them rotated left by 1 (input `a b c d e` → output `b\nc\nd\ne\na\n`).
 

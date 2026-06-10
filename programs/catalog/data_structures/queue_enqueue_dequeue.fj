@@ -1,4 +1,4 @@
-// Queue Enqueue Dequeue (#1148)
+// Queue Enqueue Dequeue (#0395)
 
 // Reads digit N `1`-`9` + `\n`. Enqueues integers `1..N` then dequeues all, printing each on its own line. Output is `1\n2\n...\nN\n` (FIFO order).
 

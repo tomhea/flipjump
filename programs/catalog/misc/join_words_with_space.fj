@@ -1,4 +1,4 @@
-// Join Words With Space (#0876)
+// Join Words With Space (#1003)
 
 // Reads digit N `1`-`9` + `\n`, then N `\n`-terminated words. Prints them joined by single space + `\n`.
 

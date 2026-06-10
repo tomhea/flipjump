@@ -1,4 +1,4 @@
-// Boolean Xor Three (#0906)
+// Boolean Xor Three (#0259)
 
 // Reads three ASCII bits. Prints their XOR (= 1 iff odd number of 1s) + `\n`.
 

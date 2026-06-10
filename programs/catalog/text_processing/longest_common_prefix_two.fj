@@ -1,4 +1,4 @@
-// Longest Common Prefix Two (#1105)
+// Longest Common Prefix Two (#0749)
 
 // Reads two `\n`-terminated lines (each ≤ 40 chars). Prints the longest common prefix + `\n`. If no common prefix, prints just `\n`.
 

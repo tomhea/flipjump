@@ -1,0 +1,68 @@
+// Simple Login (#0453)
+
+// Reads a `\n`-terminated username, then a `\n`-terminated password (each ≤ 20 chars). Prints `Welcome!\n` if username is exactly `admin` and password is exactly `root`, else `Denied\n`.
+
+hw = w / 4
+
+main
+
+def main @ userok, welcome, deny, done < buf, bptr, slen {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    equals_admin buf, slen, userok, deny
+  userok:
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    equals_root buf, slen, welcome, deny
+  welcome:
+    stl.output "Welcome!\n"
+    ;done
+  deny:
+    stl.output "Denied\n"
+  done:
+    stl.loop
+}
+
+// Jump `yes` if buf[:slen] equals "admin", else `no`.
+def equals_admin buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 5
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, 'a', no
+    next_byte_is eqptr, 'd', no
+    next_byte_is eqptr, 'm', no
+    next_byte_is eqptr, 'i', no
+    next_byte_is eqptr, 'n', no
+    ;yes
+}
+
+// Jump `yes` if buf[:slen] equals "root", else `no`.
+def equals_root buf, slen, yes, no @ chk < eqptr, lenreg {
+    hex.set w/4, lenreg, 4
+    hex.cmp w/4, slen, lenreg, no, chk, no
+  chk:
+    hex.set w/4, eqptr, buf
+    next_byte_is eqptr, 'r', no
+    next_byte_is eqptr, 'o', no
+    next_byte_is eqptr, 'o', no
+    next_byte_is eqptr, 't', no
+    ;yes
+}
+
+// Read the next buffer byte through ptr (advancing it); jump `no` if it differs from c.
+def next_byte_is ptr, c, no @ ok < cb, cc {
+    hex.read_byte_and_inc cb, ptr
+    hex.set 2, cc, c
+    hex.cmp 2, cb, cc, no, ok, no
+  ok:
+}
+
+buf: hex.vec 84
+bptr: hex.vec w/4
+slen: hex.vec w/4
+eqptr: hex.vec w/4
+lenreg: hex.vec w/4
+cb: hex.vec 2
+cc: hex.vec 2

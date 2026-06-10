@@ -1,0 +1,19 @@
+// Nibble To Base64 Char (#0525)
+
+// Reads a decimal `0`-`15` + `\n`. Prints the corresponding base64 alphabet character (`A` for 0, `B` for 1, ..., `P` for 15), followed by `\n`.
+
+main
+
+def main @ err < v, chv {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, v, err
+    hex.set 4, chv, 'A'
+    hex.add 4, chv, v
+    hex.print chv
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+v: hex.vec 4
+chv: hex.vec 4

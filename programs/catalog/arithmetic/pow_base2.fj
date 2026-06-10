@@ -1,4 +1,4 @@
-// Pow Base 2 (#0133)
+// Pow Base 2 (#0108)
 
 // Reads decimal N in `0`-`7` and prints `2^N` as decimal + `\n`.
 

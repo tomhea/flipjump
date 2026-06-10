@@ -1,0 +1,45 @@
+// Polybius Square Decode (#0890)
+
+// Reads two decimal digits + `\n` (e.g. `42`). Prints the corresponding uppercase letter from the standard 5×5 Polybius square + `\n`.
+
+main
+
+def main @ bump, doout < d0, row, col, idx, outc, ca, c5, c9val {
+    stl.startup_and_init_all
+    read_digit row
+    read_digit col
+    hex.input d0
+    hex.dec 4, row
+    hex.dec 4, col
+    hex.mul 4, idx, row, c5
+    hex.add 4, idx, col
+    hex.cmp 4, idx, c9val, doout, bump, bump
+  bump:
+    hex.inc 4, idx
+  doout:
+    hex.zero 4, outc
+    hex.mov 4, outc, idx
+    hex.add 4, outc, ca
+    hex.print outc
+    stl.output '\n'
+    stl.loop
+}
+
+// Read one ASCII digit into dst[:4] (value 0-9).
+def read_digit dst < db, c0 {
+    hex.input db
+    hex.zero 4, dst
+    hex.mov 2, dst, db
+    hex.sub 4, dst, c0
+}
+
+d0: hex.vec 2
+row: hex.vec 4
+col: hex.vec 4
+idx: hex.vec 4
+outc: hex.vec 4
+ca: hex.vec 4, 'A'
+c5: hex.vec 4, 5
+c9val: hex.vec 4, 9
+db: hex.vec 2
+c0: hex.vec 4, '0'

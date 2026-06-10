@@ -1,4 +1,4 @@
-// Random Bits N (#1223)
+// Random Bits N (#0586)
 
 // Reads one byte (seed), then decimal N `1`-`9` + `\n`. Applies N LCG steps and outputs the LSB of each state as a `0` or `1` char, all concatenated on a single line + `\n`.
 

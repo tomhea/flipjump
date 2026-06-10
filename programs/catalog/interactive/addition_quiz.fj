@@ -1,0 +1,30 @@
+// Addition Quiz (#0440)
+
+// Reads two single-digit decimals (each `\n`-terminated), then a decimal answer (`\n`-terminated, may be 1-2 digits). Prints `correct\n` if the answer equals the sum of the two digits, else `wrong (expected <S>)\n` with `S` the actual sum.
+
+main
+
+def main @ err, ok, bad, done < a, b, res, ans {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.input_dec_uint 4, b, err
+    hex.input_dec_uint 4, ans, err
+    hex.mov 4, res, a
+    hex.add 4, res, b
+    hex.cmp 4, ans, res, bad, ok, bad
+  ok:
+    stl.output "correct\n"
+    ;done
+  bad:
+    stl.output "wrong (expected "
+    hex.print_dec_uint 4, res
+    stl.output ")\n"
+  done:
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+b: hex.vec 4
+res: hex.vec 4
+ans: hex.vec 4

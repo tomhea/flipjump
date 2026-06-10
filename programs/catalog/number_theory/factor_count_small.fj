@@ -1,4 +1,4 @@
-// Factor Count Small (#0145)
+// Factor Count Small (#0120)
 
 // Reads decimal N in `1`-`50` and prints the number of positive divisors of N as decimal + `\n`.
 

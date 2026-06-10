@@ -1,0 +1,39 @@
+// Find Missing Geom Progression (#0674)
+
+// Reads exactly 4 decimals `1`-`50` with one being `0` (the missing entry) of a 4-element geometric progression with integer common ratio `>= 2`. Prints the missing value + `\n`.
+
+main
+
+def main @ err, m0, m1, m2, m3, done < arr, r, rem, miss {
+    stl.startup_and_init_all
+    rep(4, i) hex.input_dec_uint 4, arr + i*dw*4, err
+    hex.if0 4, arr + 0*dw*4, m0
+    hex.if0 4, arr + 1*dw*4, m1
+    hex.if0 4, arr + 2*dw*4, m2
+    ;m3
+  m0:
+    hex.div 4, 4, r, rem, arr + 2*dw*4, arr + 1*dw*4, err
+    hex.div 4, 4, miss, rem, arr + 1*dw*4, r, err
+    ;done
+  m1:
+    hex.div 4, 4, r, rem, arr + 3*dw*4, arr + 2*dw*4, err
+    hex.mul 4, miss, arr + 0*dw*4, r
+    ;done
+  m2:
+    hex.div 4, 4, r, rem, arr + 1*dw*4, arr + 0*dw*4, err
+    hex.mul 4, miss, arr + 1*dw*4, r
+    ;done
+  m3:
+    hex.div 4, 4, r, rem, arr + 1*dw*4, arr + 0*dw*4, err
+    hex.mul 4, miss, arr + 2*dw*4, r
+  done:
+    hex.print_dec_uint 4, miss
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+arr: hex.vec 4*4
+r: hex.vec 4
+rem: hex.vec 4
+miss: hex.vec 4

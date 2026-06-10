@@ -1,0 +1,11 @@
+// Print Self Description Long (#0938)
+
+// No input. Prints a 4-line self-description: `I am a FlipJump program.\nMy only operation is flip-and-jump.\nI was assembled from macros.\nI run in a finite memory.\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "I am a FlipJump program.\nMy only operation is flip-and-jump.\nI was assembled from macros.\nI run in a finite memory.\n"
+    stl.loop
+}

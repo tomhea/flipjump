@@ -1,0 +1,23 @@
+// Trivia Math (#0449)
+
+// First prints `What's 2+2?\n`. Then reads a decimal `\n`-terminated answer. Prints `correct!\n` if exactly `4`, else `wrong\n`.
+
+main
+
+def main @ err, ok, bad, done < val, four {
+    stl.startup_and_init_all
+    stl.output "What's 2+2?\n"
+    hex.input_dec_uint 4, val, err
+    hex.cmp 4, val, four, bad, ok, bad
+  ok:
+    stl.output "correct!\n"
+    ;done
+  bad:
+    stl.output "wrong\n"
+  done:
+  err:
+    stl.loop
+}
+
+val: hex.vec 4
+four: hex.vec 4, 4

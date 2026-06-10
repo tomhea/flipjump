@@ -1,4 +1,4 @@
-// Is Palindrome Num (#0157)
+// Is Palindrome Num (#0132)
 
 // Reads decimal N in `0`-`999` and prints `1\n` if its base-10 representation is a palindrome, else `0\n`.
 

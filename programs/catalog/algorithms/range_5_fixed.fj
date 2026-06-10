@@ -1,4 +1,4 @@
-// Range 5 Fixed (#1207)
+// Range 5 Fixed (#0570)
 
 // Reads exactly 5 decimals and prints `max - min` as decimal + `\n`.
 

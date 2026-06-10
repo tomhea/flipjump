@@ -1,4 +1,4 @@
-// Mul By 7 (#0111)
+// Mul By 7 (#0086)
 
 // Reads one decimal in `0`-`14` and prints `a * 7` as decimal + `\n`.
 

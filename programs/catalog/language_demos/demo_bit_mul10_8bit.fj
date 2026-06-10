@@ -1,4 +1,4 @@
-// Demo Bit Mul10 8bit (#1257)
+// Demo Bit Mul10 8bit (#0854)
 
 // Reads an 8-char binary + `\n`. Uses `bit.mul10`. Prints the result as decimal + `\n` (assume no overflow).
 

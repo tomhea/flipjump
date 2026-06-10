@@ -1,4 +1,4 @@
-// Collatz Steps (#0155)
+// Collatz Steps (#0130)
 
 // Reads decimal N in `1`-`50` and prints the number of Collatz steps (3n+1 / n/2) to reach 1 + `\n`.
 

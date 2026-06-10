@@ -1,4 +1,4 @@
-// Km To Miles (#0349)
+// Km To Miles (#0476)
 
 // Reads decimal kilometers `0`-`100` + `\n` and prints `floor(km * 5 / 8)` as decimal miles + `\n`.
 

@@ -1,4 +1,4 @@
-// Parity Three (#0221)
+// Parity Three (#0348)
 
 // Reads three decimals and prints `all even\n` if all are even, `all odd\n` if all odd, else `mixed\n`.
 

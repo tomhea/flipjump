@@ -1,4 +1,4 @@
-// Period Sentence Count (#0470)
+// Period Sentence Count (#0738)
 
 // Reads a `\n`-terminated line ≤ 80 chars. Prints the count of `.` bytes in the line (excluding `\n`) as decimal + `\n`. (Approximates sentence count by period count.)
 

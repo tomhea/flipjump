@@ -1,0 +1,26 @@
+// Ptr Advance Demo (#0922)
+
+// Reads decimal base address `0`-`15` + `\n`, then offset `0`-`15` + `\n`. Prints `(base + offset) mod 16` as decimal + `\n` (simulates pointer advance with wraparound).
+
+main
+
+def main @ err < sixteen, rbase, roff, sum49, quot49, result {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, rbase, err
+    hex.input_dec_uint 4, roff, err
+    hex.mov 4, sum49, rbase
+    hex.add 4, sum49, roff
+    hex.div 4, 4, quot49, result, sum49, sixteen, err
+    hex.print_dec_uint 4, result
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+rbase: hex.vec 4
+roff: hex.vec 4
+sum49: hex.vec 4
+result: hex.vec 4
+quot49: hex.vec 4
+sixteen: hex.vec 4, 16

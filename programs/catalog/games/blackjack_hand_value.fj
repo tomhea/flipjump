@@ -1,0 +1,67 @@
+// Blackjack Hand Value (#0952)
+
+// Reads digit N `1`-`9` + `\n`, then N card-value codes (each one of `A`, `2`-`9`, `T`, `J`, `Q`, `K` on its own line). Computes the best total (`A` is `1` or `11`, face cards `J`/`Q`/`K` are `10`). Prints the best total `≤ 21` (or, if even with `A=1` all hands bust, prints the minimum bust total).
+
+main
+
+// add bj_c's value to bj_total; bump bj_aces if it's an ace.
+def bj_add @ is_a, not_a, is_digit, is_face, end < bj_c, bj_total, bj_aces, bj_tmp, bj_ten, bj_0c, bj_Ac, bj_9c {
+    hex.cmp 2, bj_c, bj_Ac, not_a, is_a, not_a
+  is_a:
+    hex.inc 4, bj_total
+    hex.inc 4, bj_aces
+    ;end
+  not_a:
+    hex.cmp 2, bj_c, bj_9c, is_digit, is_digit, is_face
+  is_digit:
+    hex.zero 4, bj_tmp
+    hex.mov 2, bj_tmp, bj_c
+    hex.sub 4, bj_tmp, bj_0c
+    hex.add 4, bj_total, bj_tmp
+    ;end
+  is_face:
+    hex.add 4, bj_total, bj_ten
+  end:
+}
+
+def main @ err, bj_loop, bj_done, bj_no_bonus, bj_use_bonus < bj_N, bj_cnt, bj_total, bj_aces, bj_c, bj_nl, bj_tmp, bj_21, bj_bonus {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, bj_N, err
+    hex.zero 4, bj_total
+    hex.zero 4, bj_aces
+    hex.mov 4, bj_cnt, bj_N
+  bj_loop:
+    hex.if0 4, bj_cnt, bj_done
+    hex.input bj_c
+    hex.input bj_nl
+    bj_add
+    hex.dec 4, bj_cnt
+    ;bj_loop
+  bj_done:
+    hex.if0 4, bj_aces, bj_no_bonus
+    hex.mov 4, bj_tmp, bj_total
+    hex.add 4, bj_tmp, bj_bonus
+    hex.cmp 4, bj_tmp, bj_21, bj_use_bonus, bj_use_bonus, bj_no_bonus
+  bj_use_bonus:
+    hex.add 4, bj_total, bj_bonus
+  bj_no_bonus:
+    hex.print_dec_uint 4, bj_total
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+bj_N: hex.vec 4
+bj_cnt: hex.vec 4
+bj_total: hex.vec 4
+bj_aces: hex.vec 4
+bj_c: hex.vec 2
+bj_nl: hex.vec 2
+bj_tmp: hex.vec 4
+bj_ten: hex.vec 4, 10
+bj_21: hex.vec 4, 21
+bj_bonus: hex.vec 4, 10
+bj_0c: hex.vec 4, '0'
+bj_Ac: hex.vec 2, 'A'
+bj_9c: hex.vec 2, '9'

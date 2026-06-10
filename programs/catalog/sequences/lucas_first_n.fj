@@ -1,4 +1,4 @@
-// Lucas First N (#0440)
+// Lucas First N (#0705)
 
 // Reads digit N `1`-`9` + `\n`. Prints `L(0), L(1), ..., L(N-1)` (where `L(0)=2, L(1)=1`), space-separated, + `\n`.
 

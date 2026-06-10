@@ -1,0 +1,35 @@
+// One Time Pad Xor (#0888)
+
+// Reads a `\n`-terminated pad of `1`-`30` bytes, then a `\n`-terminated message of EXACTLY the same length. XORs corresponding bytes; outputs the result as raw bytes + `\n`. (Self-inverse — applying twice with the same pad returns the original.)
+
+hw = w / 4
+
+main
+
+def main @ err, loop, go, done < b, nl, padbuf, padlen, pptr, pb {
+    stl.startup_and_init_all
+    hex.set hw, pptr, padbuf
+    hex.input_ptr_line pptr, padlen
+    hex.set hw, pptr, padbuf
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.read_byte pb, pptr
+    hex.xor 2, b, pb
+    hex.print b
+    hex.ptr_inc pptr
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+padbuf: hex.vec 32
+padlen: hex.vec hw
+pptr: hex.vec hw
+pb: hex.vec 2

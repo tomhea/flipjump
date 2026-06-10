@@ -1,4 +1,4 @@
-// Is Prime Small (#0138)
+// Is Prime Small (#0113)
 
 // Reads decimal N in `0`-`50` and prints `1\n` if N is prime, else `0\n`.
 

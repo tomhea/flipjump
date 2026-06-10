@@ -1,4 +1,4 @@
-// Lucky Sum Check (#0878)
+// Lucky Sum Check (#1004)
 
 // Reads 3 decimals `1`-`9` (each own line). Prints `1\n` if their sum is divisible by 7, else `0\n`.
 

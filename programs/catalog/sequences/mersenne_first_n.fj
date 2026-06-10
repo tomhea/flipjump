@@ -1,4 +1,4 @@
-// Mersenne First N (#0922)
+// Mersenne First N (#0729)
 
 // Reads digit N `1`-`7` + `\n`. Prints first N Mersenne numbers `M(k) = 2^k - 1` for `k = 1..N`, space-separated + `\n`.
 

@@ -1,4 +1,4 @@
-// Cube Surface Area (#0586)
+// Cube Surface Area (#0610)
 
 // Reads decimal side `0`-`20` + `\n`. Prints `6 * side * side` + `\n`.
 

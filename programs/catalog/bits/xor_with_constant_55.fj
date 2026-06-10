@@ -1,4 +1,4 @@
-// Xor With Constant 55 (#0376)
+// Xor With Constant 55 (#0210)
 
 // Reads one byte and outputs `byte XOR 0x55`, as one raw byte.
 

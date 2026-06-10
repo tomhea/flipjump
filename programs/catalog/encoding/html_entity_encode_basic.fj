@@ -1,0 +1,43 @@
+// Html Entity Encode Basic (#0505)
+
+// Reads a `\n`-terminated line ≤ 40 chars. Replaces `&` with `&amp;`, `<` with `&lt;`, `>` with `&gt;`. Other bytes unchanged. Prints result + `\n`.
+
+main
+
+def main @ err, loop, go, done, c1, c2, do_amp, do_lt, do_gt, echo < b, nl, amp, lt, gt {
+    stl.startup_and_init_all
+    
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, amp, c1, do_amp, c1
+  c1:
+    hex.cmp 2, b, lt, c2, do_lt, c2
+  c2:
+    hex.cmp 2, b, gt, echo, do_gt, echo
+  do_amp:
+    stl.output "&amp;"
+    ;loop
+  do_lt:
+    stl.output "&lt;"
+    ;loop
+  do_gt:
+    stl.output "&gt;"
+    ;loop
+  echo:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+amp: hex.vec 2, '&'
+lt: hex.vec 2, '<'
+gt: hex.vec 2, '>'

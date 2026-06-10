@@ -1,0 +1,11 @@
+// Counting Squares 3X3 (#0676)
+
+// No input. Prints `14\n` (number of squares in a 3×3 lattice grid: 9 unit + 4 of side 2 + 1 of side 3).
+
+main
+
+def main {
+    stl.startup
+    stl.output "14\n"
+    stl.loop
+}

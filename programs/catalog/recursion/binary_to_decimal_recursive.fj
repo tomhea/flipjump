@@ -1,0 +1,36 @@
+// Binary To Decimal Recursive (#0430)
+
+// Reads an 8-char `0`/`1` binary string + `\n`. Computes its decimal value via recursive macro `b2d(s) = head(s) * 2^(len-1) + b2d(tail(s))`. Prints decimal `0`-`255` + `\n`.
+
+main
+
+def main @ err < r_n, b2d_remaining, b2d_acc, b2d_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_n, err
+    hex.mov 4, b2d_remaining, r_n
+    hex.zero 4, b2d_acc
+    stl.call b2d_fn
+    hex.print_dec_uint 4, b2d_acc
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Reads b2d_remaining ASCII bits, builds b2d_acc = decimal value
+b2d_fn:
+    hex.if0 4, b2d_remaining, b2d_base
+    hex.input b2d_bit
+    hex.sub 2, b2d_bit, b2d_zero_char
+    hex.shl_bit 4, b2d_acc
+    hex.add 2, b2d_acc, b2d_bit
+    hex.dec 4, b2d_remaining
+    stl.call b2d_fn
+    stl.return
+  b2d_base:
+    stl.return
+
+r_n: hex.vec 4
+b2d_remaining: hex.vec 4
+b2d_acc: hex.vec 4
+b2d_bit: hex.vec 2
+b2d_zero_char: hex.vec 2, '0'

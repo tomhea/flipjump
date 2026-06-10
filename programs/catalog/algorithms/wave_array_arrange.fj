@@ -1,4 +1,4 @@
-// Wave Array Arrange (#1236)
+// Wave Array Arrange (#0599)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints them rearranged in wave pattern (sorted ascending, then adjacent pairs swapped: `a[0] >= a[1] <= a[2] >= a[3] <= ...`), one per line.
 

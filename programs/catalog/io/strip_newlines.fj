@@ -1,4 +1,4 @@
-// Strip Newlines (#0037)
+// Strip Newlines (#0036)
 
 // Reads stdin and outputs all bytes except `\n`.
 

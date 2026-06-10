@@ -1,4 +1,4 @@
-// Demo Bit Shl 4bit (#1255)
+// Demo Bit Shl 4bit (#0852)
 
 // Reads a 4-char binary + `\n`, then digit `0`-`3` + `\n` (shift count). Uses `bit.shl`. Prints result as 4-char binary + `\n`.
 

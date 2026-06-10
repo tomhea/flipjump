@@ -1,0 +1,281 @@
+// Snake Advance One Step (#0643)
+
+// Reads a `\n`-terminated string of length `1`-`5` representing the snake's body positions on a 1D 10-cell line (`H` head, `B` body); positions separated by `.` for empty cells. Then reads one direction byte `L` or `R` + `\n`. Moves the head by 1 in that direction (no wrap; clamp to bounds); body follows. Prints the new state + `\n`.
+
+main
+
+// Read 10-char state + '\n', then direction L/R + '\n'.
+// Find H and B, compute new positions, print result.
+
+def main @ err, sn_h0, sn_h1, sn_h2, sn_h3, sn_h4, sn_h5, sn_h6, sn_h7, sn_h8, sn_h9, sn_hi0, sn_hi1, sn_hi2, sn_hi3, sn_hi4, sn_hi5, sn_hi6, sn_hi7, sn_hi8, sn_bc0, sn_bc1, sn_bc2, sn_bc3, sn_bc4, sn_bc5, sn_bc6, sn_bc7, sn_bc8, sn_bc9, sn_bs0, sn_bs1, sn_bs2, sn_bs3, sn_bs4, sn_bs5, sn_bs6, sn_bs7, sn_bs8, sn_bs9, sn_bi0, sn_bi1, sn_bi2, sn_bi3, sn_bi4, sn_bi5, sn_bi6, sn_bi7, sn_bi8, sn_move_r, sn_move_r2, sn_move_l, sn_clamp9, sn_move_done, sn_bc_scan, sn_nb_done, sn_wb_start, sn_wh0, sn_wh1, sn_wh2, sn_wh3, sn_wh4, sn_wh5, sn_wh6, sn_wh7, sn_wh8, sn_whn1, sn_whn2, sn_whn3, sn_whn4, sn_whn5, sn_whn6, sn_whn7, sn_whn8, sn_whn9, sn_wh_done, sn_wb0, sn_wb1, sn_wb2, sn_wb3, sn_wb4, sn_wb5, sn_wb6, sn_wb7, sn_wb8, sn_wbn1, sn_wbn2, sn_wbn3, sn_wbn4, sn_wbn5, sn_wbn6, sn_wbn7, sn_wbn8, sn_wbn9, sn_wb_done < sn0, sn1, sn2, sn3, sn4, sn5, sn6, sn7, sn8, sn9, sn_dir, sn_eol, sn_hpos, sn_bpos, sn_nhead, sn_nbody, sn_rc, sn_hc, sn_bc, sn_dc, sn_nine, sn_ff, sn_tmp4, sn_zero4 {
+    stl.startup_and_init_all 100
+    hex.input sn0
+    hex.input sn1
+    hex.input sn2
+    hex.input sn3
+    hex.input sn4
+    hex.input sn5
+    hex.input sn6
+    hex.input sn7
+    hex.input sn8
+    hex.input sn9
+    hex.input sn_eol
+    hex.input sn_dir
+    hex.input sn_eol
+    hex.set 4, sn_hpos, 0xff
+    hex.set 4, sn_bpos, 0xff
+    // find H
+    hex.cmp 2, sn0, sn_hc, sn_hi0, sn_h0, sn_hi0
+  sn_h0: hex.set 4, sn_hpos, 0
+  sn_hi0:
+    hex.cmp 2, sn1, sn_hc, sn_hi1, sn_h1, sn_hi1
+  sn_h1: hex.set 4, sn_hpos, 1
+  sn_hi1:
+    hex.cmp 2, sn2, sn_hc, sn_hi2, sn_h2, sn_hi2
+  sn_h2: hex.set 4, sn_hpos, 2
+  sn_hi2:
+    hex.cmp 2, sn3, sn_hc, sn_hi3, sn_h3, sn_hi3
+  sn_h3: hex.set 4, sn_hpos, 3
+  sn_hi3:
+    hex.cmp 2, sn4, sn_hc, sn_hi4, sn_h4, sn_hi4
+  sn_h4: hex.set 4, sn_hpos, 4
+  sn_hi4:
+    hex.cmp 2, sn5, sn_hc, sn_hi5, sn_h5, sn_hi5
+  sn_h5: hex.set 4, sn_hpos, 5
+  sn_hi5:
+    hex.cmp 2, sn6, sn_hc, sn_hi6, sn_h6, sn_hi6
+  sn_h6: hex.set 4, sn_hpos, 6
+  sn_hi6:
+    hex.cmp 2, sn7, sn_hc, sn_hi7, sn_h7, sn_hi7
+  sn_h7: hex.set 4, sn_hpos, 7
+  sn_hi7:
+    hex.cmp 2, sn8, sn_hc, sn_hi8, sn_h8, sn_hi8
+  sn_h8: hex.set 4, sn_hpos, 8
+  sn_hi8:
+    hex.cmp 2, sn9, sn_hc, sn_bc_scan, sn_h9, sn_bc_scan
+  sn_h9: hex.set 4, sn_hpos, 9
+    // find B (first occurrence)
+  sn_bc_scan:
+    hex.cmp 2, sn0, sn_bc, sn_bi0, sn_bs0, sn_bi0
+  sn_bs0: hex.cmp 4, sn_bpos, sn_ff, sn_bi0, sn_bc0, sn_bi0
+  sn_bc0: hex.set 4, sn_bpos, 0
+  sn_bi0:
+    hex.cmp 2, sn1, sn_bc, sn_bi1, sn_bs1, sn_bi1
+  sn_bs1: hex.cmp 4, sn_bpos, sn_ff, sn_bi1, sn_bc1, sn_bi1
+  sn_bc1: hex.set 4, sn_bpos, 1
+  sn_bi1:
+    hex.cmp 2, sn2, sn_bc, sn_bi2, sn_bs2, sn_bi2
+  sn_bs2: hex.cmp 4, sn_bpos, sn_ff, sn_bi2, sn_bc2, sn_bi2
+  sn_bc2: hex.set 4, sn_bpos, 2
+  sn_bi2:
+    hex.cmp 2, sn3, sn_bc, sn_bi3, sn_bs3, sn_bi3
+  sn_bs3: hex.cmp 4, sn_bpos, sn_ff, sn_bi3, sn_bc3, sn_bi3
+  sn_bc3: hex.set 4, sn_bpos, 3
+  sn_bi3:
+    hex.cmp 2, sn4, sn_bc, sn_bi4, sn_bs4, sn_bi4
+  sn_bs4: hex.cmp 4, sn_bpos, sn_ff, sn_bi4, sn_bc4, sn_bi4
+  sn_bc4: hex.set 4, sn_bpos, 4
+  sn_bi4:
+    hex.cmp 2, sn5, sn_bc, sn_bi5, sn_bs5, sn_bi5
+  sn_bs5: hex.cmp 4, sn_bpos, sn_ff, sn_bi5, sn_bc5, sn_bi5
+  sn_bc5: hex.set 4, sn_bpos, 5
+  sn_bi5:
+    hex.cmp 2, sn6, sn_bc, sn_bi6, sn_bs6, sn_bi6
+  sn_bs6: hex.cmp 4, sn_bpos, sn_ff, sn_bi6, sn_bc6, sn_bi6
+  sn_bc6: hex.set 4, sn_bpos, 6
+  sn_bi6:
+    hex.cmp 2, sn7, sn_bc, sn_bi7, sn_bs7, sn_bi7
+  sn_bs7: hex.cmp 4, sn_bpos, sn_ff, sn_bi7, sn_bc7, sn_bi7
+  sn_bc7: hex.set 4, sn_bpos, 7
+  sn_bi7:
+    hex.cmp 2, sn8, sn_bc, sn_bi8, sn_bs8, sn_bi8
+  sn_bs8: hex.cmp 4, sn_bpos, sn_ff, sn_bi8, sn_bc8, sn_bi8
+  sn_bc8: hex.set 4, sn_bpos, 8
+  sn_bi8:
+    hex.cmp 2, sn9, sn_bc, sn_move_r, sn_bs9, sn_move_r
+  sn_bs9: hex.cmp 4, sn_bpos, sn_ff, sn_move_r, sn_bc9, sn_move_r
+  sn_bc9: hex.set 4, sn_bpos, 9
+    // compute new head
+  sn_move_r:
+    hex.cmp 2, sn_dir, sn_rc, sn_move_l, sn_move_r2, sn_move_l
+  sn_move_r2:
+    hex.mov 4, sn_nhead, sn_hpos
+    hex.inc 4, sn_nhead
+    hex.cmp 4, sn_nhead, sn_nine, sn_move_done, sn_move_done, sn_clamp9
+  sn_clamp9:
+    hex.set 4, sn_nhead, 9
+    ;sn_move_done
+  sn_move_l:
+    hex.mov 4, sn_nhead, sn_hpos
+    hex.if0 4, sn_nhead, sn_move_done
+    hex.dec 4, sn_nhead
+  sn_move_done:
+    // new body = old head position
+    hex.mov 4, sn_nbody, sn_hpos
+    // clear all cells to '.'
+    hex.mov 2, sn0, sn_dc
+    hex.mov 2, sn1, sn_dc
+    hex.mov 2, sn2, sn_dc
+    hex.mov 2, sn3, sn_dc
+    hex.mov 2, sn4, sn_dc
+    hex.mov 2, sn5, sn_dc
+    hex.mov 2, sn6, sn_dc
+    hex.mov 2, sn7, sn_dc
+    hex.mov 2, sn8, sn_dc
+    hex.mov 2, sn9, sn_dc
+    // write H at new head
+    hex.cmp 4, sn_nhead, sn_zero4, sn_whn1, sn_wh0, sn_whn1
+  sn_wh0:
+    hex.mov 2, sn0, sn_hc
+    ;sn_wh_done
+  sn_whn1:
+    hex.set 4, sn_tmp4, 1
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn2, sn_wh1, sn_whn2
+  sn_wh1:
+    hex.mov 2, sn1, sn_hc
+    ;sn_wh_done
+  sn_whn2:
+    hex.set 4, sn_tmp4, 2
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn3, sn_wh2, sn_whn3
+  sn_wh2:
+    hex.mov 2, sn2, sn_hc
+    ;sn_wh_done
+  sn_whn3:
+    hex.set 4, sn_tmp4, 3
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn4, sn_wh3, sn_whn4
+  sn_wh3:
+    hex.mov 2, sn3, sn_hc
+    ;sn_wh_done
+  sn_whn4:
+    hex.set 4, sn_tmp4, 4
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn5, sn_wh4, sn_whn5
+  sn_wh4:
+    hex.mov 2, sn4, sn_hc
+    ;sn_wh_done
+  sn_whn5:
+    hex.set 4, sn_tmp4, 5
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn6, sn_wh5, sn_whn6
+  sn_wh5:
+    hex.mov 2, sn5, sn_hc
+    ;sn_wh_done
+  sn_whn6:
+    hex.set 4, sn_tmp4, 6
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn7, sn_wh6, sn_whn7
+  sn_wh6:
+    hex.mov 2, sn6, sn_hc
+    ;sn_wh_done
+  sn_whn7:
+    hex.set 4, sn_tmp4, 7
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn8, sn_wh7, sn_whn8
+  sn_wh7:
+    hex.mov 2, sn7, sn_hc
+    ;sn_wh_done
+  sn_whn8:
+    hex.set 4, sn_tmp4, 8
+    hex.cmp 4, sn_nhead, sn_tmp4, sn_whn9, sn_wh8, sn_whn9
+  sn_wh8:
+    hex.mov 2, sn8, sn_hc
+    ;sn_wh_done
+  sn_whn9:
+    hex.mov 2, sn9, sn_hc
+    ;sn_wh_done
+  sn_wh_done:
+    // write B at new body (if bpos != 0xff)
+    hex.cmp 4, sn_bpos, sn_ff, sn_wb_start, sn_nb_done, sn_wb_start
+  sn_wb_start:
+    hex.cmp 4, sn_nbody, sn_zero4, sn_wbn1, sn_wb0, sn_wbn1
+  sn_wb0:
+    hex.mov 2, sn0, sn_bc
+    ;sn_wb_done
+  sn_wbn1:
+    hex.set 4, sn_tmp4, 1
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn2, sn_wb1, sn_wbn2
+  sn_wb1:
+    hex.mov 2, sn1, sn_bc
+    ;sn_wb_done
+  sn_wbn2:
+    hex.set 4, sn_tmp4, 2
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn3, sn_wb2, sn_wbn3
+  sn_wb2:
+    hex.mov 2, sn2, sn_bc
+    ;sn_wb_done
+  sn_wbn3:
+    hex.set 4, sn_tmp4, 3
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn4, sn_wb3, sn_wbn4
+  sn_wb3:
+    hex.mov 2, sn3, sn_bc
+    ;sn_wb_done
+  sn_wbn4:
+    hex.set 4, sn_tmp4, 4
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn5, sn_wb4, sn_wbn5
+  sn_wb4:
+    hex.mov 2, sn4, sn_bc
+    ;sn_wb_done
+  sn_wbn5:
+    hex.set 4, sn_tmp4, 5
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn6, sn_wb5, sn_wbn6
+  sn_wb5:
+    hex.mov 2, sn5, sn_bc
+    ;sn_wb_done
+  sn_wbn6:
+    hex.set 4, sn_tmp4, 6
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn7, sn_wb6, sn_wbn7
+  sn_wb6:
+    hex.mov 2, sn6, sn_bc
+    ;sn_wb_done
+  sn_wbn7:
+    hex.set 4, sn_tmp4, 7
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn8, sn_wb7, sn_wbn8
+  sn_wb7:
+    hex.mov 2, sn7, sn_bc
+    ;sn_wb_done
+  sn_wbn8:
+    hex.set 4, sn_tmp4, 8
+    hex.cmp 4, sn_nbody, sn_tmp4, sn_wbn9, sn_wb8, sn_wbn9
+  sn_wb8:
+    hex.mov 2, sn8, sn_bc
+    ;sn_wb_done
+  sn_wbn9:
+    hex.mov 2, sn9, sn_bc
+  sn_wb_done:
+  sn_nb_done:
+    hex.print sn0
+    hex.print sn1
+    hex.print sn2
+    hex.print sn3
+    hex.print sn4
+    hex.print sn5
+    hex.print sn6
+    hex.print sn7
+    hex.print sn8
+    hex.print sn9
+    stl.output '\n'
+    stl.loop
+  err:
+    stl.loop
+}
+
+sn0: hex.vec 2
+sn1: hex.vec 2
+sn2: hex.vec 2
+sn3: hex.vec 2
+sn4: hex.vec 2
+sn5: hex.vec 2
+sn6: hex.vec 2
+sn7: hex.vec 2
+sn8: hex.vec 2
+sn9: hex.vec 2
+sn_dir: hex.vec 2
+sn_eol: hex.vec 2
+sn_hpos: hex.vec 4
+sn_bpos: hex.vec 4
+sn_nhead: hex.vec 4
+sn_nbody: hex.vec 4
+sn_rc: hex.vec 2, 'R'
+sn_hc: hex.vec 2, 'H'
+sn_bc: hex.vec 2, 'B'
+sn_dc: hex.vec 2, '.'
+sn_nine: hex.vec 4, 9
+sn_ff: hex.vec 4, 0xff
+sn_tmp4: hex.vec 4
+sn_zero4: hex.vec 4, 0

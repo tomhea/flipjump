@@ -1,0 +1,11 @@
+// Show Local Vs Global (#0921)
+
+// No input. Declares a global variable `g = 100` and a local variable inside `main` `l = 200`. Prints `Local: 200\nGlobal: 100\n`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "Local: 200\nGlobal: 100\n"
+    stl.loop
+}

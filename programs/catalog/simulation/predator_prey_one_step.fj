@@ -1,0 +1,51 @@
+// Predator Prey One Step (#0647)
+
+// Reads `prey` `0`-`50`, `pred` `0`-`20` (each own line). Applies one Lotka-Volterra-inspired step: `prey' = prey + prey/4 - pred`, `pred' = pred + prey/10 - pred/4` (integer divisions, clamp at 0). Prints `<prey'> <pred'>\n`.
+
+main
+
+def main @ err, pp_cp, pp_pp, pp_clp, pp_ppp < pp_prey, pp_pred, pp_tmp, pp_q, pp_r, pp_four, pp_ten, pp_zero4, pp_oprey {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, pp_prey, err
+    hex.input_dec_uint 4, pp_pred, err
+    // save original prey for pred update
+    hex.mov 4, pp_oprey, pp_prey
+    // new_prey = prey + prey/4 - pred
+    hex.div 4, 4, pp_q, pp_r, pp_prey, pp_four, err
+    hex.add 4, pp_prey, pp_q
+    hex.sub 4, pp_prey, pp_pred
+    // clamp at 0 (signed: prey + prey/4 - pred can be negative)
+    hex.scmp 4, pp_prey, pp_zero4, pp_cp, pp_pp, pp_pp
+  pp_cp:
+    hex.zero 4, pp_prey
+  pp_pp:
+    // new_pred = pred + oprey/10 - pred/4
+    // save original pred/4 first
+    hex.div 4, 4, pp_q, pp_r, pp_pred, pp_four, err
+    hex.mov 4, pp_tmp, pp_q
+    // pred += oprey/10
+    hex.div 4, 4, pp_q, pp_r, pp_oprey, pp_ten, err
+    hex.add 4, pp_pred, pp_q
+    hex.sub 4, pp_pred, pp_tmp
+    // clamp at 0 (signed, for consistency)
+    hex.scmp 4, pp_pred, pp_zero4, pp_clp, pp_ppp, pp_ppp
+  pp_clp:
+    hex.zero 4, pp_pred
+  pp_ppp:
+    hex.print_dec_uint 4, pp_prey
+    stl.output ' '
+    hex.print_dec_uint 4, pp_pred
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+pp_prey: hex.vec 4
+pp_pred: hex.vec 4
+pp_oprey: hex.vec 4
+pp_tmp: hex.vec 4
+pp_q: hex.vec 4
+pp_r: hex.vec 4
+pp_four: hex.vec 4, 4
+pp_ten: hex.vec 4, 10
+pp_zero4: hex.vec 4, 0

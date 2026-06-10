@@ -1,0 +1,36 @@
+// Menu Selection (#0438)
+
+// Reads a single digit `1`-`4` + `\n`. Prints `Pizza\n`, `Burger\n`, `Salad\n`, or `Soup\n` for `1`/`2`/`3`/`4` respectively.
+
+main
+
+def main @ err, c2, c3, c4, p1, p2, p3, p4, done < val, one, two, three {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, val, err
+    hex.cmp 4, val, one, c2, p1, c2
+  c2:
+    hex.cmp 4, val, two, c3, p2, c3
+  c3:
+    hex.cmp 4, val, three, c4, p3, c4
+  c4:
+    ;p4
+  p1:
+    stl.output "Pizza\n"
+    ;done
+  p2:
+    stl.output "Burger\n"
+    ;done
+  p3:
+    stl.output "Salad\n"
+    ;done
+  p4:
+    stl.output "Soup\n"
+  done:
+  err:
+    stl.loop
+}
+
+val: hex.vec 4
+one: hex.vec 4, 1
+two: hex.vec 4, 2
+three: hex.vec 4, 3

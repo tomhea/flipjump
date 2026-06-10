@@ -1,4 +1,4 @@
-// Sort By Key 5 (#1167)
+// Sort By Key 5 (#0414)
 
 // Reads 5 `(key, value)` pairs (each on 2 own lines, key `0`-`9` integer, value `0`-`99`). Sorts ascending by key (stable). Prints each pair as `<key> <value>\n` (5 lines).
 

@@ -1,0 +1,83 @@
+// Binary Search Recursive (#0427)
+
+// Reads digit N `1`-`9` + `\n`, then N sorted decimals (each on own line), then target. Implements binary search via recursive macro that halves the search interval. Prints 0-based index + `\n` or `not found\n`.
+
+main
+
+def main @ err, arr_loop, arr_body, arr_done, bs_notfound_print, bs_print_idx, bs_end < r_n, r_target, bs_lo, bs_hi, bs_target, bs_result, bs_bval, bs_wptr, bs_arr, bs_bidx, bs_notfound_val, bsearch_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_n, err
+    hex.set w/4, bs_wptr, bs_arr
+    hex.zero 4, bs_bidx
+  arr_loop:
+    hex.cmp 4, bs_bidx, r_n, arr_body, arr_done, arr_done
+  arr_body:
+    hex.input_dec_uint 2, bs_bval, err
+    hex.write_byte_and_inc bs_wptr, bs_bval
+    hex.inc 4, bs_bidx
+    ;arr_loop
+  arr_done:
+    hex.input_dec_uint 4, r_target, err
+    hex.set w/4, bs_wptr, bs_arr
+    hex.zero 4, bs_lo
+    hex.mov 4, bs_hi, r_n
+    hex.dec 4, bs_hi
+    hex.mov 2, bs_target, r_target
+    stl.call bsearch_fn
+    hex.cmp 4, bs_result, bs_notfound_val, bs_print_idx, bs_notfound_print, bs_print_idx
+  bs_notfound_print:
+    stl.output "not found\n"
+    ;bs_end
+  bs_print_idx:
+    hex.print_dec_uint 4, bs_result
+    stl.output '\n'
+  bs_end:
+    stl.loop
+  err:
+    stl.loop
+}
+
+// Binary search bs_lo..bs_hi for bs_target; writes bs_result (0xff=not found)
+bsearch_fn:
+    hex.scmp 4, bs_lo, bs_hi, bs_cont, bs_cont, bs_notfound
+  bs_cont:
+    hex.mov 4, bs_sum, bs_lo
+    hex.add 4, bs_sum, bs_hi
+    hex.div 4, 4, bs_mid, bs_rdiv, bs_sum, bs_two, bs_div0
+    hex.read_nth_byte bs_val, bs_wptr, bs_mid
+    hex.cmp 2, bs_val, bs_target, bs_lt, bs_found, bs_gt
+  bs_lt:
+    hex.mov 4, bs_lo, bs_mid
+    hex.inc 4, bs_lo
+    stl.call bsearch_fn
+    stl.return
+  bs_gt:
+    hex.mov 4, bs_hi, bs_mid
+    hex.dec 4, bs_hi
+    stl.call bsearch_fn
+    stl.return
+  bs_found:
+    hex.mov 4, bs_result, bs_mid
+    stl.return
+  bs_notfound:
+    hex.set 4, bs_result, 0xff
+    stl.return
+bs_div0:
+    stl.loop
+
+r_n: hex.vec 4
+r_target: hex.vec 4
+bs_lo: hex.vec 4
+bs_hi: hex.vec 4
+bs_target: hex.vec 2
+bs_result: hex.vec 4
+bs_bval: hex.vec 2
+bs_val: hex.vec 2
+bs_wptr: hex.vec w/4
+bs_arr: hex.vec 9, 0
+bs_bidx: hex.vec 4
+bs_sum: hex.vec 4
+bs_mid: hex.vec w/4
+bs_rdiv: hex.vec 4
+bs_two: hex.vec 4, 2
+bs_notfound_val: hex.vec 4, 0xff

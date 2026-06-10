@@ -1,4 +1,4 @@
-// Mixed Brackets Matched (#1158)
+// Mixed Brackets Matched (#0405)
 
 // Reads a `\n`-terminated string ≤ 40 chars containing only `()[]{}`. Prints `1\n` if all three bracket types are balanced AND properly nested (e.g. `([])` valid, `([)]` invalid), else `0\n`. Use an explicit stack.
 

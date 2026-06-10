@@ -1,0 +1,31 @@
+// Tower Of Hanoi Count (#0665)
+
+// Reads digit N `1`-`9` + `\n`. Prints `2^N - 1` (minimum moves) + `\n`.
+
+main
+
+def main @ err, loop, body, done < nval, idx, res, tmp, two {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, nval, err
+    hex.set 8, res, 1
+    hex.zero 8, idx
+  loop:
+    hex.cmp 8, idx, nval, body, done, done
+  body:
+    hex.mul 8, tmp, res, two
+    hex.mov 8, res, tmp
+    hex.inc 8, idx
+    ;loop
+  done:
+    hex.dec 8, res
+    hex.print_dec_uint 8, res
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+nval: hex.vec 8
+idx: hex.vec 8
+res: hex.vec 8
+tmp: hex.vec 8
+two: hex.vec 8, 2

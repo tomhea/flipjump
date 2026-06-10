@@ -1,0 +1,25 @@
+// Parse Date Iso (#0785)
+
+// Reads `YYYY-MM-DD\n` (10 bytes + `\n`). Prints `Year: <Y>\nMonth: <M>\nDay: <D>\n` with no leading zeros.
+
+main
+
+def main < year, mon, day, sb {
+    stl.startup_and_init_all
+    hex.input_dec_uint_until 8, year, sb
+    hex.input_dec_uint_until 8, mon, sb
+    hex.input_dec_uint_until 8, day, sb
+    stl.output "Year: "
+    hex.print_dec_uint 8, year
+    stl.output "\nMonth: "
+    hex.print_dec_uint 8, mon
+    stl.output "\nDay: "
+    hex.print_dec_uint 8, day
+    stl.output '\n'
+    stl.loop
+}
+
+year: hex.vec 8
+mon: hex.vec 8
+day: hex.vec 8
+sb: hex.vec 2

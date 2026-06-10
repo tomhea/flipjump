@@ -1,4 +1,4 @@
-// Tetrahedral First N (#0436)
+// Tetrahedral First N (#0702)
 
 // Reads digit N `1`-`9` + `\n`. Prints the first N tetrahedral numbers `Te(k) = k(k+1)(k+2)/6`, space-separated, + `\n`.
 

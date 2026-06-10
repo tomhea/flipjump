@@ -1,4 +1,4 @@
-// Max Index 5 (#1141)
+// Max Index 5 (#0388)
 
 // Reads exactly 5 decimals and prints the 0-based index of the maximum value + `\n`. Ties: smallest index among tied positions.
 

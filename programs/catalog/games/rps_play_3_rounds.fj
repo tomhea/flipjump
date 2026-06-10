@@ -1,0 +1,66 @@
+// Rps Play 3 Rounds (#0963)
+
+// Reads 6 chars (3 pairs): player 1 then player 2 for each of 3 rounds (each char on own line; `r`/`p`/`s`). Determines round winner for each (P1, P2, or tie). Prints final summary `P1: <p1_wins>\nP2: <p2_wins>\nTies: <ties>\n`.
+
+main
+
+def rps_round < rps_p1, rps_p2, rps_nl {
+    hex.input rps_p1
+    hex.input rps_nl
+    hex.input rps_p2
+    hex.input rps_nl
+    rps_judge
+}
+
+def rps_judge @ rj_notie, rj_t2, rj_chk_rs, rj_t3, rj_chk_sp, rj_chk_pr, rj_p1win, rj_p2win, rj_tie, rj_done < rps_p1, rps_p2, rps_p1w, rps_p2w, rps_tie, rps_rc, rps_sc, rps_pc {
+    hex.cmp 2, rps_p1, rps_p2, rj_notie, rj_tie, rj_notie
+  rj_notie:
+    hex.cmp 2, rps_p1, rps_rc, rj_t2, rj_chk_rs, rj_t2
+  rj_chk_rs:
+    hex.cmp 2, rps_p2, rps_sc, rj_t2, rj_p1win, rj_t2
+  rj_t2:
+    hex.cmp 2, rps_p1, rps_sc, rj_t3, rj_chk_sp, rj_t3
+  rj_chk_sp:
+    hex.cmp 2, rps_p2, rps_pc, rj_t3, rj_p1win, rj_t3
+  rj_t3:
+    hex.cmp 2, rps_p1, rps_pc, rj_p2win, rj_chk_pr, rj_p2win
+  rj_chk_pr:
+    hex.cmp 2, rps_p2, rps_rc, rj_p2win, rj_p1win, rj_p2win
+  rj_p1win:
+    hex.inc 4, rps_p1w
+    ;rj_done
+  rj_p2win:
+    hex.inc 4, rps_p2w
+    ;rj_done
+  rj_tie:
+    hex.inc 4, rps_tie
+  rj_done:
+}
+
+def main < rps_p1w, rps_p2w, rps_tie {
+    stl.startup_and_init_all 100
+    hex.zero 4, rps_p1w
+    hex.zero 4, rps_p2w
+    hex.zero 4, rps_tie
+    rep(3, i) rps_round
+    stl.output "P1: "
+    hex.print_dec_uint 4, rps_p1w
+    stl.output '\n'
+    stl.output "P2: "
+    hex.print_dec_uint 4, rps_p2w
+    stl.output '\n'
+    stl.output "Ties: "
+    hex.print_dec_uint 4, rps_tie
+    stl.output '\n'
+    stl.loop
+}
+
+rps_p1: hex.vec 2
+rps_p2: hex.vec 2
+rps_nl: hex.vec 2
+rps_p1w: hex.vec 4
+rps_p2w: hex.vec 4
+rps_tie: hex.vec 4
+rps_rc: hex.vec 2, 'r'
+rps_sc: hex.vec 2, 's'
+rps_pc: hex.vec 2, 'p'

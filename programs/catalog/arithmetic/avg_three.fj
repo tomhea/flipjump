@@ -1,4 +1,4 @@
-// Avg Three (#0102)
+// Avg Three (#0077)
 
 // Reads three decimal integers and prints their integer average `(a + b + c) / 3` (floor division) as decimal + `\n`.
 

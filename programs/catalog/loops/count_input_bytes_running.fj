@@ -1,4 +1,4 @@
-// Count Input Bytes Running (#0265)
+// Count Input Bytes Running (#0304)
 
 // Reads bytes until `\n`. After each byte, prints the byte's 1-based position as decimal + `\n`. Stops at `\n` (does not print the position of the `\n`).
 

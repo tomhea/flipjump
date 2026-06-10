@@ -1,0 +1,46 @@
+// Magic Eight Ball (#0435)
+
+// Reads any `\n`-terminated question (≤ 60 chars). Prints exactly one of 5 fixed answers selected by `(input_length_excluding_newline) mod 5`: `0→Yes\n`, `1→No\n`, `2→Maybe\n`, `3→Ask again later\n`, `4→Definitely\n`.
+
+hw = w / 4
+
+main
+
+def main @ err, ans0, ans1, ans2, ans3, ans4, done < buf, bptr, slen, qd, rem, five {
+    stl.startup_and_init_all
+    hex.set hw, bptr, buf
+    hex.input_ptr_line bptr, slen
+    hex.div hw, hw, qd, rem, slen, five, err       // rem = slen mod 5
+    hex.if0 4, rem, ans0
+    hex.dec 4, rem
+    hex.if0 4, rem, ans1
+    hex.dec 4, rem
+    hex.if0 4, rem, ans2
+    hex.dec 4, rem
+    hex.if0 4, rem, ans3
+    ;ans4
+  ans0:
+    stl.output "Yes\n"
+    ;done
+  ans1:
+    stl.output "No\n"
+    ;done
+  ans2:
+    stl.output "Maybe\n"
+    ;done
+  ans3:
+    stl.output "Ask again later\n"
+    ;done
+  ans4:
+    stl.output "Definitely\n"
+  done:
+  err:
+    stl.loop
+}
+
+buf: hex.vec 84
+bptr: hex.vec hw
+slen: hex.vec hw
+qd: hex.vec hw
+rem: hex.vec hw
+five: hex.vec hw, 5

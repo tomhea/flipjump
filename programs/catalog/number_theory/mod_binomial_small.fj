@@ -1,4 +1,4 @@
-// Mod Binomial Small (#1033)
+// Mod Binomial Small (#0144)
 
 // Reads decimals `N` `K` `m` (`N` `1`-`9`, `K` `0..N`, `m` `1`-`30`, on own lines). Prints `(C(N, K) mod m)` as decimal + `\n`.
 

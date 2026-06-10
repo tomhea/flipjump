@@ -1,0 +1,28 @@
+// Shopping Cart Check (#0461)
+
+// Reads decimal price `0`-`999` + `\n` then decimal budget `0`-`999` + `\n`. If `price <= budget` prints `affordable\n`, else prints `over budget by <X>\n` where `X = price - budget`.
+
+main
+
+def main @ err, afford, over, done < price, budget, diff {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, price, err
+    hex.input_dec_uint 4, budget, err
+    hex.cmp 4, price, budget, afford, afford, over
+  afford:
+    stl.output "affordable\n"
+    ;done
+  over:
+    hex.mov 4, diff, price
+    hex.sub 4, diff, budget
+    stl.output "over budget by "
+    hex.print_dec_uint 4, diff
+    stl.output '\n'
+  done:
+  err:
+    stl.loop
+}
+
+price: hex.vec 4
+budget: hex.vec 4
+diff: hex.vec 4

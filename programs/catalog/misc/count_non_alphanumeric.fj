@@ -1,4 +1,4 @@
-// Count Non Alphanumeric (#1083)
+// Count Non Alphanumeric (#1023)
 
 // Reads `\n`-terminated line ≤ 80 chars. Prints the count of bytes that are NEITHER letters NOR digits (excluding terminating `\n`) as decimal + `\n`.
 

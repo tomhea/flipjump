@@ -1,4 +1,4 @@
-// Find Missing In Sequence (#1177)
+// Find Missing In Sequence (#0541)
 
 // Reads digit N `2`-`9` + `\n`, then `N-1` decimals which are some permutation of `{1, 2, ..., N}` with exactly one value missing. Prints the missing value + `\n`.
 

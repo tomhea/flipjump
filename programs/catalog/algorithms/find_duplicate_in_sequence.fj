@@ -1,4 +1,4 @@
-// Find Duplicate In Sequence (#1178)
+// Find Duplicate In Sequence (#0542)
 
 // Reads digit N `2`-`9` + `\n`, then N decimals from `{1, 2, ..., N-1}` with exactly one value duplicated. Prints the duplicated value + `\n`.
 

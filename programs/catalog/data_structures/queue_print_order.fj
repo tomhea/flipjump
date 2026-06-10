@@ -1,4 +1,4 @@
-// Queue Print Order (#1156)
+// Queue Print Order (#0403)
 
 // Reads digit N `1`-`9` + `\n`, then exactly N bytes (no separator). Enqueues each byte then dequeues all, outputting them in original input order (FIFO demo).
 

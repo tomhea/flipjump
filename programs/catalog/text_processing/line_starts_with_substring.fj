@@ -1,4 +1,4 @@
-// Line Starts With Substring (#1107)
+// Line Starts With Substring (#0751)
 
 // Reads a `\n`-terminated prefix (≤ 20 chars), then a `\n`-terminated line (≤ 60 chars). Prints `1\n` if the line starts with the prefix exactly, else `0\n`.
 

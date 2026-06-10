@@ -1,4 +1,4 @@
-// Count Below Threshold Lcg (#1227)
+// Count Below Threshold Lcg (#0590)
 
 // Reads one byte (seed), then one byte (threshold). Applies 10 LCG steps and counts how many states are strictly `<` threshold. Prints the count as decimal `0`-`10` + `\n`.
 

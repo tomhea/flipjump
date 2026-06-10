@@ -1,4 +1,4 @@
-// Parallel Vectors Check (#0594)
+// Parallel Vectors Check (#0618)
 
 // Reads 4 decimals (two 2D vectors). Prints `1\n` if their scalar cross product is `0` (parallel or anti-parallel), else `0\n`.
 

@@ -1,0 +1,26 @@
+// Parse Version String (#0797)
+
+// Reads `v<MAJOR>.<MINOR>.<PATCH>\n` where each segment is `0`-`99`. Prints `<MAJOR> <MINOR> <PATCH>\n` space-separated.
+
+main
+
+def main < vch, maj, minr, pat, sb {
+    stl.startup_and_init_all
+    hex.input vch
+    hex.input_dec_uint_until 8, maj, sb
+    hex.input_dec_uint_until 8, minr, sb
+    hex.input_dec_uint_until 8, pat, sb
+    hex.print_dec_uint 8, maj
+    stl.output ' '
+    hex.print_dec_uint 8, minr
+    stl.output ' '
+    hex.print_dec_uint 8, pat
+    stl.output '\n'
+    stl.loop
+}
+
+vch: hex.vec 2
+maj: hex.vec 8
+minr: hex.vec 8
+pat: hex.vec 8
+sb: hex.vec 2

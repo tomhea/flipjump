@@ -1,0 +1,43 @@
+// Ping Pong Toggle State (#0765)
+
+// Reads a `\n`-terminated bit string (`0`/`1`, ≤ 20 chars). State starts at `Ping`. On each `1` input, state toggles (`Ping↔Pong`); on each `0`, state stays. After each input, prints the current state + `\n` (one state per line).
+
+main
+
+def main @ err, loop, done, is1pp, to_pong, print_pp, print_ping < ch, nl_char, one_char, state, tmp {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, one_char
+    hex.if0 2, tmp, is1pp
+    ;print_pp
+  is1pp:
+    // toggle: 0->1, 1->0
+    hex.if0 2, state, to_pong
+    hex.set 2, state, 0
+    ;print_pp
+  to_pong:
+    hex.set 2, state, 1
+  print_pp:
+    hex.if0 2, state, print_ping
+    stl.output "Pong\n"
+    ;loop
+  print_ping:
+    stl.output "Ping\n"
+    ;loop
+  done:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+one_char: hex.vec 2, '1'
+nl_char: hex.vec 2, '\n'

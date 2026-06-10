@@ -1,4 +1,4 @@
-// Checkerboard (#0238)
+// Checkerboard (#0278)
 
 // Reads digit N `1`-`8` + `\n`. Prints an N-by-N checkerboard: top-left cell `*`, alternating `*` and `.` along each row and column.
 

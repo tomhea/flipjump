@@ -1,0 +1,16 @@
+// Customer Rating (#0457)
+
+// Reads digit `1`-`5` + `\n`. Prints `Thank you for your <N>-star review!\n`.
+
+main
+
+def main < ch {
+    stl.startup_and_init_all
+    hex.input ch
+    stl.output "Thank you for your "
+    hex.print ch
+    stl.output "-star review!\n"
+    stl.loop
+}
+
+ch: hex.vec 2, 0

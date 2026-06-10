@@ -1,4 +1,4 @@
-// Divisors Of N (#0146)
+// Divisors Of N (#0121)
 
 // Reads decimal N in `1`-`30` and prints all positive divisors of N in ascending order, one per line.
 

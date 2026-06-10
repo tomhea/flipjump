@@ -1,4 +1,4 @@
-// Std Dev 5 Floor Sqrt (#1206)
+// Std Dev 5 Floor Sqrt (#0569)
 
 // Reads exactly 5 decimals `0`-`99`. Computes variance (as in `variance_5`), then prints `floor(sqrt(variance))` as decimal + `\n`. Use integer-sqrt by linear scan.
 

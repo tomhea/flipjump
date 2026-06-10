@@ -1,0 +1,313 @@
+// Rule 110 One Step (#0629)
+
+// Same I/O but Rule 110.
+
+main
+
+def main @ err, lz0, c10_0, r110_0, r100_0, c00_0, r010_0, r000_0, dn0, lz1, c10_1, r110_1, r100_1, c00_1, r010_1, r000_1, dn1, lz2, c10_2, r110_2, r100_2, c00_2, r010_2, r000_2, dn2, lz3, c10_3, r110_3, r100_3, c00_3, r010_3, r000_3, dn3, lz4, c10_4, r110_4, r100_4, c00_4, r010_4, r000_4, dn4, lz5, c10_5, r110_5, r100_5, c00_5, r010_5, r000_5, dn5, lz6, c10_6, r110_6, r100_6, c00_6, r010_6, r000_6, dn6, lz7, c10_7, r110_7, r100_7, c00_7, r010_7, r000_7, dn7 < ca_c0, ca_c1, ca_c2, ca_c3, ca_c4, ca_c5, ca_c6, ca_c7, ca_n0, ca_n1, ca_n2, ca_n3, ca_n4, ca_n5, ca_n6, ca_n7, ca_tmp, zero_char, ca_eol {
+    stl.startup_and_init_all 100
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c0, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c1, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c2, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c3, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c4, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c5, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c6, ca_tmp
+    hex.input ca_tmp
+    hex.sub 2, ca_tmp, zero_char
+    hex.mov 2, ca_c7, ca_tmp
+    hex.input ca_eol
+    hex.if0 2, ca_c7, lz0
+    hex.if0 2, ca_c0, c10_0
+    hex.if0 2, ca_c1, r110_0
+    hex.set 2, ca_n0, 0
+    ;dn0
+  r110_0:
+    hex.set 2, ca_n0, 1
+    ;dn0
+  c10_0:
+    hex.if0 2, ca_c1, r100_0
+    hex.set 2, ca_n0, 1
+    ;dn0
+  r100_0:
+    hex.set 2, ca_n0, 0
+    ;dn0
+  lz0:
+    hex.if0 2, ca_c0, c00_0
+    hex.if0 2, ca_c1, r010_0
+    hex.set 2, ca_n0, 1
+    ;dn0
+  r010_0:
+    hex.set 2, ca_n0, 1
+    ;dn0
+  c00_0:
+    hex.if0 2, ca_c1, r000_0
+    hex.set 2, ca_n0, 1
+    ;dn0
+  r000_0:
+    hex.set 2, ca_n0, 0
+  dn0:
+    hex.if0 2, ca_c0, lz1
+    hex.if0 2, ca_c1, c10_1
+    hex.if0 2, ca_c2, r110_1
+    hex.set 2, ca_n1, 0
+    ;dn1
+  r110_1:
+    hex.set 2, ca_n1, 1
+    ;dn1
+  c10_1:
+    hex.if0 2, ca_c2, r100_1
+    hex.set 2, ca_n1, 1
+    ;dn1
+  r100_1:
+    hex.set 2, ca_n1, 0
+    ;dn1
+  lz1:
+    hex.if0 2, ca_c1, c00_1
+    hex.if0 2, ca_c2, r010_1
+    hex.set 2, ca_n1, 1
+    ;dn1
+  r010_1:
+    hex.set 2, ca_n1, 1
+    ;dn1
+  c00_1:
+    hex.if0 2, ca_c2, r000_1
+    hex.set 2, ca_n1, 1
+    ;dn1
+  r000_1:
+    hex.set 2, ca_n1, 0
+  dn1:
+    hex.if0 2, ca_c1, lz2
+    hex.if0 2, ca_c2, c10_2
+    hex.if0 2, ca_c3, r110_2
+    hex.set 2, ca_n2, 0
+    ;dn2
+  r110_2:
+    hex.set 2, ca_n2, 1
+    ;dn2
+  c10_2:
+    hex.if0 2, ca_c3, r100_2
+    hex.set 2, ca_n2, 1
+    ;dn2
+  r100_2:
+    hex.set 2, ca_n2, 0
+    ;dn2
+  lz2:
+    hex.if0 2, ca_c2, c00_2
+    hex.if0 2, ca_c3, r010_2
+    hex.set 2, ca_n2, 1
+    ;dn2
+  r010_2:
+    hex.set 2, ca_n2, 1
+    ;dn2
+  c00_2:
+    hex.if0 2, ca_c3, r000_2
+    hex.set 2, ca_n2, 1
+    ;dn2
+  r000_2:
+    hex.set 2, ca_n2, 0
+  dn2:
+    hex.if0 2, ca_c2, lz3
+    hex.if0 2, ca_c3, c10_3
+    hex.if0 2, ca_c4, r110_3
+    hex.set 2, ca_n3, 0
+    ;dn3
+  r110_3:
+    hex.set 2, ca_n3, 1
+    ;dn3
+  c10_3:
+    hex.if0 2, ca_c4, r100_3
+    hex.set 2, ca_n3, 1
+    ;dn3
+  r100_3:
+    hex.set 2, ca_n3, 0
+    ;dn3
+  lz3:
+    hex.if0 2, ca_c3, c00_3
+    hex.if0 2, ca_c4, r010_3
+    hex.set 2, ca_n3, 1
+    ;dn3
+  r010_3:
+    hex.set 2, ca_n3, 1
+    ;dn3
+  c00_3:
+    hex.if0 2, ca_c4, r000_3
+    hex.set 2, ca_n3, 1
+    ;dn3
+  r000_3:
+    hex.set 2, ca_n3, 0
+  dn3:
+    hex.if0 2, ca_c3, lz4
+    hex.if0 2, ca_c4, c10_4
+    hex.if0 2, ca_c5, r110_4
+    hex.set 2, ca_n4, 0
+    ;dn4
+  r110_4:
+    hex.set 2, ca_n4, 1
+    ;dn4
+  c10_4:
+    hex.if0 2, ca_c5, r100_4
+    hex.set 2, ca_n4, 1
+    ;dn4
+  r100_4:
+    hex.set 2, ca_n4, 0
+    ;dn4
+  lz4:
+    hex.if0 2, ca_c4, c00_4
+    hex.if0 2, ca_c5, r010_4
+    hex.set 2, ca_n4, 1
+    ;dn4
+  r010_4:
+    hex.set 2, ca_n4, 1
+    ;dn4
+  c00_4:
+    hex.if0 2, ca_c5, r000_4
+    hex.set 2, ca_n4, 1
+    ;dn4
+  r000_4:
+    hex.set 2, ca_n4, 0
+  dn4:
+    hex.if0 2, ca_c4, lz5
+    hex.if0 2, ca_c5, c10_5
+    hex.if0 2, ca_c6, r110_5
+    hex.set 2, ca_n5, 0
+    ;dn5
+  r110_5:
+    hex.set 2, ca_n5, 1
+    ;dn5
+  c10_5:
+    hex.if0 2, ca_c6, r100_5
+    hex.set 2, ca_n5, 1
+    ;dn5
+  r100_5:
+    hex.set 2, ca_n5, 0
+    ;dn5
+  lz5:
+    hex.if0 2, ca_c5, c00_5
+    hex.if0 2, ca_c6, r010_5
+    hex.set 2, ca_n5, 1
+    ;dn5
+  r010_5:
+    hex.set 2, ca_n5, 1
+    ;dn5
+  c00_5:
+    hex.if0 2, ca_c6, r000_5
+    hex.set 2, ca_n5, 1
+    ;dn5
+  r000_5:
+    hex.set 2, ca_n5, 0
+  dn5:
+    hex.if0 2, ca_c5, lz6
+    hex.if0 2, ca_c6, c10_6
+    hex.if0 2, ca_c7, r110_6
+    hex.set 2, ca_n6, 0
+    ;dn6
+  r110_6:
+    hex.set 2, ca_n6, 1
+    ;dn6
+  c10_6:
+    hex.if0 2, ca_c7, r100_6
+    hex.set 2, ca_n6, 1
+    ;dn6
+  r100_6:
+    hex.set 2, ca_n6, 0
+    ;dn6
+  lz6:
+    hex.if0 2, ca_c6, c00_6
+    hex.if0 2, ca_c7, r010_6
+    hex.set 2, ca_n6, 1
+    ;dn6
+  r010_6:
+    hex.set 2, ca_n6, 1
+    ;dn6
+  c00_6:
+    hex.if0 2, ca_c7, r000_6
+    hex.set 2, ca_n6, 1
+    ;dn6
+  r000_6:
+    hex.set 2, ca_n6, 0
+  dn6:
+    hex.if0 2, ca_c6, lz7
+    hex.if0 2, ca_c7, c10_7
+    hex.if0 2, ca_c0, r110_7
+    hex.set 2, ca_n7, 0
+    ;dn7
+  r110_7:
+    hex.set 2, ca_n7, 1
+    ;dn7
+  c10_7:
+    hex.if0 2, ca_c0, r100_7
+    hex.set 2, ca_n7, 1
+    ;dn7
+  r100_7:
+    hex.set 2, ca_n7, 0
+    ;dn7
+  lz7:
+    hex.if0 2, ca_c7, c00_7
+    hex.if0 2, ca_c0, r010_7
+    hex.set 2, ca_n7, 1
+    ;dn7
+  r010_7:
+    hex.set 2, ca_n7, 1
+    ;dn7
+  c00_7:
+    hex.if0 2, ca_c0, r000_7
+    hex.set 2, ca_n7, 1
+    ;dn7
+  r000_7:
+    hex.set 2, ca_n7, 0
+  dn7:
+    hex.add 2, ca_n0, zero_char
+    hex.print ca_n0
+    hex.add 2, ca_n1, zero_char
+    hex.print ca_n1
+    hex.add 2, ca_n2, zero_char
+    hex.print ca_n2
+    hex.add 2, ca_n3, zero_char
+    hex.print ca_n3
+    hex.add 2, ca_n4, zero_char
+    hex.print ca_n4
+    hex.add 2, ca_n5, zero_char
+    hex.print ca_n5
+    hex.add 2, ca_n6, zero_char
+    hex.print ca_n6
+    hex.add 2, ca_n7, zero_char
+    hex.print ca_n7
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+ca_c0: hex.vec 2
+ca_c1: hex.vec 2
+ca_c2: hex.vec 2
+ca_c3: hex.vec 2
+ca_c4: hex.vec 2
+ca_c5: hex.vec 2
+ca_c6: hex.vec 2
+ca_c7: hex.vec 2
+ca_n0: hex.vec 2
+ca_n1: hex.vec 2
+ca_n2: hex.vec 2
+ca_n3: hex.vec 2
+ca_n4: hex.vec 2
+ca_n5: hex.vec 2
+ca_n6: hex.vec 2
+ca_n7: hex.vec 2
+ca_tmp: hex.vec 2
+ca_eol: hex.vec 2
+zero_char: hex.vec 2, '0'

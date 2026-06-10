@@ -1,4 +1,4 @@
-// Kadane Max Subarray (#1181)
+// Kadane Max Subarray (#0545)
 
 // Reads digit N `1`-`9` + `\n`, then N signed decimals. Prints the maximum contiguous subarray sum as signed decimal + `\n`. Implementation: Kadane's algorithm.
 

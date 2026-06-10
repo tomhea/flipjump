@@ -1,0 +1,31 @@
+// Percent Encode Space (#0503)
+
+// Reads a `\n`-terminated line ≤ 40 chars. Replaces each space byte (` `) with `%20`. Other bytes unchanged. Prints result + `\n`.
+
+main
+
+def main @ err, loop, go, done, issp, echo < b, nl, spc {
+    stl.startup_and_init_all
+    
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, spc, echo, issp, echo
+  issp:
+    stl.output "%20"
+    ;loop
+  echo:
+    hex.print b
+    ;loop
+  done:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+spc: hex.vec 2, ' '

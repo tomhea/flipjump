@@ -1,0 +1,32 @@
+// Parse Yaml Kv Simple (#0790)
+
+// Reads `<key>: <value>\n` (single colon-space separator; key is letters only, value any byte). Prints `<key>\n<value>\n`.
+
+main
+
+def main @ k, kecho, kend, v, vprint, done < b, colon, nl {
+    stl.startup_and_init_all
+  k:
+    hex.input b
+    hex.cmp 2, b, colon, kecho, kend, kecho
+  kecho:
+    hex.print b
+    ;k
+  kend:
+    stl.output '\n'
+    hex.input b
+  v:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, vprint, done, vprint
+  vprint:
+    hex.print b
+    ;v
+  done:
+    stl.output '\n'
+    stl.loop
+}
+
+b: hex.vec 2
+colon: hex.vec 2, ':'
+nl: hex.vec 2, '\n'

@@ -1,4 +1,4 @@
-// Word Count Multiline (#0461)
+// Word Count Multiline (#0734)
 
 // Reads stdin until an empty line (`\n` alone). Prints the total count of whitespace-separated tokens across all non-empty lines as decimal + `\n`. Whitespace = `' '`, `'\t'`, `'\n'`; runs collapse; leading/trailing whitespace introduce no empty tokens.
 

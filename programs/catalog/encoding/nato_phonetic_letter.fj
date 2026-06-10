@@ -1,0 +1,147 @@
+// Nato Phonetic Letter (#0508)
+
+// Reads exactly one byte `A`-`Z` (no `\n` required). Prints the NATO phonetic word for that letter (`Alpha`/`Bravo`/`Charlie`/.../`Zulu`) followed by `\n`.
+
+main
+
+def main @ done, w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, w16, w17, w18, w19, w20, w21, w22, w23, w24, w25 < chx, idx, c65 {
+    stl.startup_and_init_all
+    hex.input chx
+    hex.zero 4, idx
+    hex.mov 2, idx, chx
+    hex.sub 4, idx, c65
+    hex.if0 4, idx, w0
+    hex.dec 4, idx
+    hex.if0 4, idx, w1
+    hex.dec 4, idx
+    hex.if0 4, idx, w2
+    hex.dec 4, idx
+    hex.if0 4, idx, w3
+    hex.dec 4, idx
+    hex.if0 4, idx, w4
+    hex.dec 4, idx
+    hex.if0 4, idx, w5
+    hex.dec 4, idx
+    hex.if0 4, idx, w6
+    hex.dec 4, idx
+    hex.if0 4, idx, w7
+    hex.dec 4, idx
+    hex.if0 4, idx, w8
+    hex.dec 4, idx
+    hex.if0 4, idx, w9
+    hex.dec 4, idx
+    hex.if0 4, idx, w10
+    hex.dec 4, idx
+    hex.if0 4, idx, w11
+    hex.dec 4, idx
+    hex.if0 4, idx, w12
+    hex.dec 4, idx
+    hex.if0 4, idx, w13
+    hex.dec 4, idx
+    hex.if0 4, idx, w14
+    hex.dec 4, idx
+    hex.if0 4, idx, w15
+    hex.dec 4, idx
+    hex.if0 4, idx, w16
+    hex.dec 4, idx
+    hex.if0 4, idx, w17
+    hex.dec 4, idx
+    hex.if0 4, idx, w18
+    hex.dec 4, idx
+    hex.if0 4, idx, w19
+    hex.dec 4, idx
+    hex.if0 4, idx, w20
+    hex.dec 4, idx
+    hex.if0 4, idx, w21
+    hex.dec 4, idx
+    hex.if0 4, idx, w22
+    hex.dec 4, idx
+    hex.if0 4, idx, w23
+    hex.dec 4, idx
+    hex.if0 4, idx, w24
+    hex.dec 4, idx
+    ;w25
+  w0:
+    stl.output "Alpha\n"
+    ;done
+  w1:
+    stl.output "Bravo\n"
+    ;done
+  w2:
+    stl.output "Charlie\n"
+    ;done
+  w3:
+    stl.output "Delta\n"
+    ;done
+  w4:
+    stl.output "Echo\n"
+    ;done
+  w5:
+    stl.output "Foxtrot\n"
+    ;done
+  w6:
+    stl.output "Golf\n"
+    ;done
+  w7:
+    stl.output "Hotel\n"
+    ;done
+  w8:
+    stl.output "India\n"
+    ;done
+  w9:
+    stl.output "Juliett\n"
+    ;done
+  w10:
+    stl.output "Kilo\n"
+    ;done
+  w11:
+    stl.output "Lima\n"
+    ;done
+  w12:
+    stl.output "Mike\n"
+    ;done
+  w13:
+    stl.output "November\n"
+    ;done
+  w14:
+    stl.output "Oscar\n"
+    ;done
+  w15:
+    stl.output "Papa\n"
+    ;done
+  w16:
+    stl.output "Quebec\n"
+    ;done
+  w17:
+    stl.output "Romeo\n"
+    ;done
+  w18:
+    stl.output "Sierra\n"
+    ;done
+  w19:
+    stl.output "Tango\n"
+    ;done
+  w20:
+    stl.output "Uniform\n"
+    ;done
+  w21:
+    stl.output "Victor\n"
+    ;done
+  w22:
+    stl.output "Whiskey\n"
+    ;done
+  w23:
+    stl.output "X-ray\n"
+    ;done
+  w24:
+    stl.output "Yankee\n"
+    ;done
+  w25:
+    stl.output "Zulu\n"
+  done:
+    stl.loop
+}
+
+chx: hex.vec 2
+idx: hex.vec 4
+c65: hex.vec 4, 'A'

@@ -1,4 +1,4 @@
-// Array Double Each (#1119)
+// Array Double Each (#0366)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals. Prints `2*a_i` for each input on its own line, in the same order.
 

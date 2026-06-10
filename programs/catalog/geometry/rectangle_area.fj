@@ -1,4 +1,4 @@
-// Rectangle Area (#0581)
+// Rectangle Area (#0607)
 
 // Reads two decimals `width` `height` (each own line, `0`-`100`). Prints `width * height` + `\n`.
 

@@ -1,4 +1,4 @@
-// Binary Search First Match (#1170)
+// Binary Search First Match (#0534)
 
 // Reads digit N `1`-`9` + `\n`, then N decimals sorted ascending (may have duplicates), then target. Prints the 0-based index of the FIRST occurrence (lower-bound) + `\n`, or `not found\n`.
 

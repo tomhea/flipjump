@@ -1,0 +1,41 @@
+// Fermat Test Witness (#0886)
+
+// Reads three decimals `a`, `n` (each `2`-`30`, own line). Prints `1\n` if `a^(n-1) ≡ 1 (mod n)`, else `0\n`. (Fermat's little theorem witness; passing doesn't guarantee primality.)
+
+main
+
+def main @ err, loop, body, done, isone, notone, fin < a, nmod, e, idx, acc, q, r, one {
+    stl.startup_and_init_all
+    hex.input_dec_uint 4, a, err
+    hex.input_dec_uint 4, nmod, err
+    hex.mov 4, e, nmod
+    hex.dec 4, e
+    hex.set 4, acc, 1
+    hex.zero 4, idx
+  loop:
+    hex.cmp 4, idx, e, body, done, done
+  body:
+    hex.mul 4, r, acc, a
+    hex.div 4, 4, q, acc, r, nmod, err
+    hex.inc 4, idx
+    ;loop
+  done:
+    hex.cmp 4, acc, one, notone, isone, notone
+  isone:
+    stl.output "1\n"
+    ;fin
+  notone:
+    stl.output "0\n"
+  fin:
+  err:
+    stl.loop
+}
+
+a: hex.vec 4
+nmod: hex.vec 4
+e: hex.vec 4
+idx: hex.vec 4
+acc: hex.vec 4
+q: hex.vec 4
+r: hex.vec 4
+one: hex.vec 4, 1

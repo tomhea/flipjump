@@ -1,0 +1,11 @@
+// Infinite Loop Explanation (#0948)
+
+// No input. Prints `A FlipJump program ends with a self-loop.\n`, then enters `stl.loop`.
+
+main
+
+def main {
+    stl.startup
+    stl.output "A FlipJump program ends with a self-loop.\n"
+    stl.loop
+}

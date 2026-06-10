@@ -1,4 +1,4 @@
-// Repeat Line N (#1094)
+// Repeat Line N (#0317)
 
 // Reads a digit N `1`-`9` + `\n` then a `\n`-terminated line ≤ 30 chars. Prints the line N times (each ending with the same `\n`).
 

@@ -1,0 +1,70 @@
+// Wordle Feedback (#0969)
+
+// Reads a `\n`-terminated secret word (exactly 5 lowercase letters), then a `\n`-terminated guess (exactly 5 lowercase letters). Prints exactly 5 feedback chars + `\n`: `G` for green (right letter, right position), `Y` for yellow (right letter, wrong position; track multiplicity correctly per standard Wordle rules), `_` for grey.
+
+main
+
+// green pass at position i.
+def wd_green i @ wd_g_eq, wd_g_ne < wd_sec, wd_gue, wd_res, wd_used {
+    hex.cmp 2, wd_sec + i*dw*2, wd_gue + i*dw*2, wd_g_ne, wd_g_eq, wd_g_ne
+  wd_g_eq:
+    hex.set 2, wd_res + i*dw*2, 'G'
+    hex.set 2, wd_used + i*dw*2, 1
+  wd_g_ne:
+}
+
+// try matching guess[i] against an unused secret[j]; on match set yellow and jump done.
+def wd_try i, j, done @ wd_t_unused, wd_t_eq, wd_t_ne < wd_sec, wd_gue, wd_res, wd_used {
+    hex.if0 2, wd_used + j*dw*2, wd_t_unused
+    ;wd_t_ne
+  wd_t_unused:
+    hex.cmp 2, wd_sec + j*dw*2, wd_gue + i*dw*2, wd_t_ne, wd_t_eq, wd_t_ne
+  wd_t_eq:
+    hex.set 2, wd_res + i*dw*2, 'Y'
+    hex.set 2, wd_used + j*dw*2, 1
+    ;done
+  wd_t_ne:
+}
+
+// yellow pass at position i (skip if already green).
+def wd_yellow i, done @ wd_y_skip, wd_y_try < wd_res, wd_Gc {
+    hex.cmp 2, wd_res + i*dw*2, wd_Gc, wd_y_skip, wd_y_skip, wd_y_try
+  wd_y_try:
+    wd_try i, 0, done
+    wd_try i, 1, done
+    wd_try i, 2, done
+    wd_try i, 3, done
+    wd_try i, 4, done
+  wd_y_skip:
+}
+
+def main @ wd_d0, wd_d1, wd_d2, wd_d3, wd_d4 < wd_sec, wd_gue, wd_res, wd_used, wd_nlc {
+    stl.startup_and_init_all 100
+    rep(5, i) hex.input wd_sec + i*dw*2
+    hex.input wd_nlc
+    rep(5, i) hex.input wd_gue + i*dw*2
+    hex.input wd_nlc
+    rep(5, i) hex.set 2, wd_res + i*dw*2, '_'
+    rep(5, i) hex.set 2, wd_used + i*dw*2, 0
+    rep(5, i) wd_green i
+    wd_yellow 0, wd_d0
+  wd_d0:
+    wd_yellow 1, wd_d1
+  wd_d1:
+    wd_yellow 2, wd_d2
+  wd_d2:
+    wd_yellow 3, wd_d3
+  wd_d3:
+    wd_yellow 4, wd_d4
+  wd_d4:
+    rep(5, i) hex.print wd_res + i*dw*2
+    stl.output '\n'
+    stl.loop
+}
+
+wd_sec: hex.vec 2*5
+wd_gue: hex.vec 2*5
+wd_res: hex.vec 2*5
+wd_used: hex.vec 2*5
+wd_Gc: hex.vec 2, 'G'
+wd_nlc: hex.vec 2, '\n'

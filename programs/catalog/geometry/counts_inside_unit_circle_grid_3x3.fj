@@ -1,4 +1,4 @@
-// Counts Inside Unit Circle Grid 3X3 (#1060)
+// Counts Inside Unit Circle Grid 3X3 (#0626)
 
 // No input. Counts how many of the 9 lattice points `(i,j)` for `i,j ∈ {-1,0,1}` satisfy `i^2 + j^2 <= 1`. Prints the count as decimal + `\n` (answer: 5).
 

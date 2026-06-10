@@ -1,0 +1,36 @@
+// Parity Byte Compute (#0513)
+
+// Reads exactly 7 ASCII bits (each `0` or `1` byte, all on one `\n`-terminated line, e.g. `1010101\n`). Prints `0\n` if the count of 1s among the 7 input bits is even, `1\n` if odd. (This is the parity bit that, when appended, makes total ones EVEN.)
+
+main
+
+def main @ err, loop, go, done, tog, skip, pz, pdone < b, nl, onec, par {
+    stl.startup_and_init_all
+    bit.zero par
+  loop:
+    hex.input b
+    hex.if0 2, b, done
+    hex.cmp 2, b, nl, go, done, go
+  go:
+    hex.cmp 2, b, onec, skip, tog, skip
+  tog:
+    bit.not par
+  skip:
+    ;loop
+  done:
+    bit.if0 par, pz
+    stl.output '1'
+    ;pdone
+  pz:
+    stl.output '0'
+  pdone:
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+
+b: hex.vec 2
+nl: hex.vec 2, '\n'
+onec: hex.vec 2, '1'
+par: bit.bit

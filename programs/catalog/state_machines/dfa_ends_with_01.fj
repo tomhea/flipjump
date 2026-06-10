@@ -1,0 +1,55 @@
+// Dfa Ends With 01 (#0757)
+
+// Reads a `\n`-terminated binary string of `0`/`1` (≤ 30 chars). Prints `1\n` if the string ends with the two-byte pattern `01` (immediately before the `\n`), else `0\n`.
+
+main
+
+def main @ err, loop, done, is0c, is1c, set_s2, set_s0, print1c, done_c < state, ch, tmp, nl_char, zero_char {
+    stl.startup_and_init_all 100
+    hex.set 2, state, 0
+  loop:
+    hex.input ch
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, nl_char
+    hex.if0 2, tmp, done
+    hex.mov 2, tmp, ch
+    hex.sub 2, tmp, zero_char
+    hex.if0 2, tmp, is0c
+    ;is1c
+  is0c:
+    hex.set 2, state, 1
+    ;loop
+  is1c:
+    // On '1': state==1 -> state=2, else -> state=0
+    hex.if0 2, state, set_s0
+    hex.dec 2, state
+    hex.if0 2, state, set_s2
+    // state was >=2: go to 0
+    hex.set 2, state, 0
+    ;loop
+  set_s2:
+    hex.set 2, state, 2
+    ;loop
+  set_s0:
+    hex.set 2, state, 0
+    ;loop
+  done:
+    // accept if state==2: subtract 2, check if 0
+    hex.dec 2, state
+    hex.dec 2, state
+    hex.if0 2, state, print1c
+    stl.output "0\n"
+    ;done_c
+  print1c:
+    stl.output "1\n"
+  done_c:
+    stl.loop
+  err:
+    stl.loop
+}
+
+state: hex.vec 2
+ch: hex.vec 2
+tmp: hex.vec 2
+zero_char: hex.vec 2, '0'
+nl_char: hex.vec 2, '\n'

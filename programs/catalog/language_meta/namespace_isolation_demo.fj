@@ -1,0 +1,24 @@
+// Namespace Isolation Demo (#0942)
+
+// Defines two namespaces `foo` and `bar`, each with a macro `say()` printing different text. Top-level invokes `foo.say()` then `bar.say()`. Output: `from foo\nfrom bar\n`.
+
+main
+
+ns foo {
+def say {
+    stl.output "from foo\n"
+}
+}
+
+ns bar {
+def say {
+    stl.output "from bar\n"
+}
+}
+
+def main {
+    stl.startup
+    foo.say
+    bar.say
+    stl.loop
+}

@@ -1,4 +1,4 @@
-// Array Last 3 (#1151)
+// Array Last 3 (#0398)
 
 // Reads digit N `3`-`9` + `\n`, then N decimals. Prints just the last 3 values, one per line.
 

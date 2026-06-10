@@ -1,4 +1,4 @@
-// Array Median 5 (#1145)
+// Array Median 5 (#0392)
 
 // Reads exactly 5 decimals (any order) and prints the median (middle value when sorted) as decimal + `\n`.
 

@@ -1,0 +1,29 @@
+// Count Down Recursive (#0418)
+
+// Reads decimal N in `0`-`9` + `\n`. Prints `N\n(N-1)\n...\n1\n` using a recursive macro that prints then recurses on N-1.
+
+main
+
+def main @ err < r_nval, cd_arg, cd_fn {
+    stl.startup_and_init_all 100
+    hex.input_dec_uint 4, r_nval, err
+    hex.mov 4, cd_arg, r_nval
+    stl.call cd_fn
+    stl.output '\n'
+  err:
+    stl.loop
+}
+
+// Prints cd_arg, cd_arg-1, ..., 1 with spaces
+cd_fn:
+    hex.if0 4, cd_arg, cd_done
+    hex.print_dec_uint 4, cd_arg
+    stl.output ' '
+    hex.dec 4, cd_arg
+    stl.call cd_fn
+    stl.return
+  cd_done:
+    stl.return
+
+r_nval: hex.vec 4
+cd_arg: hex.vec 4

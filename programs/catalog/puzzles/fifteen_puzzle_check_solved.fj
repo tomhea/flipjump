@@ -1,0 +1,83 @@
+// Fifteen Puzzle Check Solved (#0680)
+
+// Reads 16 decimals (each `0`-`15`, own line) representing a 4×4 15-puzzle state (0 = blank). Prints `1\n` if it equals the solved state `1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 0` (row-major), else `0\n`.
+
+main
+
+def main @ err, no, yes, ok0, ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8, ok9, ok10, ok11, ok12, ok13, ok14, ok15 < val, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15 {
+    stl.startup_and_init_all
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c0, no, ok0, no
+  ok0:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c1, no, ok1, no
+  ok1:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c2, no, ok2, no
+  ok2:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c3, no, ok3, no
+  ok3:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c4, no, ok4, no
+  ok4:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c5, no, ok5, no
+  ok5:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c6, no, ok6, no
+  ok6:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c7, no, ok7, no
+  ok7:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c8, no, ok8, no
+  ok8:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c9, no, ok9, no
+  ok9:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c10, no, ok10, no
+  ok10:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c11, no, ok11, no
+  ok11:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c12, no, ok12, no
+  ok12:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c13, no, ok13, no
+  ok13:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c14, no, ok14, no
+  ok14:
+    hex.input_dec_uint 8, val, err
+    hex.cmp 8, val, c15, no, ok15, no
+  ok15:
+    ;yes
+  no:
+    stl.output "0\n"
+    ;err
+  yes:
+    stl.output "1\n"
+  err:
+    stl.loop
+}
+
+val: hex.vec 8
+c0: hex.vec 8, 1
+c1: hex.vec 8, 2
+c2: hex.vec 8, 3
+c3: hex.vec 8, 4
+c4: hex.vec 8, 5
+c5: hex.vec 8, 6
+c6: hex.vec 8, 7
+c7: hex.vec 8, 8
+c8: hex.vec 8, 9
+c9: hex.vec 8, 10
+c10: hex.vec 8, 11
+c11: hex.vec 8, 12
+c12: hex.vec 8, 13
+c13: hex.vec 8, 14
+c14: hex.vec 8, 15
+c15: hex.vec 8, 0

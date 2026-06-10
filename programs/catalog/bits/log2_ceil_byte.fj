@@ -1,4 +1,4 @@
-// Log2 Ceil Byte (#0928)
+// Log2 Ceil Byte (#0231)
 
 // Reads one byte `1`-`128` and prints `ceil(log2(byte))` as a single decimal digit `0`-`7` + `\n` (e.g. `5` → `3`, `8` → `3`).
 
