@@ -43,12 +43,17 @@ modify it except via its own finish-up handoff. Sessions working on the game nee
   `FLIPJUMP_NO_FLAT`, and a **`storage_mode` report** (flat/paged) in `TerminationStatistics`.
   A **jump-target speculation tier is studied (GO: 5–9% miss, expected +50–80% → ~450–600M) but NOT
   built** — treat as headroom, never a dependency.
-- **IO devices**: whole-device `--io MODE` (`standard` terminal default; **`pc`** = pygame window with
-  live keyboard + scaled 256-color screen, F11 fullscreen, window-close = clean stop). Headless/CI:
+- **IO devices**: the model **collapsed to whole-device `--io MODE`** — **one device owns both keyboard
+  and screen**; there is **no `--di`/`--do` input/output splitting and no two-device shared-window
+  composition** (this replaces the old plan's separate `InMemoryScreen256` + `Keyboard` device pair).
+  `standard` = terminal (default); **`pc`** = a pygame window with live keyboard + scaled 256-color
+  screen (F11 fullscreen, window-close = clean stop). Headless/CI:
   **`PcIO.headless(events_file, frames_dir)`** replays scripted key events and writes PNG frames;
-  **`InMemoryScreen`** captures the screen command stream. A **`DeviceMemory` hook** lets devices
+  **`InMemoryScreen`** captures the screen command stream. **All doom integration tests are headless
+  replays against golden frames — no test needs a real window.** A **`DeviceMemory` hook** lets devices
   read/write program memory mid-run (the screen reads pixels straight from memory). Mode strings carry
-  factory params (`--io "pc <params>"`) — no parallel config channel, ever.
+  whitespace-separated factory params (`--io "pc <params>"`; none yet — so any future window option like
+  scale/fullscreen-on-start arrives this way) — **no parallel config channel, ever**.
 - **Screen commands**: `0x01` init, `0x02` set_palette, `0x03` update_screen (memory-hook read —
   **the primary present path, ~70 fj-ops/frame blit**), `0x04` update_rectangle (stride-correct —
   reserved for status-bar/menu rects; the 3D view redraws fully), `0x05` update_screen_raw (in-stream
@@ -79,7 +84,27 @@ modify it except via its own finish-up handoff. Sessions working on the game nee
 - The LUT generator currently emits **data tables**; it must learn to emit **dispatch-code tables**
   (§3.2) — that upgrade is part of the repo bootstrap.
 
-### 1.3 What the old plan got that 1.5.0 deleted (the delta table)
+### 1.3 flipjump finish-up tasks the game depends on (upstream, not game work)
+
+A handful of flipjump-side "finish-up" work items sit *upstream* of the game on the dependency chain
+(referenced as WI-* in §8/§10). They are not doom work — they live in the flipjump repo's own finish-up
+handoff — but the game's start gates on the 1.5.0 tag that includes them, and two of them
+(WI-E, WI-G2) directly affect game risks:
+
+- **WI-E — assembler speedup (load-bearing for R-2).** Macro-resolve + create-binary dominate assemble
+  time (not parsing); the column-unroll + mega-dispatch-table program is exactly WI-E's mega-LUT
+  benchmark workload. If it underdelivers, the game leans harder on §3.1(a) (column buffer) over (b).
+- **WI-F — jump-target speculation *measurement*.** Measures the studied speculation tier's feasibility
+  (the engine itself is unbuilt — Part B). **The game treats any speculation win as headroom, never a
+  dependency**; budget against today's ~280–334M.
+- **WI-G — raw-frame present (`0x05`) + stride-correct `update_rectangle`.** Shipped; the game uses the
+  memory-hook `update_screen` (`0x03`) as primary and may use `0x05` only as a purist fallback.
+- **WI-G2 — flat-storage configurability + `storage_mode` observability (affects R-3).** Makes the flat
+  limit configurable (`--flat-max-words` / env / API) and the flat-vs-paged mode reportable, so "the game
+  runs flat" is *verifiable*, not assumed.
+- **WI-H — the 1.5.0 release/tag** the game pins (`flipjump>=1.5.0`, abi3 wheels).
+
+### 1.4 What the old plan got that 1.5.0 deleted (the delta table)
 
 | Old plan (pre-1.5.0) | Now |
 |---|---|
@@ -151,6 +176,8 @@ dispatch-LUTs (§3.2) fix reads.
 
 ### 3.2 Dispatch-LUTs for every table access — "fixed-address-LUT everything you can" (owner directive)
 
+*(a.k.a. the "hex.and / dispatch-table technique" — the `hex.xor`-jumper idiom below, per `tables_init.fj`)*
+
 NOT `hex.read_table` pointer reads (those are the fallback). Mechanism (study
 `flipjump/stl/hex/tables_init.fj`):
 - the table is a **pad-aligned CODE region** — entry *k* at `base + k·dw`, base low bits zero;
@@ -175,8 +202,10 @@ entries and wrap boundaries.
 
 - **Verify, don't assume**: assert `storage_mode == flat` in the test harness.
 - Keep total address span under the flat limit, or raise it explicitly (`--flat-max-words` /
-  `FLIPJUMP_FLAT_MAX_WORDS`); cost is RAM (8B × span) + fill time only. Document the knob and the
-  paged fallback in the doom README.
+  `FLIPJUMP_FLAT_MAX_WORDS`); cost is RAM (**8B × span**, whole span touched at startup) + fill time
+  (~0.1s/GB) only — **zero per-op speed cost**. Concretely: a 2²⁶-word program ≈ **512MB** flat (and a
+  future per-op prediction array could roughly double that). Document the knob and the paged-mode
+  fallback in the doom README.
 - **Aligned dispatch tables pad to power-of-two boundaries and inflate the span** — lay tables out
   deliberately, **largest alignment first**, and keep a *span ledger* (a living table in the design
   doc, like the ops ledger) so padding waste is summed, not discovered.
@@ -355,8 +384,8 @@ measurement stages (D2's R1 experiment) come before the designs they decide. Exp
 non-binding — Stage 4 formalizes it):
 
 ```
-flipjump 1.5.0 tagged (incl. finish-up: WI-E assembler, WI-G raw-frame,
-                       WI-G2 flat config, WI-H release)
+flipjump 1.5.0 tagged (incl. finish-up §1.3: WI-E assembler, WI-F speculation
+                       measurement, WI-G raw-frame, WI-G2 flat config, WI-H release)
         │
         ▼
 S5.0  PR #1 CR-loop → fixed_point + LUT generator land in the designed tree
