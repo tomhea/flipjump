@@ -1,10 +1,24 @@
 # DOOM-on-FlipJump — Implementation Handoff (post-1.5.0)
 
-**This document supersedes `doom_on_flipjump_plan.md` wherever they disagree — especially every
-performance number.** The old plan was written against a ~2–4M fj/s pure-Python interpreter; flipjump
-1.5.0's native engine re-baselined the world by ~50–80×. The old plan remains valuable for its cost
-models, risk catalog, and methodology; its budgets, tier table, and "interpreter is the gate" framing are
-obsolete.
+**This document is standalone — you need nothing else to drive the plan.** It supersedes the older
+`doom_on_flipjump_plan.md` and fully absorbs it: every surviving lesson from that plan is inlined in
+**Part II** (the cost models, Lever-0 mechanics, DOOM-pipeline reference, sim ladder, compositor
+architecture, and the full risk/gap/open-question catalogs). The old file is now only a historical
+record — you may archive or ignore it.
+
+The re-baseline that motivated the rewrite: the old plan was written against a ~2–4M fj/s pure-Python
+interpreter; flipjump 1.5.0's native engine re-baselined the world by ~50–80×, so its **budgets, tier
+table, and "interpreter is the gate" framing are obsolete.** What survives is everything *not* about
+interpreter speed — and, crucially, **the fj-op cost counts in Part II are still current** (they measure
+macro-expansion cost in fj-ops, which the engine change did not touch; only the per-frame *budget* grew,
+from ~1M to ~11.2M).
+
+**How Part I and Part II relate (read this):** Part I is the **operating contract** — the staged process
+(§4), the design-doc spec (§5), the D1–D15 decision backlog. Part II is **raw material**, not settled
+design: it is the inherited knowledge the Stage-1 `DESIGN.md` *draws from and the owner re-decides*
+through the Q&A. Nothing in Part II is a foregone conclusion; where it bears on a live decision it is
+cross-referenced to a D-item. The U#/G#/S#/OQ# codes used as shorthand throughout Part I are all
+**defined in Part II.**
 
 **Where the work happens:** the game lives in the **`tomhea/doom-flipjump`** companion repo. The
 `flipjump` package (`>=1.5.0`, `[io]` extra for the pygame device) is a pinned dependency — we do not
@@ -13,6 +27,8 @@ modify it except via its own finish-up handoff. Sessions working on the game nee
 `plugins/flipjump/skills/flipjump-dev/SKILL.md` + `reference/`).
 
 ---
+
+# Part I — Operating contract (the plan & the process)
 
 ## 1. The world as it stands (inputs to this handoff)
 
@@ -78,10 +94,12 @@ modify it except via its own finish-up handoff. Sessions working on the game nee
 | `flipjump[screen]` extra (planned name) | **`flipjump[io]`** |
 | Fixed-point STL ships in flipjump 1.5.0 | **Moved to doom-flipjump** (PR #1); flipjump keeps abs/byte-buffers/read_table |
 
-Still standing from the old plan: the per-op cost intuitions (pointer ≫ fixed-address; div ≫ mul;
-variable shifts are pointer-class — U6), the TDD methodology + `hex.scmp` rule, the compositor/pass
-architecture, the reference-model verification idea, `@`-sensitivity (U7), and 32×32→64 fixed-point
-intermediates (U5).
+Still standing (all inlined in Part II): the per-op cost intuitions (pointer ≫ fixed-address; div ≫ mul;
+variable shifts are pointer-class — U6; full table in §A), the Lever-0 unrolling mechanics (§B), the
+DOOM rendering pipeline (§C), the S0–S2 sim ladder (§D), the compositor/pass architecture + `blit_rect`
+(§E), the TDD methodology + `hex.scmp` rule (§3.5), the reference-model verification idea (§H),
+`@`-sensitivity (U7), and 32×32→64 fixed-point intermediates (U5) — the latter two in the risk catalog
+(§F).
 
 ---
 
@@ -260,15 +278,15 @@ silently dropped):
 - **Renderer** — visibility (D1: BSP walk vs raycaster), wall column renderer, floor/ceiling
   spans/visplanes, sprite renderer (D7), lighting/colormap application point (D11).
 - **Game loop & tic** — input poll + `keydown[]`, player move/collide, doors/specials, entities/AI
-  (scope ladder S0–S2 from the old plan, re-budgeted), combat, level transitions.
+  (scope ladder S0–S2, §D, re-budgeted), combat, level transitions.
 - **Present layer** — init/set_palette/update_screen; `update_rectangle` only for status-bar/menus.
 - **HUD/status bar/menu/text passes** — now plausible at 160×100 (D7); compositor/pass pipeline and
-  the `blit_rect`/glyph design carry over from the old plan.
+  the `blit_rect`/glyph design are in §E.
 - **Debug/diagnostics** — op-count probes, frame dumps, on-screen debug values (cheap at this budget).
 
 **Decision backlog** (the Q&A agenda; owner leanings recorded where known):
-- **D1 — Visibility:** BSP walk (real DOOM maps, now affordable) vs grid raycaster (simpler, proven
-  in old plan). Settles map compiler + U11's fate.
+- **D1 — Visibility:** BSP walk (real DOOM maps, now affordable) vs grid raycaster (simpler; the
+  pre-1.5.0 default — §C). Settles map compiler + U11's fate.
 - **D2 — Static-store design:** column buffer (a) vs full unroll (b); decided by R1 measurements
   (ops AND assemble time AND size). The unroll feeds the assembler mega-program workload.
 - **D3 — Framebuffer encoding:** hex-memory (owner leaning) vs packed-byte; must co-resolve with the
@@ -402,6 +420,237 @@ Only after this lands does S5.1+ execution begin.
    benchmark run + `storage_mode` report.
 3. flipjump-dev skill: `/plugin marketplace add tomhea/skills` + `/plugin install flipjump@tomhe`;
    in remote sessions without the plugin, clone `tomhea/skills` and read the skill files directly.
-4. Read, in order: this handoff → `doom_on_flipjump_plan.md` (cost models/risks; numbers superseded)
-   → `flipjump/stl/hex/tables_init.fj` (the dispatch-LUT mechanism) → PR #1's diff.
+4. Read, in order: Part I of this handoff → Part II (inherited cost models, mechanics, risks) →
+   `flipjump/stl/hex/tables_init.fj` (the dispatch-LUT mechanism) → PR #1's diff.
 5. Start Stage 1: open `DESIGN.md` in doom-flipjump, seed it from §5, and begin the Q&A.
+
+---
+
+# Part II — Inherited design knowledge (raw material for Stage 1)
+
+**Status of this Part:** this is the consolidated knowledge from the pre-1.5.0 plan, *re-baselined and
+inlined so the handoff is standalone.* **It is input to the design, not the design.** The Stage-1
+`DESIGN.md` adopts, revises, or rejects each item through the owner Q&A; where an item bears on a live
+choice it points to a D-decision. **Read the fj-op cost numbers (§A) as current** (they count macro
+expansion, unaffected by the engine change); read every *budget/fps/resolution* number as superseded by
+Part I.
+
+## §A — Per-op cost model (fj-op counts; still current at w=32)
+
+These are the foundation costs every design is measured against. Pre-1.5.0 estimates at `@≈27`, w=32 —
+**still valid as fj-op counts**; only the per-frame budget changed (1M → ~11.2M).
+
+| Operation | stl macro | cost (w=32) | ≈ fj-ops |
+|-----------|-----------|-------------|----------|
+| Fixed-address byte write | `hex.xor`-style | ~7@ | ~190 |
+| **Pointer** byte write (runtime addr) | `write_byte` | 41@+197 | **~1,300** |
+| **Pointer** byte read (runtime addr) | `read_byte` | ~33@ | **~1,000** |
+| **Indexed** read/write (`read_nth_*`) | `ptr_index`+… | O(w) ops **and** O(w) *space* per call site | pointer-class |
+| 32-bit multiply (8 hex) | `hex.mul` | ~350@+1300 | **~10,000** |
+| 16-bit multiply (8.8, 4 hex) | `hex.mul` | ~88@+320 | **~2,700** |
+| 32-bit **divide** (8 hex) | `hex.div` | ~2300@+6400 | **~68,000** |
+| constant shift (`<<`/`>>` by const) | `hex.shl_hex` | ~8@+32 | **~250** |
+
+**Estimate reconciliation (a contradiction-hunt item, §6):** Part I §2 uses ~80 ops for a *static packed*
+pixel store (multiple px/word, fixed address — cheaper than the ~190 single-byte fixed write) and quotes
+a per-pixel *pointer* write at "~500 ops"; this table says ~1,300. The two differ because of packing and
+estimate vintage. The conclusion is invariant under either figure — **per-pixel pointer writes are
+unaffordable** (16K × 500–1,300 = 8–21M/frame on stores alone) — but **S5.3 must measure the real number**
+before R2 commits.
+
+**Three lessons that drive the whole renderer:**
+1. *The framebuffer-write reckoning.* A pixel at runtime `(x,y)` is a runtime address → naïvely a pointer
+   write. That's why **static stores (§3.1) are mandatory**, not an optimization.
+2. *Per-column math is the second threat.* One 32-bit `FixedMul` ≈ 10K ops, one `FixedDiv` ≈ 68K. Even one
+   divide per column × 160 ≈ 11M — the entire frame. ⇒ **the hot path must be mul/div-free:**
+   reciprocal/scale/yslope LUTs (replace *every* divide), `×const`→shifts+adds (cost scales with the
+   operand's on-bits, so sparse constants are cheap), 8.8/narrow widths where precision allows, LUT-multiply
+   for bounded operands, and DDA incremental adds over per-step muls.
+3. *Never `rep`-unroll an O(w)-sized macro.* Measured in the catalog campaign: **243 unrolled indexed
+   (`read_nth_*`) reads ≈ 7-minute assemble**; ~729 of them ran ~12s interpreted. Only **O(1)-size bodies**
+   (fixed-address ops, a few flips, an `fcall`) may be unrolled — the quantitative backing for R-2 and the
+   design rule behind every Lever-0 stub.
+
+## §B — Lever 0: pointer-free by compile-time unrolling (the "constant algorithm")
+
+The mechanism behind §3.1(b) (full column unroll) and the dispatch-LUT idiom (§3.2). A runtime pointer is
+only needed when an address is computed *at runtime*; unroll with `rep(n,i)` and **every address becomes a
+compile-time constant** → fixed-address write/read (~7@), never a ~1,300-op pointer op. Cost moves from
+*time* into *space* (assembled size).
+
+```
+rep(W*H/PXPERWORD, i) calc_pixel SCREEN + i*WORD_STRIDE   // each i is constant ⇒ fixed address
+```
+
+- **Writes → fixed-address, packed.** Unrolling + packed word writes ⇒ a full fill in fixed-address
+  word-writes (~7@), zero pointers. Replaces the fragile "sequential-pointer-write primitive" idea.
+- **Branchless per-pixel selection.** Wall height per column is runtime, but don't branch on it: unroll all
+  `H` rows and have the tiny `calc_pixel` **select** ceiling/wall/floor color by comparing its
+  *compile-time* `y` against the column's runtime top/bottom held in **fixed-address per-column scratch**.
+  Same work every pixel, data-selected — the "constant algorithm." `calc_pixel` must be *tens* of ops.
+- **The calling-convention crux (settled in R1 / D2).** A *shared* `fcall` body cannot contain a
+  per-call-site constant, so each unrolled stub must (a) write its compile-time `y` (or pre-staged per-row
+  data) into a single fixed `CUR_Y` scratch — a constant-into-fixed-address write, a few ops; (b) `fcall`
+  the shared compare/select/pack body; (c) write the result to its constant `SCREEN+i*STRIDE` address.
+  Whether the compare lives in the stub (bigger stub, no `CUR_Y` write) or the body (smaller stub, one
+  extra write) is R1's first experiment.
+- **Share per-column, unroll per-pixel.** Unroll geometry once per column (`rep(W,x)`, 160×) and only the
+  cheap fill per pixel — so the ~10K-op math happens ~160×, never 16K×. Each column's setup copies that
+  column's top/bottom/color into the single fixed scratch the shared body reads.
+- **Factor with `stl.fcall`/`stl.fret`, don't inline.** A heavy `calc_pixel` inlined 16K× = 16K×(its size).
+  Put the heavy, **address-independent** logic (LUT lookups, color select, packing) in **one shared leaf
+  subroutine** via `stl.fcall` (≈`@-1` time, ~0 space) / `stl.fret` (≈1) — far cheaper than `stl.call`'s
+  ~2.5w@ stack call, and fine because the body is a leaf (no recursion ⇒ no stack; one `ret_reg` per nesting
+  level if bodies ever chain — OQ9). Only a tiny address-specific stub inlines per iteration.
+- **Constant-table reads by runtime value → jump-table, not pointer.** This is exactly the dispatch-LUT of
+  §3.2: set a hex to the value, jump into `rep`-generated code at that offset (the `stl/hex/mul.fj`
+  `switch:`/`dst: ;switch` idiom). Reads constant data by value with **no RAM pointer**.
+- **The price is space-complexity** — now load-bearing (R-2). Unrolling a fat macro explodes assembled size
+  *and* compile time. Mitigations: factor (above), unroll over **packed words** not pixels, share geometry
+  per-column, bound table sizes, and **track assemble time + `.fjm` size as first-class metrics from R1.**
+  Fallback ladder if it overruns: shrink the stub → fewer px/word → smaller res → hybrid (unroll rows, loop
+  columns) → §3.1(a) column buffer → indexed loop for non-hot surfaces only.
+
+## §C — DOOM rendering pipeline (the reference the renderer reimplements)
+
+Player state: position `(x,y)`, eye height `z`, view angle. Per frame:
+1. **Visibility (D1).** Stock DOOM walks a precompiled **BSP tree** front-to-back, no overdraw, clipping
+   screen columns as it goes (~55@/node — pointer-heavy, the reason the pre-1.5.0 plan chose a **grid
+   raycaster** instead: one ray per column into a tile map, no pointer chasing). *Re-baseline:* BSP is now
+   affordable (D1) — both options are live.
+2. **Walls (`R_DrawColumn`).** Per visible column: distance → on-screen wall height via a **divide**
+   (`scale ≈ projection / distance`), then draw a vertical strip. Textured = sample a texture column with a
+   fixed step (`frac += step`; `texel = source[frac>>FRACBITS]`); flat = one shade.
+3. **Floors/ceilings (`R_DrawSpan`).** Horizontal spans, perspective-correct via a per-row distance
+   (`yslope[]`) and a divide per span. Flat = solid color (cheap). DOOM batches these as *visplanes*.
+4. **Sprites/things.** Masked (transparent) columns, distance-sorted, clipped against walls.
+5. **Lighting.** A **colormap** LUT chosen by distance + sector light darkens texels (D11: apply per-column
+   in flat mode, not per pixel — naïve per-pixel colormap is a pointer read per pixel, ~6M+/frame).
+
+All 16.16 fixed-point, leaning on precomputed tables: `finesine/finecosine`, `finetangent`,
+`viewangletox`/`xtoviewangle`, `yslope`, `distscale`, `colormaps`. **Takeaway:** almost everything reduces
+to table lookups + a few fixed-point mul/div per column/span → exactly what dispatch-LUTs (§3.2) make
+cheap.
+
+## §D — Game simulation ladder (the other half — rendering alone is a screensaver)
+
+Sim shares the frame budget; on a tile/seg map it is tile lookups + signed compares + adds — the cheap op
+class — so it is budgeted, not feared. Compile-time-gated like render passes:
+- **S0 — Walk (ships with R2/minimal).** Poll → turn (angle ± const, table-wrapped) → strafe/forward
+  (pos += dir·speed, `×const`→shifts) → **collision**: check the 1–2 destination tiles (value-indexed map
+  lookup, same idiom as the DDA) with axis-separated slide (DOOM-feel wall glide, not full `P_TryMove`).
+  ≈ a few K ops/tic.
+- **S1 — Doors + hitscan (minimal, after S0).** Use-key opens a door tile (timed state in a small
+  fixed-address door table); fire = one extra DDA ray (same code as a render column) → hit wall/entity.
+  ≈ one column's ops/shot.
+- **S2 — Entities (very-good tier, with sprites).** N **fixed entity slots** (pos, type, hp, state) at
+  fixed addresses — **no DOOM thinker lists** (pointer-chasing). Per tic per entity: line-of-sight ray
+  (DDA), chase step (tile-collision like the player), melee/hitscan damage. Cap actives per tic
+  (round-robin) to bound the frame.
+- Health/armor/ammo = fixed-address counters touched by S1/S2. Level exit = a tile/linedef value. Game
+  over/restart = re-init the state block. **No** savegames, demos-from-WAD, multiplayer, or audio.
+
+**Signed-value warning (the catalog's #1 latent-bug class):** deltas, velocities, angle wraps, `mid-1`
+underflows are all signed → compare with **`hex.scmp`, never `hex.cmp`** (three real catalog bugs shipped
+past green fixtures from exactly this). A review-checklist item on every `.fj` PR.
+
+## §E — Compositor / extensibility architecture (build for HUD/text without rework)
+
+Mirror DOOM's `colfunc`/`spanfunc` indirection: one `draw_column`/`draw_span` macro whose body is chosen
+by the `TEXTURED` flag. Only the innermost loop + per-column data differ; everything upstream is identical.
+- **Pass pipeline.** `render_frame` is a fixed, ordered list of compile-time-gated **passes** into one
+  `SCREEN`: `render_3d_view → [render_sprites] → [render_statusbar] → [render_text/messages] →
+  [render_menu]`. Minimal compiles only the first; later tiers flip flags. Adding a pass = one gated call,
+  never touching the 3D core.
+- **Sub-window draw target.** The 3D view writes a `(VIEW_X,VIEW_Y,VIEW_W,VIEW_H)` rect inside `SCREEN`;
+  overlay passes own the rest — HUD/text claim rows the 3D view doesn't, no coordinate retrofit. (At
+  160×100 these overlays are now plausible — D7.)
+- **Reusable blitter.** `blit_rect(src_addr, dst_x, dst_y, w, h, [transparent_idx])` is the shared backbone
+  for sprites **and** HUD graphics **and** glyphs — write once (R3), the rest are callers.
+- **Text = glyph LUT + blitter.** `draw_string(x, y, ptr_to_chars)` walks bytes, indexes a font glyph table
+  (fixed-address LUT, DOOM's `hu_font`), calls `blit_rect` per glyph. Menus/stats = `draw_string`+
+  `blit_rect`. **Stub the API now** (flag-gated), so the seams exist from day one.
+- **Cost note.** Overlay passes are framebuffer-write-heavy like walls — enabled only at tiers whose budget
+  pays for them. *Architecture free, pixels not.*
+- **Present-path caveat (1.5.0):** the 3D view redraws fully every frame; `update_rectangle` (cmd `0x04`)
+  is reserved for status-bar/menu rects that *don't* redraw — not the main view.
+
+## §F — Risk catalog (U-codes; re-baselined)
+
+Part I's live risks are R-1…R-6; these are the detailed inherited risks they build on. "(now: …)" marks
+the re-baseline.
+
+- **U0 — Compile time / assembled size is the engineering #1.** Unrolling + mega switch-tables can make the
+  *assembler* take minutes and balloon the `.fjm` (243 unrolled O(w) reads ≈ 7-min assemble). *(now: R-2;
+  mitigated by §B factoring + the 1.5–7× faster 1.5.0 assembler, whose mega-LUT benchmark is this exact
+  workload.)*
+- **U1 — Framebuffer write wall.** *(now: mitigated by static stores §3.1; residual risk lives in U0/R-2.)*
+- **U2 — Mul ≈ 10K ops, div ≈ 68K.** "A few per column" = several× budget. Hot path must be mul/div-free
+  (§A lesson 2). *Unknown:* whether our geometry fully reduces to LUTs + adds (D-OQ4 below).
+- **U3 — Map lookup.** *(now: a value-indexed dispatch jump §3.2, not a ~1,000-op pointer read.)*
+- **U4 — Interpreter speed.** *(now: resolved — native engine; off the critical path.)*
+- **U5 — 32×32→64 fixed-point intermediates.** A 16.16 `FixedMul` needs a 64-bit product (two words at
+  w=32) with hand-carried overflow — extra ops + macro complexity; pushes toward 8.8 where precision
+  allows. (D13.)
+- **U6 — Variable shifts are pointer-class.** Constant shifts (`frac>>FRACBITS`) are ~free; any
+  **runtime-amount** shift is expensive. **LUT indices must be formed without a runtime shift** (e.g.
+  integer-distance index), or they quietly cost like pointers.
+- **U7 — `@` grows with total program size.** Every per-op cost scales with `@≈27`; a DOOM-scale program
+  (huge LUTs + textures + map) can push `@` higher, inflating *all* costs uniformly. Big static tables
+  aren't free even when fixed-address.
+- **U8 — Assemble time/memory at DOOM scale.** Mega-tables may make the assembler slow/memory-hungry.
+  *(now: folds into R-2; the LUT generator + zero-fill segments must not regress assemble time.)*
+- **U9 — Divide ≥ multiply, and lighting can secretly go per-pixel.** Replace *every* runtime divide with a
+  reciprocal/scale LUT. Apply the colormap **once per column** in flat mode (D11), never per pixel.
+- **U10 — Framebuffer clear.** A full per-frame clear = another ~W·H writes. The raycaster avoids it
+  *only because every column is drawn ceiling→wall→floor with no gaps* — "no clear" is a **load-bearing
+  invariant.** Any partial-draw path (sprite gaps, letterbox) reintroduces a clear and needs explicit fills.
+- **U11 — Gridification fidelity.** Rasterizing E1M1 linedefs onto a tile grid may be unrecognizable
+  (diagonals staircased, heights flattened). *(now: likely moot if D1 picks BSP over a grid; otherwise the
+  honest fallback is "DOOM-flavored maps with real DOOM assets.")*
+
+## §G — Gaps & scope cuts (G-codes; status)
+
+- **G1** engine scope → hand-written FlipJump, no c2fj. **G2** blit cost → device reads framebuffer from
+  memory (~0 FJ ops; 1.5.0 cmd `0x03`). **G3/G15** divides/fixed-point → reciprocal/scale LUTs, no FP,
+  8.8 where 16.16 is overkill. **G4** timing → virtual frame-counter clock, no timer device. **G5** memory
+  → flat-path, compact layout (Part I §3.3). **G6** interpreter fast-mode → *resolved by 1.5.0 native
+  engine.* **G7** WAD pipeline → R0 converter + gridification/licensing (shareware dev, Freedoom
+  redistribution). **G8/G23** tiny-res features → minimal = 3D view only, auto-warp, skip menu/HUD
+  (*re-baseline:* HUD/text now plausible at 160×100, D7). **G9** audio → out of scope. **G11** `@` growth
+  → keep hot data low/`pad`-aligned, re-measure (=U7). **G13** variable frame cost → set worst-case scene
+  or accept fps swing (D9). **G14** BSP pointer-heavy → *re-baseline: now affordable, D1.* **G16** cache
+  coherence with self-modifying code → *resolved inside the 1.5.0 engine.* **G17** device↔memory hook →
+  *shipped (DeviceMemory).* **G18** framebuffer layout → packed, device-readable (D3 settles encoding).
+  **G20** assembler scalability → *upgraded to a dependency, R-2.* **G21** tic/render decoupling → render
+  1-of-N tics if needed (D9). **G22** flat-mode reference → host-side reference model of our exact
+  renderer+sim (§H). **G25** sim scope → S0/S1/S2 ladder (§D). **G26** headless-first dev → *shipped
+  (`PcIO.headless`, `InMemoryScreen`).*
+
+## §H — Verification approach (carried forward)
+
+- **TDD everywhere:** a unit test per macro (FixedIO/byte-exact, `--werror`, **a boundary input per
+  behavior path** — a single green fixture proved insufficient three times in the catalog), per generated
+  table, per device interaction. Register macro tests in the catalog/hexlib style so existing infra runs
+  them.
+- **Per-table tests:** each generated `.fj` table diffed against a host-reference over many indices,
+  including first/last entries and wrap boundaries.
+- **Budget + compile budget tracked together:** `op_counter`/frame (profiling mode / featured loop on
+  small builds) **and** assemble time + `.fjm` size, at every milestone. Micro-benchmark in isolation first
+  (a Lever-0 packed fill; a per-column-math path) before trusting any tier promise.
+- **Correctness by reference model:** dump `SCREEN→PNG` (headless device) and **hash + diff against the
+  host-side flat/textured reference**; the sim's state (player pos/angle after a scripted input sequence)
+  must match the reference exactly. Per-region op-count profiling localizes overspend.
+- **End-to-end:** `fj doom.fjm --io pc` interactively, or `PcIO.headless(events_file, frames_dir)` with a
+  **scripted key-event file** for CI — scene renders, movement/collision/fire behave per the reference,
+  measured fps (device present-log) meets the tier; captured frames/video are the deliverable.
+
+## §I — Open questions inherited (mapped to Part I's D-backlog)
+
+The pre-1.5.0 OQ list is now folded into Part I's D1–D15; the still-empirical ones: **OQ4** (does the
+per-column math reduce fully to LUTs + adds, or leave residual mul/div? → D2/R1), **OQ5** (16.16 vs 8.8 per
+quantity, wobble vs cost → D6), **OQ8** (are map/texture dispatch tables small enough for the compile +
+span budget? map likely yes, textures open → D5/R-2/R-3), **OQ9** (`fcall` non-reentrancy — does any
+hot-path call chain exceed one nesting level, forcing a stack? → R1 as the call graph forms), **OQ10**
+(accept variable fps or cap to a worst-case scene? → D9/R2). Resolved by 1.5.0: interpreter speed (was
+OQ1), w-width (OQ2 → w=32 confirmed), device/cache/debugger questions (shipped).
