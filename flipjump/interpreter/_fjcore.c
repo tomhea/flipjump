@@ -1692,6 +1692,94 @@ static PyObject* Memory_get_allocated_bytes(MemoryObject* self, void* closure)
                                        self->slot_count * sizeof(Slot));
 }
 
+/* ---- CPU calibration: an L1-resident throughput micro-benchmark, same toolchain as the engine
+ * the denominator for normalizing fj/s across the wheel targets: a slower (or throttled) runner
+ * lowers BOTH this and fj/s proportionally, so the fj/C ratio isolates a genuine per-arch engine
+ * regression from a merely-slow cpu. for that to hold the yardstick must share the engine's
+ * BOTTLENECK, not just "be C": the native run-loop is bound by L1 + execution-port throughput on
+ * an L1-resident hot region (3 loads + 1 RMW store per op, branchless). this loop mirrors that -
+ * a 16 KB working set (stays in L1 on every target), four independent lanes (saturate the load/
+ * store ports, throughput- not latency-bound), no data-dependent branches. (an earlier streaming
+ * prime-sieve yardstick was DRAM-bandwidth + branch-prediction bound, so its cpu ranking diverged
+ * from the engine's - e.g. Apple Silicon's huge bandwidth inflated it while Graviton's deflated
+ * it, swinging the ratio 0.10-0.30 across arches.) the loop carries a real cross-iteration data
+ * dependency and writes the buffer back, so it can't be elided; `checksum` is deterministic for a
+ * given `iterations` (pure uint64 arithmetic, endianness-independent) and is pinned by the caller. */
+#define CALIB_WORDS 2048u             /* 16 KB working set - L1-resident on every wheel target */
+#define CALIB_MASK (CALIB_WORDS - 1)
+#define CALIB_LANE_OPS 4              /* memory-op "units" per iteration (the four lanes) */
+
+static PyObject* fjcore_cpu_calibrate(PyObject* module, PyObject* args)
+{
+    (void)module;
+    unsigned long long iterations = 0;
+    if (!PyArg_ParseTuple(args, "K", &iterations)) {
+        return NULL;
+    }
+    if (iterations < 1) {
+        PyErr_SetString(PyExc_ValueError, "cpu_calibrate: iterations must be >= 1");
+        return NULL;
+    }
+
+    uint64_t* buf = (uint64_t*)malloc(CALIB_WORDS * sizeof(uint64_t));
+    if (!buf) {
+        return PyErr_NoMemory();
+    }
+    for (unsigned w = 0; w < CALIB_WORDS; w++) {
+        buf[w] = 0x9E3779B97F4A7C15ull * (uint64_t)(w + 1); /* nonzero, varied seed */
+    }
+
+    uint64_t checksum = 0;
+    double seconds = 0.0;
+
+    Py_BEGIN_ALLOW_THREADS
+    double t0 = monotonic_seconds();
+    /* four independent accumulator lanes over four non-overlapping 512-word stripes: each lane
+       does load + rotate-mix + RMW store, and the lanes have no inter-dependency so out-of-order
+       execution fills the L1 load/store ports (throughput-bound, like the engine). */
+    uint64_t a = 0x0123456789ABCDEFull;
+    uint64_t b = 0x123456789ABCDEF0ull;
+    uint64_t c = 0x23456789ABCDEF01ull;
+    uint64_t d = 0x3456789ABCDEF012ull;
+    for (unsigned long long i = 0; i < iterations; i++) {
+        uint64_t i0 = i & CALIB_MASK;
+        uint64_t i1 = (i0 + (CALIB_WORDS / 4)) & CALIB_MASK;
+        uint64_t i2 = (i0 + (CALIB_WORDS / 2)) & CALIB_MASK;
+        uint64_t i3 = (i0 + 3 * (CALIB_WORDS / 4)) & CALIB_MASK;
+        a += buf[i0] ^ ((a << 13) | (a >> 51));
+        b += buf[i1] ^ ((b << 13) | (b >> 51));
+        c += buf[i2] ^ ((c << 13) | (c >> 51));
+        d += buf[i3] ^ ((d << 13) | (d >> 51));
+        buf[i0] = a;
+        buf[i1] = b;
+        buf[i2] = c;
+        buf[i3] = d;
+    }
+    seconds = monotonic_seconds() - t0;
+    for (unsigned w = 0; w < CALIB_WORDS; w++) {
+        checksum ^= buf[w];
+    }
+    checksum ^= a ^ b ^ c ^ d;
+    Py_END_ALLOW_THREADS
+
+    free(buf);
+
+    return Py_BuildValue("{s:K,s:K,s:K,s:d}",
+                         "iterations", (unsigned long long)iterations,
+                         "ops", (unsigned long long)(iterations * CALIB_LANE_OPS),
+                         "checksum", (unsigned long long)checksum,
+                         "seconds", seconds);
+}
+
+static PyMethodDef module_methods[] = {
+    {"cpu_calibrate", (PyCFunction)fjcore_cpu_calibrate, METH_VARARGS,
+     "cpu_calibrate(iterations) -> dict(iterations, ops, checksum, seconds)\n"
+     "an L1-resident load+RMW throughput micro-benchmark compiled with the same toolchain\n"
+     "as the engine and sharing its bottleneck; ops/seconds is the platform's CPU yardstick\n"
+     "for normalizing fj/s. checksum is deterministic for a given iterations count."},
+    {NULL, NULL, 0, NULL},
+};
+
 static PyMethodDef Memory_methods[] = {
     {"add_segment", (PyCFunction)Memory_add_segment, METH_VARARGS,
      "add_segment(start_word_address, length_words) - declare a valid memory segment"},
@@ -1737,7 +1825,7 @@ static PyType_Spec Memory_type_spec = {
 };
 
 static PyModuleDef fjcore_module = {
-    PyModuleDef_HEAD_INIT, "_fjcore", "native FlipJump interpreter engine", -1, NULL, NULL, NULL, NULL, NULL,
+    PyModuleDef_HEAD_INIT, "_fjcore", "native FlipJump interpreter engine", -1, module_methods, NULL, NULL, NULL, NULL,
 };
 
 PyMODINIT_FUNC PyInit__fjcore(void)

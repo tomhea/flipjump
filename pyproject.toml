@@ -86,4 +86,7 @@ skip-string-normalization = true
 [tool.cibuildwheel]
 # abi3: build once per platform/arch with CPython 3.10 - the wheel covers >= 3.10
 build = "cp310-*"
-test-command = 'python -c "import flipjump.interpreter._fjcore as fjcore; fjcore.Memory(32)"'
+# verify the just-built wheel IN its target env (every os/arch, incl. musllinux & native-arm):
+# native engine active + exact op-counts (correctness) + cpu-normalized speed floors. runs the
+# installed wheel against the repo's .fj programs ({project} is the checkout). see the script.
+test-command = "python {project}/tests/wheel_smoke.py"

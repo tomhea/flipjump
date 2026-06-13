@@ -152,6 +152,22 @@ def test_fast_loop_tracks_last_ops_when_requested(tmp_path: Path, engine: str) -
     assert statistics_none.last_ops_addresses is None
 
 
+def test_is_native_engine_active_tracks_engine_state(engine: str) -> None:
+    # the public predicate is the wheel-smoke guard against a silent python fallback. the
+    # `engine` fixture sets _fjcore=None for the python loops and clears FLIPJUMP_NO_NATIVE for
+    # native, so the predicate must report active iff the native engine would actually be used.
+    assert fjm_run.is_native_engine_active() == (engine == 'native')
+
+
+def test_no_native_env_var_disables_native_predicate(monkeypatch: pytest.MonkeyPatch) -> None:
+    if fjm_run._fjcore is None:  # type: ignore[attr-defined]
+        pytest.skip('the native engine (_fjcore) is not built')
+    monkeypatch.setenv('FLIPJUMP_NO_NATIVE', '1')
+    assert fjm_run.is_native_engine_active() is False
+    monkeypatch.delenv('FLIPJUMP_NO_NATIVE', raising=False)
+    assert fjm_run.is_native_engine_active() is True
+
+
 @pytest.mark.parametrize('last_ops_length', [None, 10])
 def test_eof_op_counting_matches_featured_loop(tmp_path: Path, engine: str, last_ops_length: Optional[int]) -> None:
     # the op that reads past the input-end is not counted - in either loop.

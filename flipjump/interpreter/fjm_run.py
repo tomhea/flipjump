@@ -224,16 +224,26 @@ def run(
         ) from unknown_exception
 
 
+def is_native_engine_active() -> bool:
+    """
+    is the native (C) engine present and enabled - i.e. will runs use it (for the programs it
+    supports) rather than silently falling back to the ~200x-slower pure-python loop?
+
+    a wheel can import cleanly yet have a broken/absent _fjcore (an ABI/libc/arch mismatch made
+    the extension unimportable), in which case runs degrade to the python loop with no error at
+    all. this predicate is the hard, cpu-independent signal for that: True iff _fjcore imported
+    and FLIPJUMP_NO_NATIVE is not set. (whether a *specific* program also takes the native path
+    additionally needs Stop garbage-handling - see _is_native_engine_usable.)
+    """
+    return _fjcore is not None and environ.get('FLIPJUMP_NO_NATIVE') != '1'
+
+
 def _is_native_engine_usable(mem: fjm_reader.Reader) -> bool:
     """
     is the native (C) engine available and able to run this program?
     (it implements the Stop garbage-handling only - the default of fjm_run.run.)
     """
-    return (
-        _fjcore is not None
-        and environ.get('FLIPJUMP_NO_NATIVE') != '1'
-        and mem.garbage_handling == GarbageHandling.Stop
-    )
+    return is_native_engine_active() and mem.garbage_handling == GarbageHandling.Stop
 
 
 def _run_native(

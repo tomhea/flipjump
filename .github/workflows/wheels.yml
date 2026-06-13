@@ -24,7 +24,8 @@ jobs:
           - ubuntu-24.04-arm     # manylinux + musllinux, aarch64
           - windows-latest       # win amd64
           - windows-11-arm       # win arm64
-          - macos-13             # macOS x86_64
+          - macos-15-intel       # macOS x86_64 (Intel) - macos-13 was retired Dec 2025; this is
+                                  # the last x86_64 runner, supported by GitHub only until Aug 2027
           - macos-latest         # macOS arm64
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3

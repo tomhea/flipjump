@@ -16,7 +16,7 @@ from flipjump.flipjump_quickstart import (
     assemble_and_run_test_output,
 )
 from flipjump.fjm.fjm_consts import FJMVersion, FJ_MAGIC
-from flipjump.interpreter.fjm_run import TerminationStatistics
+from flipjump.interpreter.fjm_run import TerminationStatistics, is_native_engine_active
 from flipjump.utils.classes import TerminationCause
 from flipjump.utils.functions import get_stl_paths
 from flipjump.utils.exceptions import IODeviceException, FlipJumpException
@@ -38,6 +38,7 @@ __all__ = [
     'FJ_MAGIC',
     'TerminationCause',
     'TerminationStatistics',
+    'is_native_engine_active',
     'FlipJumpException',
     'get_stl_paths',
 ]

@@ -465,3 +465,19 @@ def test_hybrid_device_pokes_route_correctly() -> None:
     assert memory.get_word(3) == 7
     assert memory.get_word(9) == 5
     assert memory.get_word(FAR + 2) == 9
+
+
+def test_cpu_calibrate_is_deterministic_and_well_formed() -> None:
+    # the L1 throughput yardstick: for a fixed iteration count the checksum is deterministic
+    # (pure uint64 arithmetic, endianness-independent) - same on every arch, so the work can't be
+    # optimized away and a mismatch would flag a miscompiled calibration. ops = 4 lanes x iters.
+    result = _fjcore.cpu_calibrate(1_000_000)
+    assert result['iterations'] == 1_000_000
+    assert result['ops'] == 4_000_000
+    assert result['seconds'] > 0.0
+    assert _fjcore.cpu_calibrate(1_000_000)['checksum'] == result['checksum']  # deterministic
+
+
+def test_cpu_calibrate_rejects_degenerate_args() -> None:
+    with pytest.raises(ValueError):
+        _fjcore.cpu_calibrate(0)  # iterations must be >= 1
