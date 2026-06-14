@@ -31,7 +31,7 @@ every int is a multi-digit CPython PyLong, and the small-int fast paths don't ap
 ## Native engine (_fjcore C-extension, the default when built)
 
 Segment-aware paged memory (lazily-allocated 128KB pages) + the run-loop in C; Python is
-called back only for IO. Build with `pip install -e .`.
+called back only for IO. Build with `pip install -e .` (note that for that to work - you need to clone this repo as another name, not "flipjump", to not confuse the python package manager).
 
 The shipping engine (v10 below; sieve = hybrid path - low code flat, far data table
 paged; loop = compact/flat path):

@@ -7,8 +7,7 @@ and collecting run statistics (returned as TerminationStatistics).
 three run-loops (engines) are implemented:
 - the native engine (the default when built): the _fjcore C-extension - segment-aware paged
   memory and the fetch-flipjump loop in C, calling back into python only for IO. ~500x
-  faster than the featured loop. build it with `pip install -e .`; disable it with the
-  FLIPJUMP_NO_NATIVE=1 environment variable.
+  faster than the featured loop. disable it with the FLIPJUMP_NO_NATIVE=1 environment variable.
 - the fast loop (the default otherwise): pure-python, the memory accesses and IO/termination
   checks are inlined, and the per-op statistics (flip/jump counters) are skipped. ~20x faster.
 - the featured loop: supports breakpoints, tracing, and full statistics. selected when

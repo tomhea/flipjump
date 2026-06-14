@@ -32,7 +32,6 @@ This prime numbers program was coded only with FlipJump ([source](programs/prime
 
 <details>
   <summary>A simple hello-world flipjump program, not using the standard library:</summary>
-(jump to the source code)
 
 ```c
 // define macros that will be used later

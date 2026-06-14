@@ -81,12 +81,7 @@ and f1,f2,f3,... for the compiled .fj files, in the order they are mentioned to 
 
 You can place breakpoints to stop on specific labels using the `-d`, followed by a  `-b` and a label name. You cal also use `-B` instead of `-d` in order to stop on all labels that contain a substring. 
 
-For example stopping on the label "start":
-![Debugging Demo](../resources/breakpoint.png)
-Read memory (You can read the memory as if it was flipjump variables):
-![Debugging Demo](../resources/debug_read_memory.png)
-Notice that `:b8:ascii` is 0x36, which is the ascii of `'6'`, which was the input to the program:
-![Debugging Demo](../resources/debug_read_memory_result.png)
+See the example at the [Debugging Readme](interpreter/debugging/README.md)
 
 
 ## More Files
