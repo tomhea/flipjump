@@ -59,7 +59,6 @@ class TerminationStatistics:
         self.jump_counter = run_statistics.jump_counter
         self.detailed_statistics = run_statistics.detailed_statistics
         self.storage_mode = run_statistics.storage_mode
-        self.speculation_stats = run_statistics.speculation_stats
         self.last_ops_addresses: Optional[Deque[int]] = run_statistics.last_ops_addresses
 
         self.termination_cause = termination_cause
@@ -292,7 +291,6 @@ def _run_native(
         statistics.op_counter = core.last_run_op_count
         statistics.pause_timer.paused_time += core.last_run_paused_seconds
         statistics.storage_mode = core.storage_mode
-        statistics.speculation_stats = core.speculation_stats
 
     statistics.op_counter = op_count
     if last_ops is not None:

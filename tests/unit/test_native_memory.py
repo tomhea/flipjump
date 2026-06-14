@@ -208,26 +208,6 @@ def test_run_with_only_a_far_segment_raises() -> None:
         memory.run(_unexpected_io, _unexpected_io, IOReadOnEOF)
 
 
-def test_speculation_stats_is_none_without_the_env_flag() -> None:
-    memory = _looping_memory()
-    _run_to_looping(memory)
-    assert memory.speculation_stats is None
-
-
-def test_speculation_stats_counts_when_measuring(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv('FLIPJUMP_MEASURE_SPECULATION', '1')
-    memory = _looping_memory()  # one op at ip 0 that loops to itself
-    cause, op_count, _, _, _ = memory.run(_unexpected_io, _unexpected_io, IOReadOnEOF)
-    assert cause == _fjcore.TERM_LOOPING
-    stats = memory.speculation_stats
-    assert stats is not None
-    # the op at ip 0 ran twice (once to set up, once that loops); its jump word never
-    # changed, so: 1 first-execution, 0 misses.
-    assert stats['first_executions'] == 1
-    assert stats['misses'] == 0
-    assert stats['ops'] == op_count
-
-
 # ---------------------------------------- self-modifying ops (the flat run-loop's rare paths)
 
 

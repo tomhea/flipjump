@@ -220,6 +220,7 @@ _You can also use the `flipjump.assemble_run_according_to_cmd_line_args(cmd_line
   - [flipjump_cli.py](flipjump/flipjump_cli.py) - Main CLI script fot the FlipJump Assembler & Interpreter.
   - [fjm/](flipjump/fjm) - Tools for reading/writing .fjm (flipjump-memory) files.
   - [interpreter/fjm_run.py](flipjump/interpreter/fjm_run.py) - Interpreter + debugger for assembled fj files.
+  - [interpreter/_fjcore.c](flipjump/interpreter/_fjcore.c) - The optional native engine: the run-loop in C (~100x faster than the pure-python loop).
   - [assembler/](flipjump/assembler) - Components for assembling FlipJump code.
     - [fj_parser.py](flipjump/assembler/fj_parser.py) - Pythonic lex/yacc parser.
     - [preprocessor.py](flipjump/assembler/preprocessor.py) - Unwinds all macros and reps (repetitions).

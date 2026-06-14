@@ -210,9 +210,8 @@ compression (preset 6) is most of "create binary" and is part of the .fjm format
 The native engine is bounded (~16 cycles/op flat) by the serial chain: this op's jump-word
 load -> next op address -> next load. Jump-target speculation (remember the last jump target
 per op address, start the next op's loads early, verify) only pays if the jump word at a
-given ip rarely changes between executions. Measured with the exact counting mode in
-`_fjcore` (`FLIPJUMP_MEASURE_SPECULATION=1`, off the normal hot path; reproduce with
-`python tests/benchmarks/measure_speculation.py`):
+given ip rarely changes between executions. Measured with an exact counting mode in
+`_fjcore` (an opt-in study mode, off the normal hot path; since removed):
 
 | program | ops | first executions | misses | miss-rate | warm miss-rate |
 |---|---:|---:|---:|---:|---:|
@@ -260,8 +259,8 @@ What the experiments exposed instead: the loop was throughput-bound (~59 instruc
 fixing that is the v7 slim loop above. The remaining ~9-11 cycles/op carry the
 flip-store -> jump-load disambiguation stall, which is structural to FlipJump semantics
 (the flip may modify the jump word; both escapes from the stall are the rejected
-variants 2 and 3). Decision: **no speculation tier**; the predictor infrastructure was
-removed, the measuring mode (`FLIPJUMP_MEASURE_SPECULATION=1`) stays as a study tool.
+variants 2 and 3). Decision: **no speculation tier**; the predictor infrastructure and the
+opt-in measuring mode were removed.
 
 ### Bottleneck decomposition (the oracle-replay study)
 

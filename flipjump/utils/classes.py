@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import deque
 from enum import IntEnum
 from time import time
-from typing import Optional, Deque, Dict
+from typing import Optional, Deque
 
 
 class TerminationCause(IntEnum):
@@ -94,9 +94,6 @@ class RunStatistics:
         self.detailed_statistics = True
         # 'flat'/'hybrid'/'paged' when the native engine ran (which memory storage it chose); None otherwise.
         self.storage_mode: Optional[str] = None
-        # dict(ops, first_executions, misses) when the native engine measured jump-target
-        # speculation (FLIPJUMP_MEASURE_SPECULATION=1); None otherwise.
-        self.speculation_stats: Optional[Dict[str, int]] = None
 
         self.last_ops_addresses: Optional[Deque[int]] = None
         if last_ops_debugging_list_length is not None:

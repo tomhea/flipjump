@@ -136,13 +136,6 @@ typedef struct {
     int mem_error;            /* set when garbage_stop fired */
     uint64_t error_bit_address;
 
-    /* jump-target speculation measurement (FLIPJUMP_MEASURE_SPECULATION=1):
-       per executed op, would a "last jump target per ip" predictor have missed? */
-    int spec_measured; /* did the last run measure? */
-    unsigned long long spec_ops;
-    unsigned long long spec_first;  /* first executions of an ip (no prediction yet) */
-    unsigned long long spec_misses; /* jump word differed from its previous execution */
-
     unsigned long long last_run_op_count; /* op count of the last run (also on exceptions) */
     double last_run_paused_seconds;       /* IO-paused seconds of the last run (also on exceptions) */
 } MemoryObject;
@@ -654,10 +647,6 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->flat_covers_all = 0;
     self->mem_error = 0;
     self->error_bit_address = 0;
-    self->spec_measured = 0;
-    self->spec_ops = 0;
-    self->spec_first = 0;
-    self->spec_misses = 0;
     self->last_run_op_count = 0;
     self->last_run_paused_seconds = 0.0;
     return 0;
@@ -802,190 +791,6 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
 }
 
 #define CAUSE_PYTHON_ERROR (-2)
-
-/* ------------------------------------------------ speculation measurement
-
-   measures the would-be miss-rate of jump-target speculation: remember the last jump
-   word per executed ip; an execution whose jump word differs from the previous execution
-   of the same ip is a miss. enabled with FLIPJUMP_MEASURE_SPECULATION=1 - it runs a
-   dedicated slow reference-style loop (works for flat AND paged storage, any width), so
-   the normal run-loops' hot paths are completely untouched. */
-
-typedef struct {
-    uint64_t ip_plus1; /* ip + 1; 0 marks an empty slot */
-    uint64_t jump_word;
-} SpecSlot;
-
-typedef struct {
-    SpecSlot* slots; /* open-addressing, power-of-two sized */
-    uint64_t slot_count;
-    uint64_t slots_used;
-} SpecShadow;
-
-static int spec_grow(SpecShadow* shadow)
-{
-    uint64_t new_count = shadow->slot_count ? shadow->slot_count * 2 : (1ull << 16);
-    SpecSlot* new_slots = (SpecSlot*)calloc((size_t)new_count, sizeof(SpecSlot));
-    uint64_t i;
-    if (!new_slots) {
-        PyErr_NoMemory();
-        return -1;
-    }
-    for (i = 0; i < shadow->slot_count; i++) {
-        if (shadow->slots[i].ip_plus1) {
-            uint64_t h = (shadow->slots[i].ip_plus1 * 0x9E3779B97F4A7C15ull) & (new_count - 1);
-            while (new_slots[h].ip_plus1) {
-                h = (h + 1) & (new_count - 1);
-            }
-            new_slots[h] = shadow->slots[i];
-        }
-    }
-    free(shadow->slots);
-    shadow->slots = new_slots;
-    shadow->slot_count = new_count;
-    return 0;
-}
-
-/* record one executed (ip, jump_word): bumps spec_first or spec_misses. -1 on alloc fail. */
-static int spec_record(SpecShadow* shadow, MemoryObject* m, uint64_t ip, uint64_t jump_word)
-{
-    uint64_t key = ip + 1, h;
-    if (shadow->slots_used * 2 >= shadow->slot_count) {
-        if (spec_grow(shadow) < 0) {
-            return -1;
-        }
-    }
-    h = (key * 0x9E3779B97F4A7C15ull) & (shadow->slot_count - 1);
-    while (shadow->slots[h].ip_plus1) {
-        if (shadow->slots[h].ip_plus1 == key) {
-            if (shadow->slots[h].jump_word != jump_word) {
-                m->spec_misses++;
-                shadow->slots[h].jump_word = jump_word;
-            }
-            return 0;
-        }
-        h = (h + 1) & (shadow->slot_count - 1);
-    }
-    shadow->slots[h].ip_plus1 = key;
-    shadow->slots[h].jump_word = jump_word;
-    shadow->slots_used++;
-    m->spec_first++;
-    return 0;
-}
-
-/* the measurement run-loop: the reference op order through the generic mem_* helpers
-   (slow - measurement only). returns the termination cause / CAUSE_PYTHON_ERROR. */
-static int run_measured_loop(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
-                             PyObject* eof_exception_type, uint64_t start_ip, uint64_t* ops_out,
-                             double* paused_seconds_out)
-{
-    const uint64_t width = (uint64_t)self->w;
-    const uint64_t ww = (uint64_t)self->ww;
-    const uint64_t dw = 2 * width;
-    const uint64_t out1 = dw + 1;
-    const uint64_t in_addr = 3 * width + ww + 1; /* 3w + #w */
-    const uint64_t in_lo_exclusive = in_addr - dw;
-
-    SpecShadow shadow = {NULL, 0, 0};
-    uint64_t ip = start_ip, ops = 0;
-    int cause = CAUSE_PYTHON_ERROR;
-
-    self->spec_ops = 0;
-    self->spec_first = 0;
-    self->spec_misses = 0;
-    self->mem_error = 0;
-
-    for (;;) {
-        uint64_t f, j;
-
-        if ((ops & SIGNAL_CHECK_MASK) == SIGNAL_CHECK_MASK) {
-            self->last_run_op_count = ops;
-            if (PyErr_CheckSignals() < 0) {
-                goto done;
-            }
-        }
-
-        /* read flip word */
-        if (mem_get_word_unaligned(self, ip, &f) < 0) {
-            goto memory_error;
-        }
-
-        /* handle output */
-        if (f <= out1 && f >= dw) {
-            PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == out1) ? Py_True : Py_False, NULL);
-            if (!result) {
-                goto done;
-            }
-            Py_DECREF(result);
-        }
-
-        /* handle input */
-        if (ip <= in_addr && ip > in_lo_exclusive) {
-            PyObject* result;
-            int bit_value;
-            double io_start = monotonic_seconds();
-            result = PyObject_CallNoArgs(read_bit);
-            *paused_seconds_out += monotonic_seconds() - io_start;
-            if (!result) {
-                if (PyErr_ExceptionMatches(eof_exception_type)) {
-                    PyErr_Clear();
-                    cause = TERM_EOF;
-                    goto done;
-                }
-                goto done;
-            }
-            bit_value = PyObject_IsTrue(result);
-            Py_DECREF(result);
-            if (bit_value < 0) {
-                goto done;
-            }
-            if (mem_write_bit(self, in_addr, bit_value) < 0) {
-                goto memory_error;
-            }
-        }
-
-        /* FLIP! */
-        if (mem_flip_bit(self, f) < 0) {
-            goto memory_error;
-        }
-
-        /* read jump word (after the flip - the flip may modify it) */
-        if (mem_get_word_unaligned(self, ip + width, &j) < 0) {
-            goto memory_error;
-        }
-        ops++;
-
-        if (spec_record(&shadow, self, ip, j) < 0) {
-            goto done;
-        }
-
-        /* check finish? */
-        if (j == ip && !(f >= ip && f - ip < dw)) {
-            cause = TERM_LOOPING;
-            goto done;
-        }
-        if (j < dw) {
-            cause = TERM_NULL_IP;
-            goto done;
-        }
-
-        /* JUMP! */
-        ip = j;
-    }
-
-memory_error:
-    if (self->mem_error) {
-        self->mem_error = 0;
-        cause = TERM_MEMORY_ERROR;
-    }
-done:
-    free(shadow.slots);
-    self->spec_ops = ops;
-    self->last_run_op_count = ops;
-    self->last_run_paused_seconds = *paused_seconds_out;
-    *ops_out = ops;
-    return cause;
-}
 
 /* the dedicated flat-storage run loop - the common fast case (no last-ops ring, flat
    memory): all paged-mode and ring branches are out of the per-op path.
@@ -1604,22 +1409,6 @@ static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
         return NULL;
     }
 
-    self->spec_measured = 0;
-    {
-        const char* measure_speculation = getenv("FLIPJUMP_MEASURE_SPECULATION");
-        if (measure_speculation && measure_speculation[0] == '1' && last_ops_length == 0) {
-            uint64_t measured_ops = 0;
-            double measured_paused = 0.0;
-            int measured_cause = run_measured_loop(self, read_bit, write_bit, eof_exception_type, start_ip,
-                                                   &measured_ops, &measured_paused);
-            if (measured_cause == CAUSE_PYTHON_ERROR) {
-                return NULL;
-            }
-            self->spec_measured = 1;
-            return build_run_result(self, measured_cause, measured_ops, NULL, 0, 0, measured_paused);
-        }
-    }
-
     if (self->flat && last_ops_length == 0) {
         /* the common fast case gets the dedicated loop (no ring, no paged branches) */
         uint64_t fast_ops = 0;
@@ -1672,16 +1461,6 @@ static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
         Py_RETURN_NONE;
     }
     return PyUnicode_FromString(self->flat ? (self->flat_covers_all ? "flat" : "hybrid") : "paged");
-}
-
-static PyObject* Memory_get_speculation_stats(MemoryObject* self, void* closure)
-{
-    (void)closure;
-    if (!self->spec_measured) {
-        Py_RETURN_NONE;
-    }
-    return Py_BuildValue("{s:K, s:K, s:K}", "ops", self->spec_ops, "first_executions", self->spec_first, "misses",
-                         self->spec_misses);
 }
 
 static PyObject* Memory_get_allocated_bytes(MemoryObject* self, void* closure)
@@ -1801,8 +1580,6 @@ static PyGetSetDef Memory_getset[] = {
      "bytes allocated for memory pages (footprint scales with touched memory, not segment sizes)", NULL},
     {"storage_mode", (getter)Memory_get_storage_mode, NULL,
      "'flat'/'hybrid'/'paged' - the storage mode chosen at the first run (None before it)", NULL},
-    {"speculation_stats", (getter)Memory_get_speculation_stats, NULL,
-     "dict(ops, first_executions, misses) of the last FLIPJUMP_MEASURE_SPECULATION=1 run, else None", NULL},
     {NULL, NULL, NULL, NULL, NULL},
 };
 
