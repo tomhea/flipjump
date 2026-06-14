@@ -10,13 +10,14 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 | `memory.fj`             | `hex`, `vec`, `zero`, `mov`, `xor_by`, `set`, `swap`.                                             |
 | `logics.fj`             | `xor`, `or`, `and`, `not`, plus `exact_*`, `double_xor`, `quadrupled_exact_xor`.                  |
 | `math.fj`               | `add`, `sub`, `add_constant`, `add_shifted`, `add_hex_shifted_constant`, plus the `clear_carry` / `not_carry` / `set_carry` helpers for both `ns add` and `ns sub`. |
-| `math_basic.fj`         | `inc`, `dec`, `neg`, `inc1`, `dec1`, `step`, `add_count_bits`, `count_bits`, `sign_extend`.       |
+| `math_basic.fj`         | `inc`, `dec`, `neg`, `abs`, `inc1`, `dec1`, `step`, `add_count_bits`, `count_bits`, `sign_extend`. |
 | `mul.fj`                | `mul`, `mul10`, `add_mul`, plus the per-multiplication carry / init machinery.                    |
 | `div.fj`                | `div` (unsigned) and `idiv` (signed, with configurable remainder convention).                     |
 | `shifts.fj`             | `shl_hex`, `shr_hex`, plus the inline-table `shl_bit_once` / `shr_bit_once` helpers.              |
 | `cond_jumps.fj`         | `if`, `if0`, `if1`, `if_flags`, `sign`, `cmp` (3-way), `cmp_eq_next`, `min`/`max`, `cmp.init`.    |
-| `input.fj`              | `input_hex`, `input` (1 hex / n hexes), `input_as_hex`, `input_dec_uint`/`input_dec_int`.         |
+| `input.fj`              | `input_hex`, `input` (1 hex / n hexes), `input_as_hex`, `input_dec_uint`/`input_dec_int`, `input_dec_uint_until`/`input_dec_int_until`. |
 | `output.fj`             | `output`, `print`, `print_as_digit`, `print_uint`, `print_int`, `print_digit`, `print_dec_uint`, `print_dec_int`. |
+| `strings.fj`            | `input_ptr_line`, `print_ptr_text`, `print_ptr_line` (packed-byte line/text I/O), plus `fill_bytes` / `copy_bytes` block helpers. |
 | `casting.fj` *(root)*   | `bit2hex` / `hex2bit` — bridging the two namespaces.                                              |
 | `pointers/`             | The hex pointer subsystem (see below).                                                            |
 
