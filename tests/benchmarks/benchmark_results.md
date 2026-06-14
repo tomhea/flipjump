@@ -31,7 +31,7 @@ every int is a multi-digit CPython PyLong, and the small-int fast paths don't ap
 ## Native engine (_fjcore C-extension, the default when built)
 
 Segment-aware paged memory (lazily-allocated 128KB pages) + the run-loop in C; Python is
-called back only for IO. Build with `python build_fjcore.py`.
+called back only for IO. Build with `pip install -e .`.
 
 The shipping engine (v10 below; sieve = hybrid path - low code flat, far data table
 paged; loop = compact/flat path):
@@ -66,7 +66,7 @@ trust wall-time over the post-run freq-probe, which only catches the recovered b
 | v3: one page lookup per op-pair | 127M | 129M | 140M | 123M |
 | v4: flat storage for compact programs | 112-127M | 115-129M | 125-140M | 246M |
 | v5: dedicated flat loop (no ring/paged branches) | - | - | - | 273M |
-| v6: + MSVC PGO (`build_fjcore.py --pgo-*`, optional) | 122M | 128M | 132M | **280-286M** |
+| v6: + MSVC PGO (optional; build path since removed) | 122M | 128M | 132M | **280-286M** |
 | v7: slim specialized flat loop (cold-block layout, folded IO checks, per-width constants, strip-mined signal check) | unchanged | unchanged | unchanged | **352-430M** (+25-30% interleaved A/B) |
 | v8: flat storage opened to w=64 (magic gap sentinel + segment-routed API) | unchanged | unchanged | unchanged | loop w=64: 110M -> **358-382M** (3.4x) |
 | v9: slim paged loop (widened page cache, cold-block reshape, width+ring clones) | **~180M** (+50%) | **~180M** (+50%) | - | paged-forced w=64: 130M -> **221-239M** (+75-85%); flat unchanged |

@@ -13,7 +13,7 @@ from setuptools.command.build_ext import build_ext
 SKIP_WARNING = (
     'WARNING: building the optional native interpreter engine (_fjcore) failed: {error!r}. '
     'flipjump will run with the pure-python interpreter (the native engine is ~100x faster - '
-    'install a C compiler and reinstall, or run `python build_fjcore.py`, to enable it).'
+    'install a C compiler and reinstall to enable it).'
 )
 
 
