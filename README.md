@@ -156,8 +156,7 @@ fj --run hello_world.fjm
 The interpreter has three engines:
 - **The native engine** (~300M fj-ops/s) - a C-extension, prebuilt in the official wheels
   (Linux glibc/musl, macOS, Windows; every CPython >= 3.10), so a plain `pip install flipjump`
-  already has it. Elsewhere, build it once with `pip install -e .`; it is used
-  automatically whenever present (`FLIPJUMP_NO_NATIVE=1` disables it).
+  already has it. it is used automatically whenever present (`FLIPJUMP_NO_NATIVE=1` disables it).
 - **The fast loop** (~4M fj-ops/s) - pure Python, the fallback when the native engine isn't built.
 - **The featured loop** - used for `--trace`/breakpoints, or with `--profile` for the full
   per-op statistics (flips/jumps percentages).
