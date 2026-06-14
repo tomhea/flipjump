@@ -929,7 +929,11 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
 
     cold_output:
     {
+        /* time the output callback as paused, exactly like the input callback below - so the
+           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
+        double io_start = monotonic_seconds();
         PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == dw + 1) ? Py_True : Py_False, NULL);
+        *paused_seconds_out += monotonic_seconds() - io_start;
         if (!result) {
             goto done;
         }
@@ -1240,7 +1244,11 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
 
     cold_output:
     {
+        /* time the output callback as paused, exactly like the input callback below - so the
+           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
+        double io_start = monotonic_seconds();
         PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == dw + 1) ? Py_True : Py_False, NULL);
+        *paused_seconds_out += monotonic_seconds() - io_start;
         if (!result) {
             goto loop_done;
         }

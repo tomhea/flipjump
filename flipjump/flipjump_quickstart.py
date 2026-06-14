@@ -19,7 +19,6 @@ from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.interpreter.io_devices.StandardIO import StandardIO
 from flipjump.utils.classes import TerminationCause
 from flipjump.utils.constants import (
-    LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
     IO_BYTES_ENCODING,
     DEFAULT_MAX_MACRO_RECURSION_DEPTH,
 )
@@ -78,7 +77,7 @@ def run(
     show_trace: bool = False,
     print_time: bool = True,
     print_termination: bool = True,
-    last_ops_debugging_list_length: Optional[int] = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
 ) -> TerminationStatistics:
@@ -126,7 +125,7 @@ def debug(
     show_trace: bool = False,
     print_time: bool = True,
     print_termination: bool = True,
-    last_ops_debugging_list_length: Optional[int] = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
 ) -> TerminationStatistics:
@@ -187,7 +186,7 @@ def run_test_output(
     show_trace: bool = False,
     print_time: bool = True,
     print_termination: bool = True,
-    last_ops_debugging_list_length: Optional[int] = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    last_ops_debugging_list_length: Optional[int] = None,
 ) -> bool:
     """
     runs a .fjm file (with the FlipJump interpreter) with the given input, and checks that it finished successfuly and
@@ -252,7 +251,7 @@ def assemble_and_run(
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
     print_termination: bool = True,
-    last_ops_debugging_list_length: Optional[int] = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    last_ops_debugging_list_length: Optional[int] = None,
 ) -> TerminationStatistics:
     """
     assembles the .fj files into a temporary .fjm file, then runs it.
@@ -293,7 +292,7 @@ def assemble_and_debug(
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
     print_termination: bool = True,
-    last_ops_debugging_list_length: Optional[int] = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    last_ops_debugging_list_length: Optional[int] = None,
 ) -> TerminationStatistics:
     """
     assembles the .fj files into a temporary .fjm file, then runs and debugs it.
@@ -351,7 +350,7 @@ def assemble_and_run_test_output(
     should_raise_assertion_error: bool = False,
     show_trace: bool = False,
     print_termination: bool = True,
-    last_ops_debugging_list_length: Optional[int] = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    last_ops_debugging_list_length: Optional[int] = None,
 ) -> bool:
     """
     assembles the .fj files into a temporary .fjm file, then runs it with the given input, and checks that

@@ -226,9 +226,10 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         '--debug-ops-list',
         metavar='LENGTH',
         type=_check_int_positive,
-        default=LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
-        help=f"show the last LENGTH executed opcodes on tests that failed during their run "
-        f"({LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH} by default).",
+        default=None,
+        help=f"show the last LENGTH executed opcodes when a run ends abnormally. off by default "
+        f"(tracking them slows the engine); auto-enabled (length {LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH}) "
+        f"when debugging/tracing/profiling. pass a value to force it on for a normal run.",
     )
 
     run_arguments.add_argument('-t', '--trace', help="output every running opcode", action='store_true')
