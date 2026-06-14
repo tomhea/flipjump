@@ -14,7 +14,7 @@ Yet, it can do **any modern computation**. See the [C -> FlipJump compiler](http
 
 **Try for yourself — [Online IDE](https://fj.tomhe.app).** No install needed.
 
-It's an Esoteric language ([FlipJump esolangs page](https://esolangs.org/wiki/FlipJump)), with just 1 operation `a;b`:  
+It's an [Esoteric language](https://esolangs.org/wiki/FlipJump), with just 1 operation `a;b`:  
 - `not *a; jump b`
 
 Which means - **Flip** a bit, then **Jump**.
@@ -105,7 +105,7 @@ pip install flipjump
 And jump right into the neat [**FlipJump Docs**](https://fjdocs.tomhe.app) site!
 
 You can also install it with its extras:
-- `flipjump[io]`: the interactive IO devices (the `--io pc` keyboard+screen window; pygame).
+- `flipjump[io]`: the interactive IO devices (e.g. pygame for the `--io pc` keyboard+screen window).
 - `flipjump[stats]`: support for viewing macro usage in an interactive graph.
 - `flipjump[tests]`: all the testing libraries needed.
 ```shell
@@ -151,7 +151,7 @@ fj --run hello_world.fjm
 - The second line will run your code.
 
 <details>
-<summary><b>Make it fast</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
+<summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
 
 The interpreter has three engines:
 - **The native engine** (~300M fj-ops/s) - a C-extension, prebuilt in the official wheels
@@ -167,7 +167,7 @@ w=32-vs-w=64 recommendation are recorded in [tests/benchmarks/benchmark_results.
 </details>
 
 <details>
-<summary><b>IO devices</b> — pluggable input/output, including an interactive screen window and a keyboard.</summary>
+<summary><b>IO devices 🖥️</b> — pluggable input/output, including an interactive screen window and a keyboard.</summary>
 
 The interpreter's IO is pluggable: `--io MODE` picks one complete IO device.
 
