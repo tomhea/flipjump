@@ -139,6 +139,8 @@ ruvector.db
 docs/m0-*.log
 docs/m0-*.txt
 
+*.so
+
 # Pytest cache and compiled catalog artifacts
 tests/compiled/catalog/
 tests/compiled/benchmark/
