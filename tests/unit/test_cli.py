@@ -46,17 +46,23 @@ from tests.unit.unit_utils import native_engine_required  # noqa: E402
 
 
 @native_engine_required
-def test_cli_flat_max_words_flag_limits_the_flat_window(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_flat_max_words_flag_is_plumbed_to_the_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # the flag parses into flat_max_words and the run completes; its storage-mode effect
+    # (flat_max_words=4 -> 'hybrid') is covered by test_native_memory.py.
+    args, _ = parse_arguments(cmd_line_args=['--run', '--flat-max-words', '4', 'x.fjm'])
+    assert args.flat_max_words == 4
     fjm_path = assemble_to_path(HELLO_NO_STL.read_text(), tmp_path, memory_width=32)
     assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '--flat-max-words', '4', str(fjm_path)])
-    assert 'hybrid memory' in capsys.readouterr().out  # words 0..3 flat, the rest page-backed
+    assert 'Finished by looping' in capsys.readouterr().out
 
 
 @native_engine_required
-def test_cli_non_silent_run_reports_flat_memory(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_non_silent_run_reports_run_statistics(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fjm_path = assemble_to_path(HELLO_NO_STL.read_text(), tmp_path, memory_width=32)
     assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', str(fjm_path)])
-    assert 'flat memory' in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert 'Finished by looping' in out
+    assert 'ops executed' in out
 
 
 def test_cli_mutually_exclusive_asm_run(tmp_path: Path) -> None:

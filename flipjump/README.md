@@ -22,9 +22,9 @@ The whole process is executed within the [assemble()](assembler/assembler.py) fu
 
 The Interpreter ([fjm_run.py](interpreter/fjm_run.py)) dispatches each run to one of three engines:
 
-- **The native engine** ([_fjcore.c](interpreter/_fjcore.c)) - the run-loop in C, used automatically whenever its compiled module is present (prebuilt in the official wheels for Linux/macOS/Windows, every CPython >= 3.10; elsewhere `python build_fjcore.py`). ~100-300M fj-ops/s (`python tests/benchmarks/benchmark_interpreter.py`; history in [benchmark_results.md](../tests/benchmarks/benchmark_results.md)). Compact programs (all segments below the flat-storage limit, at w<=32) run over one dense flat array; sparse programs over lazily-allocated pages, so the footprint scales with the memory actually touched. `FLIPJUMP_NO_NATIVE=1` disables it.
+- **The native engine** ([_fjcore.c](interpreter/_fjcore.c)) - the run-loop in C, used automatically whenever its compiled module is present (prebuilt in the official wheels for Linux/macOS/Windows, every CPython >= 3.10). ~300M fj-ops/s (`python tests/benchmarks/benchmark_interpreter.py`; history in [benchmark_results.md](../tests/benchmarks/benchmark_results.md)). Compact programs (all segments below the flat-storage limit, at w<=32) run over one dense flat array; sparse programs have that initial flat array + lazily-allocated pages, so the footprint scales with the memory actually touched. `FLIPJUMP_NO_NATIVE=1` disables it.
 
-  The flat-storage limit defaults to 2^23 words; set it with `fj --flat-max-words N`, `fjm_run.run(flat_max_words=)`, or the `FLIPJUMP_FLAT_MAX_WORDS` environment variable. It never affects per-op speed - only startup time and memory (8 bytes per word of span; an impossible allocation falls back to paged mode). The mode that ran is reported in the termination statistics line and as `TerminationStatistics.storage_mode`.
+  The flat-storage limit defaults to 2^23 words; set it with `fj --flat-max-words N`, `fjm_run.run(flat_max_words=)`, or the `FLIPJUMP_FLAT_MAX_WORDS` environment variable. It never affects per-op speed - only startup time and memory (8 bytes per word of span; an impossible allocation falls back to paged mode). The mode that ran is available as `TerminationStatistics.storage_mode`.
 - **The pure-python fast loop** - the fallback when the native engine isn't built (~4M fj-ops/s). Stores the memory in a dictionary {address: value}, with the memory accesses and IO/termination checks inlined into the loop.
 - **The featured loop** - used for tracing, breakpoints, and `--profile` (full per-op statistics). This is the loop the debugger runs on.
 
@@ -81,12 +81,7 @@ and f1,f2,f3,... for the compiled .fj files, in the order they are mentioned to 
 
 You can place breakpoints to stop on specific labels using the `-d`, followed by a  `-b` and a label name. You cal also use `-B` instead of `-d` in order to stop on all labels that contain a substring. 
 
-For example stopping on the label "start":
-![Debugging Demo](../resources/breakpoint.png)
-Read memory (You can read the memory as if it was flipjump variables):
-![Debugging Demo](../resources/debug_read_memory.png)
-Notice that `:b8:ascii` is 0x36, which is the ascii of `'6'`, which was the input to the program:
-![Debugging Demo](../resources/debug_read_memory_result.png)
+See the example at the [Debugging Readme](interpreter/debugging/README.md)
 
 
 ## More Files

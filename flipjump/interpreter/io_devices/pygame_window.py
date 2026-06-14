@@ -191,6 +191,12 @@ class PcIO(IODevice):
         self._screen = screen
         self._keyboard = keyboard
 
+    @property
+    def outputs_live(self) -> bool:
+        # output is presented live as screen frames (the window, or PNG frames when headless),
+        # so the termination summary shouldn't re-dump the raw screen-command bytes.
+        return True
+
     @classmethod
     def interactive(cls) -> 'PcIO':
         """a real window: live key presses in, a scaled 256-color screen out (one window).

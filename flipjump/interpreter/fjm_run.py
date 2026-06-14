@@ -7,8 +7,7 @@ and collecting run statistics (returned as TerminationStatistics).
 three run-loops (engines) are implemented:
 - the native engine (the default when built): the _fjcore C-extension - segment-aware paged
   memory and the fetch-flipjump loop in C, calling back into python only for IO. ~500x
-  faster than the featured loop. build it with `python build_fjcore.py`; disable it with the
-  FLIPJUMP_NO_NATIVE=1 environment variable.
+  faster than the featured loop. disable it with the FLIPJUMP_NO_NATIVE=1 environment variable.
 - the fast loop (the default otherwise): pure-python, the memory accesses and IO/termination
   checks are inlined, and the per-op statistics (flip/jump counters) are skipped. ~20x faster.
 - the featured loop: supports breakpoints, tracing, and full statistics. selected when
@@ -28,6 +27,7 @@ except ImportError:  # the native engine is optional - fall back to the pure-pyt
     _fjcore = None
 from flipjump.interpreter.debugging.breakpoints import BreakpointHandler, handle_breakpoint
 from flipjump.utils.classes import TerminationCause, PrintTimer, RunStatistics
+from flipjump.utils.constants import LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH
 from flipjump.utils.exceptions import (
     FlipJumpRuntimeMemoryException,
     IOReadOnEOF,
@@ -59,7 +59,6 @@ class TerminationStatistics:
         self.jump_counter = run_statistics.jump_counter
         self.detailed_statistics = run_statistics.detailed_statistics
         self.storage_mode = run_statistics.storage_mode
-        self.speculation_stats = run_statistics.speculation_stats
         self.last_ops_addresses: Optional[Deque[int]] = run_statistics.last_ops_addresses
 
         self.termination_cause = termination_cause
@@ -88,8 +87,6 @@ class TerminationStatistics:
             jumps_percentage = self.jump_counter / self.op_counter * 100
             flips_jumps_str = f'; {flips_percentage:.2f}% flips, {jumps_percentage:.2f}% jumps'
 
-        storage_str = f'; {self.storage_mode} memory' if self.storage_mode else ''
-
         last_ops_str = ''
         output_str = ''
         if TerminationCause.Looping != self.termination_cause:
@@ -107,6 +104,13 @@ class TerminationStatistics:
                         [self.beautify_address(address, labels_handler) for address in self.last_ops_addresses][::-1]
                     )
                 )
+            else:
+                # last-ops tracking is off by default (it slows the engine); on an abnormal
+                # finish, point the user at how to get the last executed ops.
+                last_ops_str = (
+                    '\n\n**** Re-run with --debug-ops-list N (or the -d debug flags) '
+                    'to see the last executed ops ****'
+                )
             if output_to_print is not None:
                 output_str = f"Program's output before it was terminated:  {output_to_print!r}\n\n"
 
@@ -120,7 +124,6 @@ class TerminationStatistics:
             f'('
             f'{self.op_counter:,} ops executed'
             f'{flips_jumps_str}'
-            f'{storage_str}'
             f').'
             f'{last_ops_str}'
         )
@@ -139,13 +142,15 @@ def _handle_input(io_device: IODevice, ip: int, mem: fjm_reader.Reader, statisti
         mem.write_bit(in_addr, input_bit)
 
 
-def _handle_output(flip_address: int, io_device: IODevice, w: int) -> None:
+def _handle_output(flip_address: int, io_device: IODevice, w: int, statistics: RunStatistics) -> None:
     """
     if the ip is in the output-bit range, output the corresponding bit to the io_device.
+    the write is timed as paused (like input), so it doesn't inflate the net fj-run-time.
     """
     out_addr = 2 * w
     if out_addr <= flip_address <= out_addr + 1:
-        io_device.write_bit(out_addr + 1 == flip_address)
+        with statistics.pause_timer:
+            io_device.write_bit(out_addr + 1 == flip_address)
 
 
 def _trace_jump(jump_address: int, show_trace: bool) -> None:
@@ -198,6 +203,11 @@ def run(
 
     if io_device is None:
         io_device = BrokenIO()
+
+    # Auto-enable when the featured loop runs (tracing / breakpoints / profiling)
+    use_featured_loop = profile or show_trace or breakpoint_handler is not None
+    if last_ops_debugging_list_length is None and use_featured_loop:
+        last_ops_debugging_list_length = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH
 
     statistics = RunStatistics(mem.memory_width, last_ops_debugging_list_length)
 
@@ -292,7 +302,6 @@ def _run_native(
         statistics.op_counter = core.last_run_op_count
         statistics.pause_timer.paused_time += core.last_run_paused_seconds
         statistics.storage_mode = core.storage_mode
-        statistics.speculation_stats = core.speculation_stats
 
     statistics.op_counter = op_count
     if last_ops is not None:
@@ -335,7 +344,7 @@ def _run_featured(
         _trace_flip(ip, flip_address, show_trace)
 
         # handle IO
-        _handle_output(flip_address, io_device, w)
+        _handle_output(flip_address, io_device, w, statistics)
         try:
             _handle_input(io_device, ip, mem, statistics)
         except IOReadOnEOF:
@@ -409,8 +418,9 @@ def _run_fast(  # noqa: C901
             # handle IO (both checks fail after a single comparison for almost all ops)
             if flip_address <= out1:
                 if flip_address >= dw:
-                    io_write_bit(out1 == flip_address)
-            if ip <= in_addr and ip > in_lo:
+                    with pause_timer:
+                        io_write_bit(out1 == flip_address)
+            if in_addr >= ip > in_lo:
                 try:
                     with pause_timer:
                         input_bit = io_read_bit()

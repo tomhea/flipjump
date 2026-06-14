@@ -48,12 +48,7 @@ def benchmark(program: str, memory_width: int, n: int) -> None:
     io_device = FixedIO(f'{n}\n'.encode() if program == 'sieve' else b'')
 
     start_time = time()
-    termination_statistics = fjm_run.run(
-        fjm_path,
-        io_device=io_device,
-        print_time=False,
-        last_ops_debugging_list_length=None,
-    )
+    termination_statistics = fjm_run.run(fjm_path, io_device=io_device)
     wall_time = time() - start_time
 
     assert (

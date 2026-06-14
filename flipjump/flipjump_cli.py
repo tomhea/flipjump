@@ -226,9 +226,10 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         '--debug-ops-list',
         metavar='LENGTH',
         type=_check_int_positive,
-        default=LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
-        help=f"show the last LENGTH executed opcodes on tests that failed during their run "
-        f"({LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH} by default).",
+        default=None,
+        help=f"show the last LENGTH executed opcodes when a run ends abnormally. off by default "
+        f"(tracking them slows the engine); auto-enabled (length {LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH}) "
+        f"when debugging/tracing/profiling. pass a value to force it on for a normal run.",
     )
 
     run_arguments.add_argument('-t', '--trace', help="output every running opcode", action='store_true')
@@ -392,6 +393,8 @@ def get_argument_parser() -> argparse.ArgumentParser:
         '// assemble without the standard library, 32 bit memory\n\n'
         '  fj --run  prog.fjm                                 // just run\n'
         '  fj --run  o.fjm  -d dir/debug.fjd  -B label        // run and debug\n ',
+        epilog="note: the run-time printed on the 'Finished by ...' line is compute-only - "
+        "time spent in IO (input/output) is excluded.",
     )
 
 

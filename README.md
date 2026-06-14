@@ -14,7 +14,7 @@ Yet, it can do **any modern computation**. See the [C -> FlipJump compiler](http
 
 **Try for yourself — [Online IDE](https://fj.tomhe.app).** No install needed.
 
-It's an Esoteric language ([FlipJump esolangs page](https://esolangs.org/wiki/FlipJump)), with just 1 operation `a;b`:  
+It's an [Esoteric language](https://esolangs.org/wiki/FlipJump), with just 1 operation `a;b`:  
 - `not *a; jump b`
 
 Which means - **Flip** a bit, then **Jump**.
@@ -32,7 +32,6 @@ This prime numbers program was coded only with FlipJump ([source](programs/prime
 
 <details>
   <summary>A simple hello-world flipjump program, not using the standard library:</summary>
-(jump to the source code)
 
 ```c
 // define macros that will be used later
@@ -105,7 +104,7 @@ pip install flipjump
 And jump right into the neat [**FlipJump Docs**](https://fjdocs.tomhe.app) site!
 
 You can also install it with its extras:
-- `flipjump[io]`: the interactive IO devices (the `--io pc` keyboard+screen window; pygame).
+- `flipjump[io]`: the interactive IO devices (e.g. pygame for the `--io pc` keyboard+screen window).
 - `flipjump[stats]`: support for viewing macro usage in an interactive graph.
 - `flipjump[tests]`: all the testing libraries needed.
 ```shell
@@ -151,13 +150,12 @@ fj --run hello_world.fjm
 - The second line will run your code.
 
 <details>
-<summary><b>Make it fast</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
+<summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
 
 The interpreter has three engines:
 - **The native engine** (~300M fj-ops/s) - a C-extension, prebuilt in the official wheels
   (Linux glibc/musl, macOS, Windows; every CPython >= 3.10), so a plain `pip install flipjump`
-  already has it. Elsewhere, build it once with `python build_fjcore.py`; it is used
-  automatically whenever present (`FLIPJUMP_NO_NATIVE=1` disables it).
+  already has it. it is used automatically whenever present (`FLIPJUMP_NO_NATIVE=1` disables it).
 - **The fast loop** (~4M fj-ops/s) - pure Python, the fallback when the native engine isn't built.
 - **The featured loop** - used for `--trace`/breakpoints, or with `--profile` for the full
   per-op statistics (flips/jumps percentages).
@@ -167,7 +165,7 @@ w=32-vs-w=64 recommendation are recorded in [tests/benchmarks/benchmark_results.
 </details>
 
 <details>
-<summary><b>IO devices</b> — pluggable input/output, including an interactive screen window and a keyboard.</summary>
+<summary><b>IO devices 🖥️</b> — pluggable input/output, including an interactive screen window and a keyboard.</summary>
 
 The interpreter's IO is pluggable: `--io MODE` picks one complete IO device.
 
@@ -220,6 +218,7 @@ _You can also use the `flipjump.assemble_run_according_to_cmd_line_args(cmd_line
   - [flipjump_cli.py](flipjump/flipjump_cli.py) - Main CLI script fot the FlipJump Assembler & Interpreter.
   - [fjm/](flipjump/fjm) - Tools for reading/writing .fjm (flipjump-memory) files.
   - [interpreter/fjm_run.py](flipjump/interpreter/fjm_run.py) - Interpreter + debugger for assembled fj files.
+  - [interpreter/_fjcore.c](flipjump/interpreter/_fjcore.c) - The optional native engine: the run-loop in C (~100x faster than the pure-python loop).
   - [assembler/](flipjump/assembler) - Components for assembling FlipJump code.
     - [fj_parser.py](flipjump/assembler/fj_parser.py) - Pythonic lex/yacc parser.
     - [preprocessor.py](flipjump/assembler/preprocessor.py) - Unwinds all macros and reps (repetitions).
