@@ -87,8 +87,6 @@ class TerminationStatistics:
             jumps_percentage = self.jump_counter / self.op_counter * 100
             flips_jumps_str = f'; {flips_percentage:.2f}% flips, {jumps_percentage:.2f}% jumps'
 
-        storage_str = f'; {self.storage_mode} memory' if self.storage_mode else ''
-
         last_ops_str = ''
         output_str = ''
         if TerminationCause.Looping != self.termination_cause:
@@ -126,7 +124,6 @@ class TerminationStatistics:
             f'('
             f'{self.op_counter:,} ops executed'
             f'{flips_jumps_str}'
-            f'{storage_str}'
             f').'
             f'{last_ops_str}'
         )

@@ -29,6 +29,11 @@ class StandardIO(IODevice):
         self.current_output_byte = 0
         self.bits_to_write_in_output_byte = 0
 
+    @property
+    def outputs_live(self) -> bool:
+        # when verbose, write_bit prints each byte to stdout during the run
+        return self.output_verbose
+
     def read_bit(self) -> bool:
         if 0 == self.bits_to_read_in_input_byte:
             read_bytes = stdin.read(1).encode(encoding=IO_BYTES_ENCODING)

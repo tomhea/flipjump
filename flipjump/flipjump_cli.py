@@ -393,6 +393,8 @@ def get_argument_parser() -> argparse.ArgumentParser:
         '// assemble without the standard library, 32 bit memory\n\n'
         '  fj --run  prog.fjm                                 // just run\n'
         '  fj --run  o.fjm  -d dir/debug.fjd  -B label        // run and debug\n ',
+        epilog="note: the run-time printed on the 'Finished by ...' line is compute-only - "
+        "time spent in IO (input/output) is excluded.",
     )
 
 

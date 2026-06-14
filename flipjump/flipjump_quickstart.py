@@ -168,9 +168,10 @@ def debug(
         flat_max_words=flat_max_words,
     )
     if print_termination:
-        termination_statistics.print(
-            labels_handler=breakpoint_handler, output_to_print=io_device.get_output(allow_incomplete_output=True)
-        )
+        # devices that echo output live (e.g. verbose StandardIO) already showed it during the
+        # run - don't re-dump the buffered output in the termination summary.
+        output_to_print = None if io_device.outputs_live else io_device.get_output(allow_incomplete_output=True)
+        termination_statistics.print(labels_handler=breakpoint_handler, output_to_print=output_to_print)
 
     return termination_statistics
 
