@@ -21,8 +21,8 @@ cross-referenced to a D-item. The U#/G#/S#/OQ# codes used as shorthand throughou
 **defined in Part II.**
 
 **Where the work happens:** the game lives in the **`tomhea/doom-flipjump`** companion repo. The
-`flipjump` package (`>=1.5.0`, `[io]` extra for the pygame device) is a pinned dependency — we do not
-modify it except via its own finish-up handoff. Sessions working on the game need that repo in scope
+`flipjump` package (`>=1.5.0`, released on PyPI; `[io]` extra for the pygame device) is a pinned
+dependency we treat as frozen — we do not modify it. Sessions working on the game need that repo in scope
 (and the `flipjump-dev` skill installed, or clone `tomhea/skills` and read
 `plugins/flipjump/skills/flipjump-dev/SKILL.md` + `reference/`).
 
@@ -79,30 +79,37 @@ modify it except via its own finish-up handoff. Sessions working on the game nee
 
 - **PR #1** holds `fixed_point.fj` (`hex.fixed_mul`/`fixed_div`: 16.16 = n8/f4, 8.8 = n4/f2), the
   **LUT generator** (`lut_generator.py`), and their tests — relocated out of the flipjump repo.
-  Independent of flipjump#354; mergeable once 1.5.0 is tagged. **It is the first execution item (§9),
-  and it enters through a CR loop, into the directory structure WE design (§7), not the PR's paths.**
+  Independent of flipjump#354; **mergeable now that 1.5.0 is released.** It is the first execution item
+  (§9), and it enters through a CR loop, into the directory structure WE design (§7), not the PR's paths.
 - The LUT generator currently emits **data tables**; it must learn to emit **dispatch-code tables**
   (§3.2) — that upgrade is part of the repo bootstrap.
 
-### 1.3 flipjump finish-up tasks the game depends on (upstream, not game work)
+### 1.3 What 1.5.0 shipped (the upstream gate is now cleared)
 
-A handful of flipjump-side "finish-up" work items sit *upstream* of the game on the dependency chain
-(referenced as WI-* in §8/§10). They are not doom work — they live in the flipjump repo's own finish-up
-handoff — but the game's start gates on the 1.5.0 tag that includes them, and two of them
-(WI-E, WI-G2) directly affect game risks:
+**flipjump 1.5.0 is released on PyPI (abi3 wheels, py3.10+) and fjdocs is current for it** — so the
+"wait for the 1.5.0 tag / finish-up" gate the earlier draft carried is **closed**. Of the flipjump-side
+work items the game leaned on (referenced as WI-* in §8/§10), all but one are in the release:
 
-- **WI-E — assembler speedup (load-bearing for R-2).** Macro-resolve + create-binary dominate assemble
-  time (not parsing); the column-unroll + mega-dispatch-table program is exactly WI-E's mega-LUT
-  benchmark workload. If it underdelivers, the game leans harder on §3.1(a) (column buffer) over (b).
-- **WI-F — jump-target speculation *measurement*.** Measures the studied speculation tier's feasibility
-  (the engine itself is unbuilt — Part B). **The game treats any speculation win as headroom, never a
-  dependency**; budget against today's ~280–334M.
-- **WI-G — raw-frame present (`0x05`) + stride-correct `update_rectangle`.** Shipped; the game uses the
-  memory-hook `update_screen` (`0x03`) as primary and may use `0x05` only as a purist fallback.
-- **WI-G2 — flat-storage configurability + `storage_mode` observability (affects R-3).** Makes the flat
-  limit configurable (`--flat-max-words` / env / API) and the flat-vs-paged mode reportable, so "the game
-  runs flat" is *verifiable*, not assumed.
-- **WI-H — the 1.5.0 release/tag** the game pins (`flipjump>=1.5.0`, abi3 wheels).
+- **WI-E — assembler speedup → SHIPPED** (1.5–7× faster; macro-resolve + create-binary dominate, not
+  parsing). Still *load-bearing for R-2*: the column-unroll + mega-dispatch-table program is exactly its
+  mega-LUT workload, so R-2 is now "does the *shipped* assembler hold up on a game-scale program?", a
+  thing to **measure**, not wait for. If it underdelivers, the game leans on §3.1(a) over (b).
+- **WI-G — raw-frame present (`0x05`) + stride-correct `update_rectangle` → SHIPPED.** The game uses the
+  memory-hook `update_screen` (`0x03`) as primary; `0x05` only as a purist fallback.
+- **WI-G2 — flat-storage configurability + `storage_mode` observability → SHIPPED** (`--flat-max-words` /
+  `FLIPJUMP_FLAT_MAX_WORDS` / API; flat-vs-paged reported in `TerminationStatistics`), so "the game runs
+  flat" is *verifiable*, not assumed (R-3 guard).
+- **WI-H — the 1.5.0 release/tag → DONE.** Pin `flipjump>=1.5.0`; plain `pip install` gets the native
+  engine on Linux/macOS/Windows.
+- **WI-F — jump-target speculation → NOT in 1.5.0** ("planned, not yet landed"). It was always **headroom,
+  never a dependency**: budget against today's ~280–334M flat; treat any future speculation win
+  (~450–600M) as extra resolution/framerate. This is the *only* upstream item still outstanding, and the
+  game does not gate on it.
+
+**Net:** nothing upstream blocks starting the game. The critical path is entirely game code now —
+fixed-point layer (PR #1) → framebuffer renderer → tic-based input loop — all testable headless against
+the released 1.5.0 interpreter. fjdocs (`fjdocs.tomhe.app`) is the authoritative macro/CLI reference;
+prefer it over memory for any signature.
 
 ### 1.4 What the old plan got that 1.5.0 deleted (the delta table)
 
@@ -384,8 +391,8 @@ measurement stages (D2's R1 experiment) come before the designs they decide. Exp
 non-binding — Stage 4 formalizes it):
 
 ```
-flipjump 1.5.0 tagged (incl. finish-up §1.3: WI-E assembler, WI-F speculation
-                       measurement, WI-G raw-frame, WI-G2 flat config, WI-H release)
+flipjump 1.5.0 RELEASED ✓ (assembler speedup, raw-frame, flat-config, native
+                          engine all shipped; only speculation WI-F is future headroom)
         │
         ▼
 S5.0  PR #1 CR-loop → fixed_point + LUT generator land in the designed tree
@@ -411,7 +418,7 @@ Procedure:
    D15 API decisions.
 2. Post findings as a CR; iterate with the owner until **approved** — a real loop, not one pass.
 3. Relocate the files into the Stage-3 tree (**not** the PR's stated paths) as part of the merge.
-4. Merge gates: flipjump 1.5.0 is tagged (the PR is independent of flipjump#354 but builds on the
+4. Merge gates: flipjump 1.5.0 is released ✓ (the PR is independent of flipjump#354 but builds on the
    released package); all PR tests green in the doom-flipjump CI.
 
 Only after this lands does S5.1+ execution begin.
@@ -425,17 +432,19 @@ Only after this lands does S5.1+ execution begin.
   but not infinite. Fallbacks: flat-shaded / 12.5fps.
 - **R-2 — Assembler scalability is now load-bearing** (upgraded from the old plan's informational
   R-C). Column-unroll + mega dispatch tables make the program large (hundreds of KB of ops → a few
-  MB); the build leans on the 1.5.0 assembler speedup (whose mega-LUT benchmark *is* the game-shaped
-  workload) and on flipjump finish-up WI-E. If assemble time still kills the TDD loop, design (a)
-  (column buffer) is the relief valve.
+  MB); the build leans on the **shipped** 1.5.0 assembler speedup (whose mega-LUT benchmark *is* the
+  game-shaped workload). Now a thing to **measure** at game scale (S5.1/S5.3), not await; if assemble
+  time still kills the TDD loop, design (a) (column buffer) is the relief valve.
 - **R-3 — Span vs flat path.** Power-of-two table padding can balloon the address span past the flat
   limit silently → paged mode → ~2.5× slowdown. The span ledger + `storage_mode` assertion are the
   guards.
 - **R-4 — D3 encoding tension** (hex-memory pixels vs packed-byte device read) is a real
   contradiction candidate that touches device, store layer, and present path — resolve early, in the
   design doc, not in code.
-- **R-5 — flipjump finish-up timing.** S5.0 gates on the 1.5.0 tag; WI-E/WI-G2 affect R-2/R-3. Track
-  the finish-up handoff's status at session start.
+- **R-5 — (cleared) flipjump release timing.** 1.5.0 is released, so S5.0 no longer waits on a tag; the
+  only outstanding upstream item is the speculation engine (WI-F), which is headroom, not a dependency.
+  Residual: R-2/R-3 now depend on the *shipped* assembler + flat-config behaving at game scale — measured,
+  not awaited.
 - **R-6 — Fidelity unknowns carried over:** 8.8 wobble (D6), 32×32→64 intermediates (U5), `@` growth
   with program size (U7) — all old-plan risks that survive re-baselining, now with much more headroom.
 
