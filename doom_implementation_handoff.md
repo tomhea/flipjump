@@ -453,7 +453,7 @@ Only after this lands does S5.1+ execution begin.
 ## 11. Session bootstrap (for whoever picks this up)
 
 1. Repo scope: get `tomhea/doom-flipjump` added to the session (game work happens there;
-   `tomhea/flip-jump` is reference/dependency only).
+   `tomhea/flipjump` is reference/dependency only).
 2. `pip install "flipjump[io]>=1.5.0"` (abi3 wheels include the native engine); verify with a
    benchmark run + `storage_mode` report.
 3. flipjump-dev skill: `/plugin marketplace add tomhea/skills` + `/plugin install flipjump@tomhe`;
