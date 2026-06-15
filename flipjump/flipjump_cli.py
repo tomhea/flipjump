@@ -16,7 +16,11 @@ from flipjump.assembler import assembler
 from flipjump.fjm.fjm_consts import FJMVersion, SUPPORTED_VERSIONS_NAMES
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter.io_devices.cli_devices import IO_MODES, make_io_device, split_io_mode
-from flipjump.utils.constants import LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH, DEFAULT_MAX_MACRO_RECURSION_DEPTH
+from flipjump.utils.constants import (
+    LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
+    DEFAULT_MAX_MACRO_RECURSION_DEPTH,
+    FLIPJUMP_VERSION,
+)
 from flipjump.utils.exceptions import IODeviceException
 from flipjump.utils.functions import get_file_tuples, get_temp_directory_suffix
 
@@ -340,6 +344,13 @@ def add_universal_arguments(parser: argparse.ArgumentParser) -> None:
     @param parser: the parser
     """
     parser.add_argument('files', help="the .fj files to assemble (if run-only, the .fjm file to run)", nargs='+')
+    parser.add_argument(
+        '-V',
+        '--flipjump_version',
+        action='version',
+        version=f'flipjump {FLIPJUMP_VERSION}',
+        help="show the installed flipjump version and exit",
+    )
     parser.add_argument(
         '-s', '--silent', action='store_true', help="don't show assemble & run times, and run statistics"
     )

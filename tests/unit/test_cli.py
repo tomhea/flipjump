@@ -144,3 +144,14 @@ def test_cli_no_output_flag_is_gone(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(HELLO_NO_STL.read_text(), tmp_path)
     with pytest.raises(SystemExit):
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', '--no_output', str(fjm_path)])
+
+
+@pytest.mark.parametrize('flag', ['-V', '--flipjump_version'])
+def test_cli_flipjump_version_flag(flag: str, capsys: pytest.CaptureFixture[str]) -> None:
+    # -V / --flipjump_version print the package version and exit 0, before the required `files` positional.
+    from flipjump import __version__
+
+    with pytest.raises(SystemExit) as exc_info:
+        parse_arguments(cmd_line_args=[flag])
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out.strip() == f'flipjump {__version__}'

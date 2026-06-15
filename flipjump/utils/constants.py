@@ -7,8 +7,14 @@ compression settings, and the paths to the bundled standard library (stl).
 from __future__ import annotations
 
 import lzma
+from importlib.metadata import version as _package_version, PackageNotFoundError
 from pathlib import Path
 from typing import List, Dict
+
+try:
+    FLIPJUMP_VERSION = _package_version('flipjump')
+except PackageNotFoundError:  # running from a source tree without an installed distribution
+    FLIPJUMP_VERSION = 'unknown'
 
 MACRO_SEPARATOR_STRING = "---"
 STARTING_LABEL_IN_MACROS_STRING = ':start:'
