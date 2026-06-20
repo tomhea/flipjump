@@ -12,9 +12,10 @@ i.e. memory_width/8 bytes):
   [0x03][screen_fj_bit_address:w/8]                     update_screen (presents a frame)
   [0x04][x:2][y:2][rect_w:2][rect_h:2][screen_addr:w/8] update_rectangle (presents a frame)
   [0x05][width*height pixel bytes]                      update_screen_raw (presents a frame)
+  [0x06][screen_fj_bit_address:w/8]                     update_screen_reg (presents a frame; fj 1.5.1)
 
-the memory-hook commands (update_screen/update_rectangle) are the primary path - reading
-the framebuffer straight out of program memory is DMA-like, ~free for the fj program.
+the memory-hook commands (update_screen/update_rectangle/update_screen_reg) are the primary
+path - reading the framebuffer straight out of program memory is DMA-like, ~free for the fj program.
 update_screen_raw is the no-memory-hook alternative: the full frame's pixel bytes arrive
 in-stream (row-major, one byte each, masked to bpp bits), so it works without
 attach_memory - at the cost of the program outputting every pixel byte each frame.
@@ -23,6 +24,12 @@ it requires a prior init_screen (the pixel count defines the command length).
 memory layout contracts (op-structured "packed bytes", one byte per fj-op, stride dw):
   framebuffer: pixel (px, py) is the packed byte at screen_address + (px + py*width)*dw,
     masked to bpp bits (bpp is 4 or 8 - the palette-index width).
+  update_screen_reg (0x06, fj 1.5.1, bpp 8): the REGISTER-form framebuffer - each pixel is a
+    hex.vec 2 (TWO ops, not one packed byte): the low nibble in op (2k) and the high nibble in
+    op (2k+1), so pixel k is read from screen_address + 2k*dw (low) and +(2k+1)*dw (high). This
+    is the format a `.lookup`/colormap writes DIRECTLY (its result-copy is register-form), so the
+    renderer skips the pack/deposit step that the 0x03 packed framebuffer needs per pixel (DESIGN
+    section 2.1: "two 4-bpp ops as one 8-bpp pixel - hex.vec 2 framebuffer device-direct").
   update_rectangle reads the same full-screen framebuffer (the address is the screen base,
     not the rectangle's): its source for row i is rect_width packed bytes starting at pixel
     (x + (y+i)*width) - so it never reads pixels outside the [x, x+rect_w) x [y, y+rect_h) box.
@@ -51,6 +58,7 @@ CMD_SET_PALETTE = 0x02
 CMD_UPDATE_SCREEN = 0x03
 CMD_UPDATE_RECTANGLE = 0x04
 CMD_UPDATE_SCREEN_RAW = 0x05
+CMD_UPDATE_SCREEN_REG = 0x06  # fj 1.5.1: hex.vec-2 (register-form) framebuffer, two 4-bit ops/pixel (DESIGN section 2.1)
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
@@ -121,7 +129,7 @@ class InMemoryScreen(IODevice):
     def _command_length(self, command: int) -> int:
         if command == CMD_INIT_SCREEN:
             return 1 + 2 + 2 + 1 + 2
-        if command in (CMD_SET_PALETTE, CMD_UPDATE_SCREEN):
+        if command in (CMD_SET_PALETTE, CMD_UPDATE_SCREEN, CMD_UPDATE_SCREEN_REG):
             return 1 + self._address_bytes()
         if command == CMD_UPDATE_RECTANGLE:
             return 1 + 2 + 2 + 2 + 2 + self._address_bytes()
@@ -154,6 +162,8 @@ class InMemoryScreen(IODevice):
             self._set_palette(self._read_address(payload, 0))
         elif command == CMD_UPDATE_SCREEN:
             self._update_screen(self._read_address(payload, 0))
+        elif command == CMD_UPDATE_SCREEN_REG:
+            self._update_screen_reg(self._read_address(payload, 0))
         elif command == CMD_UPDATE_RECTANGLE:
             self._update_rectangle(
                 self._u16(payload, 0),
@@ -197,6 +207,30 @@ class InMemoryScreen(IODevice):
         pixel_mask = (1 << self.bpp) - 1
         raw = self._read_packed_bytes(screen_bit_address, self.width * self.height)
         self.pixel_indices = [pixel & pixel_mask for pixel in raw]
+        self._present()
+
+    def _read_reg_bytes(self, first_op_bit_address: int, count: int) -> List[int]:
+        """read `count` REGISTER-form palette bytes (fj 1.5.1): each pixel is a hex.vec 2 (two ops) -
+        the low nibble in op (2k), the high nibble in op (2k+1) - combined into one 8-bit value. this
+        is the layout a `.lookup`/colormap result-copy writes directly (no pack/deposit step)."""
+        if self.device_memory is None:
+            raise IODeviceException('the screen device is not attached to the interpreter memory')
+        dw = 2 * self.device_memory.memory_width
+        out = []
+        for k in range(count):
+            lo = self.device_memory.read_data_byte(first_op_bit_address + (2 * k) * dw) & 0xF
+            hi = self.device_memory.read_data_byte(first_op_bit_address + (2 * k + 1) * dw) & 0xF
+            out.append(lo | (hi << 4))
+        return out
+
+    def _update_screen_reg(self, screen_bit_address: int) -> None:
+        """present a hex.vec-2 (register-form) framebuffer: two 4-bit ops per pixel (low, high). bpp
+        must be 8 (the register byte is two nibbles). DESIGN section 2.1 device extension."""
+        self._require_initialized_screen()
+        if self.bpp != 8:
+            raise IODeviceException(f'update_screen_reg (0x06) requires bpp 8, got {self.bpp}')
+        raw = self._read_reg_bytes(screen_bit_address, self.width * self.height)
+        self.pixel_indices = [pixel & 0xFF for pixel in raw]
         self._present()
 
     def _update_screen_raw(self, pixels: List[int]) -> None:
