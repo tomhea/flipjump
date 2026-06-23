@@ -1,5 +1,5 @@
-# Show statistics for FlipJump files (as Text files, until FlipJump is Supported in linguist/lib/linguist/languages.yml).
-*.fj linguist-language=Text linguist-detectable
+# Show statistics for FlipJump files (as Assembly files, until FlipJump is Supported in linguist/lib/linguist/languages.yml).
+*.fj linguist-language=Assembly linguist-detectable=true
 
 # Catalog test fixtures must round-trip as raw bytes (no CRLF translation).
 # Pytest's internal harness reads these files byte-for-byte and compares
