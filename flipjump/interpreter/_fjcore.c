@@ -133,6 +133,12 @@ typedef struct {
     int flat_covers_all; /* 1: every segment fits in the flat window ('flat'); 0 with a
                             non-NULL flat: low window flat, the rest paged ('hybrid') */
 
+    /* freeze()/reset(): a memcpy snapshot of the pristine flat image, so a caller that runs
+       the SAME self-modifying program many times (doom-flipjump's per-frame walker) restores
+       it in one memcpy instead of re-loading tens of millions of words through set_words */
+    uint64_t* pristine;
+    uint64_t pristine_count;
+
     int mem_error;            /* set when garbage_stop fired */
     uint64_t error_bit_address;
 
@@ -606,6 +612,8 @@ static void mem_free_allocations(MemoryObject* self)
     }
     free(self->flat);
     self->flat = NULL;
+    free(self->pristine);
+    self->pristine = NULL;
     free(self->segments);
     self->segments = NULL;
 }
@@ -645,6 +653,8 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->flat_max_words = flat_max_words;
     self->storage_decided = 0;
     self->flat_covers_all = 0;
+    self->pristine = NULL;
+    self->pristine_count = 0;
     self->mem_error = 0;
     self->error_bit_address = 0;
     self->last_run_op_count = 0;
@@ -1394,6 +1404,59 @@ static PyObject* build_run_result(MemoryObject* self, int cause, uint64_t ops, u
 /* the run loop.
    run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0)
    -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds) */
+/* freeze(): decide the storage mode NOW (building the flat image from the loaded pages,
+   exactly as the first run would) and capture it as the pristine snapshot for reset().
+   Canonical use (doom-flipjump's per-frame walker): add_segment -> set_words -> freeze() ->
+   then per frame reset() + run(). Pure-flat programs only: a hybrid/paged snapshot would
+   also need the page tables, and the walker's programs are all 'flat'. */
+static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
+{
+    if (mem_decide_storage(self) < 0) {
+        return NULL;
+    }
+    if (!self->flat || !self->flat_covers_all) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "freeze() requires pure flat storage ('flat' mode) - raise flat_max_words");
+        return NULL;
+    }
+    if (!self->pristine) {
+        self->pristine = (uint64_t*)malloc((size_t)self->flat_count * sizeof(uint64_t));
+        if (!self->pristine) {
+            return PyErr_NoMemory();
+        }
+    }
+    memcpy(self->pristine, self->flat, (size_t)self->flat_count * sizeof(uint64_t));
+    self->pristine_count = self->flat_count;
+    Py_RETURN_NONE;
+}
+
+/* reset(): restore the frozen image - one memcpy instead of re-loading every word through
+   set_words - and drop all pages (device/API memory above the segments, dirtied by the
+   previous run's IO device), so a rerun starts from the exact frozen state. */
+static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
+{
+    if (!self->pristine || !self->flat || self->pristine_count != self->flat_count) {
+        PyErr_SetString(PyExc_RuntimeError, "reset() needs a prior freeze()");
+        return NULL;
+    }
+    memcpy(self->flat, self->pristine, (size_t)self->flat_count * sizeof(uint64_t));
+    if (self->slots) {
+        for (uint64_t i = 0; i < self->slot_count; i++) {
+            if (self->slots[i].key_plus1) {
+                free(self->slots[i].page->words);
+                free(self->slots[i].page);
+                self->slots[i].key_plus1 = 0;
+                self->slots[i].page = NULL;
+            }
+        }
+        self->slots_used = 0;
+    }
+    memset(self->page_cache_key_plus1, 0, sizeof(self->page_cache_key_plus1));
+    self->mem_error = 0;
+    self->error_bit_address = 0;
+    Py_RETURN_NONE;
+}
+
 static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
 {
     static char* kwlist[] = {"read_bit", "write_bit", "eof_exception_type", "last_ops_length", "start_ip", NULL};
@@ -1573,6 +1636,10 @@ static PyMethodDef Memory_methods[] = {
     {"set_word", (PyCFunction)Memory_set_word, METH_VARARGS, "set_word(word_address, value)"},
     {"get_word", (PyCFunction)Memory_get_word, METH_VARARGS, "get_word(word_address) -> value"},
     {"set_words", (PyCFunction)Memory_set_words, METH_VARARGS, "set_words(start_word_address, values)"},
+    {"freeze", (PyCFunction)Memory_freeze, METH_NOARGS,
+     "freeze() - decide storage (building the flat image) and snapshot it as the pristine copy"},
+    {"reset", (PyCFunction)Memory_reset, METH_NOARGS,
+     "reset() - restore the frozen pristine image (one memcpy) and drop device/API pages"},
     {"run", (PyCFunction)Memory_run, METH_VARARGS | METH_KEYWORDS,
      "run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0)\n"
      "-> (termination_cause, op_count, error_bit_address_or_None, last_ops, paused_seconds)"},
