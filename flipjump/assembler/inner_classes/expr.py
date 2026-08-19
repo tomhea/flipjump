@@ -57,6 +57,15 @@ class Expr:
     The python representation of a .fj expression (from labels, consts and math-ops)
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__. MEASURED: assembling a 129 MB program
+    # peaks at ~13.6 GB on a 16.8 GB machine and PAGES -- every CPU model says the build
+    # should take ~800 s and it takes 6,332-8,054 s. This class is instantiated millions of
+    # times (the real program has 24.4M labels and ~42M ops), and without __slots__ each
+    # instance carries a per-object __dict__. This is a pure memory-layout change: no
+    # attribute is added, removed or renamed, so emission is unaffected -- asserted by
+    # sha256 of the .fjm (scratchpad/asm_bench.py, which ships a negative control).
+    __slots__ = ('value',)
+
     def __init__(self, expr: Union[int, str, Tuple[str, Tuple[Expr, ...]]]):
         self.value = expr
 

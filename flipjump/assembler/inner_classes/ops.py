@@ -16,7 +16,12 @@ from flipjump.utils.exceptions import FlipJumpExprException
 from flipjump.assembler.inner_classes.expr import Expr
 
 
-@dataclass
+# PERF (doom-flipjump, 2026-08-20): slots=True. CodePosition is attached to EVERY op,
+# so on the real program (~42M ops) its per-instance __dict__ is one of the largest
+# single memory costs -- and the pipeline pages at scale. dataclass(slots=True) is a
+# layout change only; the field set is unchanged and emission is asserted identical by
+# .fjm sha256.
+@dataclass(slots=True)
 class CodePosition:
     """
     A position in the .fj files.
@@ -40,6 +45,10 @@ class MacroName:
     """
     Unique for every macro definition.
     """
+
+    # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
+    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
+    __slots__ = ('name', 'parameter_num',)
 
     def __init__(self, name: str, parameter_num: int = 0):
         self.name = name
@@ -74,6 +83,16 @@ class FlipJump:
     The python representation of the "flip; jump" fj-assembly op.
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
+    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
+    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
+    # classes are instantiated millions of times, and without __slots__ each instance
+    # carries a per-object __dict__. No attribute is added, removed or renamed, so
+    # emission is unaffected -- asserted by sha256 of the .fjm.
+    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
+    # attempt guessed WordFlip's fields and broke the parser at once.
+    __slots__ = ('flip', 'jump', 'code_position',)
+
     def __init__(self, flip: Expr, jump: Expr, code_position: CodePosition):
         self.flip = flip
         self.jump = jump
@@ -102,6 +121,16 @@ class WordFlip:
     """
     The python representation of the "wflip address, value [, return_address]" fj-assembly op.
     """
+
+    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
+    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
+    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
+    # classes are instantiated millions of times, and without __slots__ each instance
+    # carries a per-object __dict__. No attribute is added, removed or renamed, so
+    # emission is unaffected -- asserted by sha256 of the .fjm.
+    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
+    # attempt guessed WordFlip's fields and broke the parser at once.
+    __slots__ = ('word_address', 'flip_value', 'return_address', 'code_position',)
 
     def __init__(self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition):
         self.word_address = word_address
@@ -149,6 +178,16 @@ class Pad:
     The python representation of the "pad ops_alignment" fj-assembly op.
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
+    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
+    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
+    # classes are instantiated millions of times, and without __slots__ each instance
+    # carries a per-object __dict__. No attribute is added, removed or renamed, so
+    # emission is unaffected -- asserted by sha256 of the .fjm.
+    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
+    # attempt guessed WordFlip's fields and broke the parser at once.
+    __slots__ = ('ops_alignment', 'code_position',)
+
     def __init__(self, ops_alignment: Expr, code_position: CodePosition):
         self.ops_alignment = ops_alignment
         self.code_position = code_position
@@ -174,6 +213,16 @@ class Segment:
     The python representation of the "segment start_address" fj-assembly op.
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
+    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
+    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
+    # classes are instantiated millions of times, and without __slots__ each instance
+    # carries a per-object __dict__. No attribute is added, removed or renamed, so
+    # emission is unaffected -- asserted by sha256 of the .fjm.
+    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
+    # attempt guessed WordFlip's fields and broke the parser at once.
+    __slots__ = ('start_address', 'code_position',)
+
     def __init__(self, start_address: Expr, code_position: CodePosition):
         self.start_address = start_address
         self.code_position = code_position
@@ -198,6 +247,16 @@ class Reserve:
     """
     The python representation of the "reserve bit_size" fj-assembly op.
     """
+
+    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
+    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
+    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
+    # classes are instantiated millions of times, and without __slots__ each instance
+    # carries a per-object __dict__. No attribute is added, removed or renamed, so
+    # emission is unaffected -- asserted by sha256 of the .fjm.
+    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
+    # attempt guessed WordFlip's fields and broke the parser at once.
+    __slots__ = ('reserved_bit_size', 'code_position',)
 
     def __init__(self, reserved_bit_size: Expr, code_position: CodePosition):
         self.reserved_bit_size = reserved_bit_size
@@ -344,6 +403,16 @@ class Label:
     The python representation of the "label:" fj-assembly op.
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
+    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
+    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
+    # classes are instantiated millions of times, and without __slots__ each instance
+    # carries a per-object __dict__. No attribute is added, removed or renamed, so
+    # emission is unaffected -- asserted by sha256 of the .fjm.
+    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
+    # attempt guessed WordFlip's fields and broke the parser at once.
+    __slots__ = ('name', 'code_position',)
+
     def __init__(self, name: str, code_position: CodePosition):
         self.name = name
         self.code_position = code_position
@@ -403,6 +472,10 @@ class NewSegment:
      of the "segment start_address" fj-assembly op.
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
+    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
+    __slots__ = ('start_address', 'wflip_start_address',)
+
     def __init__(self, start_address: int):
         """
         @param start_address: the first address of the new segment
@@ -418,6 +491,10 @@ class ReserveBits:
     The python expressions-resolved (all compilation data is known) representation
      of the "reserve bit_size" fj-assembly op.
     """
+
+    # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
+    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
+    __slots__ = ('first_address_after_reserved',)
 
     def __init__(self, first_address_after_reserved: int):
         """
