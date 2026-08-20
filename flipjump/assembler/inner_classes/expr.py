@@ -146,7 +146,14 @@ class Expr:
 
         op, args = value
         try:
-            return op_string_to_function[op](*(e.exact_eval(labels) for e in args))
+            # PERF (doom-flipjump, 2026-08-20): the binary case is spelled out. Nearly every fj
+            # operator is binary, and `f(*(e.exact_eval(labels) for e in args))` paid for a whole
+            # generator frame per expression NODE to deliver two values -- 17.0 s of a 321.7 s
+            # labels-resolve on the doom-flipjump program. Unary/ternary keep the general path.
+            if len(args) == 2:
+                first, second = args
+                return op_string_to_function[op](first.exact_eval(labels), second.exact_eval(labels))
+            return op_string_to_function[op](*[e.exact_eval(labels) for e in args])
         except FlipJumpExprException:
             raise
         except Exception as e:

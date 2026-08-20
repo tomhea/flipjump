@@ -38,6 +38,7 @@ def assemble(
     show_statistics: bool = False,
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
+    lzma_fast: bool = False,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -52,11 +53,13 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param lzma_fast: compress the .fjm with the fast match finder. Encoder-only, so the result is
+    readable by any reader; much faster to write, ~33% larger on disk.
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
     file_tuples = get_file_tuples([str(fj_file.absolute()) for fj_file in fj_file_paths], no_stl=not use_stl)
-    fjm_writer = Writer(output_fjm_path, memory_width, fjm_version)
+    fjm_writer = Writer(output_fjm_path, memory_width, fjm_version, lzma_fast=lzma_fast)
     assembler.assemble(
         file_tuples,
         memory_width,

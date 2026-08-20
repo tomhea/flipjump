@@ -48,11 +48,16 @@ class MacroName:
 
     # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
     # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    __slots__ = ('name', 'parameter_num',)
+    # PERF (doom-flipjump, 2026-08-20): `_hash` is a cached field, not a new attribute of the
+    # concept -- MacroName is immutable in practice (nothing ever rebinds .name/.parameter_num),
+    # and it is the key of the `macros` dict, looked up twice per macro expansion (~3.4M times on
+    # the doom-flipjump program). Both __hash__ and __eq__ used to build a fresh tuple per call.
+    __slots__ = ('name', 'parameter_num', '_hash',)
 
     def __init__(self, name: str, parameter_num: int = 0):
         self.name = name
         self.parameter_num = parameter_num
+        self._hash = hash((name, parameter_num))
 
     def __str__(self) -> str:
         if 0 == self.parameter_num:
@@ -63,10 +68,14 @@ class MacroName:
         return self.name, self.parameter_num
 
     def __hash__(self) -> int:
-        return hash(self.to_tuple())
+        return self._hash
 
     def __eq__(self, other: Any) -> bool:
-        return isinstance(other, MacroName) and self.to_tuple() == other.to_tuple()
+        # field-wise, but exactly equivalent to `isinstance(other, MacroName) and
+        # self.to_tuple() == other.to_tuple()` -- tuple comparison is element-wise in this order.
+        if isinstance(other, MacroName):
+            return self.name == other.name and self.parameter_num == other.parameter_num
+        return False
 
     def __repr__(self) -> str:
         return str(self)
@@ -283,6 +292,11 @@ class MacroCall:
     The python representation of the "macro-call [args...]" fj-assembly op.
     """
 
+    # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
+    # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
+    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
+    __slots__ = ('macro_name', 'arguments', 'code_position',)
+
     def __init__(self, macro_name: str, arguments: List[Expr], code_position: CodePosition):
         self.macro_name = MacroName(macro_name, len(arguments))
         self.arguments = arguments
@@ -307,6 +321,21 @@ class RepCall:
     """
     The python representation of the "rep(n, i) macro_call [args...]" fj-assembly op.
     """
+
+    # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
+    # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
+    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
+    # `current_index` and `source_iterator_name` are assigned outside __init__ (by the preprocessor
+    # and by rename_iterator respectively) -- both are listed, or those assignments would raise.
+    __slots__ = (
+        'current_index',
+        'repeat_times',
+        'iterator_name',
+        'source_iterator_name',
+        'macro_name',
+        'arguments',
+        'code_position',
+    )
 
     def __init__(
         self,
@@ -459,6 +488,19 @@ class Macro:
     namespace: str
     code_position: CodePosition
 
+    # PERF (doom-flipjump, 2026-08-20): [(f'{namespace}.{name}', name)] for every parameter and
+    # local-parameter, derived ONCE here at macro-DEFINITION time. get_params_dictionary() used to
+    # rebuild that f-string on every macro EXPANSION -- ~5M string formats on the doom-flipjump
+    # program, all of them recomputing the same few hundred names. Empty when the macro has no
+    # namespace. Safe to cache: a Macro is built once by the parser from fresh lists and never
+    # mutated afterwards.
+    namespaced_params: List[Tuple[str, str]] = dataclasses.field(init=False, repr=False, default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.namespace:
+            namespace = self.namespace
+            self.namespaced_params = [(f'{namespace}.{name}', name) for name in (*self.params, *self.local_params)]
+
     def __repr__(self) -> str:
         return f'{self.namespace}.MACRO({", ".join(self.params)})  ({repr(self.code_position)})'
 
@@ -508,6 +550,11 @@ class Padding:
     The python expressions-resolved (all compilation data is known) representation
      of the "pad ops_alignment" fj-assembly op.
     """
+
+    # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
+    # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
+    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
+    __slots__ = ('ops_count',)
 
     def __init__(self, ops_count: int):
         """

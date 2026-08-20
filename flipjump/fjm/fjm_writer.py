@@ -5,7 +5,9 @@ and segments, and the metadata (flags) - with support for the different fjm vers
 and optional LZMA compression.
 """
 
+import array
 import lzma
+import sys
 from pathlib import Path
 from struct import pack
 from typing import List, Tuple
@@ -22,6 +24,45 @@ from flipjump.fjm.fjm_consts import (
     FJMVersion,
 )
 from flipjump.utils.exceptions import FlipJumpWriteFjmException
+
+
+# PERF (doom-flipjump, 2026-08-20): the word array's typecode per memory-width.
+# `array` typecodes are platform-sized, so the itemsize is CHECKED at runtime before use and the
+# code falls back to struct.pack when it does not match exactly (e.g. 'L' is 8 bytes on 64-bit
+# linux). Both paths produce identical bytes; this only decides which one is taken.
+_ARRAY_TYPECODE = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
+_STRUCT_FORMAT = {8: 'B', 16: 'H', 32: 'L', 64: 'Q'}
+
+
+def new_word_buffer(word_size: int) -> 'array.array[int] | List[int]':
+    """An empty, append-efficient buffer of `word_size`-bit words.
+
+    A typed array where the platform sizes the typecode exactly, else a plain list. Callers must
+    use .extend()/.append() rather than `+=` with a tuple, which arrays do not accept.
+    """
+    typecode = _ARRAY_TYPECODE[word_size]
+    return array.array(typecode) if array.array(typecode).itemsize * 8 == word_size else []
+
+
+def _pack_words_little_endian(words: 'array.array[int] | List[int]', word_size: int) -> bytes:
+    """Pack `words` as little-endian unsigned integers of `word_size` bits.
+
+    Byte-for-byte identical to struct.pack(f'<{len(words)}{fmt}', *words), which is what this
+    replaces. MEASURED (doom-flipjump, 2026-08-20): that call unpacked an 84.8M-element list as
+    *args, which builds an 84.8M-slot argument tuple purely to serialise it.
+    """
+    typecode = _ARRAY_TYPECODE[word_size]
+    if isinstance(words, array.array) and words.typecode == typecode:
+        buffer = words
+    elif array.array(typecode).itemsize * 8 == word_size:
+        buffer = array.array(typecode, words)
+    else:  # this platform sizes the typecode differently - take the portable path
+        struct_format = _STRUCT_FORMAT[word_size]
+        return pack(f'<{len(words)}{struct_format}', *words)
+    if sys.byteorder != 'little':
+        buffer = buffer[:]
+        buffer.byteswap()
+    return buffer.tobytes()
 
 
 class Writer:
@@ -42,6 +83,7 @@ class Writer:
         *,
         flags: int = 0,
         lzma_preset: int = lzma.PRESET_DEFAULT,
+        lzma_fast: bool = False,
     ):
         """
         the .fjm-file writer
@@ -50,6 +92,8 @@ class Writer:
         @param version: the file's version
         @param flags: the file's flags
         @param lzma_preset: the preset to be used when compressing the .fjm data
+        @param lzma_fast: compress with the fast match finder (encoder-only; same dict_size, so any
+        reader still reads it). Much faster, ~33% larger.
         """
         if memory_width not in SUPPORTED_MEMORY_WIDTHS:
             raise FlipJumpWriteFjmException(f"Word size {memory_width} is not in {sorted(SUPPORTED_MEMORY_WIDTHS)}.")
@@ -67,6 +111,7 @@ class Writer:
             else:
                 self.lzma_preset = lzma_preset
 
+        self.lzma_fast = lzma_fast
         self.output_file = output_file
         self.word_size = memory_width
         self.version = version
@@ -74,12 +119,23 @@ class Writer:
         self.reserved: int = 0
 
         self.segments: List[Tuple[int, int, int, int]] = []
-        self.data: List[int] = []  # words array
+        # PERF (doom-flipjump, 2026-08-20): a typed word array, not a list of python ints. It holds
+        # every word of the program -- 84.8M of them on the doom-flipjump build -- and as a list
+        # that is 8 bytes of pointer plus a 28-byte int object per word that is not in CPython's
+        # small-int cache. As an array it is word_size/8 bytes each, flat. Indexing still yields
+        # ints, so add_data / the v1 relative-jump patch / write_to_file are unchanged in behaviour.
+        # Falls back to a list if this platform sizes the typecode differently (see _ARRAY_TYPECODE).
+        typecode = _ARRAY_TYPECODE[memory_width]
+        self.data: 'array.array[int] | List[int]' = (
+            array.array(typecode) if array.array(typecode).itemsize * 8 == memory_width else []
+        )
 
     def _compress_data(self, data: bytes) -> bytes:
         try:
             return lzma.compress(
-                data, format=_LZMA_FORMAT, filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset)
+                data,
+                format=_LZMA_FORMAT,
+                filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset, fast=self.lzma_fast),
             )
         except lzma.LZMAError as e:
             raise FlipJumpWriteFjmException('Error: Unable to compress the data.') from e
@@ -89,8 +145,6 @@ class Writer:
         writes the .fjm headers, segments and (might be compressed) data into the output_file.
         @note call this after finished adding data and segments and editing the Writer.
         """
-        word_format = {8: 'B', 16: 'H', 32: 'L', 64: 'Q'}[self.word_size]
-
         with open(self.output_file, 'wb') as f:
             f.write(pack(_header_base_format, FJ_MAGIC, self.word_size, self.version.value, len(self.segments)))
             if FJMVersion.BaseVersion != self.version:
@@ -99,7 +153,7 @@ class Writer:
             for segment in self.segments:
                 f.write(pack(_segment_format, *segment))
 
-            fjm_data = pack(f'<{len(self.data)}{word_format}', *self.data)
+            fjm_data = _pack_words_little_endian(self.data, self.word_size)
             if FJMVersion.CompressedVersion == self.version:
                 fjm_data = self._compress_data(fjm_data)
 
@@ -165,9 +219,18 @@ class Writer:
             self._validate_segment_data_not_overlapping(data_start, data_length)
 
     def _update_to_relative_jumps(self, segment_start: int, data_start: int, data_length: int) -> None:
-        word_mask = (1 << self.word_size) - 1
-        for i in range(1, data_length, 2):
-            self.data[data_start + i] = (self.data[data_start + i] - (segment_start + i) * self.word_size) & word_mask
+        # PERF (doom-flipjump, 2026-08-20): same arithmetic, walked instead of recomputed. This runs
+        # once per JUMP WORD in the program -- 39.3M iterations on the doom-flipjump build -- and
+        # every one of them used to redo `self.data` twice, `(segment_start + i) * self.word_size`
+        # and `data_start + i`. The subtrahend is an arithmetic progression, so it is carried.
+        data = self.data
+        word_size = self.word_size
+        word_mask = (1 << word_size) - 1
+        subtrahend = (segment_start + 1) * word_size
+        step = 2 * word_size
+        for i in range(data_start + 1, data_start + data_length, 2):
+            data[i] = (data[i] - subtrahend) & word_mask
+            subtrahend += step
 
     def add_segment(self, segment_start: int, segment_length: int, data_start: int, data_length: int) -> None:
         """
@@ -210,7 +273,8 @@ class Writer:
         @return: the data start index
         """
         data_start = len(self.data)
-        self.data += data
+        # `+=` on an array only accepts another array; extend() takes any iterable of ints.
+        self.data.extend(data)
         return data_start
 
     def add_simple_segment_with_data(self, segment_start: int, data: List[int]) -> None:

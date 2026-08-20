@@ -73,6 +73,15 @@ class PreprocessorData:
     """
 
     class _PrepareMacroCall:
+        # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
+        # One of these is allocated per MACRO EXPANSION -- several million on the doom-flipjump
+        # program -- purely to hold four references across a `with` block.
+        # (A further step is possible and deliberately NOT taken here: the object could be dropped
+        # altogether by inlining enter/exit as a try/finally at the two call sites, since __exit__
+        # only pops curr_tree. That trades this class's encapsulation for the allocation, and is
+        # worth measuring separately rather than folding into a __slots__ change.)
+        __slots__ = ('curr_tree', 'calling_op', 'macros', 'max_recursion_depth',)
+
         def __init__(
             self,
             curr_tree: CurrTree,
@@ -111,15 +120,25 @@ class PreprocessorData:
         def __exit__(self, exc_type, exc_val, exc_tb):  # type: ignore[no-untyped-def]
             self.curr_tree.pop()
 
-    def __init__(self, memory_width: int, macros: Dict[MacroName, Macro], max_recursion_depth: int):
+    def __init__(
+        self,
+        memory_width: int,
+        macros: Dict[MacroName, Macro],
+        max_recursion_depth: int,
+        *,
+        save_debug_labels: bool = True,
+    ):
         """
         @param memory_width: the memory-width
         @param macros: parser's result; the dictionary from the macro names to the macro declaration
         @param max_recursion_depth: The compiler supports macros that recursively uses other macros,
         up to the specified recursion depth.
+        @param save_debug_labels: whether to record the per-expansion `...---:start:` macro-start
+        labels. See insert_macro_start_label for why they can be skipped.
         """
         self.memory_width = memory_width
         self.macros = macros
+        self.save_debug_labels = save_debug_labels
 
         self.curr_address: int = 0
 
@@ -187,13 +206,27 @@ class PreprocessorData:
             )
         self.labels_code_positions[label] = code_position
         self.labels[label] = address
-        self.addresses_with_labels.add(address)
+        if self.save_debug_labels:
+            # only insert_macro_start_labels_if_their_address_not_used reads this set
+            self.addresses_with_labels.add(address)
 
-    def insert_macro_start_label(self, label: str, code_position: CodePosition) -> None:
+    def insert_macro_start_label(self, labels_prefix: str, code_position: CodePosition) -> None:
+        """Record that a macro expansion starts here, so a `<path>---:start:` label can name it.
+
+        ⚠ THESE LABELS ARE UNREACHABLE FROM FJ SOURCE, exactly like `:wflips:N`:
+        STARTING_LABEL_IN_MACROS_STRING is ':start:' and the lexer's identifier rule is
+        `[a-zA-Z_][a-zA-Z_0-9]*`, so no Expr can ever name one. They exist for the debugging file
+        and for macro-trace readability. MEASURED (doom-flipjump, 2026-08-20): that program does
+        1.69M macro expansions, so this is 1.69M long f-strings and 1.69M list entries, plus a
+        set of every labelled address, built for a debugging file that is never requested.
+
+        @note must be called at the start of the expansion.
+        @note takes the PREFIX, not the finished label: when labels are off the string is never
+        built at all, which is where most of the saving is.
         """
-        @note must be called at the start of the function.
-        """
-        self.macro_start_labels.append((self.curr_address, label, code_position))
+        if self.save_debug_labels:
+            label = f'{labels_prefix}{MACRO_SEPARATOR_STRING}{STARTING_LABEL_IN_MACROS_STRING}'
+            self.macro_start_labels.append((self.curr_address, label, code_position))
 
     def insert_macro_start_labels_if_their_address_not_used(self) -> None:
         for address, label, code_position in self.macro_start_labels[::-1]:
@@ -292,9 +325,11 @@ def get_params_dictionary(
     for local_param in current_macro.local_params:
         params_dict[local_param] = Expr(f'{labels_prefix}{MACRO_SEPARATOR_STRING}{local_param}')
 
-    if namespace:
-        for k, v in tuple(params_dict.items()):
-            params_dict[f'{namespace}.{k}'] = v
+    # PERF: the `namespace.name` keys are a property of the macro DECLARATION, so they are built
+    # once in Macro.__post_init__ rather than re-formatted on every expansion. `namespaced_params`
+    # is empty for a macro with no namespace, which is why the `if namespace` test is gone.
+    for namespaced_name, name in current_macro.namespaced_params:
+        params_dict[namespaced_name] = params_dict[name]
 
     return params_dict
 
@@ -317,9 +352,7 @@ def resolve_macro_aux(
     current_macro = preprocessor_data.macros[macro_name]
     params_dict = get_params_dictionary(current_macro, args, current_macro.namespace, labels_prefix)
 
-    preprocessor_data.insert_macro_start_label(
-        f'{labels_prefix}{MACRO_SEPARATOR_STRING}{STARTING_LABEL_IN_MACROS_STRING}', current_macro.code_position
-    )
+    preprocessor_data.insert_macro_start_label(labels_prefix, current_macro.code_position)
 
     for op in current_macro.ops:
         if isinstance(op, Label):
@@ -389,6 +422,7 @@ def resolve_macros(
     *,
     show_statistics: bool = False,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
+    save_debug_labels: bool = True,
 ) -> Tuple[OpsQueue, LabelsDict]:
     """
     unwind the macro tree to a serialized-queue of ops,
@@ -398,9 +432,14 @@ def resolve_macros(
     @param show_statistics: if True then prints the macro-usage statistics
     @param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    @param save_debug_labels: record the per-expansion `...---:start:` macro-start labels. They are
+    unreachable from fj source (see PreprocessorData.insert_macro_start_label), so a caller that is
+    not writing a debugging file can pass False. It cannot change the emitted .fjm.
     @return: tuple of the queue of ops, and the labels' dictionary
     """
-    preprocessor_data = PreprocessorData(memory_width, macros, max_recursion_depth)
+    preprocessor_data = PreprocessorData(
+        memory_width, macros, max_recursion_depth, save_debug_labels=save_debug_labels
+    )
     resolve_macro_aux(preprocessor_data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
 
     preprocessor_data.finish(show_statistics)
