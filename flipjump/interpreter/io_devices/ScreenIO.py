@@ -13,6 +13,19 @@ i.e. memory_width/8 bytes):
   [0x04][x:2][y:2][rect_w:2][rect_h:2][screen_addr:w/8] update_rectangle (presents a frame)
   [0x05][width*height pixel bytes]                      update_screen_raw (presents a frame)
   [0x06][screen_fj_bit_address:w/8]                     update_screen_reg (presents a frame; fj 1.5.1)
+  [0x0B] then column run-lists                          begin_frame_collines (presents a frame; fj 1.5.1)
+
+begin_frame_collines (0x0B) is the third kind: no framebuffer at all. the program streams the
+finished picture as COLUMN RUN-LISTS and the device holds nothing but a fill cursor -
+  [tag]  x < 0xFE  opens column x's list (the fill cursor starts at row 0)
+         0xFF      ends the frame (and presents it)
+  inside a list, byte pairs [y2][colour] fill rows [cursor, y2) of that column with palette
+  index colour and move the cursor to y2, so a column is written top-down and never revisited;
+         0xFF      ends the column (the tail below the cursor keeps last frame's pixels)
+         0xFE      DITTO - copy column x-1 wholesale, the run-list's one compression form
+the cursor only moves forward, which is what lets the device be this dumb: the program has
+already resolved occlusion by the time a run is emitted. a screen must be initialized first
+(0x01) - the column/row bounds come from it.
 
 the memory-hook commands (update_screen/update_rectangle/update_screen_reg) are the primary
 path - reading the framebuffer straight out of program memory is DMA-like, ~free for the fj program.
@@ -59,6 +72,10 @@ CMD_UPDATE_SCREEN = 0x03
 CMD_UPDATE_RECTANGLE = 0x04
 CMD_UPDATE_SCREEN_RAW = 0x05
 CMD_UPDATE_SCREEN_REG = 0x06  # fj 1.5.1: hex.vec-2 (register-form) framebuffer, two 4-bit ops/pixel (DESIGN section 2.1)
+CMD_BEGIN_FRAME_COLLINES = 0x0B  # fj 1.5.1: the column-run-list frame - no framebuffer, see the module docstring
+
+COLLINES_END = 0xFF  # ends the frame (at tag position) or the current column (inside a list)
+COLLINES_DITTO = 0xFE  # inside a list, at tag-follow position: copy the whole previous column
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
@@ -101,6 +118,13 @@ class InMemoryScreen(IODevice):
         self._bits_count = 0
         self._command_buffer: List[int] = []
 
+        # 0x0B column-run-list state. _collines_column is None both when the mode is off and
+        # when it is on but between columns (expecting a tag), which _in_collines separates.
+        self._in_collines = False
+        self._collines_column: Optional[int] = None
+        self._collines_row = 0
+        self._collines_y2: Optional[int] = None  # a y2 byte awaiting its colour mate
+
     def attach_memory(self, device_memory: DeviceMemory) -> None:
         self.device_memory = device_memory
 
@@ -136,9 +160,14 @@ class InMemoryScreen(IODevice):
         if command == CMD_UPDATE_SCREEN_RAW:
             self._require_initialized_screen()  # the pixel count defines the command length
             return 1 + self.width * self.height
+        if command == CMD_BEGIN_FRAME_COLLINES:
+            return 1  # bare command; the run-lists that follow are not part of it
         raise IODeviceException(f'unknown screen-device command: {command:#x}')
 
     def _handle_byte(self, byte: int) -> None:
+        if self._in_collines:  # the run-list bytes are NOT commands
+            self._handle_collines_byte(byte)
+            return
         self._command_buffer.append(byte)
         if len(self._command_buffer) >= self._command_length(self._command_buffer[0]):
             command, *payload = self._command_buffer
@@ -174,6 +203,8 @@ class InMemoryScreen(IODevice):
             )
         elif command == CMD_UPDATE_SCREEN_RAW:
             self._update_screen_raw(payload)
+        elif command == CMD_BEGIN_FRAME_COLLINES:
+            self._begin_frame_collines()
 
     # ---------------------------------------------------------------- screen functions
 
@@ -239,6 +270,60 @@ class InMemoryScreen(IODevice):
         pixel_mask = (1 << self.bpp) - 1
         self.pixel_indices = [pixel & pixel_mask for pixel in pixels]
         self._present()
+
+    def _begin_frame_collines(self) -> None:
+        """enter column-run-list mode (0x0B): every following byte is run-list data until the
+        frame's end marker. the pixel buffer is NOT cleared - a column the frame never mentions,
+        and the tail below a column's last run, keep the previous frame's pixels."""
+        self._require_initialized_screen()
+        self._in_collines = True
+        self._collines_column = None
+        self._collines_row = 0
+        self._collines_y2 = None
+
+    def _handle_collines_byte(self, byte: int) -> None:
+        """one byte of a 0x0B frame. see the module docstring for the grammar."""
+        if self._collines_column is None:  # at a record tag
+            if byte == COLLINES_END:
+                self._in_collines = False
+                self._present()
+                return
+            if byte >= self.width:
+                raise IODeviceException(f'collines column {byte} is outside the {self.width}-column screen')
+            self._collines_column, self._collines_row, self._collines_y2 = byte, 0, None
+            return
+
+        if self._collines_y2 is None:  # at a y2 byte, a ditto, or the column's end
+            if byte == COLLINES_END:
+                self._collines_column = None
+                return
+            if byte == COLLINES_DITTO:
+                # copy the column to the left wholesale. column 0 has no left neighbour, and
+                # silently copying `[-1]` would take the row ABOVE's last pixel instead.
+                column = self._collines_column
+                if column == 0:
+                    raise IODeviceException('collines DITTO for column 0 (no left neighbour to copy)')
+                for row in range(self.height):
+                    self.pixel_indices[row * self.width + column] = self.pixel_indices[
+                        row * self.width + column - 1
+                    ]
+                self._collines_column = None
+                return
+            if byte > self.height:
+                raise IODeviceException(f'collines run ends at row {byte}, past the {self.height}-row screen')
+            if byte < self._collines_row:
+                raise IODeviceException(
+                    f'collines run ends at row {byte}, behind the fill cursor at {self._collines_row}'
+                    ' (the cursor only moves forward)'
+                )
+            self._collines_y2 = byte
+            return
+
+        y2, colour = self._collines_y2, byte & ((1 << self.bpp) - 1)
+        column, width = self._collines_column, self.width
+        for row in range(self._collines_row, y2):
+            self.pixel_indices[row * width + column] = colour
+        self._collines_row, self._collines_y2 = y2, None
 
     def _update_rectangle(self, x: int, y: int, rect_width: int, rect_height: int, screen_bit_address: int) -> None:
         # the address is the full-screen framebuffer base (NOT the rectangle's): the source of
