@@ -35,7 +35,7 @@ def _make_standard(parameters: List[str]) -> IODevice:
 
 def _make_pc(parameters: List[str]) -> IODevice:
     _require_no_parameters('pc', parameters)
-    # imported lazily: the interactive window needs pygame (the optional `io` extra)
+    # imported lazily: the interactive window needs pygame-ce (the optional `io` extra)
     from flipjump.interpreter.io_devices.pygame_window import PcIO
 
     return PcIO.interactive()

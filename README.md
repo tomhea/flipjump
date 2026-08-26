@@ -104,7 +104,7 @@ pip install flipjump
 And jump right into the neat [**FlipJump Docs**](https://fjdocs.tomhe.app) site!
 
 You can also install it with its extras:
-- `flipjump[io]`: the interactive IO devices (e.g. pygame for the `--io pc` keyboard+screen window).
+- `flipjump[io]`: the interactive IO devices (pygame-ce, for the `--io pc` keyboard+screen window).
 - `flipjump[stats]`: support for viewing macro usage in an interactive graph.
 - `flipjump[tests]`: all the testing libraries needed.
 ```shell
@@ -176,7 +176,9 @@ fj --run program.fjm --io pc
 - **`--io standard`** (the default) - input/output over the terminal.
 - **`--io pc`** - an interactive window: live keyboard input **and** a scaled 256-color screen,
   in one window the device owns (F11 toggles fullscreen, closing it stops the run). Needs
-  pygame (`pip install flipjump[io]`); works on Windows, Linux and macOS.
+  pygame-ce (`pip install flipjump[io]`); works on Windows, Linux and macOS. ⚠ pygame-ce, NOT
+  upstream pygame: they share a module name, so the wrong one is silent -- the window code
+  requires `pygame.IS_CE` and refuses otherwise.
 
 Each mode is one complete `IODevice` that owns all of its channels (and window, if any).
 Adding a new device (e.g. a windowed text console, or one that also

@@ -268,7 +268,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         type=_io_mode,
         help="the IO device. `standard` (the default) - input/output over the terminal. "
         "`pc` - an interactive window: live keyboard input + a scaled 256-color screen "
-        "(F11 toggles fullscreen, closing it stops the run; needs pygame - "
+        "(F11 toggles fullscreen, closing it stops the run; needs pygame-ce - "
         "`pip install flipjump[io]`)",
     )
 

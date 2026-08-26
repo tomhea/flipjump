@@ -51,7 +51,7 @@ tests = [
     "bandit>=1.9.4,<2",
     "black>=26.5.1,<27",
 ]
-io = ["pygame>=2.5,<3"]
+io = ["pygame-ce>=2.5,<3"]
 stats = ["plotly>=6.8.0,<7"]
 
 

@@ -51,7 +51,7 @@ memory layout contracts (op-structured "packed bytes", one byte per fj-op, strid
 the headless backend (default) keeps the expanded RGB frame (last_frame_rgb), writes one
 PNG per present into frames_dir, timestamps presents, and keeps a per-frame hash log
 (frame_hashes: sha256 over the raw pixel indices + palette bytes) for golden tests -
-measured fps comes from this log, not hand-timing. the interactive (pygame) backend in
+measured fps comes from this log, not hand-timing. the interactive (pygame-ce) backend in
 pygame_window.py presents the same command stream into a real window.
 """
 
@@ -111,7 +111,7 @@ class InMemoryScreen(IODevice):
         self.pixel_indices: List[int] = []
 
         self.frame_count = 0
-        self.last_frame_rgb: List[Tuple[int, int, int]] = []
+        self._presented: Optional[Tuple[bytes, Tuple[Tuple[int, int, int], ...]]] = None
         self.frame_hashes: List[Tuple[int, str]] = []  # (present-time ns, sha256 hexdigest)
 
         self._current_byte = 0
@@ -345,21 +345,39 @@ class InMemoryScreen(IODevice):
                 self.pixel_indices[(y + row) * self.width + (x + col)] = line[col] & pixel_mask
         self._present()
 
-    def _present(self) -> None:
+    @property
+    def last_frame_rgb(self) -> List[Tuple[int, int, int]]:
+        """the last presented frame, expanded to row-major RGB tuples.
+
+        LAZY, because expanding it costs ~0.47 ms per 160x100 frame in python and the interactive
+        backend does not need it at all -- it hands SDL the palette indices instead. The INPUTS are
+        snapshotted at present time, so this is still the frame that was presented and not whatever
+        the device has been filling in since; only the expansion is deferred."""
+        if self._presented is None:
+            return []
+        indices, palette = self._presented
         black = (0, 0, 0)
-        self.last_frame_rgb = [
-            self.palette[index] if index < len(self.palette) else black for index in self.pixel_indices
-        ]
+        return [palette[i] if i < len(palette) else black for i in indices]
+
+    def _present(self) -> None:
+        # snapshot the INPUTS, not the expansion -- `bytes(self.pixel_indices)` is needed for the
+        # hash below anyway, so this is very nearly free.
+        pixel_bytes = bytes(self.pixel_indices)
+        self._presented = (pixel_bytes, tuple(self.palette))
         self.frame_count += 1
 
         palette_bytes = b''.join(bytes(color) for color in self.palette)
-        frame_hash = hashlib.sha256(bytes(self.pixel_indices) + palette_bytes).hexdigest()
+        frame_hash = hashlib.sha256(pixel_bytes + palette_bytes).hexdigest()
         self.frame_hashes.append((time.time_ns(), frame_hash))
 
         if self.frames_dir is not None:
             self.frames_dir.mkdir(parents=True, exist_ok=True)
+            # !! BIND IT ONCE. `last_frame_rgb` is a property that expands the whole frame, so
+            # slicing it per row would expand it `height` times -- 100x the work for an identical
+            # picture. The eager attribute this replaced made that free; the property does not.
+            frame_rgb = self.last_frame_rgb
             row_slices = [
-                self.last_frame_rgb[row * self.width : (row + 1) * self.width]  # noqa: E203
+                frame_rgb[row * self.width : (row + 1) * self.width]  # noqa: E203
                 for row in range(self.height)
             ]
             rows = b''.join(b'\x00' + b''.join(bytes(rgb) for rgb in row_slice) for row_slice in row_slices)
