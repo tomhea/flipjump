@@ -88,6 +88,65 @@ def test_cli_missing_file(tmp_path: Path) -> None:
         )
 
 
+DEFINE_PROG = """stl.startup
+stl.output_char GREET
+stl.loop
+"""
+
+
+def _assemble_with(tmp_path: Path, name: str, source: str, *defines: str) -> bytes:
+    fj_path = tmp_path / f'{name}.fj'
+    fj_path.write_text(source)
+    out_path = tmp_path / f'{name}.fjm'
+    args = ['--asm', '-o', str(out_path), '-w', '32']
+    for define in defines:
+        args += ['-D', define]
+    assemble_run_according_to_cmd_line_args(cmd_line_args=args + [str(fj_path)])
+    return out_path.read_bytes()
+
+
+def test_cli_define_reaches_the_assembled_binary(tmp_path: Path) -> None:
+    """the VALUE given to -D is the value the program is assembled with.
+
+    Asserted on the .fjm bytes rather than on stdout, because the assembler is deterministic: two
+    different defines must produce different binaries, and -- the control that makes the first
+    assertion mean something -- the same define twice must produce the SAME binary. Without the
+    second, "they differ" could be true of any two runs."""
+    a = _assemble_with(tmp_path, 'a', DEFINE_PROG, 'GREET = 0x41')
+    b = _assemble_with(tmp_path, 'b', DEFINE_PROG, 'GREET = 0x58')
+    again = _assemble_with(tmp_path, 'again', DEFINE_PROG, 'GREET = 0x41')
+    assert a != b, 'the -D value did not reach the binary'
+    assert a == again, 'the assembler is not deterministic -- the difference above proves nothing'
+
+
+def test_cli_define_lands_after_the_stl(tmp_path: Path) -> None:
+    """the defines file is inserted first among the USER files, i.e. after the stl -- so a define
+    may use an stl constant. `w` is 32 here, so `w + 33` must assemble to exactly what the literal
+    65 assembles to. A defines file placed before the stl could not resolve `w` at all."""
+    computed = _assemble_with(tmp_path, 'computed', DEFINE_PROG, 'GREET = w + 33')
+    literal = _assemble_with(tmp_path, 'literal', DEFINE_PROG, 'GREET = 65')
+    assert computed == literal
+
+
+def test_cli_define_is_repeatable_and_may_use_an_earlier_define(tmp_path: Path) -> None:
+    """-D is `action='append'`, and the lines are written in order, so a later define sees an
+    earlier one."""
+    chained = _assemble_with(tmp_path, 'chained', DEFINE_PROG, 'BASE = 0x40', 'GREET = BASE + 1')
+    literal = _assemble_with(tmp_path, 'lit2', DEFINE_PROG, 'GREET = 0x41')
+    assert chained == literal
+
+
+def test_cli_define_without_a_value_is_refused(tmp_path: Path) -> None:
+    """a bare -D NAME is a typo, not an empty definition: it would emit a line the assembler
+    cannot parse, and the error would point at a temporary file the user never wrote."""
+    fj_path = tmp_path / 'defines.fj'
+    fj_path.write_text(DEFINE_PROG)
+    with pytest.raises(SystemExit):
+        assemble_run_according_to_cmd_line_args(
+            cmd_line_args=['--asm', '-o', str(tmp_path / 'out.fjm'), '-w', '32', '-D', 'GREET', str(fj_path)]
+        )
+
+
 def _no_error(message: str) -> None:
     raise AssertionError(f'unexpected error: {message}')
 

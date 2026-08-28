@@ -335,6 +335,16 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         help='The compiler supports macros that recursively uses other macros, ' 'up to the this specified depth',
     )
     asm_arguments.add_argument('--no_stl', help="don't assemble/link the standard library files", action='store_true')
+
+    asm_arguments.add_argument(
+        '-D',
+        '--define',
+        action='append',
+        default=[],
+        metavar='NAME=VALUE',
+        help="define a constant before the assembled files (repeatable). "
+        "redefining an stl constant is an assembly error, not a silent override",
+    )
     asm_arguments.add_argument('--stats', help="show macro code-size statistics", action='store_true')
 
 
@@ -422,6 +432,24 @@ def parse_arguments(*, cmd_line_args: Optional[List[str]] = None) -> Tuple[argpa
     return parsed_args, parser.error
 
 
+def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> None:
+    """
+    write the --define constants into a temporary .fj file, and put it first among the input files.
+    it lands after the stl (so a define may use w, dw, ...) and before every user file.
+    @param args: the parsed arguments
+    @param temp_dir_name: the temp directory to write the defines file into
+    @param error_func: parser's error function
+    """
+    if not args.define:
+        return
+    for define in args.define:
+        if '=' not in define:
+            error_func(f"-D expects NAME=VALUE, got {define!r}")
+    defines_path = Path(temp_dir_name) / '_defines.fj'
+    defines_path.write_text(''.join(f'{define}\n' for define in args.define), encoding='utf-8')
+    args.files.insert(0, str(defines_path))
+
+
 def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> None:
     """
     prepare temp files, and execute the run and assemble functions.
@@ -432,6 +460,7 @@ def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> Non
         debug_path, in_fjm_path, out_fjm_path = get_files_paths(args, error_func, temp_dir_name)
 
         if not args.run:
+            add_defines_file(args, temp_dir_name, error_func)
             assemble(out_fjm_path, debug_path, args, error_func)
 
         if not args.asm:
