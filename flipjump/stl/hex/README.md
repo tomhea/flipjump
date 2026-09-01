@@ -8,7 +8,7 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 |-------------------------|---------------------------------------------------------------------------------------------------|
 | `tables_init.fj`        | `hex.init` and the `tables.*` machinery that every other hex operation depends on.                |
 | `memory.fj`             | `hex`, `vec`, `zero`, `mov`, `xor_by`, `set`, `swap`.                                             |
-| `logics.fj`             | `xor`, `or`, `and`, `not`, plus `exact_*`, `double_xor`, `quadrupled_exact_xor`.                  |
+| `logics.fj`             | `xor`, `or`, `and`, `not`, plus the `exact_xor` family (1/2/3/4 destination groups) and its `address_and_variable_*` forms. |
 | `math.fj`               | `add`, `sub`, `add_constant`, `add_shifted`, `add_hex_shifted_constant`, plus the `clear_carry` / `not_carry` / `set_carry` helpers for both `ns add` and `ns sub`. |
 | `math_basic.fj`         | `inc`, `dec`, `neg`, `abs`, `inc1`, `dec1`, `step`, `add_count_bits`, `count_bits`, `sign_extend`. |
 | `mul.fj`                | `mul`, `mul10`, `add_mul`, plus the per-multiplication carry / init machinery.                    |
@@ -25,7 +25,7 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 
 | File                              | What it provides                                                                |
 |-----------------------------------|---------------------------------------------------------------------------------|
-| `basic_pointers.fj`               | `ptr_init`, `ptr_jump`, `set_flip_pointer`, `set_jump_pointer`, `stack_init`.   |
+| `basic_pointers.fj`               | `ptr_init`, `ptr_jump`, `set_flip_and_jump_pointers` (and its `set_flip_pointer` / `set_jump_pointer` aliases), `stack_init`. |
 | `pointer_arithmetics.fj`          | `ptr_inc`, `ptr_dec`, `ptr_add`, `ptr_sub`.                                     |
 | `read_pointers.fj`                | `read_byte`, `read_hex`, `read_byte_and_inc`, `read_hex_and_inc`.               |
 | `write_pointers.fj`               | `write_byte`, `write_hex`, `write_byte_and_inc`, `write_hex_and_inc`, `zero_ptr`. |

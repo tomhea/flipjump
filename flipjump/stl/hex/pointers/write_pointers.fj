@@ -2,8 +2,8 @@
 
 
 ns hex {
-    //  Time Complexity: w(0.75@+5)  + 11@+25
-    // Space Complexity: w(0.75@+29) + 11@+112
+    //  Time Complexity: w( 0.5@+4)  + 11@+25
+    // Space Complexity: w( 0.5@+22) + 11@+112
     //   like:  *ptr = src
     // src is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_hex ptr, src < hex.pointers.read_byte {
@@ -13,8 +13,8 @@ ns hex {
         .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.75@+5)  + 15@+37
-    // Space Complexity: w(0.75@+29) + 15@+176
+    //  Time Complexity: w( 0.5@+4)  + 15@+37
+    // Space Complexity: w( 0.5@+22) + 15@+176
     //   like:  *ptr = 0
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def zero_ptr ptr < hex.pointers.read_byte {
@@ -23,8 +23,8 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.75@+5)  + 17@+37
-    // Space Complexity: w(0.75@+29) + 17@+200
+    //  Time Complexity: w( 0.5@+4)  + 17@+37
+    // Space Complexity: w( 0.5@+22) + 17@+200
     //   like:  *ptr = src[:2]
     // src is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_byte ptr, src < hex.pointers.read_byte {
@@ -41,8 +41,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: w(0.75@+5)  + 20@+39
-    // Space Complexity: w(1.13@+32) + 16@+167
+    //  Time Complexity: w( 0.5@+4)  + 20@+39
+    // Space Complexity: w(0.88@+25) + 16@+167
     //   like:  *ptr = src
     //          ptr++
     // src is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -51,8 +51,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity:  n(w(0.75@+5)  + 20@+39)
-    // Space Complexity:  n(w(1.13@+32) + 16@+167)
+    //  Time Complexity:  n(w( 0.5@+4)  + 20@+39)
+    // Space Complexity:  n(w(0.88@+25) + 16@+167)
     //   like:  *ptr[:n] = src[:n]
     // src is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_hex n, ptr, src {
@@ -60,8 +60,8 @@ ns hex {
         .ptr_sub ptr, n
     }
 
-    //  Time Complexity: w(0.75@+5)  + 26@+51
-    // Space Complexity: w(1.13@+32) + 22@+255
+    //  Time Complexity: w( 0.5@+4)  + 26@+51
+    // Space Complexity: w(0.88@+25) + 22@+255
     //   like:  *ptr = src[:2]
     //          ptr++
     // src is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -70,8 +70,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(w(0.75@+5)  + 26@+51)
-    // Space Complexity: n(w(1.13@+32) + 22@+255)
+    //  Time Complexity: n(w( 0.5@+4)  + 26@+51)
+    // Space Complexity: n(w(0.88@+25) + 22@+255)
     //   like:  *ptr[:n] = src[:2n]
     // src is a hex[:2n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_byte n, ptr, src {
@@ -84,8 +84,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity:  w(3@+10.25) + 11@+25
-    // Space Complexity:  w(3@+69)    + 11@+112
+    //  Time Complexity:  w(2.75@+9.25) + 11@+25
+    // Space Complexity:  w(2.75@+62)    + 11@+112
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   *(ptr + index*2w) = src   — write src into the index-th hex past *ptr.
     // src is a hex; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index,src preserved.
@@ -95,8 +95,8 @@ ns hex {
         .write_hex hex.pointers.nth_ptr, src
     }
 
-    //  Time Complexity:  w(3@+10.25) + 17@+37
-    // Space Complexity:  w(3@+69)    + 17@+200
+    //  Time Complexity:  w(2.75@+9.25) + 17@+37
+    // Space Complexity:  w(2.75@+62)    + 17@+200
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   *(ptr + index*2w)[:2] = src[:2]   — write the index-th byte past *ptr.
     // src is a hex[:2]; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index,src preserved.

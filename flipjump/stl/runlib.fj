@@ -44,14 +44,14 @@ ns stl {
         stl.ptr_init
     }
 
-    // Complexity: ~7000  (7026 for w=64, 6894 for w=16)
+    // Complexity: ~7000  (7010 for w=64, 6890 for w=16)
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     def startup_and_init_all {
         .startup_and_init_all 100
     }
 
-    // Complexity: 6725 + 2.75w+@ + n
+    // Complexity: 6725 + 2.5w+@ + n
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     // stack_bit_size is the size of the global-stack (will hold this number of hexes / return-addresses).
@@ -60,7 +60,7 @@ ns stl {
       code_start:
     }
 
-    // Complexity: 6725 + 2.75w+@ + n
+    // Complexity: 6725 + 2.5w+@ + n
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     // stack_bit_size is the size of the global-stack (will hold this number of hexes / return-addresses).

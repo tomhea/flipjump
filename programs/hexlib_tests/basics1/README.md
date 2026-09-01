@@ -12,3 +12,4 @@ values and prints the results for comparison against the recorded `.out`.
 | `input.fj` | Hex input macros, including the error-checking variant. |
 | `print_as_digit.fj` | `hex.print_as_digit` (lowercase and uppercase). |
 | `print_int.fj` | `print_uint` and `print_int` on signed/unsigned values. |
+| `triple_exact_xor.fj` | `hex.triple_exact_xor` over every source value `0..15`. |

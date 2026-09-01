@@ -2,8 +2,8 @@
 
 
 ns hex {
-    //  Time Complexity: w(0.75@+ 5) + 7@+13
-    // Space Complexity: w(0.75@+29) + 7@+48
+    //  Time Complexity: w( 0.5@+ 4) + 7@+13
+    // Space Complexity: w( 0.5@+22) + 7@+48
     //   like:  dst = *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_hex dst, ptr {
@@ -11,8 +11,8 @@ ns hex {
         .xor_hex_from_ptr dst, ptr
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 9@+13
-    // Space Complexity: w(0.75@+29) + 9@+72
+    //  Time Complexity: w( 0.5@+ 4) + 9@+13
+    // Space Complexity: w( 0.5@+22) + 9@+72
     //   like:  dst[:2] = *ptr
     // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_byte dst, ptr {
@@ -27,8 +27,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: w(0.75@+ 5) + 16@+27
-    // Space Complexity: w(1.13@+32) + 12@+103
+    //  Time Complexity: w( 0.5@+ 4) + 16@+27
+    // Space Complexity: w(0.88@+25) + 12@+103
     //   like:  dst = *ptr
     //          ptr++
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -37,8 +37,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(w(0.75@+ 5) + 16@+27)
-    // Space Complexity: n(w(1.13@+32) + 12@+103)
+    //  Time Complexity: n(w( 0.5@+ 4) + 16@+27)
+    // Space Complexity: n(w(0.88@+25) + 12@+103)
     //   like:  dst[:n] = *ptr[:n]
     // dst is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_hex n, dst, ptr {
@@ -46,8 +46,8 @@ ns hex {
         .ptr_sub ptr, n
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 18@+27
-    // Space Complexity: w(1.13@+32) + 14@+127
+    //  Time Complexity: w( 0.5@+ 4) + 18@+27
+    // Space Complexity: w(0.88@+25) + 14@+127
     //   like:  dst[:2] = *ptr
     //          ptr++
     // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -56,8 +56,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(w(0.75@+ 5) + 18@+27)
-    // Space Complexity: n(w(1.13@+32) + 14@+127)
+    //  Time Complexity: n(w( 0.5@+ 4) + 18@+27)
+    // Space Complexity: n(w(0.88@+25) + 14@+127)
     //   like:  dst[:2n] = *ptr[:n]
     // dst is a hex[:2n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_byte n, dst, ptr {
@@ -70,8 +70,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity:  w(3@+10.25) + 7@+13
-    // Space Complexity:  w(3@+69)    + 7@+48
+    //  Time Complexity:  w(2.75@+9.25) + 7@+13
+    // Space Complexity:  w(2.75@+62)    + 7@+48
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   dst = *(ptr + index*2w)   — read the index-th hex past *ptr.
     // dst is a hex; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index preserved.
@@ -81,8 +81,8 @@ ns hex {
         .read_hex dst, hex.pointers.nth_ptr
     }
 
-    //  Time Complexity:  w(3@+10.25) + 9@+13
-    // Space Complexity:  w(3@+69)    + 9@+72
+    //  Time Complexity:  w(2.75@+9.25) + 9@+13
+    // Space Complexity:  w(2.75@+62)    + 9@+72
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   dst[:2] = *(ptr + index*2w)   — read the index-th byte past *ptr.
     // dst is a hex[:2]; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index preserved.

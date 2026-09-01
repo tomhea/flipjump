@@ -2,7 +2,7 @@ ns hex {
     ns pointers {
         // NOTE: must be placed just after the startup, so that the read_ptr_byte_table will be in address 256.
         //
-        // Space Complexity: 0.75w+261
+        // Space Complexity: 0.5w+261
         //   Initializes the global opcodes and pointer-copies required for the pointers macros.
         //   Initializes the read-byte-handling table and the result/return variables to the read-byte table.
         //
@@ -11,10 +11,12 @@ ns hex {
         // @output-param ret_after_read_byte:  The return address. Jumps to it after finishing reading a byte.
         //
         // @output-param to_flip:  address of opcode that holds a flipping address in its first word. jumping into it will flip wanted bit.
-        // @output-param to_flip_var:  the hex-vector (pointer) that also holds the flipping address.
         // @output-param to_jump:  address of opcode that holds a jumping address in its second word. jumping into it will jump to the wanted address.
-        // @output-param to_jump_var:  the hex-vector (pointer) that also holds the jumping address.
-        def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_flip_var, to_jump_var, \
+        // @output-param to_ptr_var:  the hex-vector (pointer) that shadows BOTH of them. The two address
+        //                            fields sit in different parts of different opcodes - to_flip's first
+        //                            word, to_jump's second - but they always hold the one address being
+        //                            pointed at, so a single shadow serves both.
+        def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_ptr_var, \
                                              read_byte, ret_after_read_byte, nth_ptr {
             pad 256
           // Time Complexity: 4/8 (when jumping to hex.pointers.to_jump, until finished)
@@ -36,9 +38,7 @@ ns hex {
           to_jump:
             ;0
 
-          to_flip_var:
-            hex.vec w/4, 0
-          to_jump_var:
+          to_ptr_var:
             hex.vec w/4, 0
 
           // Shared scratch pointer for the indexed read_nth_*/write_nth_* macros.
@@ -46,36 +46,51 @@ ns hex {
             hex.vec w/4, 0
         }
 
-        //  Time Complexity: w(0.5@+2)
-        // Space Complexity: w(0.5@+14)
-        //   Sets both to_jump and to_jump_var to point to the given pointer.
-        //   (  to_jump{_var} = ptr  )
+        //  Time Complexity: w(0.5@+4)
+        // Space Complexity: w(0.5@+22)
+        //   Sets to_flip, to_jump and their shared shadow to point to the given pointer.
+        //   (  to_flip = to_jump{+w} = to_ptr_var = ptr  )
+        //
+        //   Two passes over the pointer's hexes, not three: one k=3 xor clears all three fields,
+        //   a second sets them. A shadow per address field needed a clearing pass EACH, which is
+        //   where the extra quarter-w used to go.
+        //
+        // @Invariant: to_flip == to_jump+w == to_ptr_var on entry to, and on exit from, every one
+        //   of the three setters. The macros that offset to_flip by a compile-time constant -
+        //   read_byte_from_inners_ptrs (dbit+8), ptr_flip_dbit (dbit), xor_hex_to_flip_ptr (its
+        //   gray walk) and ptr_wflip (its advance) - each restore it before they end, so none of
+        //   them observes or breaks the invariant.
         // ptr is a hex[:w/4] that holds an address.
-        def set_jump_pointer ptr < .to_jump, .to_jump_var {
-            ..address_and_variable_xor w/4, .to_jump+w, .to_jump_var, .to_jump_var
-            ..address_and_variable_xor w/4, .to_jump+w, .to_jump_var, ptr
+        def set_flip_and_jump_pointers ptr < .to_flip, .to_jump, .to_ptr_var {
+            ..address_and_variable_triple_xor w/4, .to_flip, .to_jump+w, .to_ptr_var, .to_ptr_var
+            ..address_and_variable_triple_xor w/4, .to_flip, .to_jump+w, .to_ptr_var, ptr
         }
 
-        //  Time Complexity: w(0.5@+2)
-        // Space Complexity: w(0.5@+14)
-        //   Sets both to_flip and to_flip_var to point to the given pointer.
-        //   (  to_flip{_var} = ptr  )
+        //  Time Complexity: w(0.5@+4)
+        // Space Complexity: w(0.5@+22)
+        //   Sets to_jump - and with it to_flip and the shared shadow - to point to the given pointer.
+        //   (  to_jump{+w} = to_flip = to_ptr_var = ptr  )
+        //
+        // @note: this is an ALIAS of set_flip_and_jump_pointers, and it must stay one. A setter that
+        //   wrote only to_jump would leave to_flip holding an older address while the shadow held the
+        //   new one, and the NEXT setter would then xor the wrong value out of to_flip and aim it at
+        //   (older ^ new ^ next). That is not a slow path, it is a wild jump. hex.ptr_jump - and so
+        //   stl.return - reaches here.
         // ptr is a hex[:w/4] that holds an address.
-        def set_flip_pointer ptr < .to_flip, .to_flip_var {
-            ..address_and_variable_xor w/4, .to_flip, .to_flip_var, .to_flip_var
-            ..address_and_variable_xor w/4, .to_flip, .to_flip_var, ptr
+        def set_jump_pointer ptr {
+            .set_flip_and_jump_pointers ptr
         }
 
-        //  Time Complexity: w(0.75@+5)
-        // Space Complexity: w(0.75@+29)
-        //   Sets both to_flip and to_flip_var, and to_jump and to_jump_var to point to the given pointer.
-        //   (  to_flip{_var} = ptr  )
-        //   (  to_jump{_var} = ptr  )
+        //  Time Complexity: w(0.5@+4)
+        // Space Complexity: w(0.5@+22)
+        //   Sets to_flip - and with it to_jump and the shared shadow - to point to the given pointer.
+        //   (  to_flip = to_jump{+w} = to_ptr_var = ptr  )
+        //
+        // @note: an ALIAS of set_flip_and_jump_pointers, for the reason given at set_jump_pointer.
+        //   hex.ptr_flip, hex.ptr_wflip and hex.xor_*_to_ptr reach here.
         // ptr is a hex[:w/4] that holds an address.
-        def set_flip_and_jump_pointers ptr < .to_flip, .to_flip_var, .to_jump, .to_jump_var {
-            ..address_and_variable_xor w/4, .to_flip, .to_flip_var, .to_flip_var
-            ..address_and_variable_xor w/4, .to_jump+w, .to_jump_var, .to_jump_var
-            ..address_and_variable_double_xor w/4, .to_flip, .to_flip_var, .to_jump+w, .to_jump_var, ptr
+        def set_flip_pointer ptr {
+            .set_flip_and_jump_pointers ptr
         }
 
         // Space Complexity: n+w/4 + 330
@@ -105,8 +120,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: w(0.5@+2)
-    // Space Complexity: w(0.5@+14)
+    //  Time Complexity: w(0.5@+4)
+    // Space Complexity: w(0.5@+22)
         //   like:  ;*ptr
     //   Jump to the address the pointer points to.
     // ptr is a hex[:w/4] that holds an address.

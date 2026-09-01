@@ -24,8 +24,8 @@ ns stl {
 
 // @requires the stack_init.
 ns stl {
-    //  Time Complexity: ~2.5w@  (exact: w(2.25@+10)   + 24@+51)
-    // Space Complexity: <3w@    (exact: w(2.625@+49) + 20@+231)
+    //  Time Complexity: ~2.5w@  (exact: w(2@+11)   + 24@+51)
+    // Space Complexity: <3w@    (exact: w(2.375@+50) + 20@+231)
     //   Saves the return address to the stack and jumps to the given "address".
     //   When returned, it removes the return-address from the stack.
     //
@@ -41,8 +41,8 @@ ns stl {
         hex.pop_ret_address return_label
     }
 
-    //  Time Complexity: <3w@  (exact: w(2.25@+10)  + 37@+57)
-    // Space Complexity: <3w@  (exact: w(2.625@+49) + 43@+251)
+    //  Time Complexity: <3w@  (exact: w(2@+11)  + 37@+57)
+    // Space Complexity: <3w@  (exact: w(2.375@+50) + 43@+251)
     //   Saves the return address to the stack and jumps to the given "address".
     //   When returned, it removes the return-address from the stack, and pops "params_stack_length" cells from the stack.
     //
@@ -60,8 +60,8 @@ ns stl {
     }
 
 
-    //  Time Complexity: w(2@+7)      + 9@+23
-    // Space Complexity: w(2.375@+34) + 5@+67
+    //  Time Complexity: w(2@+11)      + 9@+23
+    // Space Complexity: w(2.375@+50) + 5@+67
     //   Returns to the calling function (gets the return-address from the top of the stack).
     //
     // note: jumps to the last-call's pop_ret_address (which this macro counts as time, but not space, complexity).

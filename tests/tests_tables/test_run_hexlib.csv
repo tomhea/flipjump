@@ -1,6 +1,7 @@
 hexlib-print_as_digit, tests/compiled/hexlib_tests/basics1/print_as_digit.fjm, ,tests/inout/hexlib_tests/basics1/print_as_digit.out, False,False
 hexlib-input, tests/compiled/hexlib_tests/basics1/input.fjm, tests/inout/hexlib_tests/basics1/input.in,tests/inout/hexlib_tests/basics1/input.out, False,False
 hexlib-basic_memory, tests/compiled/hexlib_tests/basics1/basic_memory.fjm, ,tests/inout/hexlib_tests/basics1/basic_memory.out, False,False
+hexlib-triple_exact_xor, tests/compiled/hexlib_tests/basics1/triple_exact_xor.fjm, ,tests/inout/hexlib_tests/basics1/triple_exact_xor.out, False,False
 hexlib-basic_math, tests/compiled/hexlib_tests/basics1/basic_math.fjm, ,tests/inout/hexlib_tests/basics1/basic_math.out, False,False
 hexlib-if, tests/compiled/hexlib_tests/basics1/if.fjm, ,tests/inout/hexlib_tests/basics1/if.out, False,False
 hexlib-print_int, tests/compiled/hexlib_tests/basics1/print_int.fjm, ,tests/inout/hexlib_tests/basics1/print_int.out, False,False
@@ -52,6 +53,7 @@ hexlib-idiv-cases, tests/compiled/hexlib_tests/div/test_idiv_cases.fjm, ,tests/i
 hexlib-strings, tests/compiled/hexlib_tests/basics1/strings.fjm, tests/inout/hexlib_tests/basics1/strings.in,tests/inout/hexlib_tests/basics1/strings.out, True,True
 hexlib-scmp, tests/compiled/hexlib_tests/basics1/scmp.fjm, ,tests/inout/hexlib_tests/basics1/scmp.out, False,False
 hexlib-nth_pointers, tests/compiled/hexlib_tests/basics2/nth_pointers.fjm, ,tests/inout/hexlib_tests/basics2/nth_pointers.out, False,False
+hexlib-pointer_setters, tests/compiled/hexlib_tests/basics2/pointer_setters.fjm, ,tests/inout/hexlib_tests/basics2/pointer_setters.out, False,False
 hexlib-input_dec_until, tests/compiled/hexlib_tests/basics1/input_dec_until.fjm, tests/inout/hexlib_tests/basics1/input_dec_until.in,tests/inout/hexlib_tests/basics1/input_dec_until.out, True,True
 hexlib-helpers_w64, tests/compiled/hexlib_tests/helpers/helpers_w64.fjm, ,tests/inout/hexlib_tests/helpers/helpers.out, False,False
 hexlib-helpers_w32, tests/compiled/hexlib_tests/helpers/helpers_w32.fjm, ,tests/inout/hexlib_tests/helpers/helpers.out, False,False

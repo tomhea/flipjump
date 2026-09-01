@@ -1,6 +1,6 @@
 ns hex {
-    //  Time Complexity: w(0.75@+ 5) + 6@+13
-    // Space Complexity: w(0.75@+29) + 6@+36
+    //  Time Complexity: w( 0.5@+ 4) + 6@+13
+    // Space Complexity: w( 0.5@+22) + 6@+36
     //   like:  dst ^= *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def xor_hex_from_ptr dst, ptr < hex.pointers.read_byte {
@@ -9,8 +9,8 @@ ns hex {
         .xor dst, hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 7@+13
-    // Space Complexity: w(0.75@+29) + 7@+48
+    //  Time Complexity: w( 0.5@+ 4) + 7@+13
+    // Space Complexity: w( 0.5@+22) + 7@+48
     //   like:  dst[:2] ^= *ptr
     // dst is a hex[2:]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def xor_byte_from_ptr dst, ptr < hex.pointers.read_byte {

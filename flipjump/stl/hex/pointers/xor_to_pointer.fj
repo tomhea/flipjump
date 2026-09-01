@@ -1,6 +1,6 @@
 ns hex {
-    //  Time Complexity: w(0.5@+2)  + @
-    // Space Complexity: w(0.5@+14) + @
+    //  Time Complexity: w(0.5@+4)  + @
+    // Space Complexity: w(0.5@+22) + @
     //   like:  *ptr;
     //   Flip the address the pointer points to.
     // ptr is a hex[:w/4] that holds an address.
@@ -16,8 +16,8 @@ ns hex {
     }
 
 
-    //  Time Complexity: w(0.5@+2)  + @+6
-    // Space Complexity: w(0.5@+14) + @+6
+    //  Time Complexity: w(0.5@+4)  + @+6
+    // Space Complexity: w(0.5@+22) + @+6
     // The stl.comp_flip_if executes in ~##w, which should be much less than @/2 operations.
     //   like:  (*ptr)+dbit;
     //   Flip the address dbit-ahead of what the pointer points to.
@@ -29,8 +29,8 @@ ns hex {
     }
 
 
-    //  Time Complexity: w(0.5@+2)  + 5@+12
-    // Space Complexity: w(0.5@+14) + 5@+76
+    //  Time Complexity: w(0.5@+4)  + 5@+12
+    // Space Complexity: w(0.5@+22) + 5@+76
     //   like:  hex.xor *ptr, hex
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
     def xor_hex_to_ptr ptr, hex {
@@ -38,8 +38,8 @@ ns hex {
         .pointers.xor_hex_to_flip_ptr hex
     }
 
-    //  Time Complexity: w(0.5@+2)  + 10@+24
-    // Space Complexity: w(0.5@+14) + 10@+152
+    //  Time Complexity: w(0.5@+4)  + 10@+24
+    // Space Complexity: w(0.5@+22) + 10@+152
     //   like:  hex.xor *ptr, hex[:2]
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
     def xor_byte_to_ptr ptr, hex {
@@ -47,8 +47,8 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex
     }
 
-    //  Time Complexity: n(w(0.5@+2)  + 14@+26)
-    // Space Complexity: n(w(0.9@+17) + 10@+131)
+    //  Time Complexity: n(w(0.5@+4)  + 14@+26)
+    // Space Complexity: n(w(0.88@+25) + 10@+131)
     //   like:  hex.xor *ptr[:n], hex[:n]
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
     def xor_hex_to_ptr n, ptr, hex {
@@ -56,8 +56,8 @@ ns hex {
         .ptr_sub ptr, n
     }
 
-    //  Time Complexity: n(w(0.5@+2)  + 19@+38)
-    // Space Complexity: n(w(0.9@+17) + 15@+207)
+    //  Time Complexity: n(w(0.5@+4)  + 19@+38)
+    // Space Complexity: n(w(0.88@+25) + 15@+207)
     //   like:  hex.xor *ptr[:n], hex[:2n]
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
     def xor_byte_to_ptr n, ptr, hex {
@@ -66,8 +66,8 @@ ns hex {
     }
 
     ns pointers {
-        //  Time Complexity: w(0.5@+2)  + 14@+26
-        // Space Complexity: w(0.9@+17) + 10@+131
+        //  Time Complexity: w(0.5@+4)  + 14@+26
+        // Space Complexity: w(0.88@+25) + 10@+131
         //   like:  hex.xor *ptr, hex
         //          ptr += dw
         // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
@@ -76,8 +76,8 @@ ns hex {
             ..ptr_inc ptr
         }
 
-        //  Time Complexity: w(0.5@+2)  + 19@+38
-        // Space Complexity: w(0.9@+17) + 15@+207
+        //  Time Complexity: w(0.5@+4)  + 19@+38
+        // Space Complexity: w(0.88@+25) + 15@+207
         //   like:  hex.xor *ptr, hex[:2]
         //          ptr += dw
         // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
@@ -147,8 +147,8 @@ ns hex {
         }
     }
 
-    //  Time Complexity: w(1.5@+5)
-    // Space Complexity: w(1.5@+17)
+    //  Time Complexity: w(1.5@+7)
+    // Space Complexity: w(1.5@+25)
     //   like:  wflip *ptr, value
     // ptr is a hex[:w/4] that holds an address, which we assume is w-aligned.
     def ptr_wflip ptr, value {
@@ -170,8 +170,8 @@ ns hex {
         }
     }
 
-    //  Time Complexity: w(1.5@+5)
-    // Space Complexity: w(1.5@+17)
+    //  Time Complexity: w(1.5@+7)
+    // Space Complexity: w(1.5@+25)
     //   like:  wflip (*ptr)+w, value
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def ptr_wflip_2nd_word ptr, value {

@@ -139,6 +139,88 @@ ns hex {
         wflip src+w, first_flip
     }
 
+    //  Time Complexity: @+8
+    // Space Complexity: @+44
+    //   {q3,q2,q1,q0} ^= src
+    //   {t3,t2,t1,t0} ^= src
+    //   {d3,d2,d1,d0} ^= src
+    //
+    // q3,q2,q1,q0,t3,t2,t1,t0,d3,d2,d1,d0 are bit-addresses; src is hex.
+    def triple_exact_xor q3, q2, q1, q0, t3, t2, t1, t0, d3, d2, d1, d0, src \
+            @ first_flip, second_flip, third_flip, end {
+        wflip src+w, first_flip, src
+        pad 16
+      first_flip:
+          ;end                  //  0
+        q0;second_flip+ 1*dw    //  1
+        q1;second_flip+ 2*dw    //  2
+        q1;second_flip+ 3*dw    //  3
+        q2;second_flip+ 4*dw    //  4
+        q2;second_flip+ 5*dw    //  5
+        q2;second_flip+ 6*dw    //  6
+        q2;second_flip+ 7*dw    //  7
+        q3;second_flip+ 8*dw    //  8
+        q3;second_flip+ 9*dw    //  9
+        q3;second_flip+10*dw    // 10
+        q3;second_flip+11*dw    // 11
+        q3;second_flip+12*dw    // 12
+        q3;second_flip+13*dw    // 13
+        q3;second_flip+14*dw    // 14
+        q3;second_flip+15*dw    // 15
+
+      second_flip:
+          ;end                  //  0
+        t0;third_flip+ 1*dw     //  1
+        t1;third_flip+ 2*dw     //  2
+        t1;third_flip+ 3*dw     //  3
+        t2;third_flip+ 4*dw     //  4
+        t2;third_flip+ 5*dw     //  5
+        t2;third_flip+ 6*dw     //  6
+        t2;third_flip+ 7*dw     //  7
+        t3;third_flip+ 8*dw     //  8
+        t3;third_flip+ 9*dw     //  9
+        t3;third_flip+10*dw     // 10
+        t3;third_flip+11*dw     // 11
+        t3;third_flip+12*dw     // 12
+        t3;third_flip+13*dw     // 13
+        t3;third_flip+14*dw     // 14
+        t3;third_flip+15*dw     // 15
+
+      third_flip:
+          ;end                  //  0
+        d0;end                  //  1
+        d1;end                  //  2
+        d1;first_flip+1*dw      //  3
+        d2;end                  //  4
+        d2;first_flip+1*dw      //  5
+        d2;first_flip+2*dw      //  6
+        d2;first_flip+3*dw      //  7
+        d3;end                  //  8
+        d3;first_flip+1*dw      //  9
+        d3;first_flip+2*dw      // 10
+        d3;first_flip+3*dw      // 11
+        d3;first_flip+4*dw      // 12
+        d3;first_flip+5*dw      // 13
+        d3;first_flip+6*dw      // 14
+        d3;first_flip+7*dw      // 15
+      end:
+        wflip src+w, first_flip
+    }
+
+    //  Time Complexity: n(@+8)
+    // Space Complexity: n(@+44)
+    //   address1(bit_address) ^= src
+    //   address2(bit_address) ^= src
+    //   var ^= src
+    // var,src are hex[:n], address1,address2 are addresses.
+    def address_and_variable_triple_xor n, address1, address2, var, src {
+        rep(n, i) .triple_exact_xor \
+            address1+4*i+3, address1+4*i+2, address1+4*i+1, address1+4*i+0, \
+            address2+4*i+3, address2+4*i+2, address2+4*i+1, address2+4*i+0, \
+            var+dbit+i*dw+3, var+dbit+i*dw+2, var+dbit+i*dw+1, var+dbit+i*dw+0, \
+            src+i*dw
+    }
+
     //  Time Complexity: n(@+12)
     // Space Complexity: n(@+60)
     //   address1(bit_address) ^= src
