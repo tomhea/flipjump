@@ -27,7 +27,7 @@ ns hex {
     // dst is a hex[:PTR_CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     // @note: at the default PTR_CELL_BITS=8 this is exactly read_byte.
     def read_cell dst, ptr {
-        .zero .pointers.PTR_CELL_BITS/4, dst
+        .zero .pointers.PTR_WIDE/4, dst
         .xor_cell_from_ptr dst, ptr
     }
 }

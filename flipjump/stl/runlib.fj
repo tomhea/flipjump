@@ -18,6 +18,31 @@ ns hex {
         // A wider cell costs 2^PTR_CELL_BITS ops of table and PTR_CELL_BITS/4 hexes of zeroing per
         // read; it buys reading that many bits in ONE dereference instead of one per byte.
         PTR_CELL_BITS = 8
+
+        // The WIDE cell width, in bits, or 0 for "do not lay a wide table at all".
+        //
+        // A program does not have to choose ONE cell width. The bit that gets flipped is
+        // what selects the table -- dbit+PTR_CELL_BITS sends a slot to the narrow table at
+        // op 2^PTR_CELL_BITS, dbit+PTR_WIDE_BITS sends it to the wide one at op
+        // 2^PTR_WIDE_BITS -- so both tables can sit in the same program and each pointer
+        // macro picks the one it wants. The two never overlap (256..511 and 65536..131071
+        // at 8 and 16), they share ret_after_read_byte, and one read_byte register serves
+        // both, sized to the wider of the two.
+        //
+        // That is the whole point: a narrow read costs exactly what it costs today, and
+        // ONLY the sites that actually use hex.read_cell / hex.write_cell pay the wide
+        // price. Widening PTR_CELL_BITS instead taxes every dereference in the program.
+        //
+        // Same rules as PTR_CELL_BITS when non-zero: a multiple of 4, at least 8, and
+        // dbit+PTR_WIDE_BITS < dw. Costs 2^PTR_WIDE_BITS ops of table when on, 0 when off.
+        //     fj ... -D hex.pointers.PTR_WIDE_BITS=16
+        PTR_WIDE_BITS = 0
+
+        // The width hex.read_cell / hex.write_cell actually move: the wide table when there
+        // is one, otherwise the narrow cell. So `read_cell` always means "one whole cell,"
+        // and a program that never sets PTR_WIDE_BITS still assembles and behaves exactly
+        // as read_byte does.
+        PTR_WIDE = .PTR_WIDE_BITS > 0 ? .PTR_WIDE_BITS : .PTR_CELL_BITS
     }
 }
 

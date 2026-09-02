@@ -20,7 +20,7 @@ ns hex {
     def zero_ptr ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
-        .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
+        .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
     }
 
     //  Time Complexity: w( 0.5@+4)  + 17@+37
@@ -44,10 +44,27 @@ ns hex {
     // whatever was left in the top of the cell.
     // src is a hex[:PTR_CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     // @note: at the default PTR_CELL_BITS=8 this is exactly write_byte.
+    //  Time Complexity: w(0.5@+4) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+37
+    // Space Complexity: w(0.5@+22) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+24 + 88(PTR_WIDE/4)
+    //   like:  *ptr = 0     for a WIDE cell.
+    //
+    // ⚠ hex.zero_ptr is the NARROW one and must not be pointed at a wide cell. Width is a
+    // property of the REGION, not of the call: the read dance arms a slot by flipping
+    // dbit+width, and a wide cell armed at dbit+PTR_CELL_BITS lands outside the narrow table
+    // entirely. That is not a wrong value, it is an unbounded jump.
+    // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    def zero_cell_ptr ptr < hex.pointers.read_byte {
+        .pointers.set_flip_and_jump_pointers ptr
+        rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
+        rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
+        .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
+    }
+
     def write_cell ptr, src < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
-        .pointers.read_byte_from_inners_ptrs
-        .xor .pointers.PTR_CELL_BITS/4, hex.pointers.read_byte, src
+        rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
+        rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
+        .xor .pointers.PTR_WIDE/4, hex.pointers.read_byte, src
         .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
     }
 }

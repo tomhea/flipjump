@@ -43,9 +43,15 @@ ns hex {
                 d==0 ? 0 : (.read_byte + (((#d)-1)/4)*dw + dbit + ((#d)-1)%4), \
                 (d==((1<<(#d))>>1)) ? .ret_after_read_byte : read_ptr_byte_table+(d^((1<<(#d))>>1))*dw
 
-          // the destination of a read: one whole cell, PTR_CELL_BITS/4 hexes wide.
+          // the WIDE table, laid only when PTR_WIDE_BITS asks for it. Same construction at op
+          // 2^PTR_WIDE_BITS instead, so a slot armed with dbit+PTR_WIDE_BITS lands HERE and
+          // one armed with dbit+PTR_CELL_BITS lands in the narrow table above. The flipped
+          // bit is what selects the table, which is why both can coexist.
+            rep(.PTR_WIDE_BITS > 0, i) .wide_table_init
+
+          // the destination of a read: as wide as the WIDER of the two tables.
           read_byte:
-            hex.vec .PTR_CELL_BITS/4
+            hex.vec .PTR_WIDE/4
           ret_after_read_byte:
             ;0
 
@@ -60,6 +66,29 @@ ns hex {
           // Shared scratch pointer for the indexed read_nth_*/write_nth_* macros.
           nth_ptr:
             hex.vec w/4, 0
+        }
+
+        // Space Complexity: 2^PTR_WIDE_BITS   (nothing at all when PTR_WIDE_BITS is 0)
+        //   The wide decoder table. It is a separate macro only so that ptr_init can emit
+        //   it conditionally; it must begin at op exactly 2^PTR_WIDE_BITS, which is what
+        //   the pad is for, and it shares hex.pointers.read_byte with the narrow table.
+        def wide_table_init @ read_ptr_wide_table < .read_byte > ret_after_read_wide {
+            rep(.PTR_WIDE_BITS % 4 != 0, i) \
+                .PTR_WIDE_BITS__must_be_a_multiple_of_4
+            rep(.PTR_WIDE_BITS < 8, i) \
+                .PTR_WIDE_BITS__must_be_at_least_8
+            rep(dbit + .PTR_WIDE_BITS >= dw, i) \
+                .PTR_WIDE_BITS__must_leave_dbit_plus_it_below_dw
+            rep(.PTR_WIDE_BITS <= .PTR_CELL_BITS, i) \
+                .PTR_WIDE_BITS__must_be_wider_than_PTR_CELL_BITS
+
+            pad 1<<.PTR_WIDE_BITS
+          read_ptr_wide_table:
+            rep(1<<.PTR_WIDE_BITS, d) stl.fj \
+                d==0 ? 0 : (.read_byte + (((#d)-1)/4)*dw + dbit + ((#d)-1)%4), \
+                (d==((1<<(#d))>>1)) ? .ret_after_read_wide : read_ptr_wide_table+(d^((1<<(#d))>>1))*dw
+          ret_after_read_wide:
+            ;0
         }
 
         //  Time Complexity: w(0.5@+4)

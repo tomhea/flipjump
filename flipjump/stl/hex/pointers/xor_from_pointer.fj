@@ -29,8 +29,9 @@ ns hex {
     // dst is a hex[:PTR_CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     def xor_cell_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
-        .pointers.read_byte_from_inners_ptrs
-        .xor .pointers.PTR_CELL_BITS/4, dst, hex.pointers.read_byte
+        rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
+        rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
+        .xor .pointers.PTR_WIDE/4, dst, hex.pointers.read_byte
     }
 
     ns pointers {
@@ -40,31 +41,60 @@ ns hex {
         //   does:       hex.pointers.read_byte[:2] = *ptr
         //
         // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
-        def read_byte_from_inners_ptrs @ read_ptr_and_flip_back, cleanup \
-                < hex.pointers.ret_after_read_byte, hex.pointers.read_byte, hex.pointers.to_jump, hex.pointers.to_flip {
+        //  Time Complexity: 5@+13
+        // Space Complexity: 5@+24
+        //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
+        //   does:       hex.pointers.read_byte[:PTR_CELL_BITS/4] = *ptr
+        //
+        // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+        def read_byte_from_inners_ptrs < .ret_after_read_byte {
+            .read_cell_from_inners_ptrs .PTR_CELL_BITS, .ret_after_read_byte
+        }
+
+        //  Time Complexity: 5@+13
+        // Space Complexity: 5@+24
+        //   the same dance against the WIDE table, so it returns PTR_WIDE_BITS bits from one
+        //   dereference. Only valid when PTR_WIDE_BITS is non-zero.
+        def read_wide_from_inners_ptrs < .ret_after_read_wide {
+            .read_cell_from_inners_ptrs .PTR_WIDE_BITS, .ret_after_read_wide
+        }
+
+        //  Time Complexity: 5@+13
+        // Space Complexity: 5@+24
+        //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
+        //   does:       hex.pointers.read_byte[:bits/4] = *ptr
+        //
+        // `bits` is what makes this one macro serve BOTH decoder tables: the slot is armed by
+        // flipping dbit+bits, and that lands it on its own entry of the table at op 2^bits. So
+        // bits=PTR_CELL_BITS reads through the narrow table and bits=PTR_WIDE_BITS through the
+        // wide one, in the same program, and a narrow read pays nothing for the wide table.
+        // `ret` is that table's return opcode.
+        // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+        def read_cell_from_inners_ptrs bits, ret @ read_ptr_and_flip_back, cleanup \
+                < hex.pointers.read_byte, hex.pointers.to_jump, hex.pointers.to_flip {
             // 1.  setup:
             //       zero read_byte.
-            //       to_flip   = ptr + dbit+PTR_CELL_BITS.
+            //       to_flip   = ptr + dbit+bits.
             //       to_jump+w = ptr.
-            hex.zero hex.pointers.PTR_CELL_BITS/4, hex.pointers.read_byte
-            wflip hex.pointers.to_flip, dbit+hex.pointers.PTR_CELL_BITS
+            hex.zero bits/4, hex.pointers.read_byte
+            wflip hex.pointers.to_flip, dbit+bits
 
-            // 2.  *(ptr+w) ^= 2^PTR_CELL_BITS, so that now *(ptr+w) == 2^PTR_CELL_BITS + original_value
-            //     and the slot therefore jumps to its OWN entry of read_ptr_byte_table.
+            // 2.  *(ptr+w) ^= 2^bits, so the slot now jumps to its OWN entry of the table that
+            //     begins at op 2^bits.
             wflip hex.pointers.to_flip+w, read_ptr_and_flip_back, hex.pointers.to_flip
 
             pad 4
           read_ptr_and_flip_back:
-            // 3.  Jump to *(ptr+w). It will xor the pointed original_value byte into hex.pointers.read_byte.
-            // 4.  Then jump to hex.pointers.to_flip to make *(ptr+w)==original_value back again.
+            // 3.  Jump to *(ptr+w). It xors the pointed value into hex.pointers.read_byte.
+            // 4.  Then jump to hex.pointers.to_flip to make *(ptr+w) itself again.
             // 5.  Then return to cleanup.
             wflip hex.pointers.to_flip+w, read_ptr_and_flip_back^cleanup
-            wflip hex.pointers.ret_after_read_byte+w, hex.pointers.to_flip, hex.pointers.to_jump
+            wflip ret+w, hex.pointers.to_flip, hex.pointers.to_jump
 
           cleanup:
             // 6.  to_flip = ptr, clean jump-back addresses.
-            wflip hex.pointers.ret_after_read_byte+w, hex.pointers.to_flip
-            wflip hex.pointers.to_flip, dbit+hex.pointers.PTR_CELL_BITS
+            wflip ret+w, hex.pointers.to_flip
+            wflip hex.pointers.to_flip, dbit+bits
             wflip hex.pointers.to_flip+w, cleanup
         }
     }

@@ -117,7 +117,7 @@ ns hex {
         // Covering only two hexes of a wider cell does not write a wrong value, it leaves the
         // top of the cell standing - and a cell read back at PTR_CELL_BITS then differs.
         def xor_cell_to_flip_ptr hex {
-            rep(hex.pointers.PTR_CELL_BITS/4, i) .xor_hex_to_flip_ptr hex+i*dw, 4*i
+            rep(hex.pointers.PTR_WIDE/4, i) .xor_hex_to_flip_ptr hex+i*dw, 4*i
         }
 
         //  Time Complexity: 5@+12

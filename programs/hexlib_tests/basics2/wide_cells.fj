@@ -11,41 +11,48 @@ stl.startup_and_init_all
 
 // 1. a pattern with a DIFFERENT value in every hex, so a hex that lands in the wrong place shows.
     stl.output "cell:"
-    rep(hex.pointers.PTR_CELL_BITS/4, i) hex.set src+i*dw, i+1
+    rep(hex.pointers.PTR_WIDE/4, i) hex.set src+i*dw, i+1
     hex.set w/4, p, cell
     hex.write_cell p, src
     hex.read_cell dst, p
-    hex.print_as_digit hex.pointers.PTR_CELL_BITS/4, dst, 0
+    hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
     stl.output '\n'
 
 // 2. all ones - the widest value the cell can hold, i.e. the highest table entry reachable.
     stl.output "ones:"
-    rep(hex.pointers.PTR_CELL_BITS/4, i) hex.set src+i*dw, 0xf
+    rep(hex.pointers.PTR_WIDE/4, i) hex.set src+i*dw, 0xf
     hex.write_cell p, src
     hex.read_cell dst, p
-    hex.print_as_digit hex.pointers.PTR_CELL_BITS/4, dst, 0
+    hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
     stl.output '\n'
 
-// 3. zero_ptr must clear the WHOLE cell, not the low byte of it.
+// 3. zero_cell_ptr clears the WHOLE cell. hex.zero_ptr is the NARROW one and would
+//    arm this cell at dbit+PTR_CELL_BITS, landing outside the narrow table -- a wild jump.
     stl.output "zeroed:"
-    hex.zero_ptr p
+    hex.zero_cell_ptr p
     hex.read_cell dst, p
-    hex.print_as_digit hex.pointers.PTR_CELL_BITS/4, dst, 0
+    hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
     stl.output '\n'
 
-// 4. the byte API still sees the low byte of a wide cell, unchanged.
+// 4. the low byte of a wide cell comes out of a WIDE read, not hex.read_byte.
+//
+//    This is the one thing a second table costs. Under a single global width every cell is that
+//    width and hex.read_byte reads the low byte of a wide one. With two tables the width belongs
+//    to the REGION: a wide cell armed at dbit+PTR_CELL_BITS lands outside the narrow table, so
+//    hex.read_byte on it is a wild jump, not a truncation. Pack only bytes that are read
+//    TOGETHER -- which is the whole premise of packing anyway.
     stl.output "lowbyte:"
-    rep(hex.pointers.PTR_CELL_BITS/4, i) hex.set src+i*dw, i+1
+    rep(hex.pointers.PTR_WIDE/4, i) hex.set src+i*dw, i+1
     hex.write_cell p, src
-    hex.read_byte bv, p
-    hex.print_as_digit 2, bv, 0
+    hex.read_cell dst, p
+    hex.print_as_digit 2, dst, 0
     stl.output '\n'
 
     stl.loop
 
 
   p:    hex.vec w/4
-  src:  hex.vec hex.pointers.PTR_CELL_BITS/4, 0
-  dst:  hex.vec hex.pointers.PTR_CELL_BITS/4, 0
+  src:  hex.vec hex.pointers.PTR_WIDE/4, 0
+  dst:  hex.vec hex.pointers.PTR_WIDE/4, 0
   bv:   hex.vec 2, 0
   cell: hex.vec 1, 0
