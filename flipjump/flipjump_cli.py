@@ -150,7 +150,7 @@ def assemble(
         # BEFORE the stl, not merely before the user files. The parser substitutes a
         # constant's value where it is USED, at parse time, so an override read after the
         # stl arrives too late for anything the stl itself computes from that constant
-        # (hex.pointers.ptr_init sizes its decoder table from CELL_BITS this way).
+        # (hex.pointers.ptr_init sizes its decoder table from PTR_CELL_BITS this way).
         # A side effect worth knowing: this puts a non-stl file first, so the parser's
         # stl-prefix cache is disabled for the whole run -- which is exactly right, since
         # a cached prefix was parsed without the override.

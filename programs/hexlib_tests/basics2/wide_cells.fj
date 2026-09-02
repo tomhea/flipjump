@@ -1,41 +1,41 @@
-// Writes a FULL CELL_BITS-wide value into ONE memory cell and reads it back, which is the whole
-// point of a wider decoder table: one dereference carries CELL_BITS bits instead of eight.
+// Writes a FULL PTR_CELL_BITS-wide value into ONE memory cell and reads it back, which is the whole
+// point of a wider decoder table: one dereference carries PTR_CELL_BITS bits instead of eight.
 //
-// Everything else in the pointer suite stores values that fit in a byte, so at CELL_BITS=12 or 16
+// Everything else in the pointer suite stores values that fit in a byte, so at PTR_CELL_BITS=12 or 16
 // it never lands on a table entry above 255, never sets a high hex of read_byte, and therefore
 // cannot tell a wide table from a narrow one. This program is the one that can.
 //
-// The printed value is CELL_BITS/4 hexes wide, so the expected output depends on the width -- see
+// The printed value is PTR_CELL_BITS/4 hexes wide, so the expected output depends on the width -- see
 // tests/unit/test_cell_bits.py, which computes it.
 stl.startup_and_init_all
 
 // 1. a pattern with a DIFFERENT value in every hex, so a hex that lands in the wrong place shows.
     stl.output "cell:"
-    rep(hex.pointers.CELL_BITS/4, i) hex.set src+i*dw, i+1
+    rep(hex.pointers.PTR_CELL_BITS/4, i) hex.set src+i*dw, i+1
     hex.set w/4, p, cell
     hex.write_cell p, src
     hex.read_cell dst, p
-    hex.print_as_digit hex.pointers.CELL_BITS/4, dst, 0
+    hex.print_as_digit hex.pointers.PTR_CELL_BITS/4, dst, 0
     stl.output '\n'
 
 // 2. all ones - the widest value the cell can hold, i.e. the highest table entry reachable.
     stl.output "ones:"
-    rep(hex.pointers.CELL_BITS/4, i) hex.set src+i*dw, 0xf
+    rep(hex.pointers.PTR_CELL_BITS/4, i) hex.set src+i*dw, 0xf
     hex.write_cell p, src
     hex.read_cell dst, p
-    hex.print_as_digit hex.pointers.CELL_BITS/4, dst, 0
+    hex.print_as_digit hex.pointers.PTR_CELL_BITS/4, dst, 0
     stl.output '\n'
 
 // 3. zero_ptr must clear the WHOLE cell, not the low byte of it.
     stl.output "zeroed:"
     hex.zero_ptr p
     hex.read_cell dst, p
-    hex.print_as_digit hex.pointers.CELL_BITS/4, dst, 0
+    hex.print_as_digit hex.pointers.PTR_CELL_BITS/4, dst, 0
     stl.output '\n'
 
 // 4. the byte API still sees the low byte of a wide cell, unchanged.
     stl.output "lowbyte:"
-    rep(hex.pointers.CELL_BITS/4, i) hex.set src+i*dw, i+1
+    rep(hex.pointers.PTR_CELL_BITS/4, i) hex.set src+i*dw, i+1
     hex.write_cell p, src
     hex.read_byte bv, p
     hex.print_as_digit 2, bv, 0

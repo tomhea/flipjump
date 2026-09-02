@@ -5,19 +5,19 @@ dbit = w + #w   // the bit-distance from the variable's start, to the bit/hex va
 ns hex {
     ns pointers {
         // How many BITS one pointed-to memory cell holds, and therefore how big the decoder
-        // table ptr_init lays down is: 2^CELL_BITS entries, at op exactly 2^CELL_BITS.
+        // table ptr_init lays down is: 2^PTR_CELL_BITS entries, at op exactly 2^PTR_CELL_BITS.
         //
-        // Reading a cell works by adding 2^CELL_BITS to the slot's jump value so that it lands
-        // on its own table entry (see ptr_init), which is a flip of bit dbit+CELL_BITS -- so
-        // the ceiling is dbit+CELL_BITS < dw, i.e. 25 at w=32 and 56 at w=64. It must also be a
+        // Reading a cell works by adding 2^PTR_CELL_BITS to the slot's jump value so that it lands
+        // on its own table entry (see ptr_init), which is a flip of bit dbit+PTR_CELL_BITS -- so
+        // the ceiling is dbit+PTR_CELL_BITS < dw, i.e. 25 at w=32 and 56 at w=64. It must also be a
         // multiple of 4, because the value is decoded into a hex vector.
         //
         // Declared HERE, in the first stl file, so that it is a backward reference by the time
         // basic_pointers.fj uses it as a `pad` and a `rep` count. Override it per build with
-        //     fj ... -D hex.pointers.CELL_BITS=16
-        // A wider cell costs 2^CELL_BITS ops of table and CELL_BITS/4 hexes of zeroing per
+        //     fj ... -D hex.pointers.PTR_CELL_BITS=16
+        // A wider cell costs 2^PTR_CELL_BITS ops of table and PTR_CELL_BITS/4 hexes of zeroing per
         // read; it buys reading that many bits in ONE dereference instead of one per byte.
-        CELL_BITS = 8
+        PTR_CELL_BITS = 8
     }
 }
 

@@ -1,4 +1,4 @@
-"""hex.pointers.CELL_BITS: the width of one pointed-to memory cell, and so of the decoder table.
+"""hex.pointers.PTR_CELL_BITS: the width of one pointed-to memory cell, and so of the decoder table.
 
 These are the only tests that exercise a WIDE pointer table, because the .fj test tables in
 tests/tests_tables have no column for -D. Each case assembles a real pointer program at 8, 12 and
@@ -38,10 +38,10 @@ def _assemble_at(tmp_path: Path, program: str, cell_bits: int) -> Path:
     out = tmp_path / f"cell{cell_bits}_{Path(program).stem}.fjm"
     args = [sys.executable, "-c", DRIVER, "--asm", "-o", str(out), "-w", "64"]
     if cell_bits != 8:
-        args += ["-D", f"hex.pointers.CELL_BITS = {cell_bits}"]
+        args += ["-D", f"hex.pointers.PTR_CELL_BITS = {cell_bits}"]
     args.append(str(REPO / program))
     result = subprocess.run(args, cwd=str(REPO), capture_output=True, text=True, timeout=900)
-    assert result.returncode == 0, f"assembling at CELL_BITS={cell_bits} failed:\n{result.stdout}{result.stderr}"
+    assert result.returncode == 0, f"assembling at PTR_CELL_BITS={cell_bits} failed:\n{result.stdout}{result.stderr}"
     return out
 
 
@@ -56,20 +56,20 @@ def test_pointer_program_is_correct_at_every_cell_width(
     assert run_test_output(fjm, b"", (REPO / expected).read_bytes(), print_time=False, print_termination=False)
 
 
-def test_cell_bits_actually_reaches_the_decoder_table(tmp_path: Path) -> None:
-    """the control for the test above. CELL_BITS sizes a `pad` and a `rep` inside ptr_init, so a
+def test_ptr_cell_bits_actually_reaches_the_decoder_table(tmp_path: Path) -> None:
+    """the control for the test above. PTR_CELL_BITS sizes a `pad` and a `rep` inside ptr_init, so a
     wider setting must produce a bigger, different binary. Without this, "still correct at 16"
     would be satisfied by a -D that reached nothing at all."""
     program = POINTER_PROGRAMS[0][1]
     sizes = {}
     for cell_bits in (8, 12, 16):
         sizes[cell_bits] = _assemble_at(tmp_path, program, cell_bits).read_bytes()
-    assert sizes[8] != sizes[12], "-D hex.pointers.CELL_BITS did not reach the table"
-    assert sizes[12] != sizes[16], "-D hex.pointers.CELL_BITS did not reach the table"
+    assert sizes[8] != sizes[12], "-D hex.pointers.PTR_CELL_BITS did not reach the table"
+    assert sizes[12] != sizes[16], "-D hex.pointers.PTR_CELL_BITS did not reach the table"
 
 
-def test_cell_bits_is_overridable_because_the_defines_file_precedes_the_stl(tmp_path: Path) -> None:
-    """CELL_BITS is declared in runlib.fj and consumed in basic_pointers.fj, both stl files. A
+def test_ptr_cell_bits_is_overridable_because_the_defines_file_precedes_the_stl(tmp_path: Path) -> None:
+    """PTR_CELL_BITS is declared in runlib.fj and consumed in basic_pointers.fj, both stl files. A
     constant is substituted where it is USED, at parse time, so an override read after the stl
     arrives too late. This asserts the ordering that makes the override possible at all."""
     from flipjump.utils.functions import get_stl_paths
