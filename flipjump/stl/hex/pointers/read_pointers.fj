@@ -19,6 +19,17 @@ ns hex {
         .zero 2, dst
         .xor_byte_from_ptr dst, ptr
     }
+
+    //  Time Complexity: w(0.5@+4) + (5+2*CELL_BITS/4)@+13
+    // Space Complexity: w(0.5@+22) + (5+2*CELL_BITS/4)@+24 + 24(CELL_BITS/4)
+    //   like:  dst[:CELL_BITS/4] = *ptr
+    //   Reads a WHOLE CELL - all CELL_BITS bits - in ONE dereference.
+    // dst is a hex[:CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // @note: at the default CELL_BITS=8 this is exactly read_byte.
+    def read_cell dst, ptr {
+        .zero .pointers.CELL_BITS/4, dst
+        .xor_cell_from_ptr dst, ptr
+    }
 }
 
 

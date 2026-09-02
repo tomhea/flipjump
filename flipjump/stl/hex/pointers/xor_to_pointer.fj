@@ -107,6 +107,19 @@ ns hex {
             rep(2, i) .xor_hex_to_flip_ptr hex+i*dw, 4*i
         }
 
+        //  Time Complexity: 5(CELL_BITS/4)@ + 12(CELL_BITS/4)
+        // Space Complexity: 5(CELL_BITS/4)@ + 76(CELL_BITS/4)
+        //   xors a WHOLE CELL (CELL_BITS/4 hexes) to the cell pointed by hex.pointers.to_flip.
+        //   use after:  .pointers.set_flip_and_jump_pointers ptr
+        //
+        // This is the write-side twin of the read: read_byte_from_inners_ptrs decodes all
+        // CELL_BITS bits, so anything that clears or rewrites a cell must cover all of them.
+        // Covering only two hexes of a wider cell does not write a wrong value, it leaves the
+        // top of the cell standing - and a cell read back at CELL_BITS then differs.
+        def xor_cell_to_flip_ptr hex {
+            rep(hex.pointers.CELL_BITS/4, i) .xor_hex_to_flip_ptr hex+i*dw, 4*i
+        }
+
         //  Time Complexity: 5@+12
         // Space Complexity: 5@+76
         //   xors (the parameter hex, shifted left by bit_shift) to the hex/byte pointed by the memory-word hex.pointers.to_flip.

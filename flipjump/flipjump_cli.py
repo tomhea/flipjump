@@ -146,6 +146,15 @@ def assemble(
     @param error_func: the parser's error function
     """
     file_tuples = get_file_tuples(args.files, no_stl=args.no_stl)
+    if defines_file is not None:
+        # BEFORE the stl, not merely before the user files. The parser substitutes a
+        # constant's value where it is USED, at parse time, so an override read after the
+        # stl arrives too late for anything the stl itself computes from that constant
+        # (hex.pointers.ptr_init sizes its decoder table from CELL_BITS this way).
+        # A side effect worth knowing: this puts a non-stl file first, so the parser's
+        # stl-prefix cache is disabled for the whole run -- which is exactly right, since
+        # a cached prefix was parsed without the override.
+        file_tuples.insert(0, ('d1', defines_file))
     verify_fj_files(error_func, file_tuples)
 
     fjm_writer = Writer(
@@ -448,8 +457,9 @@ _DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*
 def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> Optional[Path]:
     """
     write the --define overrides into a temporary .fj file, and put it first among the input files.
-    it lands after the stl (so a define may use w, dw, an stl constant, or an earlier define) and
-    before every user file.
+    it lands BEFORE the stl, so that a constant the stl itself uses is overridden before the stl
+    is parsed. A define's VALUE may therefore use `w` (a parser builtin) and an earlier define,
+    but not an stl constant such as dw -- write 2*w instead.
 
     The file is ordinary .fj, which is what keeps the whole expression language available to a
     define. What makes its constants OVERRIDES rather than declarations is that the parser is told
@@ -480,7 +490,6 @@ def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: E
         lines.append(f'{opening}{base_name} ={value}{closing}' + chr(10))
     defines_path = Path(temp_dir_name) / '_defines.fj'
     defines_path.write_text(''.join(lines), encoding='utf-8')
-    args.files.insert(0, str(defines_path))
     return defines_path
 
 

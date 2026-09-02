@@ -27,8 +27,8 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 |-----------------------------------|---------------------------------------------------------------------------------|
 | `basic_pointers.fj`               | `ptr_init`, `ptr_jump`, `set_flip_and_jump_pointers` (and its `set_flip_pointer` / `set_jump_pointer` aliases), `stack_init`. |
 | `pointer_arithmetics.fj`          | `ptr_inc`, `ptr_dec`, `ptr_add`, `ptr_sub`.                                     |
-| `read_pointers.fj`                | `read_byte`, `read_hex`, `read_byte_and_inc`, `read_hex_and_inc`.               |
-| `write_pointers.fj`               | `write_byte`, `write_hex`, `write_byte_and_inc`, `write_hex_and_inc`, `zero_ptr`. |
+| `read_pointers.fj`                | `read_byte`, `read_hex`, `read_cell`, `read_byte_and_inc`, `read_hex_and_inc`.  |
+| `write_pointers.fj`               | `write_byte`, `write_hex`, `write_cell`, `write_byte_and_inc`, `write_hex_and_inc`, `zero_ptr`. |
 | `stack.fj`                        | `push`, `pop`, `push_byte`/`hex`/`ret_address`, `pop_*`, `sp_inc/dec/add/sub`.   |
 | `xor_from_pointer.fj`             | `xor_byte_from_ptr`, `xor_hex_from_ptr`, `read_byte_from_inners_ptrs`.          |
 | `xor_to_pointer.fj`               | `ptr_flip`, `ptr_wflip`, `ptr_wflip_2nd_word`, `xor_*_to_ptr`, `xor_*_to_flip_ptr`. |

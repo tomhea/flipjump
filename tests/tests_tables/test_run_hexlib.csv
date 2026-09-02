@@ -54,6 +54,7 @@ hexlib-strings, tests/compiled/hexlib_tests/basics1/strings.fjm, tests/inout/hex
 hexlib-scmp, tests/compiled/hexlib_tests/basics1/scmp.fjm, ,tests/inout/hexlib_tests/basics1/scmp.out, False,False
 hexlib-nth_pointers, tests/compiled/hexlib_tests/basics2/nth_pointers.fjm, ,tests/inout/hexlib_tests/basics2/nth_pointers.out, False,False
 hexlib-pointer_setters, tests/compiled/hexlib_tests/basics2/pointer_setters.fjm, ,tests/inout/hexlib_tests/basics2/pointer_setters.out, False,False
+hexlib-wide_cells, tests/compiled/hexlib_tests/basics2/wide_cells.fjm, ,tests/inout/hexlib_tests/basics2/wide_cells.out, False,False
 hexlib-input_dec_until, tests/compiled/hexlib_tests/basics1/input_dec_until.fjm, tests/inout/hexlib_tests/basics1/input_dec_until.in,tests/inout/hexlib_tests/basics1/input_dec_until.out, True,True
 hexlib-helpers_w64, tests/compiled/hexlib_tests/helpers/helpers_w64.fjm, ,tests/inout/hexlib_tests/helpers/helpers.out, False,False
 hexlib-helpers_w32, tests/compiled/hexlib_tests/helpers/helpers_w32.fjm, ,tests/inout/hexlib_tests/helpers/helpers.out, False,False

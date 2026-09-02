@@ -19,6 +19,20 @@ ns hex {
         .xor 2, dst, hex.pointers.read_byte
     }
 
+    //  Time Complexity: w(0.5@+4) + (5+CELL_BITS/4)@+13
+    // Space Complexity: w(0.5@+22) + (5+CELL_BITS/4)@+24 + 12(CELL_BITS/4)
+    //   like:  dst[:CELL_BITS/4] ^= *ptr
+    //   Reads a WHOLE CELL - all CELL_BITS bits - in ONE dereference.
+    //
+    // This is what a wider hex.pointers.CELL_BITS buys: xor_byte_from_ptr pays the whole
+    // dereference for 8 bits, and reading 16 bits as two bytes pays it twice.
+    // dst is a hex[:CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    def xor_cell_from_ptr dst, ptr < hex.pointers.read_byte {
+        .pointers.set_flip_and_jump_pointers ptr
+        .pointers.read_byte_from_inners_ptrs
+        .xor .pointers.CELL_BITS/4, dst, hex.pointers.read_byte
+    }
+
     ns pointers {
         //  Time Complexity: 5@+13
         // Space Complexity: 5@+24
@@ -30,12 +44,13 @@ ns hex {
                 < hex.pointers.ret_after_read_byte, hex.pointers.read_byte, hex.pointers.to_jump, hex.pointers.to_flip {
             // 1.  setup:
             //       zero read_byte.
-            //       to_flip   = ptr + dbit+8.
+            //       to_flip   = ptr + dbit+CELL_BITS.
             //       to_jump+w = ptr.
-            hex.zero 2, hex.pointers.read_byte
-            wflip hex.pointers.to_flip, dbit+8
+            hex.zero hex.pointers.CELL_BITS/4, hex.pointers.read_byte
+            wflip hex.pointers.to_flip, dbit+hex.pointers.CELL_BITS
 
-            // 2.  *(ptr+w)^=256, so that now *(ptr+w) == 256 + original_value.
+            // 2.  *(ptr+w) ^= 2^CELL_BITS, so that now *(ptr+w) == 2^CELL_BITS + original_value
+            //     and the slot therefore jumps to its OWN entry of read_ptr_byte_table.
             wflip hex.pointers.to_flip+w, read_ptr_and_flip_back, hex.pointers.to_flip
 
             pad 4
@@ -49,7 +64,7 @@ ns hex {
           cleanup:
             // 6.  to_flip = ptr, clean jump-back addresses.
             wflip hex.pointers.ret_after_read_byte+w, hex.pointers.to_flip
-            wflip hex.pointers.to_flip, dbit+8
+            wflip hex.pointers.to_flip, dbit+hex.pointers.CELL_BITS
             wflip hex.pointers.to_flip+w, cleanup
         }
     }

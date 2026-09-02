@@ -179,10 +179,12 @@ def test_cli_define_of_a_parser_builtin_is_refused(tmp_path: Path) -> None:
         _assemble_with(tmp_path, "width", DEFINE_PROG, "w = 64")
 
 
-def test_cli_define_lands_after_the_stl(tmp_path: Path) -> None:
-    """the defines file is inserted first among the USER files, i.e. after the stl -- so a define
-    may use an stl constant. `w` is 32 here, so `w + 33` must assemble to exactly what the literal
-    65 assembles to. A defines file placed before the stl could not resolve `w` at all."""
+def test_cli_define_value_may_use_the_builtin_width(tmp_path: Path) -> None:
+    """the defines file is read BEFORE the stl, so that a constant the stl itself uses is already
+    overridden by the time the stl is parsed (see test_cell_bits.py). A define's VALUE can still
+    use `w`, because `w` is a parser builtin rather than an stl constant: `w` is 32 here, so
+    `w + 33` must assemble to exactly what the literal 65 assembles to. An stl constant such as
+    `dw` is NOT available to a define -- write 2*w."""
     computed = _assemble_with(tmp_path, "computed", DEFINE_PROG, "GREET = w + 33")
     literal = _assemble_with(tmp_path, "literal", DEFINE_PROG, "GREET = 65")
     assert computed == literal

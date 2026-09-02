@@ -20,7 +20,7 @@ ns hex {
     def zero_ptr ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
-        .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
+        .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
     }
 
     //  Time Complexity: w( 0.5@+4)  + 17@+37
@@ -32,6 +32,23 @@ ns hex {
         .pointers.read_byte_from_inners_ptrs
         .xor 2, hex.pointers.read_byte, src
         .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
+    }
+
+    //  Time Complexity: w(0.5@+4) + (5+CELL_BITS/4+5*CELL_BITS/4)@+25
+    // Space Complexity: w(0.5@+22) + (5+CELL_BITS/4+5*CELL_BITS/4)@+24 + 88(CELL_BITS/4)
+    //   like:  *ptr = src[:CELL_BITS/4]
+    //   Writes a WHOLE CELL - all CELL_BITS bits - in ONE dereference.
+    //
+    // The read-side twin is hex.read_cell, and section 0.1 of the handoff is why they are one
+    // commit: a cell written 8 bits wide and read CELL_BITS wide is not a wrong value, it is
+    // whatever was left in the top of the cell.
+    // src is a hex[:CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // @note: at the default CELL_BITS=8 this is exactly write_byte.
+    def write_cell ptr, src < hex.pointers.read_byte {
+        .pointers.set_flip_and_jump_pointers ptr
+        .pointers.read_byte_from_inners_ptrs
+        .xor .pointers.CELL_BITS/4, hex.pointers.read_byte, src
+        .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
     }
 }
 

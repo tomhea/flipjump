@@ -15,3 +15,4 @@ cover wide 16-hex values and variable shift amounts.
 | `add_count_bits.fj` | `hex.add_count_bits` (add while counting set bits). |
 | `nth_pointers.fj` | `hex.ptr_index` and the indexed `read_nth_*` / `write_nth_*` macros. |
 | `pointer_setters.fj` | The invariant tying `to_flip`, `to_jump` and their shared shadow together. |
+| `wide_cells.fj` | A whole `hex.pointers.CELL_BITS`-wide cell written and read in one dereference. |

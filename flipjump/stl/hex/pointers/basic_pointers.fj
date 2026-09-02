@@ -1,8 +1,9 @@
 ns hex {
     ns pointers {
-        // NOTE: must be placed just after the startup, so that the read_ptr_byte_table will be in address 256.
+        // NOTE: must be placed just after the startup, so that the read_ptr_byte_table will be at op
+        //       exactly 2^CELL_BITS (256 by default).
         //
-        // Space Complexity: 0.5w+261
+        // Space Complexity: 0.5w + 2^CELL_BITS + CELL_BITS/4 + 3   (= 0.5w+261 at CELL_BITS=8)
         //   Initializes the global opcodes and pointer-copies required for the pointers macros.
         //   Initializes the read-byte-handling table and the result/return variables to the read-byte table.
         //
@@ -18,18 +19,21 @@ ns hex {
         //                            pointed at, so a single shadow serves both.
         def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_ptr_var, \
                                              read_byte, ret_after_read_byte, nth_ptr {
-            pad 256
-          // Time Complexity: 4/8 (when jumping to hex.pointers.to_jump, until finished)
-          //                      (4 is for reading from an hex memory, 8 is for byte memory).
+            pad 1<<.CELL_BITS
+          // Time Complexity: CELL_BITS (when jumping to hex.pointers.to_jump, until finished)
+          //   -- one step per SET bit of the value, so 4 for a hex, 8 for a byte.
+          //
+          // Entry d flips d's top set bit into read_byte and jumps to entry d-without-it, so
+          // landing on entry V xors V into read_byte in popcount(V) steps. Bit number (#d)-1
+          // lives in hex (#d-1)/4 of read_byte, at bit (#d-1)%4 of it.
           read_ptr_byte_table:
-            rep(256, d) stl.fj \
-                d==0?0: (#d)<=4 \
-                    ? (.read_byte   +dbit+(#d)-1) \
-                    : (.read_byte+dw+dbit+(#d)-5), \
+            rep(1<<.CELL_BITS, d) stl.fj \
+                d==0 ? 0 : (.read_byte + (((#d)-1)/4)*dw + dbit + ((#d)-1)%4), \
                 (d==((1<<(#d))>>1)) ? .ret_after_read_byte : read_ptr_byte_table+(d^((1<<(#d))>>1))*dw
 
+          // the destination of a read: one whole cell, CELL_BITS/4 hexes wide.
           read_byte:
-            hex.vec 2
+            hex.vec .CELL_BITS/4
           ret_after_read_byte:
             ;0
 
