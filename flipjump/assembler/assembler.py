@@ -378,6 +378,7 @@ def assemble(
     show_statistics: bool = False,
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
+    defines_file: Optional[Path] = None,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -404,7 +405,7 @@ def assemble(
     gc.disable()
     try:
         with PrintTimer('  parsing:         ', print_time=print_time):
-            macros = parse_macro_tree(input_files, memory_width, warning_as_errors)
+            macros = parse_macro_tree(input_files, memory_width, warning_as_errors, defines_file)
 
         with PrintTimer('  macro resolve:   ', print_time=print_time):
             # the `...---:start:` macro-start labels are debugging-file-only and unreachable from

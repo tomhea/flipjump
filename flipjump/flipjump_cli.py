@@ -7,6 +7,7 @@ assemble and/or run flows according to the chosen --asm / --run options.
 import argparse
 import lzma
 import os
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Tuple, List, Callable, Optional
@@ -130,7 +131,13 @@ def get_version(version: Optional[int], is_outfile_specified: bool, error_func: 
     return FJMVersion.NormalVersion
 
 
-def assemble(out_fjm_file: Path, debug_file: Optional[Path], args: argparse.Namespace, error_func: ErrorFunc) -> None:
+def assemble(
+    out_fjm_file: Path,
+    debug_file: Optional[Path],
+    args: argparse.Namespace,
+    error_func: ErrorFunc,
+    defines_file: Optional[Path] = None,
+) -> None:
     """
     prepare and verify arguments, and assemble the .fj files.
     @param out_fjm_file: the to-be-compiled .fjm-file path
@@ -157,6 +164,7 @@ def assemble(out_fjm_file: Path, debug_file: Optional[Path], args: argparse.Name
         show_statistics=args.stats,
         print_time=not args.silent,
         max_recursion_depth=args.max_recursion_depth,
+        defines_file=defines_file,
     )
 
 
@@ -342,8 +350,10 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         action='append',
         default=[],
         metavar='NAME=VALUE',
-        help="define a constant before the assembled files (repeatable). "
-        "redefining an stl constant is an assembly error, not a silent override",
+        help="override a constant the assembled program declares (repeatable). "
+        "the overridden declaration is ignored as if it were never written. "
+        "NAME is the full name, so a namespaced constant is addressed as a.b.NAME. "
+        "overriding a constant that nothing declares is an error, not a new definition",
     )
     asm_arguments.add_argument('--stats', help="show macro code-size statistics", action='store_true')
 
@@ -432,22 +442,46 @@ def parse_arguments(*, cmd_line_args: Optional[List[str]] = None) -> Tuple[argpa
     return parsed_args, parser.error
 
 
-def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> None:
+_DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*$')
+
+
+def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> Optional[Path]:
     """
-    write the --define constants into a temporary .fj file, and put it first among the input files.
-    it lands after the stl (so a define may use w, dw, ...) and before every user file.
+    write the --define overrides into a temporary .fj file, and put it first among the input files.
+    it lands after the stl (so a define may use w, dw, an stl constant, or an earlier define) and
+    before every user file.
+
+    The file is ordinary .fj, which is what keeps the whole expression language available to a
+    define. What makes its constants OVERRIDES rather than declarations is that the parser is told
+    which file this is - see FJParser.statement.
+
+    A dotted NAME is wrapped in its namespaces, because a constant's full name is the only way to
+    address it: `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`, so
+    a bare `-D PTRSIZE=12` does NOT reach it.
+
     @param args: the parsed arguments
     @param temp_dir_name: the temp directory to write the defines file into
     @param error_func: parser's error function
+    @return: the path of the defines file, or None when there are no defines
     """
     if not args.define:
-        return
+        return None
+    lines = []
     for define in args.define:
         if '=' not in define:
             error_func(f"-D expects NAME=VALUE, got {define!r}")
+        name, _, value = define.partition('=')
+        name = name.strip()
+        if not _DEFINE_NAME_RE.match(name):
+            error_func(f"-D expects NAME=VALUE with a (possibly dotted) NAME, got {define!r}")
+        *namespaces, base_name = name.split('.')
+        opening = ''.join(f'ns {namespace} {{' + chr(10) for namespace in namespaces)
+        closing = (chr(10) + '}') * len(namespaces)
+        lines.append(f'{opening}{base_name} ={value}{closing}' + chr(10))
     defines_path = Path(temp_dir_name) / '_defines.fj'
-    defines_path.write_text(''.join(f'{define}\n' for define in args.define), encoding='utf-8')
+    defines_path.write_text(''.join(lines), encoding='utf-8')
     args.files.insert(0, str(defines_path))
+    return defines_path
 
 
 def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> None:
@@ -460,8 +494,8 @@ def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> Non
         debug_path, in_fjm_path, out_fjm_path = get_files_paths(args, error_func, temp_dir_name)
 
         if not args.run:
-            add_defines_file(args, temp_dir_name, error_func)
-            assemble(out_fjm_path, debug_path, args, error_func)
+            defines_path = add_defines_file(args, temp_dir_name, error_func)
+            assemble(out_fjm_path, debug_path, args, error_func, defines_path)
 
         if not args.asm:
             run(in_fjm_path, debug_path, args, error_func)

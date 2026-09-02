@@ -39,6 +39,7 @@ def assemble(
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     lzma_fast: bool = False,
+    defines_file: Optional[Path] = None,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -69,6 +70,7 @@ def assemble(
         show_statistics=show_statistics,
         print_time=print_time,
         max_recursion_depth=max_recursion_depth,
+        defines_file=defines_file,
     )
 
 
