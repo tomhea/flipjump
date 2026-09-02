@@ -54,12 +54,19 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param defines_file: a .fj file whose constants OVERRIDE the declarations in fj_file_paths
+    (the API form of the CLI's -D). It is parsed before the stl.
     :param lzma_fast: compress the .fjm with the fast match finder. Encoder-only, so the result is
     readable by any reader; much faster to write, ~33% larger on disk.
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
     file_tuples = get_file_tuples([str(fj_file.absolute()) for fj_file in fj_file_paths], no_stl=not use_stl)
+    if defines_file is not None:
+        # BEFORE the stl, exactly as flipjump_cli does: a constant is substituted where it is
+        # USED, at parse time, so an override read after the stl is too late for anything the
+        # stl computes from it. Without this line the parameter is accepted and ignored.
+        file_tuples.insert(0, ('d1', defines_file))
     fjm_writer = Writer(output_fjm_path, memory_width, fjm_version, lzma_fast=lzma_fast)
     assembler.assemble(
         file_tuples,

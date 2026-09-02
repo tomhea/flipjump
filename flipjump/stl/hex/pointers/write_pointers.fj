@@ -34,7 +34,7 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+PTR_CELL_BITS/4+5*PTR_CELL_BITS/4)@+25
+    //  Time Complexity: w(0.5@+4) + (5+PTR_CELL_BITS/4+5*PTR_CELL_BITS/4)@+37
     // Space Complexity: w(0.5@+22) + (5+PTR_CELL_BITS/4+5*PTR_CELL_BITS/4)@+24 + 88(PTR_CELL_BITS/4)
     //   like:  *ptr = src[:PTR_CELL_BITS/4]
     //   Writes a WHOLE CELL - all PTR_CELL_BITS bits - in ONE dereference.

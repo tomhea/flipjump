@@ -6,7 +6,7 @@
 // cannot tell a wide table from a narrow one. This program is the one that can.
 //
 // The printed value is PTR_CELL_BITS/4 hexes wide, so the expected output depends on the width -- see
-// tests/unit/test_cell_bits.py, which computes it.
+// tests/unit/test_ptr_cell_bits.py, which computes it.
 stl.startup_and_init_all
 
 // 1. a pattern with a DIFFERENT value in every hex, so a hex that lands in the wrong place shows.
@@ -45,7 +45,7 @@ stl.startup_and_init_all
 
 
   p:    hex.vec w/4
-  src:  hex.vec 4, 0
-  dst:  hex.vec 4, 0
+  src:  hex.vec hex.pointers.PTR_CELL_BITS/4, 0
+  dst:  hex.vec hex.pointers.PTR_CELL_BITS/4, 0
   bv:   hex.vec 2, 0
   cell: hex.vec 1, 0

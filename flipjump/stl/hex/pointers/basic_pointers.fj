@@ -19,6 +19,18 @@ ns hex {
         //                            pointed at, so a single shadow serves both.
         def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_ptr_var, \
                                              read_byte, ret_after_read_byte, nth_ptr {
+            // PTR_CELL_BITS is a -D knob, so its contract is enforced here rather than only
+            // stated: a bad width does not fault, it silently returns the wrong value (7
+            // reads 0x41 back as 0x01) or wild-jumps (4, because the byte API writes two
+            // hexes into a register sized PTR_CELL_BITS/4). rep() of an undefined macro is
+            // the assemble-time failure, and it names the rule it broke.
+            rep(.PTR_CELL_BITS % 4 != 0, i) \
+                .PTR_CELL_BITS__must_be_a_multiple_of_4
+            rep(.PTR_CELL_BITS < 8, i) \
+                .PTR_CELL_BITS__must_be_at_least_8__the_byte_api_needs_two_hexes
+            rep(dbit + .PTR_CELL_BITS >= dw, i) \
+                .PTR_CELL_BITS__must_leave_dbit_plus_it_below_dw
+
             pad 1<<.PTR_CELL_BITS
           // Time Complexity: PTR_CELL_BITS (when jumping to hex.pointers.to_jump, until finished)
           //   -- one step per SET bit of the value, so 4 for a hex, 8 for a byte.

@@ -322,10 +322,6 @@ class FJParser(sly.Parser):
         self.defines: Dict[str, int] = {}
         self.defines_lineno: Dict[str, int] = {}
         self.used_defines: Set[str] = set()
-        # `w` and friends are parser builtins, not declarations a program made, so an
-        # override of one must NOT count as satisfied -- otherwise `-D w=64` would quietly
-        # rewrite the width in the const table while the assembler kept using -w.
-        self.builtin_consts: Set[str] = set(self.consts)
 
     def _parsing_the_defines_file(self) -> bool:
         try:
@@ -747,9 +743,11 @@ class FJParser(sly.Parser):
                 syntax_error(p.lineno, f'Can\'t evaluate expression:  {str(evaluated)}.')
                 return
             self.defines_lineno[name] = p.lineno
-            if name in self.consts and name not in self.builtin_consts:
-                # a file before the defines file (i.e. the stl) declared it: satisfied already.
-                self.used_defines.add(name)
+            # NOTE there is deliberately no "was it already declared?" branch here. The defines
+            # file is parsed BEFORE every other file, so nothing but a previous line of this
+            # same file can be in self.consts yet -- and letting one define satisfy another
+            # is exactly how a repeated, misspelled -D would slip past the check below.
+            # An override is satisfied by the DECLARATION it suppresses, further down.
             # visible from here on, so a later define may use an earlier one and the
             # overridden program still sees the value at every use site.
             self.consts[name] = Expr(self.defines[name])
@@ -1070,7 +1068,7 @@ def parse_macro_tree(
     OVERRIDE the declaration elsewhere instead of adding one - see FJParser.statement.
     @return: the macro-dictionary.
     """
-    global error_occurred, all_errors
+    global error_occurred, all_errors, curr_file, curr_file_short_name
     error_occurred = False
     all_errors = ''
 
@@ -1084,8 +1082,15 @@ def parse_macro_tree(
 
     # -D may only OVERRIDE: a define that never met a declaration is a typo, and silently
     # accepting it is how a misspelled -D looks exactly like a working one.
-    for name in sorted(set(parser.defines) - parser.used_defines):
-        syntax_error(parser.defines_lineno[name], f'override of non-defined constant "{name}".')
+    #
+    # syntax_error() formats its position from curr_file, which by now holds the LAST file
+    # parsed -- so without re-pointing it the error names the user's own program at a line
+    # number taken from the defines file: a position that exists and is wrong.
+    unmatched = sorted(set(parser.defines) - parser.used_defines)
+    if unmatched:
+        curr_file, curr_file_short_name = parser.defines_file, 'd1'
+        for name in unmatched:
+            syntax_error(parser.defines_lineno[name], f'override of non-defined constant "{name}".')
 
     parser.validate_no_label_const_collisions()
     exit_if_errors()
