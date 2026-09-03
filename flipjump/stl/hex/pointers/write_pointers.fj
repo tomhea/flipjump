@@ -114,6 +114,14 @@ ns hex {
     }
 }
 
+ns hex {
+    //   like:  *ptr = src[:PTR_WIDE/4] ; ptr++
+    def write_cell_and_inc ptr, src {
+        .write_cell ptr, src
+        .ptr_inc ptr
+    }
+}
+
 // ---------- Indexed (nth) Write Pointers
 
 

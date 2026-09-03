@@ -77,6 +77,15 @@ ns hex {
     }
 }
 
+ns hex {
+    //   like:  dst[:PTR_WIDE/4] = *ptr ; ptr++
+    //   One WIDE cell, then advance one cell -- the pair-walking form of read_cell.
+    def read_cell_and_inc dst, ptr {
+        .read_cell dst, ptr
+        .ptr_inc ptr
+    }
+}
+
 // ---------- Indexed (nth) Read Pointers
 
 
