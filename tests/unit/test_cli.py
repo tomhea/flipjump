@@ -200,7 +200,7 @@ def test_cli_define_is_repeatable_and_may_use_an_earlier_define(tmp_path: Path) 
     """-D is `action='append'`, and the lines are written in order, so a later define sees an
     earlier one -- including that earlier one's OVERRIDDEN value, not the value the program
     declares."""
-    source = "BASE = 0" + chr(10) + DEFINE_PROG
+    source = "BASE = 0\n" + DEFINE_PROG
     chained = _assemble_with(tmp_path, "chained", source, "BASE = 0x40", "GREET = BASE + 1")
     literal = _assemble_with(tmp_path, "lit2", source, "BASE = 0x40", "GREET = 0x41")
     assert chained == literal
@@ -223,7 +223,6 @@ def test_cli_define_with_a_malformed_name_is_refused(tmp_path: Path) -> None:
     for bad in ("2GREET", "a..b", "a.", "GREET GREET"):
         with pytest.raises(SystemExit):
             _assemble_with(tmp_path, "bad", DEFINE_PROG, bad + " = 1")
-
 
 
 def test_cli_define_repeated_for_one_name_still_needs_a_declaration(tmp_path: Path) -> None:
@@ -252,8 +251,7 @@ def test_cli_define_refusal_names_the_defines_file(tmp_path: Path) -> None:
     fj_path.write_text(DEFINE_PROG)
     with pytest.raises(FlipJumpParsingException) as excinfo:
         assemble_run_according_to_cmd_line_args(
-            cmd_line_args=["--asm", "-o", str(tmp_path / "out.fjm"), "-w", "32",
-                           "-D", "NOPE = 5", str(fj_path)]
+            cmd_line_args=["--asm", "-o", str(tmp_path / "out.fjm"), "-w", "32", "-D", "NOPE = 5", str(fj_path)]
         )
     # match the REPORTED file, not any substring: the temp directory is itself named
     # "..__prog.fj__temp_directory", so a bare `"prog.fj" not in message` tests the wrong thing.
@@ -261,6 +259,7 @@ def test_cli_define_refusal_names_the_defines_file(tmp_path: Path) -> None:
     reported = re.search(r"in file (.+?) \(line", message)
     assert reported is not None, message
     assert Path(reported.group(1)).name == "_defines.fj", reported.group(1)
+
 
 def _no_error(message: str) -> None:
     raise AssertionError(f'unexpected error: {message}')

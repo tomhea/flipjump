@@ -748,8 +748,8 @@ class FJParser(sly.Parser):
             # same file can be in self.consts yet -- and letting one define satisfy another
             # is exactly how a repeated, misspelled -D would slip past the check below.
             # An override is satisfied by the DECLARATION it suppresses, further down.
-            # visible from here on, so a later define may use an earlier one and the
-            # overridden program still sees the value at every use site.
+            # The value is visible from here on, so a later define may use an earlier one
+            # and the overridden program still sees the value at every use site.
             self.consts[name] = Expr(self.defines[name])
             return
 
@@ -1088,6 +1088,7 @@ def parse_macro_tree(
     # number taken from the defines file: a position that exists and is wrong.
     unmatched = sorted(set(parser.defines) - parser.used_defines)
     if unmatched:
+        assert parser.defines_file is not None  # a define exists only if a defines file was parsed
         curr_file, curr_file_short_name = parser.defines_file, 'd1'
         for name in unmatched:
             syntax_error(parser.defines_lineno[name], f'override of non-defined constant "{name}".')

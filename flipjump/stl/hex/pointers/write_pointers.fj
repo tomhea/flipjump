@@ -13,14 +13,17 @@ ns hex {
         .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w( 0.5@+4)  + 15@+37
-    // Space Complexity: w( 0.5@+22) + 15@+176
+    //  Time Complexity: w( 0.5@+4) + (5+5*PTR_CELL_BITS/4)@+13 + 12(PTR_CELL_BITS/4)   (15@+37 at the default 8)
+    // Space Complexity: w( 0.5@+22) + (5+5*PTR_CELL_BITS/4)@+24 + 76(PTR_CELL_BITS/4)
     //   like:  *ptr = 0
+    //   Zeroes the whole NARROW cell - all PTR_CELL_BITS bits. The read dance decodes that many
+    //   bits into read_byte, so the write-back must cover the same width: flipping back only the
+    //   low byte of a 12/16-bit cell would leave the top of the cell standing.
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def zero_ptr ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
-        .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
+        rep(.pointers.PTR_CELL_BITS/4, i) .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte+i*dw, 4*i
     }
 
     //  Time Complexity: w( 0.5@+4)  + 17@+37
@@ -34,37 +37,38 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+PTR_CELL_BITS/4+5*PTR_CELL_BITS/4)@+37
-    // Space Complexity: w(0.5@+22) + (5+PTR_CELL_BITS/4+5*PTR_CELL_BITS/4)@+24 + 88(PTR_CELL_BITS/4)
-    //   like:  *ptr = src[:PTR_CELL_BITS/4]
-    //   Writes a WHOLE CELL - all PTR_CELL_BITS bits - in ONE dereference.
-    //
-    // The read-side twin is hex.read_cell, and section 0.1 of the handoff is why they are one
-    // commit: a cell written 8 bits wide and read PTR_CELL_BITS wide is not a wrong value, it is
-    // whatever was left in the top of the cell.
-    // src is a hex[:PTR_CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
-    // @note: at the default PTR_CELL_BITS=8 this is exactly write_byte.
     //  Time Complexity: w(0.5@+4) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+37
     // Space Complexity: w(0.5@+22) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+24 + 88(PTR_WIDE/4)
-    //   like:  *ptr = 0     for a WIDE cell.
+    //   like:  *ptr = src[:PTR_WIDE/4]
+    //   Writes a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
     //
-    // ⚠ hex.zero_ptr is the NARROW one and must not be pointed at a wide cell. Width is a
-    // property of the REGION, not of the call: the read dance arms a slot by flipping
-    // dbit+width, and a wide cell armed at dbit+PTR_CELL_BITS lands outside the narrow table
-    // entirely. That is not a wrong value, it is an unbounded jump.
-    // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
-    def zero_cell_ptr ptr < hex.pointers.read_byte {
-        .pointers.set_flip_and_jump_pointers ptr
-        rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
-        rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
-        .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
-    }
-
+    // The read-side twin is hex.read_cell, and the two must stay width-twins: a cell written
+    // narrower than it is read back does not produce a wrong value, it returns whatever was
+    // left standing in the top of the cell.
+    // src is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // @note: at the defaults (PTR_CELL_BITS=8, no wide table) this is exactly write_byte.
     def write_cell ptr, src < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
         rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
         .xor .pointers.PTR_WIDE/4, hex.pointers.read_byte, src
+        .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
+    }
+
+    //  Time Complexity: w(0.5@+4) + (5+5*PTR_WIDE/4)@+37
+    // Space Complexity: w(0.5@+22) + (5+5*PTR_WIDE/4)@+24 + 76(PTR_WIDE/4)
+    //   like:  *ptr = 0     for a whole cell, all PTR_WIDE bits of it.
+    //
+    // @note: on a WIDE cell only this macro may zero; hex.zero_ptr is the NARROW one and must
+    //   not be pointed at a wide cell. Width is a property of the REGION, not of the call: the
+    //   read dance arms a slot by flipping dbit+width, and a wide cell armed at
+    //   dbit+PTR_CELL_BITS lands outside the narrow table entirely. That is not a wrong value,
+    //   it is an unbounded jump.
+    // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    def zero_cell_ptr ptr < hex.pointers.read_byte {
+        .pointers.set_flip_and_jump_pointers ptr
+        rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
+        rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
         .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
     }
 }
@@ -112,10 +116,13 @@ ns hex {
         rep(n, i) .write_byte_and_inc ptr, src + i*2*dw
         .ptr_sub ptr, n
     }
-}
 
-ns hex {
-    //   like:  *ptr = src[:PTR_WIDE/4] ; ptr++
+    //  Time Complexity: w(0.88@+7) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+51
+    // Space Complexity: w(1.26@+25) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+24 + 88(PTR_WIDE/4) + 55
+    //   like:  *ptr = src[:PTR_WIDE/4]
+    //          ptr++
+    //   The pair-walking form of write_cell; its read twin is read_cell_and_inc.
+    // src is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_cell_and_inc ptr, src {
         .write_cell ptr, src
         .ptr_inc ptr

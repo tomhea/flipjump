@@ -2,3 +2,5 @@ cell:21
 ones:ff
 zeroed:00
 lowbyte:21
+pair:32.cd
+zeroptr:00

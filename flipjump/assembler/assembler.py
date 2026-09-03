@@ -421,9 +421,7 @@ def assemble(
         with PrintTimer('  labels resolve:  ', print_time=print_time):
             # the `:wflips:N` labels are debugging-file-only and unreachable from fj source; don't
             # build 16M of them for a caller that is not writing a debugging file.
-            labels_resolve(
-                ops, labels, memory_width, fjm_writer, save_wflip_labels=debugging_file_path is not None
-            )
+            labels_resolve(ops, labels, memory_width, fjm_writer, save_wflip_labels=debugging_file_path is not None)
 
         assert_first_op_assembled(fjm_writer)
 

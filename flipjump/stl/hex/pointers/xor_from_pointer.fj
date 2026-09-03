@@ -19,14 +19,14 @@ ns hex {
         .xor 2, dst, hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+PTR_CELL_BITS/4)@+13
-    // Space Complexity: w(0.5@+22) + (5+PTR_CELL_BITS/4)@+24 + 12(PTR_CELL_BITS/4)
-    //   like:  dst[:PTR_CELL_BITS/4] ^= *ptr
-    //   Reads a WHOLE CELL - all PTR_CELL_BITS bits - in ONE dereference.
+    //  Time Complexity: w(0.5@+4) + (5+PTR_WIDE/4)@+13
+    // Space Complexity: w(0.5@+22) + (5+PTR_WIDE/4)@+24 + 12(PTR_WIDE/4)
+    //   like:  dst[:PTR_WIDE/4] ^= *ptr
+    //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
     //
-    // This is what a wider hex.pointers.PTR_CELL_BITS buys: xor_byte_from_ptr pays the whole
-    // dereference for 8 bits, and reading 16 bits as two bytes pays it twice.
-    // dst is a hex[:PTR_CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // This is what a wide cell buys: xor_byte_from_ptr pays the whole dereference for 8 bits,
+    // and reading 16 bits as two bytes pays it twice.
+    // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     def xor_cell_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
@@ -35,12 +35,6 @@ ns hex {
     }
 
     ns pointers {
-        //  Time Complexity: 5@+13
-        // Space Complexity: 5@+24
-        //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
-        //   does:       hex.pointers.read_byte[:2] = *ptr
-        //
-        // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
         //  Time Complexity: 5@+13
         // Space Complexity: 5@+24
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr

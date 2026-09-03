@@ -1,12 +1,16 @@
-// Writes a FULL PTR_CELL_BITS-wide value into ONE memory cell and reads it back, which is the whole
-// point of a wider decoder table: one dereference carries PTR_CELL_BITS bits instead of eight.
+// Writes a FULL cell-wide value into ONE memory cell and reads it back, which is the whole
+// point of a wider decoder table: one dereference carries PTR_WIDE bits instead of eight.
 //
-// Everything else in the pointer suite stores values that fit in a byte, so at PTR_CELL_BITS=12 or 16
-// it never lands on a table entry above 255, never sets a high hex of read_byte, and therefore
-// cannot tell a wide table from a narrow one. This program is the one that can.
+// Everything else in the pointer suite stores values that fit in a byte, so at 12 or 16 bit
+// cells it never lands on a table entry above 255, never sets a high hex of read_byte, and
+// therefore cannot tell a wide table from a narrow one. This program is the one that can.
 //
-// The printed value is PTR_CELL_BITS/4 hexes wide, so the expected output depends on the width -- see
-// tests/unit/test_ptr_cell_bits.py, which computes it.
+// It runs in every legal width configuration: PTR_CELL_BITS alone (every cell wider), and
+// PTR_CELL_BITS with PTR_WIDE_BITS (two tables, narrow cells and wide cells COEXISTING --
+// the zeroptr section below is a narrow dereference in the same program as the wide ones).
+//
+// The printed values are PTR_WIDE/4 hexes wide, so the expected output depends on the width --
+// see tests/unit/test_ptr_cell_bits.py, which computes it.
 stl.startup_and_init_all
 
 // 1. a pattern with a DIFFERENT value in every hex, so a hex that lands in the wrong place shows.
@@ -48,11 +52,64 @@ stl.startup_and_init_all
     hex.print_as_digit 2, dst, 0
     stl.output '\n'
 
+// 5. the pair-walking forms: write_cell_and_inc twice into ADJACENT cells, walk back, read both
+//    back with read_cell_and_inc. A form that advanced by the wrong stride would read cell 0
+//    twice or read past cell 1, and both show as a wrong digit here.
+    stl.output "pair:"
+    hex.set w/4, p, cells2
+    rep(hex.pointers.PTR_WIDE/4, i) hex.set src+i*dw, i+2
+    rep(hex.pointers.PTR_WIDE/4, i) hex.set src2+i*dw, 0xd-i
+    hex.write_cell_and_inc p, src
+    hex.write_cell_and_inc p, src2
+    hex.ptr_sub p, 2
+    hex.read_cell_and_inc dst, p
+    hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
+    stl.output '.'
+    hex.read_cell_and_inc dst2, p
+    hex.print_as_digit hex.pointers.PTR_WIDE/4, dst2, 0
+    stl.output '\n'
+
+// 6. hex.zero_ptr zeroes the whole NARROW cell -- all PTR_CELL_BITS bits of it, not just the
+//    low byte. With no wide table the narrow cell IS the wide one and read_cell can check every
+//    bit; with a wide table present this is the narrow-dereference-coexists check instead, and
+//    the top of a narrow cell is not reachable through the public byte API to assert on.
+    stl.output "zeroptr:"
+    rep(hex.pointers.PTR_WIDE_BITS == 0, i) zeroptr_narrow_check
+    rep(hex.pointers.PTR_WIDE_BITS > 0, i) zeroptr_dual_check
+    stl.output '\n'
+
     stl.loop
 
 
-  p:    hex.vec w/4
-  src:  hex.vec hex.pointers.PTR_WIDE/4, 0
-  dst:  hex.vec hex.pointers.PTR_WIDE/4, 0
-  bv:   hex.vec 2, 0
-  cell: hex.vec 1, 0
+  p:      hex.vec w/4
+  src:    hex.vec hex.pointers.PTR_WIDE/4, 0
+  src2:   hex.vec hex.pointers.PTR_WIDE/4, 0
+  dst:    hex.vec hex.pointers.PTR_WIDE/4, 0
+  dst2:   hex.vec hex.pointers.PTR_WIDE/4, 0
+  bv:     hex.vec 2, 0
+  cell:   hex.vec 1, 0
+  cells2: hex.vec 2, 0
+  nv:     hex.vec 1, 0
+
+
+// fill the whole narrow cell with ones, zero_ptr it, and read every bit back.  ->  0 * PTR_WIDE/4
+def zeroptr_narrow_check < p, src, dst, nv {
+    hex.set w/4, p, nv
+    rep(hex.pointers.PTR_WIDE/4, i) hex.set src+i*dw, 0xf
+    hex.write_cell p, src
+    hex.zero_ptr p
+    hex.read_cell dst, p
+    hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
+}
+
+// a NARROW byte round-trip while the wide table exists: write, zero, read -- all through the
+// narrow table, against a cell the wide sections never touch.  ->  00
+def zeroptr_dual_check < p, bv, nv {
+    hex.set w/4, p, nv
+    hex.set 2, bv, 0xff
+    hex.write_byte p, bv
+    hex.zero_ptr p
+    hex.zero 2, bv
+    hex.read_byte bv, p
+    hex.print_as_digit 2, bv, 0
+}

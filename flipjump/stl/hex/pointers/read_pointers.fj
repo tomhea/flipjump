@@ -20,12 +20,12 @@ ns hex {
         .xor_byte_from_ptr dst, ptr
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+2*PTR_CELL_BITS/4)@+13
-    // Space Complexity: w(0.5@+22) + (5+2*PTR_CELL_BITS/4)@+24 + 24(PTR_CELL_BITS/4)
-    //   like:  dst[:PTR_CELL_BITS/4] = *ptr
-    //   Reads a WHOLE CELL - all PTR_CELL_BITS bits - in ONE dereference.
-    // dst is a hex[:PTR_CELL_BITS/4]. ptr is a hex[:w/4] holding a dw-aligned address.
-    // @note: at the default PTR_CELL_BITS=8 this is exactly read_byte.
+    //  Time Complexity: w(0.5@+4) + (5+2*PTR_WIDE/4)@+13
+    // Space Complexity: w(0.5@+22) + (5+2*PTR_WIDE/4)@+24 + 24(PTR_WIDE/4)
+    //   like:  dst[:PTR_WIDE/4] = *ptr
+    //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
+    // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // @note: at the defaults (PTR_CELL_BITS=8, no wide table) this is exactly read_byte.
     def read_cell dst, ptr {
         .zero .pointers.PTR_WIDE/4, dst
         .xor_cell_from_ptr dst, ptr
@@ -75,11 +75,13 @@ ns hex {
         rep(n, i) .read_byte_and_inc dst + i*2*dw, ptr
         .ptr_sub ptr, n
     }
-}
 
-ns hex {
-    //   like:  dst[:PTR_WIDE/4] = *ptr ; ptr++
-    //   One WIDE cell, then advance one cell -- the pair-walking form of read_cell.
+    //  Time Complexity: w(0.88@+7) + (5+2*PTR_WIDE/4)@+27
+    // Space Complexity: w(1.26@+25) + (5+2*PTR_WIDE/4)@+24 + 24(PTR_WIDE/4) + 55
+    //   like:  dst[:PTR_WIDE/4] = *ptr
+    //          ptr++
+    //   The pair-walking form of read_cell; its write twin is write_cell_and_inc.
+    // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_cell_and_inc dst, ptr {
         .read_cell dst, ptr
         .ptr_inc ptr

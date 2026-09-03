@@ -485,9 +485,9 @@ def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: E
         if not _DEFINE_NAME_RE.match(name):
             error_func(f"-D expects NAME=VALUE with a (possibly dotted) NAME, got {define!r}")
         *namespaces, base_name = name.split('.')
-        opening = ''.join(f'ns {namespace} {{' + chr(10) for namespace in namespaces)
-        closing = (chr(10) + '}') * len(namespaces)
-        lines.append(f'{opening}{base_name} ={value}{closing}' + chr(10))
+        opening = "".join(f"ns {namespace} {{\n" for namespace in namespaces)
+        closing = "\n}" * len(namespaces)
+        lines.append(f"{opening}{base_name} ={value}{closing}\n")
     defines_path = Path(temp_dir_name) / '_defines.fj'
     defines_path.write_text(''.join(lines), encoding='utf-8')
     return defines_path
