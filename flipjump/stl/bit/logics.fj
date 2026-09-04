@@ -22,6 +22,11 @@ ns bit {
     // dst,src are bits.
     def exact_xor dst, src @ base_jump_label, cleanup {
         wflip src+w, base_jump_label, src
+        // ⚠ STAYS AT 8. bit.exact_xor is expanded ~600,000 times in doom-flipjump -- 7.5x more
+        // than hex.exact_xor -- so a pad here is multiplied by that, not by the number of HOT
+        // expansions. `pad 128` costs ~64 ops x 600k = ~38M ops of padding on a ~12.6M-op image
+        // and overflowed the address space outright (OverflowError in the assembler).
+        // PAD SAVING SCALES WITH HOT EXPANSIONS; PAD SPACE SCALES WITH TOTAL EXPANSIONS.
         pad 8
       base_jump_label:
         ;cleanup
@@ -37,6 +42,11 @@ ns bit {
     // dst1,dst2,src are bits.
     def double_exact_xor dst1, dst2, src @ base_jump_label, cleanup {
         wflip src+w, base_jump_label, src
+        // ⚠ STAYS AT 8. bit.exact_xor is expanded ~600,000 times in doom-flipjump -- 7.5x more
+        // than hex.exact_xor -- so a pad here is multiplied by that, not by the number of HOT
+        // expansions. `pad 128` costs ~64 ops x 600k = ~38M ops of padding on a ~12.6M-op image
+        // and overflowed the address space outright (OverflowError in the assembler).
+        // PAD SAVING SCALES WITH HOT EXPANSIONS; PAD SPACE SCALES WITH TOTAL EXPANSIONS.
         pad 8
       base_jump_label:
         ;cleanup

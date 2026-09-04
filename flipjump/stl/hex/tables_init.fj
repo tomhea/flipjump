@@ -76,6 +76,7 @@ ns hex {
             ..xor jumper_to_table  , dst
             ..xor jumper_to_table+4, src
             wflip .ret+w, return, jumper_to_table
+            pad 64
           return:
             wflip .ret+w ,return
             ..xor_zero dst, .res

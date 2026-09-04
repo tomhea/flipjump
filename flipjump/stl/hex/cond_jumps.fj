@@ -12,7 +12,7 @@ ns hex {
     def if_flags hex, flags, l0, l1 @ switch, clean, return, finish {
         wflip hex+w, switch, hex
 
-        pad 16
+        pad 64
       switch:
         rep(16, i) stl.fj    (flags>>i)&1 ? return+dbit+0 : 0,    clean
 
