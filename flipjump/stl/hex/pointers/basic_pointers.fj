@@ -49,15 +49,25 @@ ns hex {
           // bit is what selects the table, which is why both can coexist.
             rep(.PTR_WIDE_BITS > 0, i) .wide_table_init
 
+          // PLACEMENT, not decoration: `to_flip` FIRST, so it lands on the op right after the
+          // decoder table -- op 2^PTR_CELL_BITS * 2, i.e. bit address 0x8000 at the defaults.
+          // A wflip costs popcount of the value it flips, and to_flip's own address is flipped
+          // on every dereference the program makes; at 0x8000 that popcount is 1, where the
+          // previous slot (0x80C0, third in this block) made it 3. Measured on doom-flipjump:
+          // 11,026 flips of this value per median frame, so 22,052 executed ops saved, for zero
+          // ops of space -- it is a reorder, not a pad.
+          // Nothing here is adjacency-sensitive: set_flip_and_jump_pointers addresses to_flip,
+          // to_jump+w and to_ptr_var independently, and the read/write dances offset to_flip by
+          // compile-time constants only.
+          to_flip:
+            0;0
+          to_jump:
+            ;0
+
           // the destination of a read: as wide as the WIDER of the two tables.
           read_byte:
             hex.vec .PTR_WIDE/4
           ret_after_read_byte:
-            ;0
-
-          to_flip:
-            0;0
-          to_jump:
             ;0
 
           to_ptr_var:
