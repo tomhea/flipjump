@@ -27,7 +27,16 @@ ns hex {
     // d3,d2,d1,d0 are bit-addresses; src is hex.
     def exact_xor d3, d2, d1, d0, src @ switch, end {
         wflip src+w, switch, src
-        pad 16
+        // ⚠ THE PAD IS A PERFORMANCE PARAMETER, not a formality. `switch` is flipped TWICE per
+        // call -- once here to arm src, once at `end:` to disarm it -- and a wflip costs popcount
+        // of the value it flips, so this label's own address is paid on every single exact_xor.
+        // The pad only has to be 16 for correctness (the table is 16 ops and is indexed by
+        // switch+d), but every extra power of two zeroes another bit of the address.
+        // Measured on doom-flipjump, where exact_xor is 33.6% of the frame: 953,688 flips of this
+        // label per median frame at mean popcount 8.6. Widening 16 -> 128 predicts -1,420,476
+        // executed ops for ~1.2M ops of padding -- and padding is not lost space, because
+        // BinaryData.get_wflip_spot() fills it with wflip chains before it uses the wflip area.
+        pad 128
       switch:
           ;end          //  0
         d0;end          //  1

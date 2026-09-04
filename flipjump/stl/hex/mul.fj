@@ -128,6 +128,11 @@ ns hex {
 
           add_res:
             wflip ..tables.ret+w, after_add, ..add.dst
+            // ⚠ REVERTED to 256 (was tried at 4096). The alignment itself is worth ~54,270 ops on
+            // doom-flipjump, but widening it here shifts every later address by ~1,800 ops, and
+            // that program anchors a narrow-pointer-arm window a little downstream: the shift
+            // pushed it over a 16^5 boundary and produced a wrong frame. Re-try only alongside
+            // an anchored consumer. Original note:
             // ALIGNMENT, and it is worth ops: `after_add` is used as a wflip VALUE by the two
             // ops around it, and a wflip costs popcount of the value it flips. At `pad 256` this
             // label lands on op 256*k, so its popcount is 1 + popcount(k); at `pad 4096` it lands
@@ -137,7 +142,7 @@ ns hex {
             // space that `get_wflip_spot` then hands back to wflip chains anyway.
             // The op above is a `wflip ..., ..add.dst`, which jumps rather than falling through,
             // so everything between it and this label is unreachable by construction.
-            pad 4096
+            pad 256
           after_add:
             wflip ..tables.ret+w, after_add, .dst
 
