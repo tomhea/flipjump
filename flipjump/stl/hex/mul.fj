@@ -128,7 +128,16 @@ ns hex {
 
           add_res:
             wflip ..tables.ret+w, after_add, ..add.dst
-            pad 256
+            // ALIGNMENT, and it is worth ops: `after_add` is used as a wflip VALUE by the two
+            // ops around it, and a wflip costs popcount of the value it flips. At `pad 256` this
+            // label lands on op 256*k, so its popcount is 1 + popcount(k); at `pad 4096` it lands
+            // on op 4096*k and the whole low half of the address is zero. On doom-flipjump that
+            // moves it from op 2,304 (popcount 2) to op 4,096 (popcount 1) and saves one op on
+            // each of 54,270 flips per median frame -- 54,270 executed ops, for 1,792 ops of
+            // space that `get_wflip_spot` then hands back to wflip chains anyway.
+            // The op above is a `wflip ..., ..add.dst`, which jumps rather than falling through,
+            // so everything between it and this label is unreachable by construction.
+            pad 4096
           after_add:
             wflip ..tables.ret+w, after_add, .dst
 
