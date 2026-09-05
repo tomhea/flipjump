@@ -36,7 +36,7 @@ ns hex {
         // label per median frame at mean popcount 8.6. Widening 16 -> 128 predicts -1,420,476
         // executed ops for ~1.2M ops of padding -- and padding is not lost space, because
         // BinaryData.get_wflip_spot() fills it with wflip chains before it uses the wflip area.
-        pad 128
+        pad 256
       switch:
           ;end          //  0
         d0;end          //  1
