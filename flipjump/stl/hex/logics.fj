@@ -36,6 +36,10 @@ ns hex {
         // label per median frame at mean popcount 8.6. Widening 16 -> 128 predicts -1,420,476
         // executed ops for ~1.2M ops of padding -- and padding is not lost space, because
         // BinaryData.get_wflip_spot() fills it with wflip chains before it uses the wflip area.
+        // 256 IS THE OPTIMUM, measured. 16 -> 128 gave -607,482 on doom-flipjump's sweep median
+        // and 128 -> 256 a further -724,727, but 256 -> 512 REVERSED it: +316,510, with two of
+        // the four degradation viewpoints ~760k worse. Past this width the padding displaces more
+        // than the extra zeroed bit is worth. Do not widen further without re-measuring.
         pad 256
       switch:
           ;end          //  0

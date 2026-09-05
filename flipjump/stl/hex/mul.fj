@@ -9,7 +9,10 @@ ns hex {
         .xor .mul.dst+4, x
         .xor .add.dst, res
         wflip .mul.ret+w, ret, .mul.dst
-        pad 4
+        // widened for placement: `ret` is flipped as a wflip VALUE by the two ops around it,
+        // so its address is paid on every call. Kept modest -- this macro has ~22,000
+        // expansions and pad SPACE scales with total expansions, not hot ones.
+        pad 32
       ret:  // meanwhile - make @+24 fj ops there
         wflip .mul.ret+w, ret
         .xor_zero res, .tables.res
