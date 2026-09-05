@@ -91,7 +91,7 @@ ns hex {
         // arm .cmp.dst and once below to arm the return table -- so its address is paid twice per
         // compare. Kept at 32: this macro has ~26,000 expansions, and pad SPACE scales with TOTAL
         // expansions while the saving scales only with the hot ones.
-        pad 64
+        pad 16
         //part2
       ret:
         wflip .tables.ret+w, ret, jumper_to_return_table //part3

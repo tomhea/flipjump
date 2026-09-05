@@ -19,6 +19,15 @@ ns hex {
         rep (n, i) .xor dst+i*dw, src+i*dw
     }
 
+    // sparse_ = padded-for-hot-sites version of the same value (checked identical over all 16 src).
+    // The DEFAULT xor/exact_xor stay pad 16 (slim, for the cold bulk); hot call sites use sparse_.
+    def sparse_xor PAD, dst, src {
+        .sparse_exact_xor PAD, dst+dbit+3, dst+dbit+2, dst+dbit+1, dst+dbit+0, src
+    }
+    def sparse_xor PAD, n, dst, src {
+        rep (n, i) .sparse_xor PAD, dst+i*dw, src+i*dw
+    }
+
 
     //  Time Complexity: @
     // Space Complexity: @+12
@@ -40,7 +49,33 @@ ns hex {
         // and 128 -> 256 a further -724,727, but 256 -> 512 REVERSED it: +316,510, with two of
         // the four degradation viewpoints ~760k worse. Past this width the padding displaces more
         // than the extra zeroed bit is worth. Do not widen further without re-measuring.
-        pad 256
+        pad 128
+      switch:
+          ;end          //  0
+        d0;end          //  1
+        d1;end          //  2
+        d1;switch+1*dw  //  3
+        d2;end          //  4
+        d2;switch+1*dw  //  5
+        d2;switch+2*dw  //  6
+        d2;switch+3*dw  //  7
+        d3;end          //  8
+        d3;switch+1*dw  //  9
+        d3;switch+2*dw  // 10
+        d3;switch+3*dw  // 11
+        d3;switch+4*dw  // 12
+        d3;switch+5*dw  // 13
+        d3;switch+6*dw  // 14
+        d3;switch+7*dw  // 15
+      end:
+        wflip src+w, switch
+    }
+
+    //   {d3,d2,d1,d0} ^= src, `switch` aligned to PAD (>=16) ops. Body verbatim from exact_xor;
+    //   pixel-identical, cost-only. Pad per HOT call site, never the default.
+    def sparse_exact_xor PAD, d3, d2, d1, d0, src @ switch, end {
+        wflip src+w, switch, src
+        pad PAD
       switch:
           ;end          //  0
         d0;end          //  1
