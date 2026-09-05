@@ -77,7 +77,11 @@ ns hex {
             //     begins at op 2^bits.
             wflip hex.pointers.to_flip+w, read_ptr_and_flip_back, hex.pointers.to_flip
 
-            pad 4
+            // pad 64, not 4: `read_ptr_and_flip_back` is flipped as a full value by the wflip
+            // above and `cleanup` -- two ops past it -- by the last wflip below, so BOTH of
+            // their addresses are paid on every dereference the program makes. Aligning this
+            // label aligns both. ~340 expansions in doom-flipjump, so the space is ~11k ops.
+            pad 64
           read_ptr_and_flip_back:
             // 3.  Jump to *(ptr+w). It xors the pointed value into hex.pointers.read_byte.
             // 4.  Then jump to hex.pointers.to_flip to make *(ptr+w) itself again.
