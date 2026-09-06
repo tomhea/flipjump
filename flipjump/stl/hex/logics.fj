@@ -478,4 +478,86 @@ ns hex {
       end:
         wflip src+w, switch
     }
+
+    def sparse_double_exact_xor PAD, t3, t2, t1, t0, d3, d2, d1, d0, src @ first_flip, second_flip, end {
+        wflip src+w, first_flip, src
+        pad PAD
+      first_flip:
+          ;end                  //  0
+        d0;second_flip+ 0*dw    //  1
+        d1;second_flip+ 1*dw    //  2
+        d1;second_flip+ 2*dw    //  3
+        d2;second_flip+ 3*dw    //  4
+        d2;second_flip+ 4*dw    //  5
+        d2;second_flip+ 5*dw    //  6
+        d2;second_flip+ 6*dw    //  7
+        d3;second_flip+ 7*dw    //  8
+        d3;second_flip+ 8*dw    //  9
+        d3;second_flip+ 9*dw    // 10
+        d3;second_flip+10*dw    // 11
+        d3;second_flip+11*dw    // 12
+        d3;second_flip+12*dw    // 13
+        d3;second_flip+13*dw    // 14
+        d3;second_flip+14*dw    // 15
+
+      second_flip:
+        t0;end          //  1
+        t1;end          //  2
+        t1;first_flip+1*dw  //  3
+        t2;end          //  4
+        t2;first_flip+1*dw  //  5
+        t2;first_flip+2*dw  //  6
+        t2;first_flip+3*dw  //  7
+        t3;end          //  8
+        t3;first_flip+1*dw  //  9
+        t3;first_flip+2*dw  // 10
+        t3;first_flip+3*dw  // 11
+        t3;first_flip+4*dw  // 12
+        t3;first_flip+5*dw  // 13
+        t3;first_flip+6*dw  // 14
+        t3;first_flip+7*dw  // 15
+      end:
+        wflip src+w, first_flip
+    }
+
+    // --- the sparse_ chain used by doom's HOT emission sites --------------------------------
+    // Measured on the shipped game binary (doom FINDINGS AX): the xor family is 57.5% of executed
+    // ops but is emitted 425,745 times, and only 12.5% of those instances ever run. Padding the
+    // DEFINITION costs 121.8 words per instance for ALL of them -- +51,838,592 words, 38.6 points
+    // of the w=32 ceiling -- to speed up the ~10,000 that carry 80% of the ops. These let a HOT
+    // call site pass its own pad so the cold bulk stays at 16.
+    //
+    // Select call sites by OPS PER INSTANCE, not by ops: the spread across doom's sites is 150x,
+    // and the highest-ops site (sim.try_move, 7.3% of ops) is the WORST candidate, because it is
+    // also the largest by instance count (72,444) -- it would spend 17% of the size budget for
+    // 7% of the win.
+
+    def sparse_double_xor PAD, dst1, dst2, src {
+        .sparse_double_exact_xor PAD, dst1+dbit+3, dst1+dbit+2, dst1+dbit+1, dst1+dbit+0,                                       dst2+dbit+3, dst2+dbit+2, dst2+dbit+1, dst2+dbit+0, src
+    }
+    def sparse_xor_zero PAD, dst, src {
+        .sparse_double_xor PAD, dst, src, src
+    }
+    def sparse_xor_zero PAD, n, dst, src {
+        rep (n, i) .sparse_xor_zero PAD, dst+i*dw, src+i*dw
+    }
+    def sparse_zero PAD, x {
+        .sparse_xor PAD, x, x
+    }
+    def sparse_zero PAD, n, x {
+        rep (n, i) .sparse_zero PAD, x+i*dw
+    }
+    def sparse_mov PAD, dst, src @ end {
+        stl.comp_if1 dst==src, end
+        .sparse_zero PAD, dst
+        .sparse_xor PAD, dst, src
+      end:
+    }
+    def sparse_mov PAD, n, dst, src @ end {
+        stl.comp_if1 dst==src, end
+        .sparse_zero PAD, n, dst
+        .sparse_xor PAD, n, dst, src
+      end:
+    }
+
 }
