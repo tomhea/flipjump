@@ -9,10 +9,7 @@ ns hex {
         .xor .mul.dst+4, x
         .xor .add.dst, res
         wflip .mul.ret+w, ret, .mul.dst
-        // widened for placement: `ret` is flipped as a wflip VALUE by the two ops around it,
-        // so its address is paid on every call. Kept modest -- this macro has ~22,000
-        // expansions and pad SPACE scales with total expansions, not hot ones.
-        pad 64
+        pad 4
       ret:  // meanwhile - make @+24 fj ops there
         wflip .mul.ret+w, ret
         .xor_zero res, .tables.res
@@ -131,19 +128,7 @@ ns hex {
 
           add_res:
             wflip ..tables.ret+w, after_add, ..add.dst
-            // 4096, retried. The first attempt at this broke doom-flipjump: the ~1,800-op shift it
-            // causes pushed that program's narrow-pointer-arm window over a 16^5 boundary. That
-            // consumer now ANCHORS its own window, so the shift is absorbed. Worth ~54,270 ops there.
-            // ALIGNMENT, and it is worth ops: `after_add` is used as a wflip VALUE by the two
-            // ops around it, and a wflip costs popcount of the value it flips. At `pad 256` this
-            // label lands on op 256*k, so its popcount is 1 + popcount(k); at `pad 4096` it lands
-            // on op 4096*k and the whole low half of the address is zero. On doom-flipjump that
-            // moves it from op 2,304 (popcount 2) to op 4,096 (popcount 1) and saves one op on
-            // each of 54,270 flips per median frame -- 54,270 executed ops, for 1,792 ops of
-            // space that `get_wflip_spot` then hands back to wflip chains anyway.
-            // The op above is a `wflip ..., ..add.dst`, which jumps rather than falling through,
-            // so everything between it and this label is unreachable by construction.
-            pad 4096
+            pad 256
           after_add:
             wflip ..tables.ret+w, after_add, .dst
 

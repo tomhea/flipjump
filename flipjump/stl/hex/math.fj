@@ -74,7 +74,6 @@ ns hex {
         // @requires hex.add.init (or hex.init)
         def clear_carry @ ret < ..tables.ret, .dst, ..tables.res {
             wflip ..tables.ret+w, ret, .dst
-            pad 64
           ret:
             wflip ..tables.ret+w, ret
             ..zero ..tables.res
@@ -86,7 +85,6 @@ ns hex {
         // @requires hex.add.init (or hex.init)
         def clear_carry c0, c1 @ ret < ..tables.ret, .dst, ..tables.res {
             wflip ..tables.ret+w, ret, .dst
-            pad 64
           ret:
             wflip ..tables.ret+w, ret
             // carry is 0/1
@@ -228,7 +226,6 @@ ns hex {
         // @requires hex.sub.init (or hex.init)
         def clear_carry c0, c1 @ ret < ..tables.ret, .dst, ..tables.res {
             wflip ..tables.ret+w, ret, .dst
-            pad 64
           ret:
             wflip ..tables.ret+w, ret
             // carry is 0/f
