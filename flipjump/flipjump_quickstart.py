@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from typing import List, Optional, Set
 
 from flipjump.assembler import assembler
+from flipjump.assembler.preprocessor import TablePool
 from flipjump.interpreter.debugging.breakpoints import get_breakpoint_handler
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
@@ -40,6 +41,7 @@ def assemble(
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     lzma_fast: bool = False,
     defines_file: Optional[Path] = None,
+    table_pool: Optional[TablePool] = None,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -58,6 +60,9 @@ def assemble(
     (the API form of the CLI's -D). It is parsed before the stl.
     :param lzma_fast: compress the .fjm with the fast match finder. Encoder-only, so the result is
     readable by any reader; much faster to write, ~33% larger on disk.
+
+    :param table_pool: if given, relocate lookup tables to low-popcount addresses.
+    See assembler.preprocessor.TablePool.
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
@@ -78,6 +83,7 @@ def assemble(
         print_time=print_time,
         max_recursion_depth=max_recursion_depth,
         defines_file=defines_file,
+        table_pool=table_pool,
     )
 
 

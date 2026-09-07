@@ -17,7 +17,7 @@ from flipjump.utils.classes import PrintTimer
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpException, FlipJumpWriteFjmException
 from flipjump.assembler.inner_classes.ops import FlipJump, WordFlip, LastPhaseOp, NewSegment, ReserveBits, Padding
-from flipjump.assembler.preprocessor import resolve_macros
+from flipjump.assembler.preprocessor import resolve_macros, TablePool
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -379,6 +379,7 @@ def assemble(
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     defines_file: Optional[Path] = None,
+    table_pool: Optional[TablePool] = None,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -391,6 +392,7 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param table_pool: if given, relocate lookup tables to low-popcount addresses (see TablePool).
     """
     # PERF (doom-flipjump, 2026-08-20): the cyclic garbage collector is off for the pipeline.
     # Assembly is one enormous monotonic allocation: the doom-flipjump program builds ~42M op objects
@@ -413,6 +415,7 @@ def assemble(
             ops, labels = resolve_macros(
                 memory_width,
                 macros,
+                table_pool=table_pool,
                 show_statistics=show_statistics,
                 max_recursion_depth=max_recursion_depth,
                 save_debug_labels=debugging_file_path is not None,
