@@ -108,6 +108,7 @@ class BinaryData:
         'wflip_words',
         'padding_ops_indices',
         'wflips_dict',
+        'pinned',
     )
 
     def __init__(
@@ -117,12 +118,17 @@ class BinaryData:
         labels: Dict[str, int],
         *,
         save_wflip_labels: bool = True,
+        pinned: Optional[Dict[int, int]] = None,
     ):
         """
         @param save_wflip_labels: whether to record a `:wflips:N` label per generated wflip-chain op.
         These labels exist ONLY for the debugging-file; see the note on _insert_wflip_label.
         """
         self.memory_width = memory_width
+
+        # {jump-word address: block base} for BlockPool. Empty/None for every other build, and the
+        # two use sites below are guarded on it, so this costs one truthiness test per op when off.
+        self.pinned = pinned
 
         self.first_address = first_segment.start_address
         self.next_wflip_address = first_segment.wflip_start_address
@@ -179,10 +185,25 @@ class BinaryData:
             self.wflips_so_far += 1
 
     def insert_fj_op(self, flip: int, jump: int) -> None:
+        if self.pinned:
+            # A pinned hex variable RESTS at `base + value` rather than at `value`, so the block's
+            # base is baked into its declaration here. Only the variable's own op can match: a
+            # wflip-chain op's jump word is at its own address, never at a pinned one.
+            base = self.pinned.get(self.first_address + (len(self.fj_words) + 1) * self.memory_width)
+            if base:
+                jump ^= base
         # `+=` on an array only accepts another array; extend() takes any iterable of ints.
         self.fj_words.extend((flip, jump))
 
     def insert_wflip_ops(self, word_address: int, flip_value: int, return_address: int) -> None:
+        if self.pinned:
+            # The word rests at `base + digit`, so a writer that wants it to hold V must flip
+            # `V ^ base`. For this table's own arm that is just the table's INDEX in the block --
+            # which is the entire point. For every other dispatcher through the same word
+            # (stl.comp_if1, hex.shifts.*, hex.tables.*) it is the same rule and the same result.
+            base = self.pinned.get(word_address)
+            if base:
+                flip_value ^= base
         if 0 == flip_value:
             self.insert_fj_op(0, return_address)
         else:
@@ -250,6 +271,7 @@ def labels_resolve(
     fjm_writer: Writer,
     *,
     save_wflip_labels: bool = True,
+    pinned: Optional[Dict[int, int]] = None,
 ) -> None:
     """
     resolve the labels and expressions to get the list of fj ops, and add all the data and segments into the fjm_writer.
@@ -265,7 +287,8 @@ def labels_resolve(
     if not isinstance(first_segment, NewSegment):
         raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_segment}).")
 
-    binary_data = BinaryData(memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels)
+    binary_data = BinaryData(memory_width, first_segment, labels,
+                             save_wflip_labels=save_wflip_labels, pinned=pinned)
 
     # PERF (doom-flipjump, 2026-08-20): this loop body runs once per emitted op -- ~42M times on the
     # doom-flipjump program, where this phase is 46% of a 29-minute assembly. Three changes, all
@@ -421,10 +444,25 @@ def assemble(
                 save_debug_labels=debugging_file_path is not None,
             )
 
+        # BlockPool pins each source word to its block base. The base was chosen during macro
+        # expansion but the WORD is an expression -- variables are usually declared after the code
+        # -- so it is resolved here, now that every label is known.
+        pinned = None
+        if table_pool is not None and hasattr(table_pool, 'pinned_words'):
+            pinned = {}
+            for expr, base in table_pool.pinned_words().items():
+                try:
+                    pinned[expr.exact_eval(labels)] = base
+                except Exception:                                            # noqa: BLE001
+                    continue          # an unresolvable word simply is not pinned
+            if not pinned:
+                pinned = None
+
         with PrintTimer('  labels resolve:  ', print_time=print_time):
             # the `:wflips:N` labels are debugging-file-only and unreachable from fj source; don't
             # build 16M of them for a caller that is not writing a debugging file.
-            labels_resolve(ops, labels, memory_width, fjm_writer, save_wflip_labels=debugging_file_path is not None)
+            labels_resolve(ops, labels, memory_width, fjm_writer,
+                           save_wflip_labels=debugging_file_path is not None, pinned=pinned)
 
         assert_first_op_assembled(fjm_writer)
 

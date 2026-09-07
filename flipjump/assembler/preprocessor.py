@@ -63,9 +63,16 @@ class TablePool:
     word is untouched.
 
     Addresses are handed out cheapest-popcount-first from a pool based at `pool_base`, in runs of
-    `run_tables` consecutive tables so the .fjm does not need one segment per table. A table's
-    total popcount is `popcount(pool_base) + popcount(run_offset) + popcount(index_in_run)`, so a
-    short run is cheaper per table but costs more segments.
+    `run_ops` ops so the .fjm does not need one segment per table. A table's total popcount is
+    `popcount(pool_base) + popcount(run_offset) + popcount(index_in_run)`, so a short run is
+    cheaper per table but costs more segments.
+
+    ONE POOL PER ASSEMBLY. A TablePool is STATEFUL -- it carries a cursor, a consumed-slot set and
+    an allocation count -- so reusing one across two `assemble()` calls makes the second call
+    continue where the first stopped and hand every table a different address. doom-flipjump's
+    game tier assembles TWICE (pass 1 resolves labels, pass 2 bakes them into the M1 self-reset),
+    and reusing a pool there moved 434 baked addresses between the passes; its own reset check
+    refused the build. Construct a fresh pool for each assembly.
     """
 
     def __init__(
@@ -75,6 +82,7 @@ class TablePool:
         *,
         run_ops: int = 256,
         capacity: Optional[int] = None,
+        span_bits: Optional[int] = None,
         wants: Optional[Callable[[MacroName, str], bool]] = None,
     ):
         """
@@ -84,6 +92,11 @@ class TablePool:
         @param run_ops: ops per contiguous run. One .fjm segment per run, so a short run buys a
         lower mean popcount and costs more segments.
         @param capacity: stop relocating after this many tables (None = unlimited)
+        @param span_bits: how far above pool_base the pool may reach (None = to the top of memory).
+        WORTH SETTING. Offsets are handed out cheapest-popcount-first, and a popcount-1 offset can
+        be 2^20 runs up -- so an unbounded pool scatters to the top of the address space and the
+        .fjm's SPAN (max segment end, what the hard ceiling binds) approaches 2^w even though its
+        DATA stays small. Bounding the span costs a little popcount and buys back the ceiling.
         @param wants: given (macro name, call-site macro path), whether that table is relocated
         """
         self.memory_width = memory_width
@@ -93,6 +106,7 @@ class TablePool:
             raise ValueError('run_ops * 2 * memory_width must be a power of two')
         self.pool_base = pool_base
         self.capacity = capacity
+        self.span_bits = span_bits
         self._wants = wants
         self.allocated = 0
         self.declined = 0
@@ -108,7 +122,10 @@ class TablePool:
 
     def _cheapest_offsets(self) -> List[int]:
         """every run-aligned offset in the pool, cheapest popcount first"""
-        count = ((1 << self.memory_width) - self.pool_base) // self.run_bits
+        reach = (1 << self.memory_width) - self.pool_base
+        if self.span_bits is not None:
+            reach = min(reach, self.span_bits)
+        count = reach // self.run_bits
         return sorted(range(count), key=lambda v: (bin(v).count('1'), v))
 
     def wants(self, macro_name: MacroName, labels_prefix: str = '') -> bool:
@@ -120,7 +137,8 @@ class TablePool:
             return False
         return True if self._wants is None else self._wants(macro_name, labels_prefix)
 
-    def reserve(self, ops_alignment: int, table_ops: int) -> Optional[Tuple[int, bool, int]]:
+    def reserve(self, ops_alignment: int, table_ops: int,
+                group: Optional[str] = None, group_expr: object = None) -> Optional[Tuple[int, bool, int]]:
         """(address, starts_a_new_run, gap_ops) for a table of `table_ops` ops.
 
         The SIZE is passed in rather than discovered afterwards, because a table may be bigger than
@@ -188,6 +206,102 @@ class TablePool:
                 f'({hex(end_address)} > {hex(self._run_end)}). reserve() was given the wrong size.'
             )
         self._cursor = end_address
+
+
+
+class BlockPool(TablePool):
+    """Give every table dispatched through ONE jump word a block, so the arm flips an INDEX.
+
+    TablePool moves a table to a cheap ADDRESS; the arm still writes that whole address, so the
+    saving is capped by how many low-popcount addresses exist (FINDINGS BE: -0.21% on the shipped
+    game). BlockPool changes what is written instead of where it goes.
+
+    A hex variable is a single op `;val*dw`, so its jump word holds the VALUE and
+    `wflip src+w, switch` makes it `switch + digit`. If that word RESTS at a block base B and every
+    table it dispatches to lives in the block at B, then `switch ^ B` is just the table's index
+    inside the block -- a handful of bits instead of ~9.32 (measured: 13.13 -> 8.16 ops per xor,
+    FINDINGS BF).
+
+    THE SAME XOR SERVES EVERY WRITER. `insert_wflip_ops` rewrites `flip_value ^= B` for any wflip
+    targeting a pinned word, so `stl.comp_if1`, `hex.shifts.*` and `hex.tables.*` -- which also
+    dispatch through these words -- keep working by construction rather than by audit: they wanted
+    the word to become V, and (B + digit) ^ (V ^ B) is V + digit.
+
+    TWO PASSES. A block's size must be known before its base is chosen, and the tables of a group
+    are scattered through the program, so counting comes first:
+
+        counting = BlockPool(w, base)                 # counts=None -> relocates nothing
+        resolve_macros(..., table_pool=counting)
+        placing = BlockPool(w, base, counts=counting.counts)
+        resolve_macros(..., table_pool=placing)
+
+    ALIGNMENT IS LOAD-BEARING (FINDINGS BF): the block, not the table, sets it, and the block size
+    must be a power of two -- otherwise the base has bits set where the index goes and the arming
+    XOR SUBTRACTS instead of adding.
+    """
+
+    def __init__(self, memory_width: int, pool_base: int, *, counts: Optional[Dict[str, int]] = None,
+                 widths: Optional[Dict[str, int]] = None, span_bits: Optional[int] = None,
+                 wants: Optional[Callable[[MacroName, str], bool]] = None):
+        super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits, wants=wants)
+        self.counts = {} if counts is None else dict(counts)
+        # A slot must hold the BIGGEST table in its group. `hex.cmp`'s table is 31 ops behind a
+        # `pad 4`, so sizing slots from the pad alignment overflows into the next slot and the fjm
+        # writer rejects the overlap. The counting pass records the max, keyed the same way.
+        self.widths = {} if widths is None else dict(widths)
+        self.counting = counts is None
+        self.groups: Dict[str, Tuple[int, object]] = {}   # group -> (base, word Expr)
+        self._used = 0                                    # bits handed out, from pool_base
+        self._next_index: Dict[str, int] = {}
+        self.ungrouped = 0
+
+    def reserve(self, ops_alignment: int, table_ops: int,
+                group: Optional[str] = None, group_expr: object = None):
+        if group is None:
+            self.ungrouped += 1               # no disarm wflip found: cannot be blocked
+            return None
+        if self.counting:
+            self.counts[group] = self.counts.get(group, 0) + 1
+            self.widths[group] = max(self.widths.get(group, 0), max(table_ops, ops_alignment))
+            return None                       # counting pass must not change the layout
+        # slot_ops is a POWER OF TWO >= the group's widest table, so index*slot_bits occupies a
+        # clean bit field and the arming XOR adds rather than subtracts (FINDINGS BF).
+        slot_ops = 1 << max(0, (max(self.widths.get(group, ops_alignment), ops_alignment) - 1).bit_length())
+        table_bits = slot_ops * self.op_bits
+        if group not in self.groups:
+            slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
+            block_bits = slots * table_bits
+            base = -(-(self.pool_base + self._used) // block_bits) * block_bits
+            if self.span_bits is not None and base + block_bits > self.pool_base + self.span_bits:
+                self.declined += 1
+                return None
+            if base + block_bits > (1 << self.memory_width):
+                self.declined += 1
+                return None
+            self.groups[group] = (base, group_expr)
+            self._used = base + block_bits - self.pool_base
+            self._next_index[group] = 0
+        base, _ = self.groups[group]
+        index = self._next_index[group]
+        slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
+        if table_ops > slot_ops:
+            self.declined += 1                # wider than the counting pass saw
+            return None
+        if index >= slots:
+            self.declined += 1                # more tables than the counting pass saw
+            return None
+        self._next_index[group] = index + 1
+        self.allocated += 1
+        address = base + index * table_bits
+        self.run_starts.append(address)
+        return address, True, 0               # its own segment; blocks are sparse by construction
+
+    def commit(self, end_address: int) -> None:
+        pass                                  # each table owns its slot; no shared cursor
+
+    def pinned_words(self) -> Dict[object, int]:
+        """{source-word Expr: block base} -- the caller resolves the Expr once labels are known"""
+        return {expr: base for base, expr in self.groups.values()}
 
 
 def macro_resolve_error(
@@ -325,7 +439,8 @@ class PreprocessorData:
         self.emit_target.append(op)
 
     def begin_relocation(
-        self, macro_name: MacroName, ops_alignment: int, table_ops: int, labels_prefix: str = ''
+        self, macro_name: MacroName, ops_alignment: int, table_ops: int, labels_prefix: str = '',
+        group: Optional[str] = None, group_expr: object = None
     ) -> bool:
         """Move emission to a pool address instead of aligning in place.
 
@@ -336,7 +451,7 @@ class PreprocessorData:
         pool = self.table_pool
         if pool is None or not pool.wants(macro_name, labels_prefix):
             return False
-        reserved = pool.reserve(ops_alignment, table_ops)
+        reserved = pool.reserve(ops_alignment, table_ops, group, group_expr)
         if reserved is None:
             return False
         address, starts_new_run, gap_ops = reserved
@@ -567,9 +682,9 @@ def get_params_dictionary(
     return params_dict
 
 
-def relocatable_table_end(ops: List[LastPhaseOp], pad_index: int) -> Optional[Tuple[int, int]]:
-    """(index of the table's last op, number of ops in it) after `ops[pad_index]`, or None if the
-    table must not be moved.
+def relocatable_table_end(ops: List[LastPhaseOp], pad_index: int) -> Optional[Tuple[int, int, object]]:
+    """(index of the table's last op, number of ops in it, the source-word Expr) after
+    `ops[pad_index]`, or None if the table must not be moved.
 
     THE TABLE is the maximal run of plain `a;b` ops after the `pad`, INCLUDING labels interleaved
     among them, but with TRAILING labels trimmed off. Both halves of that rule are load-bearing,
@@ -589,15 +704,28 @@ def relocatable_table_end(ops: List[LastPhaseOp], pad_index: int) -> Optional[Tu
     """
     last_flipjump = None
     count = 0
+    source_word = None
     for offset, op in enumerate(ops[pad_index + 1:], start=pad_index + 1):
         if isinstance(op, FlipJump):
             if '$' in op.jump.all_unknown_labels():
                 return None                       # falls through -- not relocatable
             last_flipjump = offset
             count += 1
-        elif not isinstance(op, Label):
-            break                                 # anything else ends the table
-    return None if last_flipjump is None else (last_flipjump, count)
+        elif isinstance(op, Label):
+            continue
+        else:
+            # The op right after the table is `exact_xor`'s DISARM, `wflip src+w, switch`, and its
+            # word_address is the jump word this table is dispatched through. Two tables reached
+            # from the same word must share a block (see TablePool), and that word's ADDRESS is not
+            # known during macro expansion -- variables are usually declared after the code. Its
+            # EXPRESSION is, and two sites using the same variable produce the same expression, so
+            # the expression is the group key.
+            if isinstance(op, WordFlip):
+                source_word = op.word_address
+            break
+    if last_flipjump is None:
+        return None
+    return last_flipjump, count, source_word
 
 
 def resolve_macro_aux(
@@ -649,10 +777,16 @@ def resolve_macro_aux(
             # jump, so instead of aligning HERE it is emitted at a low-popcount pool address and
             # the interrupted stream resumes at the end of this macro. See TablePool.
             found = relocatable_table_end(current_macro.ops, op_index)
+            group = None
+            if found is not None and found[2] is not None:
+                # resolve what can be resolved; unknown labels stay as names, which is exactly what
+                # makes two sites on the same variable compare equal
+                group = str(found[2].eval_new(params_dict))
             if (
                 not relocated
                 and found is not None
-                and preprocessor_data.begin_relocation(macro_name, ops_alignment, found[1], labels_prefix)
+                and preprocessor_data.begin_relocation(macro_name, ops_alignment, found[1],
+                                                       labels_prefix, group, found[2])
             ):
                 table_end = found[0]
                 relocated = True
