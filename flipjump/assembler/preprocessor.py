@@ -75,7 +75,7 @@ class TablePool:
         *,
         run_ops: int = 256,
         capacity: Optional[int] = None,
-        wants: Optional[Callable[[MacroName], bool]] = None,
+        wants: Optional[Callable[[MacroName, str], bool]] = None,
     ):
         """
         @param memory_width: the memory-width
@@ -84,7 +84,7 @@ class TablePool:
         @param run_ops: ops per contiguous run. One .fjm segment per run, so a short run buys a
         lower mean popcount and costs more segments.
         @param capacity: stop relocating after this many tables (None = unlimited)
-        @param wants: given a macro name, whether its tables should be relocated
+        @param wants: given (macro name, call-site macro path), whether that table is relocated
         """
         self.memory_width = memory_width
         self.op_bits = 2 * memory_width
@@ -111,10 +111,14 @@ class TablePool:
         count = ((1 << self.memory_width) - self.pool_base) // self.run_bits
         return sorted(range(count), key=lambda v: (bin(v).count('1'), v))
 
-    def wants(self, macro_name: MacroName) -> bool:
+    def wants(self, macro_name: MacroName, labels_prefix: str = '') -> bool:
+        """`labels_prefix` is the full macro-expansion path, i.e. the CALL SITE -- so a caller can
+        relocate the hot sites a profile named rather than every expansion of a macro. Cheap
+        addresses are finite, and spending them on cold tables is how a placement pass ends up
+        costing more than it saves."""
         if self.capacity is not None and self.allocated >= self.capacity:
             return False
-        return True if self._wants is None else self._wants(macro_name)
+        return True if self._wants is None else self._wants(macro_name, labels_prefix)
 
     def reserve(self, ops_alignment: int, table_ops: int) -> Optional[Tuple[int, bool, int]]:
         """(address, starts_a_new_run, gap_ops) for a table of `table_ops` ops.
@@ -320,7 +324,9 @@ class PreprocessorData:
         """append to whichever stream is being built -- the main one, or the table pool"""
         self.emit_target.append(op)
 
-    def begin_relocation(self, macro_name: MacroName, ops_alignment: int, table_ops: int) -> bool:
+    def begin_relocation(
+        self, macro_name: MacroName, ops_alignment: int, table_ops: int, labels_prefix: str = ''
+    ) -> bool:
         """Move emission to a pool address instead of aligning in place.
 
         A table is reached only by jump, so relocating it changes nothing but its address -- and
@@ -328,7 +334,7 @@ class PreprocessorData:
         pool does not want this macro, or the pool is full; the caller then pads normally.
         """
         pool = self.table_pool
-        if pool is None or not pool.wants(macro_name):
+        if pool is None or not pool.wants(macro_name, labels_prefix):
             return False
         reserved = pool.reserve(ops_alignment, table_ops)
         if reserved is None:
@@ -386,6 +392,15 @@ class PreprocessorData:
 
     def finish(self, show_statistics: bool) -> None:
         self.patch_last_wflip_address()
+        if self.table_pool is not None and self.curr_address > self.table_pool.pool_base:
+            # The pool sits above the main stream by construction. If the program grew into it, a
+            # relocated table is sitting on top of code and the program is silently wrong -- so
+            # this is an error, not a warning.
+            raise FlipJumpPreprocessorException(
+                'table-placement: the program reached %s, which is inside the table pool based at '
+                '%s. Raise pool_base, or relocate fewer tables.'
+                % (hex(self.curr_address), hex(self.table_pool.pool_base))
+            )
         self.flush_table_pool()
         self.insert_macro_start_labels_if_their_address_not_used()
         if show_statistics:
@@ -637,7 +652,7 @@ def resolve_macro_aux(
             if (
                 not relocated
                 and found is not None
-                and preprocessor_data.begin_relocation(macro_name, ops_alignment, found[1])
+                and preprocessor_data.begin_relocation(macro_name, ops_alignment, found[1], labels_prefix)
             ):
                 table_end = found[0]
                 relocated = True

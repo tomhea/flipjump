@@ -6,6 +6,7 @@ and optional LZMA compression.
 """
 
 import array
+import bisect
 import lzma
 import sys
 from pathlib import Path
@@ -119,6 +120,12 @@ class Writer:
         self.reserved: int = 0
 
         self.segments: List[Tuple[int, int, int, int]] = []
+        # Sorted view of the segments' start addresses, so overlap validation is a bisect over
+        # disjoint intervals rather than a scan. See _validate_segment_addresses_not_overlapping.
+        self._sorted_segment_starts: List[int] = []
+        self._segment_index_by_start: dict = {}
+        self._sorted_data_starts: List[int] = []
+        self._segment_index_by_data_start: dict = {}
         # PERF (doom-flipjump, 2026-08-20): a typed word array, not a list of python ints. It holds
         # every word of the program -- 84.8M of them on the doom-flipjump build -- and as a list
         # that is 8 bytes of pointer plus a 28-byte int object per word that is not in CPython's
@@ -179,8 +186,23 @@ class Writer:
         return False
 
     def _validate_segment_addresses_not_overlapping(self, new_segment_start: int, new_segment_length: int) -> None:
+        # PERF (doom-flipjump, 2026-09-07): this used to scan EVERY previous segment, so writing N
+        # segments was O(N^2). The assembler's table-placement pass emits one segment per relocated
+        # lookup table, which is tens of thousands on a real program -- 16k segments is 134M
+        # iterations of this loop. The intervals are disjoint by the very invariant being checked,
+        # so a sorted list admits a bisect: only the neighbours can collide. Same verdict, same
+        # message, same segment indices -- `_segment_index_by_start` keeps the reported `seg[i]`.
         new_segment_end = new_segment_start + new_segment_length - 1
-        for i, (segment_start, segment_length, _, _) in enumerate(self.segments):
+        neighbours = []
+        position = bisect.bisect_left(self._sorted_segment_starts, new_segment_start)
+        if position > 0:
+            neighbours.append(position - 1)
+        if position < len(self._sorted_segment_starts):
+            neighbours.append(position)
+        for neighbour in neighbours:
+            start = self._sorted_segment_starts[neighbour]
+            i = self._segment_index_by_start[start]
+            segment_start, segment_length, _, _ = self.segments[i]
             segment_end = segment_start + segment_length - 1
 
             if self._is_collision(segment_start, segment_end, new_segment_start, new_segment_end):
@@ -195,9 +217,19 @@ class Writer:
     def _validate_segment_data_not_overlapping(self, new_data_start: int, new_data_length: int) -> None:
         if new_data_length == 0:
             return
+        # Same bisect as the address check above, for the same reason: this is O(N) per segment
+        # and the table-placement pass writes tens of thousands of them.
         new_data_end = new_data_start + new_data_length - 1
 
-        for i, (_, _, data_start, data_length) in enumerate(self.segments):
+        neighbours = []
+        position = bisect.bisect_left(self._sorted_data_starts, new_data_start)
+        if position > 0:
+            neighbours.append(self._sorted_data_starts[position - 1])
+        if position < len(self._sorted_data_starts):
+            neighbours.append(self._sorted_data_starts[position])
+        for start in neighbours:
+            i = self._segment_index_by_data_start[start]
+            _, _, data_start, data_length = self.segments[i]
             if data_length == 0:
                 continue
             data_end = data_start + data_length - 1
@@ -264,6 +296,11 @@ class Writer:
         if self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion):
             self._update_to_relative_jumps(segment_start, data_start, data_length)
 
+        bisect.insort(self._sorted_segment_starts, segment_start)
+        self._segment_index_by_start[segment_start] = len(self.segments)
+        if data_length:
+            bisect.insort(self._sorted_data_starts, data_start)
+            self._segment_index_by_data_start[data_start] = len(self.segments)
         self.segments.append((segment_start, segment_length, data_start, data_length))
 
     def add_data(self, data: List[int]) -> int:
