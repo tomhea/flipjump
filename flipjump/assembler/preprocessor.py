@@ -242,6 +242,7 @@ class BlockPool(TablePool):
 
     def __init__(self, memory_width: int, pool_base: int, *, counts: Optional[Dict[str, int]] = None,
                  widths: Optional[Dict[str, int]] = None, span_bits: Optional[int] = None,
+                 max_slot_ops: int = 32,
                  wants: Optional[Callable[[MacroName, str], bool]] = None):
         super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits, wants=wants)
         self.counts = {} if counts is None else dict(counts)
@@ -262,6 +263,13 @@ class BlockPool(TablePool):
         self._next_index: Dict[str, int] = {}
         self.ungrouped = 0
         self.pin_conflicts = 0
+        # A block's slots are uniform, so ONE wide table sets the width for the whole group. A
+        # group holding a 514-op `hex.tables` table and 32,768 slots wants 2.1e9 bits -- the entire
+        # pool, for one group. Measured: without this cap, 9 groups of 32,064 got blocks and
+        # 347,350 tables were declined. Tables wider than the cap are declined instead and stay
+        # INLINE, which is correct because a consistent base cancels: `(B + digit) ^ (switch ^ B)`
+        # is `switch + digit` wherever the table sits.
+        self.max_slot_ops = max_slot_ops
         if not self.counting:
             self._preallocate()
 
@@ -269,7 +277,7 @@ class BlockPool(TablePool):
         """(slots, slot_bits) for a group -- both powers of two, so index*slot_bits is a clean
         bit field and the arming XOR adds rather than subtracts."""
         slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
-        width = max(self.widths.get(group, 16), 1)
+        width = min(max(self.widths.get(group, 16), 1), self.max_slot_ops)
         slot_ops = 1 << max(0, (width - 1).bit_length())
         return slots, slot_ops * self.op_bits
 
