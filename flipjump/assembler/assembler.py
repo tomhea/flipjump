@@ -275,7 +275,17 @@ class BinaryData:
         self.padding_ops_indices.clear()
 
 
-def resolve_pinned(pinned_exprs, labels: Dict[str, int]) -> Tuple[Dict[int, int], int]:
+# Words below this are the runtime's, not the program's. `stl.IO` sits at bit address 64 -- the
+# interpreter reads and writes it as the IO port, and `bit.output` DISPATCHES through it, so it
+# looks exactly like an ordinary hex source to the grouper. Baking a block base into it corrupts
+# the program's second op: the blocked game build jumped `ip 64 -> POOL -> ip 64` and presented 0
+# frames in 116 ops. On that build the first label above stl.IO is at 16,384, so this floor
+# excludes the runtime's words and nothing the program owns.
+RESERVED_BELOW = 1024
+
+
+def resolve_pinned(pinned_exprs, labels: Dict[str, int],
+                   reserved_below: int = RESERVED_BELOW) -> Tuple[Dict[int, int], int]:
     """({address: block base}, number of aliased addresses dropped).
 
     ALIASING IS FATAL AND SILENT, which is why this is a function with a test rather than four
@@ -296,6 +306,8 @@ def resolve_pinned(pinned_exprs, labels: Dict[str, int]) -> Tuple[Dict[int, int]
             address = expr.exact_eval(labels)
         except Exception:                                                    # noqa: BLE001
             continue                  # an unresolvable word simply is not pinned
+        if address < reserved_below:
+            continue                  # the runtime's word (stl.IO), not the program's
         if address in pinned and pinned[address] != base:
             conflicts.add(address)
         pinned[address] = base
