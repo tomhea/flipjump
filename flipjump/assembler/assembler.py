@@ -285,7 +285,8 @@ RESERVED_BELOW = 1024
 
 
 def resolve_pinned(pinned_exprs, labels: Dict[str, int],
-                   reserved_below: int = RESERVED_BELOW) -> Tuple[Dict[int, int], int]:
+                   reserved_below: int = RESERVED_BELOW,
+                   exclude=None) -> Tuple[Dict[int, int], int]:
     """({address: block base}, number of aliased addresses dropped).
 
     ALIASING IS FATAL AND SILENT, which is why this is a function with a test rather than four
@@ -299,6 +300,11 @@ def resolve_pinned(pinned_exprs, labels: Dict[str, int],
     both blocked and inline tables in it still work -- `(B + digit) ^ (V ^ B)` is `V + digit`, so
     a consistent base cancels either way. So a collision drops the pin rather than picking a side.
     """
+    # `exclude(address, labels) -> bool` lets the CALLER veto a pin it knows is unsafe. The
+    # doom-flipjump case is the M1 self-reset: it classifies a cell as a read-only LUT when
+    # `word >> VAL_SHIFT > 15`, and a pinned word holds `base + value`, so every pinned state cell
+    # is misclassified and silently STOPS BEING RESTORED. Frame 2 is byte-exact, the reset skips
+    # those cells, frame 3 is stale -- which is exactly what the standalone gate saw (FINDINGS BH).
     pinned: Dict[int, int] = {}
     conflicts = set()
     for expr, base in pinned_exprs.items():
@@ -308,6 +314,8 @@ def resolve_pinned(pinned_exprs, labels: Dict[str, int],
             continue                  # an unresolvable word simply is not pinned
         if address < reserved_below:
             continue                  # the runtime's word (stl.IO), not the program's
+        if exclude is not None and exclude(address, labels):
+            continue                  # the caller owns this word
         if address in pinned and pinned[address] != base:
             conflicts.add(address)
         pinned[address] = base
@@ -507,7 +515,8 @@ def assemble(
             # block bases. Pinning that address to one of them sends every table in the other
             # block to `switch ^ wrong_base`, which is nowhere. Un-pinning a word is always safe
             # (it then rests at `digit` and the full address is written), so a collision un-pins.
-            pinned, conflicts = resolve_pinned(table_pool.pinned_words(), labels)
+            pinned, conflicts = resolve_pinned(table_pool.pinned_words(), labels,
+                                               exclude=getattr(table_pool, 'pin_exclude', None))
             table_pool.pin_conflicts = conflicts
             if not pinned:
                 pinned = None
