@@ -251,9 +251,55 @@ class BlockPool(TablePool):
         self.widths = {} if widths is None else dict(widths)
         self.counting = counts is None
         self.groups: Dict[str, Tuple[int, object]] = {}   # group -> (base, word Expr)
+        # A group that could not place EVERY one of its tables must not be pinned. Pinning makes
+        # every writer of that word flip `V ^ base`, which is only correct if the table it is
+        # arming actually lives in the block -- a DECLINED table stays inline, so its arm would
+        # send the dispatch to `switch ^ base`, which is nowhere. Un-pinning the group keeps the
+        # word resting at `digit`, so the full address is written and both the blocked and the
+        # inline tables in it stay correct; only the saving is lost.
+        self.broken_groups: Set[str] = set()
         self._used = 0                                    # bits handed out, from pool_base
         self._next_index: Dict[str, int] = {}
         self.ungrouped = 0
+        self.pin_conflicts = 0
+        if not self.counting:
+            self._preallocate()
+
+    def _block_shape(self, group: str) -> Tuple[int, int]:
+        """(slots, slot_bits) for a group -- both powers of two, so index*slot_bits is a clean
+        bit field and the arming XOR adds rather than subtracts."""
+        slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
+        width = max(self.widths.get(group, 16), 1)
+        slot_ops = 1 << max(0, (width - 1).bit_length())
+        return slots, slot_ops * self.op_bits
+
+    def _preallocate(self) -> None:
+        """Assign every block a base up front, BIGGEST FIRST.
+
+        Blocks are power-of-two sized and must be aligned to their own size, so allocating them in
+        encounter order leaves a hole in front of each one -- up to a whole block's worth. Over
+        32,064 groups that wasted enough of the pool to decline 257,003 tables on the first game
+        build. Descending size makes each block land on an address the previous ones already
+        aligned past, so the waste collapses.
+
+        Doing it here rather than during expansion also makes allocation independent of the order
+        macros are reached, which is what two assemblies of the same program need in order to agree.
+        """
+        order = sorted(self.counts, key=lambda g: (-(self._block_shape(g)[0] * self._block_shape(g)[1]), g))
+        cursor = self.pool_base
+        limit = (1 << self.memory_width) if self.span_bits is None else min(
+            1 << self.memory_width, self.pool_base + self.span_bits)
+        for group in order:
+            slots, slot_bits = self._block_shape(group)
+            block_bits = slots * slot_bits
+            base = -(-cursor // block_bits) * block_bits
+            if base + block_bits > limit:
+                self.broken_groups.add(group)      # no room: this group stays inline everywhere
+                continue
+            self.groups[group] = (base, None)
+            self._next_index[group] = 0
+            cursor = base + block_bits
+        self._used = cursor - self.pool_base
 
     def reserve(self, ops_alignment: int, table_ops: int,
                 group: Optional[str] = None, group_expr: object = None):
@@ -264,35 +310,24 @@ class BlockPool(TablePool):
             self.counts[group] = self.counts.get(group, 0) + 1
             self.widths[group] = max(self.widths.get(group, 0), max(table_ops, ops_alignment))
             return None                       # counting pass must not change the layout
-        # slot_ops is a POWER OF TWO >= the group's widest table, so index*slot_bits occupies a
-        # clean bit field and the arming XOR adds rather than subtracts (FINDINGS BF).
-        slot_ops = 1 << max(0, (max(self.widths.get(group, ops_alignment), ops_alignment) - 1).bit_length())
-        table_bits = slot_ops * self.op_bits
         if group not in self.groups:
-            slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
-            block_bits = slots * table_bits
-            base = -(-(self.pool_base + self._used) // block_bits) * block_bits
-            if self.span_bits is not None and base + block_bits > self.pool_base + self.span_bits:
-                self.declined += 1
-                return None
-            if base + block_bits > (1 << self.memory_width):
-                self.declined += 1
-                return None
-            self.groups[group] = (base, group_expr)
-            self._used = base + block_bits - self.pool_base
-            self._next_index[group] = 0
-        base, _ = self.groups[group]
-        index = self._next_index[group]
-        slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
-        if table_ops > slot_ops:
-            self.declined += 1                # wider than the counting pass saw
+            self.declined += 1                # no block was reserved for it (see _preallocate)
             return None
+        slots, slot_bits = self._block_shape(group)
+        if table_ops * self.op_bits > slot_bits or ops_alignment * self.op_bits > slot_bits:
+            self.declined += 1                # wider than the counting pass saw
+            self.broken_groups.add(group)
+            return None
+        index = self._next_index[group]
         if index >= slots:
             self.declined += 1                # more tables than the counting pass saw
+            self.broken_groups.add(group)
             return None
+        base, _ = self.groups[group]
+        self.groups[group] = (base, group_expr if group_expr is not None else _)
         self._next_index[group] = index + 1
         self.allocated += 1
-        address = base + index * table_bits
+        address = base + index * slot_bits
         self.run_starts.append(address)
         return address, True, 0               # its own segment; blocks are sparse by construction
 
@@ -300,8 +335,15 @@ class BlockPool(TablePool):
         pass                                  # each table owns its slot; no shared cursor
 
     def pinned_words(self) -> Dict[object, int]:
-        """{source-word Expr: block base} -- the caller resolves the Expr once labels are known"""
-        return {expr: base for base, expr in self.groups.values()}
+        """{source-word Expr: block base} -- the caller resolves the Expr once labels are known.
+
+        Groups that failed to place every table are EXCLUDED: see broken_groups. Pinning such a
+        word makes its inline tables unreachable, and the failure is total and immediate -- the
+        game-tier build that first hit it presented 0 frames in 124 ops, while the M1 reset check
+        and the four-program gate both passed it.
+        """
+        return {expr: base for group, (base, expr) in self.groups.items()
+                if group not in self.broken_groups}
 
 
 def macro_resolve_error(

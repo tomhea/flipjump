@@ -264,6 +264,35 @@ class BinaryData:
         self.padding_ops_indices.clear()
 
 
+def resolve_pinned(pinned_exprs, labels: Dict[str, int]) -> Tuple[Dict[int, int], int]:
+    """({address: block base}, number of aliased addresses dropped).
+
+    ALIASING IS FATAL AND SILENT, which is why this is a function with a test rather than four
+    lines inside assemble(). BlockPool keys groups by the source word's EXPRESSION, because its
+    address is unknown while macros expand. Two different expressions can resolve to the SAME
+    address -- `(x + 32)` and `(x + w)` at w=32 -- and they were given different block bases.
+    Pinning that address to one of them sends every table in the other block to
+    `switch ^ wrong_base`, which is nowhere.
+
+    Un-pinning a word is always safe: it then rests at `digit`, the full address is written, and
+    both blocked and inline tables in it still work -- `(B + digit) ^ (V ^ B)` is `V + digit`, so
+    a consistent base cancels either way. So a collision drops the pin rather than picking a side.
+    """
+    pinned: Dict[int, int] = {}
+    conflicts = set()
+    for expr, base in pinned_exprs.items():
+        try:
+            address = expr.exact_eval(labels)
+        except Exception:                                                    # noqa: BLE001
+            continue                  # an unresolvable word simply is not pinned
+        if address in pinned and pinned[address] != base:
+            conflicts.add(address)
+        pinned[address] = base
+    for address in conflicts:
+        del pinned[address]
+    return pinned, len(conflicts)
+
+
 def labels_resolve(
     ops: Deque[LastPhaseOp],
     labels: Dict[str, int],
@@ -449,12 +478,14 @@ def assemble(
         # -- so it is resolved here, now that every label is known.
         pinned = None
         if table_pool is not None and hasattr(table_pool, 'pinned_words'):
-            pinned = {}
-            for expr, base in table_pool.pinned_words().items():
-                try:
-                    pinned[expr.exact_eval(labels)] = base
-                except Exception:                                            # noqa: BLE001
-                    continue          # an unresolvable word simply is not pinned
+            # ALIASING IS FATAL AND SILENT. Groups are keyed by the source word's EXPRESSION, since
+            # its address is unknown during macro expansion. Two different expressions can resolve
+            # to the SAME address -- `(x + 32)` and `(x + w)` at w=32 -- and they get different
+            # block bases. Pinning that address to one of them sends every table in the other
+            # block to `switch ^ wrong_base`, which is nowhere. Un-pinning a word is always safe
+            # (it then rests at `digit` and the full address is written), so a collision un-pins.
+            pinned, conflicts = resolve_pinned(table_pool.pinned_words(), labels)
+            table_pool.pin_conflicts = conflicts
             if not pinned:
                 pinned = None
 
