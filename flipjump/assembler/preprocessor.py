@@ -262,6 +262,7 @@ class BlockPool(TablePool):
         self._used = 0                                    # bits handed out, from pool_base
         self._next_index: Dict[str, int] = {}
         self.ungrouped = 0
+        self.reserved_words = 0
         self.pin_conflicts = 0
         # A block's slots are uniform, so ONE wide table sets the width for the whole group. A
         # group holding a 514-op `hex.tables` table and 32,768 slots wants 2.1e9 bits -- the entire
@@ -309,11 +310,26 @@ class BlockPool(TablePool):
             cursor = base + block_bits
         self._used = cursor - self.pool_base
 
+    RESERVED_BELOW = 1024
+
     def reserve(self, ops_alignment: int, table_ops: int,
                 group: Optional[str] = None, group_expr: object = None):
         if group is None:
             self.ungrouped += 1               # no disarm wflip found: cannot be blocked
             return None
+        # THE RUNTIME'S WORDS ARE NOT OURS TO DISPATCH THROUGH. `stl.IO` sits at bit address 64 and
+        # the interpreter intercepts flips there; `bit.output` dispatches through it, so it reaches
+        # the grouper looking like an ordinary hex source. Excluding it from PINNING was not enough
+        # -- its tables were still RELOCATED, so the dispatch jumped into the pool and the game
+        # build died the same way (`ip 64 -> POOL`, 0 frames in 124 ops). Such a word resolves to a
+        # small constant this early, which is exactly how it is recognised.
+        if group_expr is not None:
+            try:
+                if int(group_expr.exact_eval({})) < self.RESERVED_BELOW:
+                    self.reserved_words += 1
+                    return None
+            except Exception:                                        # noqa: BLE001
+                pass                          # depends on labels -> a normal program variable
         if self.counting:
             self.counts[group] = self.counts.get(group, 0) + 1
             self.widths[group] = max(self.widths.get(group, 0), max(table_ops, ops_alignment))
