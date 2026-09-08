@@ -197,12 +197,23 @@ class BinaryData:
 
     def insert_wflip_ops(self, word_address: int, flip_value: int, return_address: int) -> None:
         if self.pinned:
-            # The word rests at `base + digit`, so a writer that wants it to hold V must flip
+            # The word rests at `base + digit`, so a writer INSTALLING A JUMP TARGET V must flip
             # `V ^ base`. For this table's own arm that is just the table's INDEX in the block --
-            # which is the entire point. For every other dispatcher through the same word
+            # the entire point -- and for every other dispatcher through the same word
             # (stl.comp_if1, hex.shifts.*, hex.tables.*) it is the same rule and the same result.
+            #
+            # ⚠ BUT NOT EVERY WFLIP ON THIS WORD INSTALLS AN ADDRESS. `hex.set`/`xor_by` wflip the
+            # SAME word to toggle the hex's VALUE bits -- a relative edit, not an absolute one --
+            # and XORing base into that destroys the base:
+            #     word = base ; flip (val*dw ^ base) -> base ^ val*dw ^ base = val*dw
+            # which leaves the variable dispatching to a bare value. Measured: the toy died at
+            # `ip 1,536`, a word holding value bits and no base.
+            #
+            # The two are separable by magnitude. A hex's value occupies word-bits 6..9, so a
+            # value-field flip is under one table's worth of bits; every real jump target is a
+            # `pad 16`-aligned address, i.e. at least that. VALUE_FIELD_BITS is that boundary.
             base = self.pinned.get(word_address)
-            if base:
+            if base and flip_value >= 16 * 2 * self.memory_width:
                 flip_value ^= base
         if 0 == flip_value:
             self.insert_fj_op(0, return_address)

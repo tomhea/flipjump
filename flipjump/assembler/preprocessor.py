@@ -828,15 +828,22 @@ def resolve_macro_aux(
             # the interrupted stream resumes at the end of this macro. See TablePool.
             found = relocatable_table_end(current_macro.ops, op_index)
             group = None
+            group_expr = None
             if found is not None and found[2] is not None:
-                # resolve what can be resolved; unknown labels stay as names, which is exactly what
-                # makes two sites on the same variable compare equal
-                group = str(found[2].eval_new(params_dict))
+                # ⚠ SUBSTITUTE THE PARAMETERS. `found[2]` is the raw `src + w` from the macro BODY,
+                # where `src` is an unbound parameter name -- the same object for every call site.
+                # Passing that through made every group store one identical expression, which
+                # deduped to a single bogus pin that resolved `src` against an unrelated global and
+                # baked a block base into the program's startup ops. Evaluating here binds `src` to
+                # the caller's variable; unknown LABELS stay as names, which is exactly what makes
+                # two sites on the same variable compare equal.
+                group_expr = found[2].eval_new(params_dict)
+                group = str(group_expr)
             if (
                 not relocated
                 and found is not None
                 and preprocessor_data.begin_relocation(macro_name, ops_alignment, found[1],
-                                                       labels_prefix, group, found[2])
+                                                       labels_prefix, group, group_expr)
             ):
                 table_end = found[0]
                 relocated = True
