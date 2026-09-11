@@ -128,6 +128,24 @@ class TablePool:
         count = reach // self.run_bits
         return sorted(range(count), key=lambda v: (bin(v).count('1'), v))
 
+    def canonical_alias(self, labels: Dict[str, int]) -> Dict[str, str]:
+        """{group -> canonical group} for groups whose expressions resolve to the SAME address.
+
+        Run this on a COUNTING pool once its assembly's labels are known, and feed the result to
+        the placing pool. Without it every alias pair loses both its pins.
+        """
+        by_address: Dict[int, str] = {}
+        alias: Dict[str, str] = {}
+        for group in sorted(self.exprs):
+            try:
+                address = self.exprs[group].exact_eval(labels)
+            except Exception:                                            # noqa: BLE001
+                continue
+            first = by_address.setdefault(address, group)
+            if first != group:
+                alias[group] = first
+        return alias
+
     def wants(self, macro_name: MacroName, labels_prefix: str = '') -> bool:
         """`labels_prefix` is the full macro-expansion path, i.e. the CALL SITE -- so a caller can
         relocate the hot sites a profile named rather than every expansion of a macro. Cheap
@@ -242,7 +260,10 @@ class BlockPool(TablePool):
 
     def __init__(self, memory_width: int, pool_base: int, *, counts: Optional[Dict[str, int]] = None,
                  widths: Optional[Dict[str, int]] = None, span_bits: Optional[int] = None,
-                 max_slot_ops: int = 32,
+                 max_slot_ops: int = 32, alias: Optional[Dict[str, str]] = None,
+                 spread: int = 1, spread_min_count: int = 256, evict_by_value: bool = False,
+                 pin_broken: bool = False, width_hist: Optional[Dict[str, Dict[int, int]]] = None,
+                 width_buckets: bool = False,
                  wants: Optional[Callable[[MacroName, str], bool]] = None):
         super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits, wants=wants)
         self.counts = {} if counts is None else dict(counts)
@@ -250,7 +271,39 @@ class BlockPool(TablePool):
         # `pad 4`, so sizing slots from the pad alignment overflows into the next slot and the fjm
         # writer rejects the overlap. The counting pass records the max, keyed the same way.
         self.widths = {} if widths is None else dict(widths)
+        # ONE wide table sets the slot width for its WHOLE group, so a group whose widest table is
+        # 514 ops and whose typical one is 8 pays 64x on every slot. Whether that is happening is
+        # not visible from `widths` (a max) alone, so the counting pass keeps the distribution.
+        # Accounting only -- it never changes a layout.
+        self.width_hist: Dict[str, Dict[int, int]] = (
+            {} if width_hist is None else {g: dict(h) for g, h in width_hist.items()})
+        # OPT-IN: give each WIDTH its own sub-block instead of widening every slot in the group to
+        # the widest table. See `_bucket_layout`.
+        self.width_buckets = width_buckets
+        self._layout_cache: Dict[str, Tuple[Dict[int, Tuple[int, int]], int]] = {}
+        self._bucket_next: Dict[Tuple[str, int], int] = {}
         self.counting = counts is None
+        # ALIAS: {group key -> canonical group key}. Groups are keyed by the source word's
+        # EXPRESSION because its address is unknown while macros expand, and two expressions can
+        # name ONE word -- `(x + 32)` and `(x + w)` at w=32. Those got separate blocks with
+        # separate bases, and resolve_pinned then had to UN-PIN both (3,801 words on the game
+        # tier). Merging them into one block instead keeps the pins. The caller derives this from
+        # a counting pass, where the expressions CAN be resolved.
+        self.alias = alias or {}
+        self.exprs: Dict[str, object] = {}
+        # WHY a table was declined. "17,444 declined" says nothing actionable; these say which of
+        # the three causes to fix, and they are cheap counters rather than a guess.
+        self.declined_no_block = 0      # its group got no block at all (pool exhausted)
+        self.declined_too_wide = 0      # wider than max_slot_ops, so it cannot share a uniform slot
+        self.declined_overflow = 0      # more tables in the group than the counting pass saw
+        # SPAN is the binding resource (the pool fills memory to the w=32 ceiling), and
+        # `_preallocate` used to spend it in descending BLOCK SIZE -- an order that never asks
+        # which groups are worth the space. Opt-in eviction drops the least valuable groups per
+        # bit BEFORE allocating, so a cold 512-op block cannot crowd out a hot one.
+        self.evict_by_value = evict_by_value
+        self.evicted_low_value = 0
+        # OPT-IN: pin a group even though some of its tables were declined. See `pinned_words`.
+        self.pin_broken = pin_broken
         self.groups: Dict[str, Tuple[int, object]] = {}   # group -> (base, word Expr)
         # A group that could not place EVERY one of its tables must not be pinned. Pinning makes
         # every writer of that word flip `V ^ base`, which is only correct if the table it is
@@ -271,16 +324,98 @@ class BlockPool(TablePool):
         # INLINE, which is correct because a consistent base cancels: `(B + digit) ^ (switch ^ B)`
         # is `switch + digit` wherever the table sits.
         self.max_slot_ops = max_slot_ops
+        # SPARSE INDICES. The arm costs `2 * popcount(index)`, and the index is as wide as the
+        # group -- a 19,015-table group needs 15 bits, ~15 ops, against the ~18.6 it replaced, and
+        # words shared by 8+ sites carry 64.1% of all calls (FINDINGS BN). Giving such a group
+        # `spread` times the slots and handing out only the CHEAPEST indices cuts that. Unused
+        # slots emit no data, so this costs SPAN, not DATA -- and span has the headroom that data
+        # does not. Applied only above `spread_min_count`, because small groups are already cheap
+        # and would pay the span for nothing.
+        self.spread = max(1, spread)
+        self.spread_min_count = spread_min_count
+        self._cheap_index_cache: Dict[int, List[int]] = {}
         if not self.counting:
             self._preallocate()
 
-    def _block_shape(self, group: str) -> Tuple[int, int]:
+    def _cheap_indices(self, slots: int, need: int) -> List[int]:
+        """the `need` lowest-popcount indices inside a block of `slots`, cheapest first"""
+        cached = self._cheap_index_cache.get(slots)
+        if cached is None:
+            cached = sorted(range(slots), key=lambda v: (bin(v).count('1'), v))
+            self._cheap_index_cache[slots] = cached
+        return cached[:need]
+
+    def _bucket_layout(self, group: str) -> Tuple[Dict[int, Tuple[int, int]], int]:
+        """{slot_ops -> (offset_bits_within_block, slots)}, total_block_bits.
+
+        A block's slots are uniform, so ONE wide table sets the width of every slot in its group.
+        Measured on the game tier: of 68,224,992 ops of pool allocated, only 9,041,597 hold a real
+        table -- 41,479,139 is WIDTH PADDING, narrow tables inflated to a wide sibling's slot size.
+
+        Uniform slots are not required by the mechanism. Arming only needs `base ^ offset` to equal
+        `base + offset`, which holds whenever the base is aligned to the block size and the offset
+        lies inside it. Uniform slots are merely the easy way to keep popcount(offset) low, because
+        `offset = i * slot_ops` puts the index in a clean bit field.
+
+        Per-width sub-blocks keep that property. Each bucket is aligned to its OWN size and they are
+        laid out biggest-first, so a bucket's offset bits sit strictly above the bits its own slots
+        use -- popcount(offset) = popcount(bucket_offset) + popcount(index), and with one or two
+        widths per group the bucket selector costs at most a bit or two. A 21,000-table group with
+        one 512-op sibling drops from 32,768 wide slots to 32,768 narrow ones plus a single wide
+        slot: 32x smaller.
+
+        A group with ONE width lays out EXACTLY as before, so the blast radius is the mixed groups.
+        """
+        cached = self._layout_cache.get(group)
+        if cached is not None:
+            return cached
+        hist = self.width_hist.get(group)
+        if not hist:
+            slots, slot_bits = self._uniform_shape(group)
+            layout = {slot_bits // self.op_bits: (0, slots, self.counts.get(group, 1))}
+            result = (layout, slots * slot_bits)
+        else:
+            buckets: Dict[int, int] = {}
+            for w, c in hist.items():
+                capped = min(max(w, 1), self.max_slot_ops)
+                sw = 1 << max(0, (capped - 1).bit_length())
+                buckets[sw] = buckets.get(sw, 0) + c
+            total_count = sum(hist.values())
+            spread = self.spread if (self.spread > 1 and total_count >= self.spread_min_count) else 1
+            sized = {}
+            for sw, c in buckets.items():
+                slots = (1 << max(0, (c - 1).bit_length())) * spread
+                sized[sw] = (slots, slots * sw * self.op_bits)
+            offset = 0
+            layout = {}
+            for sw in sorted(sized, key=lambda k: (-sized[k][1], -k)):
+                slots, bits = sized[sw]
+                offset = -(-offset // bits) * bits          # align each bucket to its own size
+                layout[sw] = (offset, slots, buckets[sw])
+                offset += bits
+            result = (layout, 1 << max(0, (offset - 1).bit_length()))
+        self._layout_cache[group] = result
+        return result
+
+    def _block_bits(self, group: str) -> int:
+        if self.width_buckets:
+            return self._bucket_layout(group)[1]
+        slots, slot_bits = self._uniform_shape(group)
+        return slots * slot_bits
+
+    def _uniform_shape(self, group: str) -> Tuple[int, int]:
         """(slots, slot_bits) for a group -- both powers of two, so index*slot_bits is a clean
         bit field and the arming XOR adds rather than subtracts."""
-        slots = 1 << max(0, (self.counts.get(group, 1) - 1).bit_length())
+        count = self.counts.get(group, 1)
+        slots = 1 << max(0, (count - 1).bit_length())
+        if self.spread > 1 and count >= self.spread_min_count:
+            slots *= self.spread
         width = min(max(self.widths.get(group, 16), 1), self.max_slot_ops)
         slot_ops = 1 << max(0, (width - 1).bit_length())
         return slots, slot_ops * self.op_bits
+
+    def _block_shape(self, group: str) -> Tuple[int, int]:
+        return self._uniform_shape(group)
 
     def _preallocate(self) -> None:
         """Assign every block a base up front, BIGGEST FIRST.
@@ -294,13 +429,32 @@ class BlockPool(TablePool):
         Doing it here rather than during expansion also makes allocation independent of the order
         macros are reached, which is what two assemblies of the same program need in order to agree.
         """
-        order = sorted(self.counts, key=lambda g: (-(self._block_shape(g)[0] * self._block_shape(g)[1]), g))
+        bits = {g: self._block_bits(g) for g in self.counts}
         cursor = self.pool_base
         limit = (1 << self.memory_width) if self.span_bits is None else min(
             1 << self.memory_width, self.pool_base + self.span_bits)
+
+        keep = set(self.counts)
+        if self.evict_by_value:
+            # Demand exceeds capacity, so SOMETHING is dropped either way; the only question is
+            # what. Allocating biggest-first drops whatever the cursor happens to reach last,
+            # which is arbitrary with respect to how hot a group is. Dropping by ascending
+            # tables-per-bit instead spends the pool on the groups with the most dispatch sites.
+            # `counts` is a proxy for hotness, not a measurement: it counts SITES, not CALLS.
+            capacity = limit - self.pool_base
+            demand = sum(bits.values())
+            if demand > capacity:
+                for group in sorted(keep, key=lambda g: (self.counts.get(g, 1) / bits[g], g)):
+                    if demand <= capacity:
+                        break
+                    keep.discard(group)
+                    self.broken_groups.add(group)   # same contract as a no-room break
+                    self.evicted_low_value += 1
+                    demand -= bits[group]
+
+        order = sorted(keep, key=lambda g: (-bits[g], g))
         for group in order:
-            slots, slot_bits = self._block_shape(group)
-            block_bits = slots * slot_bits
+            block_bits = bits[group]
             base = -(-cursor // block_bits) * block_bits
             if base + block_bits > limit:
                 self.broken_groups.add(group)      # no room: this group stays inline everywhere
@@ -330,30 +484,103 @@ class BlockPool(TablePool):
                     return None
             except Exception:                                        # noqa: BLE001
                 pass                          # depends on labels -> a normal program variable
+        group = self.alias.get(group, group)
         if self.counting:
             self.counts[group] = self.counts.get(group, 0) + 1
-            self.widths[group] = max(self.widths.get(group, 0), max(table_ops, ops_alignment))
+            if group_expr is not None and group not in self.exprs:
+                self.exprs[group] = group_expr      # so the caller can resolve and canonicalise
+            w = max(table_ops, ops_alignment)
+            self.widths[group] = max(self.widths.get(group, 0), w)
+            hist = self.width_hist.setdefault(group, {})
+            hist[w] = hist.get(w, 0) + 1
             return None                       # counting pass must not change the layout
         if group not in self.groups:
             self.declined += 1                # no block was reserved for it (see _preallocate)
+            self.declined_no_block += 1
             return None
+        if self.width_buckets:
+            return self._reserve_bucketed(ops_alignment, table_ops, group, group_expr)
         slots, slot_bits = self._block_shape(group)
         if table_ops * self.op_bits > slot_bits or ops_alignment * self.op_bits > slot_bits:
             self.declined += 1                # wider than the counting pass saw
+            self.declined_too_wide += 1
             self.broken_groups.add(group)
             return None
         index = self._next_index[group]
+        count = self.counts.get(group, 1)
+        if self.spread > 1 and count >= self.spread_min_count:
+            # ⚠ AN OVERFLOW TABLE MUST DECLINE, NOT FALL BACK TO A RAW INDEX. The cheap-index list
+            # is a SUBSET of range(slots) chosen by popcount, so a raw index past the end of it can
+            # equal a mapped index already handed out -- two tables at one address, which the fjm
+            # writer rejects as overlapping segments (measured: seg[207408] and seg[207409] both at
+            # 0x96130000).
+            if index >= count:
+                self.declined += 1
+                self.declined_overflow += 1
+                self.broken_groups.add(group)
+                return None
+            index = self._cheap_indices(slots, count)[index]
         if index >= slots:
             self.declined += 1                # more tables than the counting pass saw
+            self.declined_overflow += 1
             self.broken_groups.add(group)
             return None
         base, _ = self.groups[group]
         self.groups[group] = (base, group_expr if group_expr is not None else _)
-        self._next_index[group] = index + 1
+        self._next_index[group] = self._next_index[group] + 1
         self.allocated += 1
         address = base + index * slot_bits
         self.run_starts.append(address)
         return address, True, 0               # its own segment; blocks are sparse by construction
+
+    def _reserve_bucketed(self, ops_alignment: int, table_ops: int, group: str, group_expr):
+        """`reserve` for width-bucketed blocks: the table picks the sub-block matching ITS width.
+
+        Mirrors the uniform path exactly -- same decline reasons, same sparse-index rule, same
+        raw-counter increment -- differing only in that the slot size and offset come from the
+        bucket rather than from the group's widest table.
+        """
+        w = max(table_ops, ops_alignment, 1)
+        if w > self.max_slot_ops:
+            self.declined += 1
+            self.declined_too_wide += 1
+            self.broken_groups.add(group)
+            return None
+        sw = 1 << max(0, (w - 1).bit_length())
+        layout, _total = self._bucket_layout(group)
+        entry = layout.get(sw)
+        if entry is None:                     # a width the counting pass never saw for this group
+            self.declined += 1
+            self.declined_too_wide += 1
+            self.broken_groups.add(group)
+            return None
+        offset, slots, cnt = entry
+        key = (group, sw)
+        raw = self._bucket_next.get(key, 0)
+        index = raw
+        total_count = self.counts.get(group, 1)
+        if self.spread > 1 and total_count >= self.spread_min_count:
+            # same rule as the uniform path: an overflow table must DECLINE, never fall back to a
+            # raw index, because the cheap-index list is a SUBSET of range(slots) and a raw index
+            # past its end can collide with one already handed out.
+            if raw >= cnt:
+                self.declined += 1
+                self.declined_overflow += 1
+                self.broken_groups.add(group)
+                return None
+            index = self._cheap_indices(slots, cnt)[raw]
+        if index >= slots:
+            self.declined += 1
+            self.declined_overflow += 1
+            self.broken_groups.add(group)
+            return None
+        base, _prev = self.groups[group]
+        self.groups[group] = (base, group_expr if group_expr is not None else _prev)
+        self._bucket_next[key] = raw + 1
+        self.allocated += 1
+        address = base + offset + index * sw * self.op_bits
+        self.run_starts.append(address)
+        return address, True, 0
 
     def commit(self, end_address: int) -> None:
         pass                                  # each table owns its slot; no shared cursor
@@ -365,7 +592,30 @@ class BlockPool(TablePool):
         word makes its inline tables unreachable, and the failure is total and immediate -- the
         game-tier build that first hit it presented 0 frames in 124 ops, while the M1 reset check
         and the four-program gate both passed it.
+
+        ⚠ `pin_broken=True` DISABLES that exclusion, and the reason it is worth trying is that the
+        arithmetic says an inline table survives pinning. `insert_fj_op` rests the word at
+        `value*dw ^ base`; `insert_wflip_ops` rewrites any ADDRESS-magnitude flip on a pinned word
+        to `V ^ base`. For a blocked table at `base + i*slot` the arm writes `i*slot`, and for an
+        INLINE table at `A` it writes `A ^ base`, landing the word at
+
+            (value*dw ^ base) ^ (A ^ base)  ==  value*dw ^ A  ==  A + value*dw
+
+        which is exactly where the un-pinned build dispatches. The declined table pays a WORSE
+        popcount (`A ^ base` rather than `A`); it does not become unreachable.
+
+        Against that: the exclusion was added when a real game build presented 0 frames in 124 ops.
+        But that same symptom, to the digit, is recorded a second time in `reserve()` against a
+        DIFFERENT cause -- `stl.IO`'s tables being relocated into the pool -- which was diagnosed
+        and fixed separately. So the exclusion may be a defensive measure that outlived its bug.
+
+        The trade is large: one declined table currently un-pins EVERY sibling in its group, and
+        the M1 reset part alone declines 4,008 tables BY DESIGN (its tables land past the counted
+        slots). ⚠ The four-program gate PASSED the broken version, so it CANNOT adjudicate this --
+        only `m2_std_gate` on the real game tier can. Do not read a toy PASS as evidence here.
         """
+        if self.pin_broken:
+            return {expr: base for group, (base, expr) in self.groups.items()}
         return {expr: base for group, (base, expr) in self.groups.items()
                 if group not in self.broken_groups}
 
