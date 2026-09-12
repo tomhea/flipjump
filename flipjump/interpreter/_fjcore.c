@@ -104,18 +104,36 @@ static void* fj_alloc_flat(size_t bytes, int* large)
     }
 #elif defined(__linux__)
     {
-        size_t two_mb = 2u * 1024u * 1024u;
+        /* THP IS THE PRIVILEGE-FREE ROUTE, AND IT ONLY WORKS 2 MB-ALIGNED. Transparent Huge
+           Pages need no capability at all (unlike MAP_HUGETLB, which needs hugepages
+           preconfigured, and unlike Windows large pages, which need SeLockMemoryPrivilege) --
+           but khugepaged can only collapse a region that is 2 MB aligned AND 2 MB sized, and
+           plain mmap only promises 4 KB alignment. An unaligned mapping therefore gets its
+           interior collapsed at best and its edges never, which quietly wastes most of the
+           benefit. So over-allocate by one huge page, trim both ends, and advise the aligned
+           middle. */
+        const size_t two_mb = 2u * 1024u * 1024u;
         size_t rounded = ((bytes + two_mb - 1) / two_mb) * two_mb;
-        void* p = mmap(NULL, rounded, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (p != MAP_FAILED) {
+        char* raw = (char*)mmap(NULL, rounded + two_mb, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (raw != MAP_FAILED) {
+            uintptr_t base = (uintptr_t)raw;
+            uintptr_t aligned = (base + (two_mb - 1)) & ~(uintptr_t)(two_mb - 1);
+            size_t head = (size_t)(aligned - base);
+            if (head) {
+                munmap(raw, head);
+            }
+            if (two_mb - head) {
+                munmap((char*)(aligned + rounded), two_mb - head);
+            }
 #if defined(MADV_HUGEPAGE)
-            /* transparent hugepages: an ADVISORY request, so this is not guaranteed and the
-               flag below records only that the mapping is mmap-backed, not that it is huge */
-            madvise(p, rounded, MADV_HUGEPAGE);
+            /* ADVISORY: the kernel may still decline (THP disabled, memory fragmented), so
+               `large` here records "mapped for huge pages", not "definitely huge". Check
+               /proc/<pid>/smaps AnonHugePages to see what was actually granted. */
+            madvise((void*)aligned, rounded, MADV_HUGEPAGE);
 #endif
             *large = 1;
-            return p;
+            return (void*)aligned;
         }
     }
 #endif
