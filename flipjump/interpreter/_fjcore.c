@@ -260,7 +260,13 @@ typedef struct {
     uint64_t page_cache_valid_start[16];
     uint64_t page_cache_valid_end[16];
 
-    SegmentRange* segments; /* sorted, merged */
+    SegmentRange* segments; /* sorted once storage is decided; NOT merged - see segments_disjoint */
+    int segments_disjoint;  /* 1: sorted AND non-overlapping, so flat_seg_contains may binary
+                               search. Computed once in mem_decide_storage. add_segment does not
+                               merge and nothing else checked, so overlap is possible in principle
+                               and a binary search over overlapping ranges can MISS a container -
+                               which would report a valid word as garbage and halt a correct
+                               program. Verified rather than assumed. */
     Py_ssize_t segment_count;
     Py_ssize_t segment_capacity;
     int segments_sorted;
@@ -456,11 +462,42 @@ static inline int flat_is_garbage(const MemoryObject* m, uint64_t value)
     return (m->w <= 32) ? ((value & GARBAGE_SENTINEL) != 0) : (value == FLAT_GARBAGE_MAGIC);
 }
 
+/* is `word_address` inside any declared segment?
+ *
+ * BINARY SEARCH WHEN THE RANGES ARE SORTED, linear otherwise. The linear form was not a mistake:
+ * nothing sorted the segments before the flat image was built (mem_ensure_segments_sorted is
+ * called only from the access-check paths, and add_segment clears the flag), so a binary search
+ * would have been WRONG -- it can miss a containing range in an unsorted array, and missing one
+ * here reports a valid word as garbage and halts a correct program. mem_decide_storage now sorts
+ * once before any op runs, so the fast path is legitimate; the linear fallback stays for any
+ * caller that reaches here with the flag clear, because being right matters more than the branch.
+ *
+ * It matters because doom-flipjump's game tier declares 424,743 segments and this sits behind the
+ * sentinel test in the hot loop: at w<=32 the in-band bit-63 sentinel is exact and never gets
+ * here, but 4-byte cells have no spare bit and must use a colliding magic, which would make every
+ * false positive cost a full scan.
+ */
 static inline int flat_seg_contains(const MemoryObject* m, uint64_t word_address)
 {
-    Py_ssize_t seg;
-    for (seg = 0; seg < m->segment_count; seg++) {
-        if (word_address >= m->segments[seg].start && word_address < m->segments[seg].end) {
+    Py_ssize_t lo, hi;
+    if (!m->segments_sorted || !m->segments_disjoint) {
+        Py_ssize_t seg;
+        for (seg = 0; seg < m->segment_count; seg++) {
+            if (word_address >= m->segments[seg].start && word_address < m->segments[seg].end) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    lo = 0;
+    hi = m->segment_count - 1;
+    while (lo <= hi) {
+        Py_ssize_t mid = lo + (hi - lo) / 2;
+        if (word_address < m->segments[mid].start) {
+            hi = mid - 1;
+        } else if (word_address >= m->segments[mid].end) {
+            lo = mid + 1;
+        } else {
             return 1;
         }
     }
@@ -638,6 +675,25 @@ static int mem_decide_storage(MemoryObject* m)
     if (!m->garbage_stop) {
         return 0; /* continue-mode: paged (the flat sentinel scheme needs garbage-stop) */
     }
+    /* SORT ONCE, HERE, so `flat_seg_contains` may binary-search. It could not before: the only
+       calls to mem_ensure_segments_sorted are on the access-check paths, `add_segment` clears
+       `segments_sorted`, and nothing sorted before the flat image was built -- which is why that
+       helper is a LINEAR SCAN. That is correct for unsorted ranges but is O(segment_count), and
+       doom-flipjump's game tier declares 424,743 segments, so a single sentinel collision inside
+       the hot loop would cost ~424k comparisons. This runs once, before any op executes. */
+    mem_ensure_segments_sorted(m);
+    {
+        /* ...and the fast path additionally needs the ranges to be DISJOINT, which nothing
+           guarantees: add_segment appends without merging. One linear pass settles it. */
+        Py_ssize_t k;
+        m->segments_disjoint = 1;
+        for (k = 1; k < m->segment_count; k++) {
+            if (m->segments[k].start < m->segments[k - 1].end) {
+                m->segments_disjoint = 0;
+                break;
+            }
+        }
+    }
     {
         const char* no_flat = getenv("FLIPJUMP_NO_FLAT");
         if (no_flat && no_flat[0] == '1') {
@@ -791,6 +847,7 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->segment_count = 0;
     self->segment_capacity = 0;
     self->segments_sorted = 1;
+    self->segments_disjoint = 0;      /* proven in mem_decide_storage, never assumed */
     self->flat = NULL;
     self->flat_large = 0;
     self->flat_count = 0;
@@ -842,6 +899,7 @@ static PyObject* Memory_add_segment(MemoryObject* self, PyObject* args)
     self->segments[self->segment_count].end = start_word + length_words;
     self->segment_count++;
     self->segments_sorted = 0;
+    self->segments_disjoint = 0;      /* a new range may overlap an existing one */
     /* validity ranges of already-allocated pages may change - recompute them */
     if (self->slots) {
         for (uint64_t i = 0; i < self->slot_count; i++) {
