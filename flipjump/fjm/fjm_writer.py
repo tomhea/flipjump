@@ -11,7 +11,7 @@ import lzma
 import sys
 from pathlib import Path
 from struct import pack
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -300,7 +300,7 @@ class Writer:
             self._segment_index_by_data_start[data_start] = len(self.segments)
         self.segments.append((segment_start, segment_length, data_start, data_length))
 
-    def add_data(self, data: List[int]) -> int:
+    def add_data(self, data: Iterable[int]) -> int:
         """
         append the data to the current data
         @param data: [in]: a list of words
@@ -311,7 +311,7 @@ class Writer:
         self.data.extend(data)
         return data_start
 
-    def add_simple_segment_with_data(self, segment_start: int, data: List[int]) -> None:
+    def add_simple_segment_with_data(self, segment_start: int, data: Sequence[int]) -> None:
         """
         adds the data and a segment that contains exactly the data, to the fjm
         @param segment_start: the start address of the segment in memory (in words)

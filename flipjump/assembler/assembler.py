@@ -8,7 +8,7 @@ and resolving labels into addresses while writing the result with the fjm Writer
 import gc
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Deque, List, Dict, Tuple, Optional, NamedTuple
+from typing import Any, Callable, Deque, List, Dict, MutableSequence, Tuple, Optional, NamedTuple
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -46,8 +46,8 @@ def add_segment_to_fjm(
     fjm_writer: Writer,
     first_address: int,
     last_address: int,
-    fj_words: List[int],
-    wflip_words: List[int],
+    fj_words: MutableSequence[int],
+    wflip_words: MutableSequence[int],
 ) -> None:
     """
     The new segment will be placed in [first_address, last_address),
@@ -89,13 +89,13 @@ class WFlipSpot(NamedTuple):
     PERF (doom-flipjump, 2026-08-20): this was a plain @dataclass, and it is allocated once per
     wflip-chain link -- 16.1M times on the doom-flipjump program, which is the single most
     frequently constructed object in `labels_resolve`. A NamedTuple keeps the exact same
-    `.list/.index/.address` attribute access with none of the per-instance __dict__, and tuple
-    allocation comes off CPython's freelist. Purely a representation change: no field is added,
-    removed, renamed or reordered.
+    `.list/.word_index/.address` attribute access with none of the per-instance __dict__, and
+    tuple allocation comes off CPython's freelist (the index field is `word_index`: a NamedTuple
+    field cannot be called `index`, which tuple already defines).
     """
 
-    list: List[int]
-    index: int
+    list: MutableSequence[int]
+    word_index: int
     address: int
 
 
@@ -227,7 +227,7 @@ class BinaryData:
 
             # insert the first op
             self.insert_fj_op(flip_addresses.pop(), 0)
-            last_return_address_index = self.fj_words, len(self.fj_words) - 1
+            last_return_address_index: Tuple[MutableSequence[int], int] = self.fj_words, len(self.fj_words) - 1
 
             while flip_addresses:
                 flips_key = tuple(flip_addresses)
@@ -245,8 +245,8 @@ class BinaryData:
                     ops_list[last_address_index] = wflip_spot.address
                     return_dict[flips_key] = wflip_spot.address
 
-                    wflip_spot.list[wflip_spot.index] = flip_addresses.pop()
-                    last_return_address_index = wflip_spot.list, wflip_spot.index + 1
+                    wflip_spot.list[wflip_spot.word_index] = flip_addresses.pop()
+                    last_return_address_index = wflip_spot.list, wflip_spot.word_index + 1
 
             ops_list, last_address_index = last_return_address_index
             ops_list[last_address_index] = return_address
@@ -358,7 +358,9 @@ def labels_resolve(
     # did, via the popleft() of the first segment above -- and `assemble()` discards it right after.
     popleft = ops.popleft
     while ops:
-        op = popleft()
+        # dispatched on the exact class below; typed Any because mypy cannot narrow on `__class__ is`
+        # and an isinstance or a cast per op is a call per op in the loop that runs once per op
+        op: Any = popleft()
         op_class = op.__class__
 
         if op_class is FlipJump:

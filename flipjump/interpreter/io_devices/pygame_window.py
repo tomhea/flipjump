@@ -241,7 +241,8 @@ class PygameWindow:
         frame_surface.set_palette(palette)
         self._blit(frame_surface)
 
-    def _blit(self, frame_surface) -> None:
+    def _blit(self, frame_surface: Any) -> None:
+        assert self._screen_surface is not None
         self._screen_surface.blit(frame_surface, (0, 0))
         self._pygame.display.flip()
 

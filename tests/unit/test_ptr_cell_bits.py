@@ -13,7 +13,7 @@ That is not hypothetical -- the first version of this reached nothing at all, be
 is substituted where it is USED, at parse time, and the defines file was being read after the stl.
 """
 
-import subprocess
+import subprocess  # nosec B404 - the test drives the fj CLI
 import sys
 from pathlib import Path
 
@@ -52,7 +52,7 @@ def _assemble_at(tmp_path: Path, program: str, cell_bits: int, wide_bits: int = 
     if wide_bits != 0:
         args += ["-D", f"hex.pointers.PTR_WIDE_BITS = {wide_bits}"]
     args.append(str(REPO / program))
-    result = subprocess.run(args, cwd=str(REPO), capture_output=True, text=True, timeout=900)
+    result = subprocess.run(args, cwd=str(REPO), capture_output=True, text=True, timeout=900)  # nosec B603
     assert result.returncode == 0, (
         f"assembling at PTR_CELL_BITS={cell_bits}, PTR_WIDE_BITS={wide_bits} failed:"
         f"\n{result.stdout}{result.stderr}"
