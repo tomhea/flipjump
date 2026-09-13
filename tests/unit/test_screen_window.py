@@ -21,6 +21,7 @@ from flipjump.interpreter.io_devices.pygame_window import (  # noqa: E402
     KEYCODE_UP,
     InteractiveScreen,
     PcIO,
+    WINDOW_HEIGHT,
     PygameWindow,
     WindowKeyEventSource,
 )
@@ -221,3 +222,64 @@ def test_closing_the_window_terminates_a_real_run(tmp_path: Path, engine: str) -
     assert device.window.closed
     # storage_mode is set only by the native engine - prove the right engine actually ran
     assert (statistics.storage_mode is not None) == (engine == 'native')
+
+
+# --- window controls (0x12 title, 0x13 icon) reach the window ---
+
+
+def send_title(device: InteractiveScreen, title: bytes) -> None:
+    write_byte(device, 0x12)
+    for char in title + b'\x00':
+        write_byte(device, char)
+
+
+def send_icon_1x1(device: InteractiveScreen, index: int) -> None:
+    write_byte(device, 0x13)
+    for byte in (1, 1, index):
+        write_byte(device, byte)
+
+
+def test_window_title_reaches_the_caption() -> None:
+    device = InteractiveScreen()
+    init_2x2_screen(device)
+    send_title(device, b'DOOM')
+    assert device.window_title == 'DOOM'
+    assert pygame.display.get_caption()[0] == 'DOOM'
+
+
+def test_window_opens_at_the_program_aspect(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeOSWindow:
+        size = (0, 0)
+
+    fake = FakeOSWindow()
+    monkeypatch.setattr(PygameWindow, '_os_window', lambda self: fake)
+    device = InteractiveScreen()
+    write_byte(device, 1)  # CMD init_screen, 160x100
+    write_u16(device, 160)
+    write_u16(device, 100)
+    write_byte(device, 8)
+    write_u16(device, 0)
+    assert fake.size == (768, WINDOW_HEIGHT)
+
+
+def test_window_icon_waits_for_the_palette(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.unit.test_screen_io import PALETTE_ADDRESS, FakeDeviceMemory, store_palette, write_address
+
+    device = InteractiveScreen()
+    memory = FakeDeviceMemory()
+    device.attach_memory(memory)
+    calls = []
+    monkeypatch.setattr(device.window, 'set_icon', lambda *args: calls.append(args))
+    write_byte(device, 1)  # CMD init_screen 2x2 with a 2-entry palette
+    write_u16(device, 2)
+    write_u16(device, 2)
+    write_byte(device, 8)
+    write_u16(device, 2)
+    send_icon_1x1(device, 1)
+    assert device.window_icon == (1, 1, [1]) and calls == []  # no palette yet: nothing to draw
+    store_palette(memory, [(10, 20, 30), (200, 100, 0)])
+    write_byte(device, 2)  # CMD set_palette
+    write_address(device, PALETTE_ADDRESS)
+    assert calls == [(1, 1, [1], [(10, 20, 30), (200, 100, 0)], 0)]
+    send_icon_1x1(device, 0)  # with a palette in place the icon is applied at once
+    assert calls[-1] == (1, 1, [0], [(10, 20, 30), (200, 100, 0)], 0)

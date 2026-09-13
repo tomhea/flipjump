@@ -2003,5 +2003,6 @@ PyMODINIT_FUNC PyInit__fjcore(void)
     PyModule_AddIntConstant(module, "TERM_NULL_IP", TERM_NULL_IP);
     PyModule_AddIntConstant(module, "TERM_MEMORY_ERROR", TERM_MEMORY_ERROR);
     PyModule_AddObject(module, "FLAT_GARBAGE_MAGIC", PyLong_FromUnsignedLongLong(FLAT_GARBAGE_MAGIC));
+    PyModule_AddObject(module, "FLAT_GARBAGE_MAGIC32", PyLong_FromUnsignedLongLong(FLAT_GARBAGE_MAGIC32));
     return module;
 }
