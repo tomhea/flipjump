@@ -285,6 +285,11 @@ typedef struct {
     int flat_large;       /* 1: `flat` came from the large-page allocator and must be released
                              with it, not with free(). See fj_alloc_flat. */
     uint64_t flat_count;
+    uint64_t flat_alloc_count; /* cells actually allocated: flat_count + 1 -- one GUARD cell past the
+                                  window, garbage-filled -- or, in full-span mode, the whole address
+                                  space + 1. Sized by this, never by flat_count. See mem_decide_storage. */
+    int flat_full_span;   /* 1: w=32, 4-byte cells, limit >= 2^27: the array holds EVERY 32-bit address,
+                             so run_flat_loop's full_span instantiation runs without span checks. */
     uint64_t flat_max_words; /* constructor override; 0 = use the env var / default */
     int storage_decided;
     int flat_covers_all; /* 1: every segment fits in the flat window ('flat'); 0 with a
@@ -783,8 +788,24 @@ static int mem_decide_storage(MemoryObject* m)
         const char* force64 = getenv("FLIPJUMP_CELL64");
         m->cell_bytes = (force64 && force64[0] == '1') ? 8 : 4;
     }
-    m->flat = fj_alloc_flat((size_t)low_max_end * (size_t)m->cell_bytes, &m->flat_large);
+    /* FULL SPAN: a w=32 program with 4-byte cells whose flat limit admits the whole 32-bit address
+       space (2^27 words) gets an array over ALL of it -- not just up to the last segment -- so that
+       every address the run loop can form is inside the array, and the loop's three per-op span
+       checks are compiled out (run_flat_loop_impl, full_span). The words past the last segment are
+       garbage-filled like any gap, so an errant access there halts through the sentinel path with
+       the same error address the paged path reported. Cost: the tail's fill (~150 MB for the game)
+       and its resident memory, paid once per process. `flat_count` stays the semantic window (the
+       last segment's end): freeze/reset, set_words and the API accessors are unchanged.
+
+       THE GUARD CELL: one extra cell past the array, garbage-filled, so that the jump-word read of
+       an op sitting in the LAST word -- word_address + 1 == the array size -- reads the sentinel
+       instead of running off the end, at every width and in every mode. */
+    m->flat_full_span = (m->w == 32 && m->cell_bytes == 4 && limit >= (1ull << 27));
+    m->flat_alloc_count = (m->flat_full_span ? (1ull << 27) : low_max_end) + 1;
+    m->flat = fj_alloc_flat((size_t)m->flat_alloc_count * (size_t)m->cell_bytes, &m->flat_large);
     if (!m->flat) {
+        m->flat_alloc_count = 0;
+        m->flat_full_span = 0;
         fprintf(stderr, "flipjump: flat-storage allocation failed; running paged (slower). lower --flat-max-words / "
                 "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
         fflush(stderr);
@@ -797,7 +818,7 @@ static int mem_decide_storage(MemoryObject* m)
            read back as a legal 0 and out-of-segment reads would go silently undetected. */
         const uint64_t garbage_fill = (m->cell_bytes == 4) ? (uint64_t)FLAT_GARBAGE_MAGIC32
                                     : ((m->w <= 32) ? GARBAGE_SENTINEL : FLAT_GARBAGE_MAGIC);
-        for (i = 0; i < low_max_end; i++) {
+        for (i = 0; i < m->flat_alloc_count; i++) { /* the window, the full-span tail, the guard */
             flat_store(m, i, garbage_fill);
         }
     }
@@ -867,7 +888,7 @@ static void mem_free_allocations(MemoryObject* self)
         self->slots = NULL;
     }
     fj_free_flat(self->flat, self->flat_large,
-                 (size_t)self->flat_count * (size_t)(self->cell_bytes ? self->cell_bytes : 8));
+                 (size_t)self->flat_alloc_count * (size_t)(self->cell_bytes ? self->cell_bytes : 8));
     self->flat = NULL;
     self->flat_large = 0;
     free(self->pristine);
@@ -911,6 +932,8 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->flat_large = 0;
     self->cell_bytes = 8;
     self->flat_count = 0;
+    self->flat_alloc_count = 0;
+    self->flat_full_span = 0;
     self->flat_max_words = flat_max_words;
     self->storage_decided = 0;
     self->flat_covers_all = 0;
@@ -1064,6 +1087,32 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
 
 #define CAUSE_PYTHON_ERROR (-2)
 
+/* is a flat cell value the width's garbage sentinel? cell32/width are literals in the run loops,
+   so this folds to one compare per instantiation. */
+#define FLAT_IS_SENTINEL(x) \
+    (cell32 ? ((x) == (uint64_t)FLAT_GARBAGE_MAGIC32) \
+            : (width <= 32 ? (((x) & GARBAGE_SENTINEL) != 0) : ((x) == FLAT_GARBAGE_MAGIC)))
+
+/* fold (b): the flip target's sentinel test is DEFERRED past its store, so that it shares one
+   branch with the jump word's test. When the deferred test fires, the cell was already flipped:
+   if it was real garbage (an out-of-segment touch) the store is undone here -- memory is then
+   exactly what an undeferred check would have left -- and the error is reported at the flip's
+   address, as before; if it was an in-segment word that merely holds the magic value, the flip
+   stands, as before. `flip_value` is the value the cell held BEFORE the flip. */
+static FJ_ALWAYS_INLINE int flat_deferred_flip_garbage(MemoryObject* m, uint64_t flip_word_address,
+                                                       uint64_t flip_value, const int cell32)
+{
+    if (flat_garbage_check(m, flip_word_address, &flip_value) < 0) {
+        if (cell32) {
+            ((uint32_t*)m->flat)[flip_word_address] = (uint32_t)flip_value;
+        } else {
+            ((uint64_t*)m->flat)[flip_word_address] = flip_value;
+        }
+        return -1;
+    }
+    return 0;
+}
+
 /* the dedicated flat-storage run loop - the common fast case (no last-ops ring, flat
    memory): all paged-mode and ring branches are out of the per-op path.
 
@@ -1077,11 +1126,26 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
    - width/ww arrive as literals from run_flat_loop's dispatch, so the shifts and the
      IO-range constants are immediates - freeing enough registers that the loop's live
      values stop spilling to the stack.
+   - `full_span` (a literal too) compiles the three per-op span checks out. THE PROOF that they
+     can never fire there (w=32, 4-byte cells, the array covers all 2^27 words + a guard cell,
+     start_ip < 2^32 checked at dispatch):
+       ip: start_ip < 2^32, and every later ip is a jump word j -- a uint32 cell value -- so
+           word_address = ip >> 5 <= 2^27 - 1: the flip word is always inside the array;
+       f:  a uint32 cell value, so flip_word_address = f >> 5 <= 2^27 - 1: the flip target too;
+       j:  read at word_address + 1 <= 2^27, inside the array except for exactly the op in the
+           LAST word, which reads index 2^27 -- the GUARD CELL, garbage-filled, so that read takes
+           the sentinel cold path, which sends indices past the window to the same slow read the
+           span check used to (cold_jump_word_slow: mem_get_word_unaligned(ip + width), a memory
+           error at bit address 2^32, as before). The unaligned cold path parks word_address one
+           below the guard for the same reason (in general mode it uses (uint64_t)-2, which fails
+           the span check).
+     Everything else -- the garbage sentinels, IO, the flip -- is unchanged, so the full-span loop
+     is the general loop minus three never-taken branches.
    returns the termination cause, or CAUSE_PYTHON_ERROR with the python error set. */
 static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
                                                PyObject* eof_exception_type, uint64_t start_ip, uint64_t* ops_out,
                                                double* paused_seconds_out, const uint64_t width, const uint64_t ww,
-                                               const int cell32)
+                                               const int cell32, const int full_span)
 {
     const uint64_t bit_mask = width - 1;
     const uint64_t dw = 2 * width;
@@ -1092,6 +1156,9 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
     uint32_t* const flat32 = (uint32_t*)self->flat;
     uint64_t* const flat64 = (uint64_t*)self->flat;
     const uint64_t flat_count = self->flat_count;
+    /* one past the last index a jump-word read can name: the address space itself in full-span
+       mode (the guard cell sits there), the window otherwise */
+    const uint64_t span_end = full_span ? (1ull << (width - ww)) : flat_count;
 
     uint64_t ip = start_ip, ops = 0;
     uint64_t word_address, f, flip_word_address, flip_value, j;
@@ -1100,56 +1167,57 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
     int cause = CAUSE_PYTHON_ERROR;
 
     self->mem_error = 0;
+    inner_left = SIGNAL_CHECK_MASK + 1;
     for (;;) {
         /* the signal check is strip-mined out of the per-op path: the inner do-while
            runs SIGNAL_CHECK_MASK+1 ops on a fused dec-jnz back-edge, the outer loop
-           checks signals - same cadence as a per-op (ops & MASK) == MASK test. */
+           checks signals - same cadence as a per-op (ops & MASK) == MASK test.
+           THE OP COUNT IS STRIP-MINED THE SAME WAY (fold e): `ops` holds the count at the strip's
+           start; the strip's own count is (SIGNAL_CHECK_MASK + 1) - inner_left, added when the
+           strip completes and at `done` - plus one at `done_counted`, for an op that halts after
+           its jump word was read, the point where the per-op ops++ used to sit. */
         self->last_run_op_count = ops;
         if (PyErr_CheckSignals() < 0) {
-            goto done;
+            goto done; /* inner_left is whole here: `done` adds nothing */
         }
-        inner_left = SIGNAL_CHECK_MASK + 1;
         do {
             /* read flip word */
-            if (ip & bit_mask) {
-                goto cold_unaligned_flip_word;
-            }
             word_address = ip >> ww;
-            if (word_address + 1 >= flat_count) {
-                goto cold_flip_word_out_of_span;
-            }
-            f = cell32 ? (uint64_t)flat32[word_address] : flat64[word_address];
-            if (cell32 ? (f == (uint64_t)FLAT_GARBAGE_MAGIC32)
-                       : (width <= 32 ? ((f & GARBAGE_SENTINEL) != 0)
-                                      : (f == FLAT_GARBAGE_MAGIC))) {
-                goto cold_flip_word_garbage;
-            }
-        flip_word_ready:
-
-            /* IO - one unsigned compare each: output when f is dw or dw+1;
-               input when in_lo_exclusive < ip <= in_addr */
-            if (f - dw <= 1) {
-                goto cold_output;
-            }
-        after_output:
-            if (ip - in_lo_exclusive - 1 < dw) {
-                goto cold_input;
+            if (full_span) {
+                /* the read is safe for ANY 32-bit ip (word_address < 2^27, aligned or not), so the
+                   alignment test joins the head branch (fold f): ONE branch for "ip is unaligned",
+                   "f is the sentinel", "f is an output op" (f is dw or dw+1) and "ip is the input
+                   op" (in_lo_exclusive < ip <= in_addr) - all rare; the cold block tells them apart
+                   in the old order (an unaligned ip's f is re-read the slow way first). The bitwise
+                   | keeps it one branch. */
+                f = cell32 ? (uint64_t)flat32[word_address] : flat64[word_address];
+                if ((ip & bit_mask) | FLAT_IS_SENTINEL(f) | (f - dw <= 1) | (ip - in_lo_exclusive - 1 < dw)) {
+                    goto cold_head;
+                }
+            } else {
+                if (ip & bit_mask) {
+                    goto cold_unaligned_flip_word;
+                }
+                if (word_address + 1 >= flat_count) {
+                    goto cold_flip_word_out_of_span;
+                }
+                f = cell32 ? (uint64_t)flat32[word_address] : flat64[word_address];
+                /* ONE branch for "f is the sentinel", "f is an output op" and "ip is the input op"
+                   (folds b, c); the cold block keeps the old order - sentinel, output, input */
+                if (FLAT_IS_SENTINEL(f) | (f - dw <= 1) | (ip - in_lo_exclusive - 1 < dw)) {
+                    goto cold_flip_word;
+                }
             }
         after_input:
 
-            /* FLIP! */
+            /* FLIP! the target's sentinel test is DEFERRED past the store to share the jump
+               word's branch below (fold b): see flat_deferred_flip_garbage for the undo. */
             flip_word_address = f >> ww;
-            if (flip_word_address >= flat_count) {
+            if (!full_span && flip_word_address >= flat_count) {
                 goto cold_flip_out_of_span;
             }
             flip_value = cell32 ? (uint64_t)flat32[flip_word_address]
                                 : flat64[flip_word_address];
-            if (cell32 ? (flip_value == (uint64_t)FLAT_GARBAGE_MAGIC32)
-                       : (width <= 32 ? ((flip_value & GARBAGE_SENTINEL) != 0)
-                                      : (flip_value == FLAT_GARBAGE_MAGIC))) {
-                goto cold_flip_garbage;
-            }
-        flip_value_ready:
             {
                 const uint64_t flipped = flip_value ^ (1ull << (f & bit_mask));
                 if (cell32) {
@@ -1161,32 +1229,25 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
         after_flip:
 
             /* read jump word (after the flip - the flip may modify it). word_address is
-               (uint64_t)-2 for unaligned ops, so they take the slow read too. */
-            if (word_address + 1 >= flat_count) {
+               (uint64_t)-2 for unaligned ops, so they take the slow read too. (full span: the
+               unaligned op is parked on the guard cell instead - see cold_flip_or_jump_sentinel) */
+            if (!full_span && word_address + 1 >= flat_count) {
                 goto cold_jump_word_slow;
             }
             j = cell32 ? (uint64_t)flat32[word_address + 1] : flat64[word_address + 1];
-            if (cell32 ? (j == (uint64_t)FLAT_GARBAGE_MAGIC32)
-                       : (width <= 32 ? ((j & GARBAGE_SENTINEL) != 0)
-                                      : (j == FLAT_GARBAGE_MAGIC))) {
-                goto cold_jump_word_garbage;
+            /* ONE branch for everything rare at the op's tail (folds b, d, g): the flip target's
+               and the jump word's sentinel tests, the self-jump and the null ip. The cold block
+               keeps the old order: sentinels first, then - the op counted from there on (fold e:
+               done_counted) - looping, then null. */
+            if (FLAT_IS_SENTINEL(flip_value) | FLAT_IS_SENTINEL(j) | (j == ip) | (j < dw)) {
+                goto cold_tail;
             }
-        jump_word_ready:
-            ops++;
-
-            /* check finish? */
-            if (j == ip) {
-                goto cold_maybe_looping;
-            }
-        not_looping:
-            if (j < dw) {
-                cause = TERM_NULL_IP;
-                goto done;
-            }
-
+        jump_go:
             /* JUMP! */
             ip = j;
         } while (--inner_left);
+        ops += SIGNAL_CHECK_MASK + 1;
+        inner_left = SIGNAL_CHECK_MASK + 1;
         continue;
 
         /* ------- cold blocks: rare per-op work, off the straight-line path. they sit
@@ -1198,8 +1259,11 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             goto memory_error;
         }
         f = cold_word;
-        word_address = (uint64_t)-2; /* the jump word is read the slow way below */
-        goto flip_word_ready;
+        /* the jump word is read the slow way below: general mode fails the span check with -2;
+           full-span mode has no span check, so park it one below the guard cell, whose sentinel
+           routes the read to cold_jump_word_slow */
+        word_address = full_span ? span_end - 1 : (uint64_t)-2;
+        goto cold_flip_word_resolved; /* the slow read resolved sentinels itself */
 
     cold_flip_word_out_of_span:
         /* the op's words reach past the flat window: read per word through the routing
@@ -1209,53 +1273,54 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             goto memory_error;
         }
         f = cold_word;
-        goto flip_word_ready;
+        goto cold_flip_word_resolved;
 
-    cold_flip_word_garbage: /* w=64: possibly real data equal to the magic fill */
-        if (flat_garbage_check(self, word_address, &f) < 0) {
+    cold_head: /* full span: an unaligned ip, or one of cold_flip_word's cases */
+        if (ip & bit_mask) {
+            goto cold_unaligned_flip_word;
+        }
+    cold_flip_word: /* f is the sentinel (w=64 / 4-byte cells: possibly real data equal to the
+                       magic fill), or an output op - in that order, as the hot path once tested */
+        if (FLAT_IS_SENTINEL(f) && flat_garbage_check(self, word_address, &f) < 0) {
             goto memory_error;
         }
-        goto flip_word_ready;
-
-    cold_output:
-    {
-        /* time the output callback as paused, exactly like the input callback below - so the
-           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
-        double io_start = monotonic_seconds();
-        PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == dw + 1) ? Py_True : Py_False, NULL);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
-            goto done;
-        }
-        Py_DECREF(result);
-        goto after_output;
-    }
-
-    cold_input:
-    {
-        PyObject* result;
-        int bit_value;
-        double io_start = monotonic_seconds();
-        result = PyObject_CallNoArgs(read_bit);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
-            if (PyErr_ExceptionMatches(eof_exception_type)) {
-                PyErr_Clear();
-                cause = TERM_EOF;
+    cold_flip_word_resolved:
+        if (f - dw <= 1) {
+            /* output. time the callback as paused, exactly like the input callback below - so
+               the reported run-time is net fj-compute, excluding the IO device's writes */
+            double io_start = monotonic_seconds();
+            PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == dw + 1) ? Py_True : Py_False, NULL);
+            *paused_seconds_out += monotonic_seconds() - io_start;
+            if (!result) {
                 goto done;
             }
-            goto done;
+            Py_DECREF(result);
         }
-        bit_value = PyObject_IsTrue(result);
-        Py_DECREF(result);
-        if (bit_value < 0) {
-            goto done;
-        }
-        if (mem_write_bit(self, in_addr, bit_value) < 0) {
-            goto memory_error;
+        if (ip - in_lo_exclusive - 1 < dw) {
+            /* input: the bit lands at in_addr before this op flips */
+            PyObject* result;
+            int bit_value;
+            double io_start = monotonic_seconds();
+            result = PyObject_CallNoArgs(read_bit);
+            *paused_seconds_out += monotonic_seconds() - io_start;
+            if (!result) {
+                if (PyErr_ExceptionMatches(eof_exception_type)) {
+                    PyErr_Clear();
+                    cause = TERM_EOF;
+                    goto done;
+                }
+                goto done;
+            }
+            bit_value = PyObject_IsTrue(result);
+            Py_DECREF(result);
+            if (bit_value < 0) {
+                goto done;
+            }
+            if (mem_write_bit(self, in_addr, bit_value) < 0) {
+                goto memory_error;
+            }
         }
         goto after_input;
-    }
 
     cold_flip_out_of_span:
         /* a flip above the flat window: the routing helper flips page-backed far data
@@ -1263,33 +1328,49 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
         if (mem_flip_bit(self, f) < 0) {
             goto memory_error;
         }
+        flip_value = 0; /* checked by the helper: keep the deferred sentinel test quiet */
         goto after_flip;
 
-    cold_flip_garbage: /* w=64: possibly real data equal to the magic fill */
-        if (flat_garbage_check(self, flip_word_address, &flip_value) < 0) {
+    cold_jump_word_slow:
+        /* the deferred flip-target test comes first (in the hot path it shares the jump word's
+           branch, which this path bypasses): a garbage target errors before the jump word is
+           read, in the old order */
+        if (FLAT_IS_SENTINEL(flip_value) &&
+            flat_deferred_flip_garbage(self, flip_word_address, flip_value, cell32) < 0) {
             goto memory_error;
         }
-        goto flip_value_ready;
-
-    cold_jump_word_slow:
+    cold_jump_word_slow_read:
         if (mem_get_word_unaligned(self, ip + width, &cold_word) < 0) {
             goto memory_error;
         }
         j = cold_word;
-        goto jump_word_ready;
+        goto cold_finish;
 
-    cold_jump_word_garbage: /* w=64: possibly real data equal to the magic fill */
-        if (flat_garbage_check(self, word_address + 1, &j) < 0) {
+    cold_tail: /* the flip target and/or the jump word read as the sentinel (w=64 / 4-byte cells:
+                  possibly real data equal to the magic), and/or the op halts - in that order */
+        if (FLAT_IS_SENTINEL(flip_value) &&
+            flat_deferred_flip_garbage(self, flip_word_address, flip_value, cell32) < 0) {
             goto memory_error;
         }
-        goto jump_word_ready;
-
-    cold_maybe_looping:
-        if (f >= ip && f - ip < dw) {
-            goto not_looping; /* the op flips its own words - not a halt */
+        if (FLAT_IS_SENTINEL(j)) {
+            if (full_span && word_address + 1 >= span_end) {
+                goto cold_jump_word_slow_read; /* the guard cell: an op in the last word, or a parked unaligned op */
+            }
+            if (flat_garbage_check(self, word_address + 1, &j) < 0) {
+                goto memory_error;
+            }
         }
-        cause = TERM_LOOPING;
-        goto done;
+        /* falls through: from here the op counts (fold e) */
+    cold_finish: /* j == ip (a halt, unless the op flips its own words) and/or j < 2w (null ip) */
+        if (j == ip && !(f >= ip && f - ip < dw)) {
+            cause = TERM_LOOPING;
+            goto done_counted;
+        }
+        if (j < dw) {
+            cause = TERM_NULL_IP;
+            goto done_counted;
+        }
+        goto jump_go;
     }
 
 memory_error:
@@ -1297,7 +1378,11 @@ memory_error:
         self->mem_error = 0;
         cause = TERM_MEMORY_ERROR;
     }
+    goto done;
+done_counted: /* the halting op had read its jump word: it counts, as the per-op ops++ counted it */
+    ops += 1;
 done:
+    ops += (SIGNAL_CHECK_MASK + 1) - inner_left; /* the ops this strip completed before the exit */
     self->last_run_op_count = ops;
     self->last_run_paused_seconds = *paused_seconds_out;
     *ops_out = ops;
@@ -1315,30 +1400,38 @@ static int run_flat_loop(MemoryObject* self, PyObject* read_bit, PyObject* write
             /* w=64 words cannot fit a 4-byte cell; mem_decide_storage never selects it, and the
                dispatch does not offer it, so the impossible instantiation is never generated. */
             return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                      paused_seconds_out, 64, 6, 0);
+                                      paused_seconds_out, 64, 6, 0, 0);
         case 32:
-            return c32
-                ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 32, 5, 1)
-                : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 32, 5, 0);
+            if (c32) {
+                /* the span-check-free loop needs the full-span array AND a 32-bit start ip (every
+                   later ip is a uint32 cell value; only the caller's start_ip could be wider) */
+                return (self->flat_full_span && start_ip < (1ull << 32))
+                    ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
+                                         paused_seconds_out, 32, 5, 1, 1)
+                    : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
+                                         paused_seconds_out, 32, 5, 1, 0);
+            }
+            return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
+                                      paused_seconds_out, 32, 5, 0, 0);
         case 16:
             return c32
                 ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 16, 4, 1)
+                                     paused_seconds_out, 16, 4, 1, 0)
                 : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 16, 4, 0);
+                                     paused_seconds_out, 16, 4, 0, 0);
         case 8:
             return c32
                 ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 8, 3, 1)
+                                     paused_seconds_out, 8, 3, 1, 0)
                 : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 8, 3, 0);
+                                     paused_seconds_out, 8, 3, 0, 0);
         default:
             return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                      paused_seconds_out, (uint64_t)self->w, (uint64_t)self->ww, 0);
+                                      paused_seconds_out, (uint64_t)self->w, (uint64_t)self->ww, 0, 0);
     }
 }
+
+#undef FLAT_IS_SENTINEL
 
 /* the generic run loop - the paged path (plus the rare flat-with-last-ops-ring debug
    mode), reshaped like run_flat_loop_impl: rare conditions are forward gotos to cold
@@ -1834,6 +1927,14 @@ static PyObject* Memory_get_large_pages(MemoryObject* self, void* closure)
     return PyBool_FromLong(self->flat_large ? 1 : 0);
 }
 
+static PyObject* Memory_get_flat_full_span(MemoryObject* self, void* closure)
+{
+    (void)closure;
+    /* observability for the span-check-free loop: an A/B of it is only evidence if the caller can
+       SEE which loop ran (same reason cell_bytes is exposed). */
+    return PyBool_FromLong(self->flat_full_span ? 1 : 0);
+}
+
 static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
 {
     (void)closure;
@@ -1849,7 +1950,7 @@ static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
 static PyObject* Memory_get_allocated_bytes(MemoryObject* self, void* closure)
 {
     (void)closure;
-    return PyLong_FromUnsignedLongLong(self->flat_count * (uint64_t)self->cell_bytes +
+    return PyLong_FromUnsignedLongLong(self->flat_alloc_count * (uint64_t)self->cell_bytes +
                                        self->slots_used * PAGE_WORDS * sizeof(uint64_t) +
                                        self->slot_count * sizeof(Slot));
 }
@@ -1970,6 +2071,9 @@ static PyGetSetDef Memory_getset[] = {
     {"cell_bytes", (getter)Memory_get_cell_bytes, NULL,
      "bytes per flat cell: 4 for a w<=32 program (half the cache footprint), else 8. "
      "FLIPJUMP_CELL64=1 forces 8 for A/B.", NULL},
+    {"flat_full_span", (getter)Memory_get_flat_full_span, NULL,
+     "True when the flat image spans the whole 32-bit address space (w=32, 4-byte cells, "
+     "flat_max_words >= 2**27) and the run loop therefore carries no per-op span checks.", NULL},
     {"large_pages", (getter)Memory_get_large_pages, NULL,
      "True when the flat image is backed by large/huge pages. Additive to storage_mode, which is "
      "an exact-compared API. Large pages are best-effort: Windows needs SeLockMemoryPrivilege and "
