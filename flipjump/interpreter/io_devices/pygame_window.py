@@ -273,8 +273,6 @@ class InteractiveScreen(InMemoryScreen):
     def __init__(self, *, frames_dir: Optional[Path] = None, window: Optional[PygameWindow] = None):
         super().__init__(frames_dir=frames_dir)
         self.window = window if window is not None else PygameWindow()
-        # an icon that arrived before the palette; applied once _set_palette runs
-        self._pending_icon: Optional[Tuple[int, int, List[int]]] = None
         self._palette_set = False
 
     def _init_screen(self, width: int, height: int, bpp: int, palette_size: int) -> None:
@@ -288,16 +286,15 @@ class InteractiveScreen(InMemoryScreen):
     def _set_window_icon(self, width: int, height: int, indices: List[int]) -> None:
         super()._set_window_icon(width, height, indices)
         # if the program set the icon before its palette, `self.palette` is still the init_screen
-        # zero-fill and the icon would be black; keep it and apply it once a palette arrives
-        self._pending_icon = (width, height, list(indices))
+        # zero-fill and the icon would be black; it is applied once a palette arrives
         if self._palette_set:
             self.window.set_icon(width, height, indices, self.palette, ICON_TRANSPARENT_INDEX)
 
     def _set_palette(self, palette_bit_address: int) -> None:
         super()._set_palette(palette_bit_address)
         self._palette_set = True
-        if self._pending_icon is not None:
-            width, height, indices = self._pending_icon
+        if self.window_icon is not None:
+            width, height, indices = self.window_icon
             self.window.set_icon(width, height, indices, self.palette, ICON_TRANSPARENT_INDEX)
 
     def _present(self) -> None:

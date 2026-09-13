@@ -122,11 +122,12 @@ class InMemoryScreen(IODevice):
         self._bits_count = 0
         self._command_buffer: List[int] = []
 
+        # the 0x12/0x13 window controls, as the program sent them: (title), (w, h, palette indices)
+        self.window_title: Optional[str] = None
+        self.window_icon: Optional[Tuple[int, int, List[int]]] = None
         # 0x0B column-run-list state. _collines_column is None both when the mode is off and
         # when it is on but between columns (expecting a tag), which _in_collines separates.
         self._in_collines = False
-        self.window_title: Optional[str] = None
-        self.window_icon: Optional[Tuple[int, int, List[int]]] = None
         self._collines_column: Optional[int] = None
         self._collines_row = 0
         self._collines_y2: Optional[int] = None  # a y2 byte awaiting its colour mate

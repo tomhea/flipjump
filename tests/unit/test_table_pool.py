@@ -17,10 +17,17 @@ from flipjump import assemble
 from flipjump.assembler.assembler import resolve_pinned
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, Label, MacroName, Op, Pad, WordFlip
-from flipjump.assembler.preprocessor import RESERVED_BELOW, BlockPool, TablePool, relocatable_table_end
+from flipjump.assembler.preprocessor import (
+    RESERVED_BELOW,
+    BlockPool,
+    PreprocessorData,
+    TablePool,
+    relocatable_table_end,
+)
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
+from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 
 W = 32
@@ -62,6 +69,16 @@ b: hex.vec 4
 r: hex.vec 4
 """
 
+# hex.input_hex's table has a `wflip` ENTRY (`flip3: wflip stl.IO+w, flip3, end`): the run of plain
+# ops before it is not a table, and a pass that moves them away from it miscompiles every input
+INPUT_PROGRAM = """
+stl.startup_and_init_all
+    hex.input b
+    hex.print_uint 2, b, 1, 1
+    stl.loop
+b: hex.vec 2
+"""
+
 # bit.exact_xor's table ends in `dst;` - a fall-through into the next op - so it must be refused
 FALL_THROUGH_PROGRAM = """
 stl.startup_and_init_all
@@ -76,14 +93,16 @@ b: bit.vec 16, 0x0102
 # --- helpers ---
 
 
-def build_and_run(source: str, tmp_path: Path, pool: Optional[TablePool], name: str = 'p') -> Tuple[bytes, int, Path]:
-    """assemble `source` with the stl (and the pool, if given), run it, and return
-    (output, op count, fjm path)."""
+def build_and_run(
+    source: str, tmp_path: Path, pool: Optional[TablePool], name: str = 'p', fixed_input: bytes = b''
+) -> Tuple[bytes, int, Path]:
+    """assemble `source` with the stl (and the pool, if given), run it on `fixed_input`, and
+    return (output, op count, fjm path)."""
     fj_path = tmp_path / f'{name}.fj'
     fj_path.write_text(source)
     fjm_path = tmp_path / f'{name}.fjm'
     assemble([fj_path], fjm_path, memory_width=W, print_time=False, table_pool=pool)
-    io_device = FixedIO(b'')
+    io_device = FixedIO(fixed_input)
     statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
     return io_device.get_output(allow_incomplete_output=True), statistics.op_counter, fjm_path
 
@@ -108,8 +127,13 @@ def _flipjump(jump: str) -> FlipJump:
 
 
 def _table_ops(entries: int, *, interior_label: bool = False, trailing_label: bool = True) -> List[Op]:
-    """the shape of a dispatch table in a macro body: pad, switch:, entries, [end:], the disarm"""
-    ops: List[Op] = [Pad(Expr(16), CODE_POSITION), Label('switch', CODE_POSITION)]
+    """the shape of a dispatch table in a macro body: the arm, pad, switch:, entries, [end:], the
+    disarm"""
+    ops: List[Op] = [
+        WordFlip(Expr('src_word'), Expr('switch'), Expr('src'), CODE_POSITION),
+        Pad(Expr(16), CODE_POSITION),
+        Label('switch', CODE_POSITION),
+    ]
     for i in range(entries):
         if interior_label and i == entries // 2:
             ops.append(Label('mid', CODE_POSITION))
@@ -194,17 +218,17 @@ def test_a_plain_pool_pins_nothing() -> None:
 
 def test_table_end_trims_the_trailing_label_and_names_the_source_word() -> None:
     ops = _table_ops(16)
-    found = relocatable_table_end(ops, 0)
+    found = relocatable_table_end(ops, 1)
     assert found is not None
     end_index, count, source_word = found
-    assert end_index == 17 and count == 16  # pad, switch:, then 16 entries; `end:` stays inline
+    assert end_index == 18 and count == 16  # arm, pad, switch:, then 16 entries; `end:` stays inline
     assert isinstance(ops[end_index], FlipJump) and isinstance(ops[end_index + 1], Label)
     assert str(source_word) == 'src_word'
 
 
 def test_table_end_keeps_an_interior_label_inside_the_table() -> None:
     ops = _table_ops(8, interior_label=True)
-    found = relocatable_table_end(ops, 0)
+    found = relocatable_table_end(ops, 1)
     assert found is not None
     assert found[1] == 8
     after_table = ops[found[0] + 1]
@@ -213,13 +237,42 @@ def test_table_end_keeps_an_interior_label_inside_the_table() -> None:
 
 def test_table_end_refuses_a_fall_through_entry() -> None:
     ops = _table_ops(4)
-    ops[3] = FlipJump(Expr('d0'), Expr('$'), CODE_POSITION)  # `d0;` continues to the next address
-    assert relocatable_table_end(ops, 0) is None
+    ops[4] = FlipJump(Expr('d0'), Expr('$'), CODE_POSITION)  # `d0;` continues to the next address
+    assert relocatable_table_end(ops, 1) is None
 
 
 def test_table_end_needs_at_least_one_entry() -> None:
-    ops: List[Op] = [Pad(Expr(16), CODE_POSITION), WordFlip(Expr('x'), Expr('y'), Expr('z'), CODE_POSITION)]
-    assert relocatable_table_end(ops, 0) is None
+    ops = _table_ops(0)
+    assert relocatable_table_end(ops, 1) is None
+
+
+def test_table_end_refuses_a_wflip_that_is_not_the_disarm() -> None:
+    # hex.input_hex's shape: flip0: entries, flip1: entries, flip3: `wflip stl.IO+w, flip3, end`
+    ops = _table_ops(4)
+    ops[6:6] = [Label('flip3', CODE_POSITION), WordFlip(Expr('src_word'), Expr('flip3'), Expr('end'), CODE_POSITION)]
+    assert relocatable_table_end(ops, 1) is None
+    # and a run whose only label is the head, ended by a wflip of something else entirely
+    ops = _table_ops(4, trailing_label=False)
+    ops[-1] = WordFlip(Expr('other_word'), Expr('elsewhere'), Expr('end'), CODE_POSITION)
+    assert relocatable_table_end(ops, 1) is None
+
+
+def test_table_end_accepts_a_run_that_simply_ends() -> None:
+    # hex.cmp's second table: entries and interior labels, then the macro body ends
+    ops = _table_ops(3, interior_label=True, trailing_label=False)[:-1]
+    found = relocatable_table_end(ops, 1)
+    assert found is not None and found[1] == 3 and found[2] is None
+
+
+def test_table_end_refuses_a_pad_that_is_fallen_into() -> None:
+    ops = _table_ops(4)
+    ops[0] = FlipJump(Expr('d0'), Expr('$'), CODE_POSITION)  # `d0;` before the pad walks into it
+    assert relocatable_table_end(ops, 1) is None
+    ops[0] = WordFlip(Expr('src_word'), Expr('switch'), Expr('$'), CODE_POSITION)  # a 2-arg wflip does too
+    assert relocatable_table_end(ops, 1) is None
+    ops[0] = Label('before', CODE_POSITION)  # nothing but labels before the pad: reached from outside
+    assert relocatable_table_end(ops, 1) is None
+    assert relocatable_table_end(_table_ops(4)[1:], 0) is None
 
 
 # --- resolve_pinned ---
@@ -308,10 +361,17 @@ def test_an_uncounted_group_and_an_ungrouped_table_decline() -> None:
     assert placing.ungrouped == 1
 
 
-def test_the_runtime_words_are_never_blocked() -> None:
-    counting = BlockPool(W, POOL_BASE)
-    assert counting.reserve(16, 16, group='(64)', group_expr=Expr(64)) is None
-    assert counting.reserved_words == 1 and counting.counts == {}
+def test_the_runtime_words_are_never_relocated() -> None:
+    # `stl.IO` is a LABEL, declared by stl.startup before any code dispatches through it, so the
+    # guard sees it resolved; a program variable, declared after the code, is not resolvable yet
+    pool = TablePool(W, POOL_BASE)
+    data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
+    data.labels['stl.IO'] = 64
+    name = MacroName('exact_xor', 5)
+    assert not data.begin_relocation(name, 16, 16, '', '(stl.IO + 32)', _sum('stl.IO', 32))
+    assert pool.reserved_words == 1 and pool.allocated == 0
+    assert data.begin_relocation(name, 16, 16, '', '(x + 32)', _sum('x', 32))
+    assert pool.reserved_words == 1 and pool.allocated == 1
 
 
 def test_sparse_indices_use_the_cheapest_slots_of_a_spread_block() -> None:
@@ -379,6 +439,21 @@ def test_a_pool_that_wants_nothing_is_inert(tmp_path: Path) -> None:
     output, ops, fjm_path = build_and_run(XOR_PROGRAM, tmp_path, pool)
     assert (output, ops) == (reference, reference_ops)
     assert pool.allocated == 0 and not pool_segments(fjm_path)
+
+
+@pytest.mark.parametrize('blocking', [False, True], ids=['TablePool', 'BlockPool'])
+def test_an_input_table_is_never_split(tmp_path: Path, blocking: bool) -> None:
+    reference, _, _ = build_and_run(INPUT_PROGRAM, tmp_path, None, name='inline', fixed_input=b'A')
+    assert reference == b'0x41'
+    pool: TablePool
+    if blocking:
+        counting = BlockPool(W, POOL_BASE)
+        build_and_run(INPUT_PROGRAM, tmp_path, counting, name='counting', fixed_input=b'A')
+        pool = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
+    else:
+        pool = TablePool(W, POOL_BASE)
+    output, _, _ = build_and_run(INPUT_PROGRAM, tmp_path, pool, fixed_input=b'A')
+    assert output == reference
 
 
 def test_a_fall_through_table_is_refused(tmp_path: Path) -> None:

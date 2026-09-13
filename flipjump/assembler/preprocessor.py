@@ -49,7 +49,7 @@ wflip_start_label = '_.wflip_area_start_'
 
 # bit addresses below this are the runtime's, not the program's: `stl.IO` sits at bit address 64
 # and the interpreter intercepts flips there, yet `bit.output` dispatches through it like an
-# ordinary hex source. Such a word is neither relocated (BlockPool.reserve) nor pinned
+# ordinary hex source. Such a word is neither relocated (PreprocessorData.begin_relocation) nor pinned
 # (assembler.resolve_pinned) - a block base baked into it would corrupt the program's startup.
 RESERVED_BELOW = 1024
 
@@ -111,6 +111,7 @@ class TablePool:
         self.pin_conflicts = 0
         self.allocated = 0
         self.declined = 0
+        self.reserved_words = 0  # tables through the runtime's words, never relocated
         self._offsets = self._cheapest_offsets()
         self._next_offset = 0
         self._cursor = 0  # bit address of the next free spot inside the current run
@@ -299,7 +300,6 @@ class BlockPool(TablePool):
         self._used = 0  # bits handed out, from pool_base
         self._next_index: Dict[str, int] = {}
         self.ungrouped = 0
-        self.reserved_words = 0
         # a block's slots are uniform, so one wide table sets the width for its whole group and a
         # single 514-op table could claim the entire pool. Wider tables are declined and stay
         # inline, which is correct because a consistent base cancels: `(B + digit) ^ (switch ^ B)`
@@ -444,21 +444,25 @@ class BlockPool(TablePool):
             cursor = base + block_bits
         self._used = cursor - self.pool_base
 
+    def _decline(self, group: str, cause: str) -> None:
+        """a table the pass cannot place. Except for a group that got no block at all, this breaks
+        the group: see broken_groups."""
+        self.declined += 1
+        if cause == 'no_block':
+            self.declined_no_block += 1
+        elif cause == 'too_wide':
+            self.declined_too_wide += 1
+            self.broken_groups.add(group)
+        else:
+            self.declined_overflow += 1
+            self.broken_groups.add(group)
+
     def reserve(
         self, ops_alignment: int, table_ops: int, group: Optional[str] = None, group_expr: Optional[Expr] = None
     ) -> Optional[Tuple[int, bool, int]]:
         if group is None:
             self.ungrouped += 1  # no disarm wflip found: cannot be blocked
             return None
-        # the runtime's words (RESERVED_BELOW) resolve to a small constant this early; a program
-        # variable depends on labels and cannot be evaluated yet
-        if group_expr is not None:
-            try:
-                if group_expr.exact_eval({}) < RESERVED_BELOW:
-                    self.reserved_words += 1
-                    return None
-            except FlipJumpExprException:
-                pass
         group = self.alias.get(group, group)
         if self.counting:
             self.counts[group] = self.counts.get(group, 0) + 1
@@ -470,16 +474,13 @@ class BlockPool(TablePool):
             hist[width] = hist.get(width, 0) + 1
             return None  # the counting pass must not change the layout
         if group not in self.groups:
-            self.declined += 1  # no block was reserved for it (see _preallocate)
-            self.declined_no_block += 1
+            self._decline(group, 'no_block')  # no block was reserved for it (see _preallocate)
             return None
         if self.width_buckets:
             return self._reserve_bucketed(ops_alignment, table_ops, group, group_expr)
         slots, slot_bits = self._uniform_shape(group)
         if table_ops * self.op_bits > slot_bits or ops_alignment * self.op_bits > slot_bits:
-            self.declined += 1  # wider than the counting pass saw
-            self.declined_too_wide += 1
-            self.broken_groups.add(group)
+            self._decline(group, 'too_wide')  # wider than the counting pass saw
             return None
         index = self._next_index[group]
         count = self.counts.get(group, 1)
@@ -488,15 +489,11 @@ class BlockPool(TablePool):
             # is a subset of range(slots), so a raw index past its end can collide with a mapped
             # one already handed out (two tables at one address)
             if index >= count:
-                self.declined += 1
-                self.declined_overflow += 1
-                self.broken_groups.add(group)
+                self._decline(group, 'overflow')
                 return None
             index = self._cheap_indices(slots, count)[index]
         if index >= slots:
-            self.declined += 1  # more tables than the counting pass saw
-            self.declined_overflow += 1
-            self.broken_groups.add(group)
+            self._decline(group, 'overflow')  # more tables than the counting pass saw
             return None
         base, previous_expr = self.groups[group]
         self.groups[group] = (base, group_expr if group_expr is not None else previous_expr)
@@ -517,17 +514,13 @@ class BlockPool(TablePool):
         """
         width = max(table_ops, ops_alignment, 1)
         if width > self.max_slot_ops:
-            self.declined += 1
-            self.declined_too_wide += 1
-            self.broken_groups.add(group)
+            self._decline(group, 'too_wide')
             return None
         slot_ops = 1 << max(0, (width - 1).bit_length())
         layout, _ = self._bucket_layout(group)
         entry = layout.get(slot_ops)
         if entry is None:  # a width the counting pass never saw for this group
-            self.declined += 1
-            self.declined_too_wide += 1
-            self.broken_groups.add(group)
+            self._decline(group, 'too_wide')
             return None
         offset, slots, bucket_count = entry
         key = (group, slot_ops)
@@ -536,15 +529,11 @@ class BlockPool(TablePool):
         total_count = self.counts.get(group, 1)
         if self.spread > 1 and total_count >= self.spread_min_count:
             if raw >= bucket_count:  # same rule as the uniform path: decline, never a raw index
-                self.declined += 1
-                self.declined_overflow += 1
-                self.broken_groups.add(group)
+                self._decline(group, 'overflow')
                 return None
             index = self._cheap_indices(slots, bucket_count)[raw]
         if index >= slots:
-            self.declined += 1
-            self.declined_overflow += 1
-            self.broken_groups.add(group)
+            self._decline(group, 'overflow')
             return None
         base, previous_expr = self.groups[group]
         self.groups[group] = (base, group_expr if group_expr is not None else previous_expr)
@@ -731,6 +720,9 @@ class PreprocessorData:
         pool = self.table_pool
         if pool is None or not pool.wants(macro_name, labels_prefix):
             return False
+        if group_expr is not None and self._is_runtime_word(group_expr):
+            pool.reserved_words += 1
+            return False
         reserved = pool.reserve(ops_alignment, table_ops, group, group_expr)
         if reserved is None:
             return False
@@ -747,6 +739,15 @@ class PreprocessorData:
             self.pool_ops.append(Padding(gap_ops))
         self.curr_address = address
         return True
+
+    def _is_runtime_word(self, word: Expr) -> bool:
+        """is `word` one of the runtime's (see RESERVED_BELOW)? Those are declared before any code
+        dispatches through them, so they resolve here; a program variable, declared after the
+        code, does not yet."""
+        try:
+            return word.exact_eval(self.labels) < RESERVED_BELOW
+        except FlipJumpExprException:
+            return False
 
     def end_relocation(self) -> None:
         """close the table and resume the interrupted stream where it left off.
@@ -964,7 +965,7 @@ def get_params_dictionary(
 
 def relocatable_table_end(ops: List[Op], pad_index: int) -> Optional[Tuple[int, int, Optional[Expr]]]:
     """(index of the table's last op, number of ops in it, the source-word Expr) after
-    `ops[pad_index]`, or None if the table must not be moved.
+    `ops[pad_index]`, or None if the run must not be moved.
 
     THE TABLE is the maximal run of plain `a;b` ops after the `pad`, INCLUDING labels interleaved
     among them, but with TRAILING labels trimmed off. Both halves of that rule are load-bearing,
@@ -978,31 +979,71 @@ def relocatable_table_end(ops: List[Op], pad_index: int) -> Optional[Tuple[int, 
         three are ONE table selected by flipping address bits of the jumper, so an interior label
         MUST be relocated with it -- splitting them apart breaks the compare.
 
-    A table is refused entirely when any of its ops has an EMPTY jump target (`dst;`), which means
-    "continue to the next address". `bit.exact_xor` is that shape: inline the next address is
-    `cleanup`, in the pool it is the next table's slot.
+    The run is refused when
+      * an entry has an EMPTY jump target (`dst;`, continue to the next address): `bit.exact_xor`
+        is that shape, and in the pool the next address is another table's slot;
+      * the pad is reached by falling into it rather than by a jump (the op before it is a `dst;`
+        or a `wflip` with no return address), since the pool is not the next address;
+      * the run ends at a `wflip` that is not the DISARM of the run's head label. A dispatch table
+        is armed and disarmed through one word (`wflip src+w, switch, src` ... `wflip src+w,
+        switch`); a `wflip` that installs anything else is an ENTRY of a multi-op table
+        (`hex.input_hex`'s `flip3: wflip stl.IO+w, flip3, end`, `hex.pointers.xor_hex_to_flip_ptr`'s
+        `after_flip_bit2: wflip to_flip, ..., cleanup`), and moving the plain ops before it away
+        from it breaks the table.
     """
+    if not _reached_only_by_jump(ops, pad_index):
+        return None
+    head: Optional[str] = None
     last_flipjump = None
     count = 0
     source_word: Optional[Expr] = None
     for offset, op in enumerate(ops[pad_index + 1 :], start=pad_index + 1):  # noqa: E203
         if isinstance(op, FlipJump):
-            if '$' in op.jump.all_unknown_labels():
-                return None  # falls through - not relocatable
+            if _falls_through(op):
+                return None
             last_flipjump = offset
             count += 1
         elif isinstance(op, Label):
-            continue
+            if count == 0 and head is None:
+                head = op.name
         else:
-            # the op right after the table is the disarm, `wflip src+w, switch`: its word is the
-            # jump word the table is dispatched through, and its EXPRESSION (the address is unknown
-            # this early) is what groups the tables that share a word (see BlockPool)
             if isinstance(op, WordFlip):
+                # the disarm names the head label; its word is the jump word the table is
+                # dispatched through, and that word's EXPRESSION (the address is unknown this
+                # early) groups the tables that share a word (see BlockPool)
+                if head is None or not _same_local_label(op.flip_value, head):
+                    return None
                 source_word = op.word_address
             break
     if last_flipjump is None:
         return None
     return last_flipjump, count, source_word
+
+
+def _same_local_label(value: Expr, label: str) -> bool:
+    """does `value` name `label`? a macro body's labels are parsed namespaced (`hex.switch`) while
+    a reference to one is the bare local name (`switch`), so the local part is what is compared"""
+    return isinstance(value.value, str) and value.value.rpartition('.')[2] == label.rpartition('.')[2]
+
+
+def _falls_through(op: Op) -> bool:
+    """does control leave `op` by falling to the next address? (`dst;`, or a `wflip` with no
+    return address)"""
+    if isinstance(op, FlipJump):
+        return '$' in op.jump.all_unknown_labels()
+    if isinstance(op, WordFlip):
+        return '$' in op.return_address.all_unknown_labels()
+    return False
+
+
+def _reached_only_by_jump(ops: List[Op], pad_index: int) -> bool:
+    """is the pad at `ops[pad_index]` preceded by an op that jumps away? labels in between do not
+    count, and a pad that opens the macro body is reached from whatever came before the call"""
+    for op in reversed(ops[:pad_index]):
+        if isinstance(op, Label):
+            continue
+        return not _falls_through(op) and isinstance(op, (FlipJump, WordFlip))
+    return False
 
 
 def resolve_macro_aux(

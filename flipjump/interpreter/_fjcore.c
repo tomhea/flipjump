@@ -110,11 +110,10 @@ static void* fj_alloc_flat(size_t bytes, int* large)
             }
 #if defined(MADV_HUGEPAGE)
             /* ADVISORY: the kernel may still decline (THP disabled, memory fragmented), so
-               `large` here records "mapped for huge pages", not "definitely huge". Check
+               `large` here records "aligned and advised", not "definitely huge". Check
                /proc/<pid>/smaps AnonHugePages to see what was actually granted. */
-            madvise((void*)aligned, rounded, MADV_HUGEPAGE);
+            *large = (madvise((void*)aligned, rounded, MADV_HUGEPAGE) == 0);
 #endif
-            *large = 1;
             return (void*)aligned;
         }
     }
@@ -1952,10 +1951,11 @@ static PyGetSetDef Memory_getset[] = {
      "bytes per flat cell: 4 for a w<=32 program (half the cache footprint), else 8. "
      "FLIPJUMP_CELL64=1 forces 8 for A/B.", NULL},
     {"large_pages", (getter)Memory_get_large_pages, NULL,
-     "True when the flat image is backed by large/huge pages. Additive to storage_mode, which is "
-     "an exact-compared API. Large pages are best-effort: Windows needs SeLockMemoryPrivilege and "
-     "Linux needs hugepages configured, and every failure falls back silently to malloc, so this "
-     "reports what was ACTUALLY obtained rather than what was asked for.", NULL},
+     "True when the flat image is in large pages: on Windows a MEM_LARGE_PAGES allocation was "
+     "obtained (needs SeLockMemoryPrivilege); on Linux the image was mapped 2 MB-aligned and "
+     "MADV_HUGEPAGE accepted, which the kernel may still back with small pages. Every failure "
+     "falls back to malloc, so False is the fallback. Additive to storage_mode, an exact-compared "
+     "API.", NULL},
     {NULL, NULL, NULL, NULL, NULL},
 };
 

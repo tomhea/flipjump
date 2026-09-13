@@ -440,21 +440,33 @@ ns hex {
         }
     }
 
-    // ------------------------------------------------------------------------------------------
-    // sparse_* -- the same operations with the wflip-target pad passed IN as a parameter, so a HOT
-    // call site can buy alignment without the cold bulk paying for it in image size.
-    //
-    // UNUSED, and deliberately so. The doom campaign measured this direction (its FINDINGS AJ/AQ):
-    // sparse-on-hot UNDER-DELIVERS -- pad WIDTH beats pad COVERAGE, and the residual cost lives in
-    // other stl macros rather than at these call sites. Kept as a tool, not as a recommendation.
-    // ------------------------------------------------------------------------------------------
+    // sparse_* -- the xor/zero/mov family with the switch table's pad passed in as PAD, so one
+    // hot call site can buy alignment without every cold expansion paying for it in image size.
+    // Value-identical to the pad-16 macros above. PAD is a constant power of two, >= 16.
 
+
+    //  Time Complexity: @
+    // Space Complexity: @+12  (the table aligned to PAD ops)
+    //   dst ^= src
+    //
+    // dst,src are hexes.
     def sparse_xor PAD, dst, src {
         .sparse_exact_xor PAD, dst+dbit+3, dst+dbit+2, dst+dbit+1, dst+dbit+0, src
     }
+    //  Time Complexity: n@
+    // Space Complexity: n(@+12)  (each table aligned to PAD ops)
+    //   dst[:n] ^= src[:n]
+    //
+    // dst,src are hex[:n].
     def sparse_xor PAD, n, dst, src {
         rep (n, i) .sparse_xor PAD, dst+i*dw, src+i*dw
     }
+
+    //  Time Complexity: @
+    // Space Complexity: @+12  (the table aligned to PAD ops)
+    //   {d3,d2,d1,d0} ^= src, the switch table aligned to PAD ops.
+    //
+    // d3,d2,d1,d0 are bit-addresses; src is hex.
     def sparse_exact_xor PAD, d3, d2, d1, d0, src @ switch, end {
         wflip src+w, switch, src
         pad PAD
@@ -479,6 +491,11 @@ ns hex {
         wflip src+w, switch
     }
 
+    //  Time Complexity: @+4
+    // Space Complexity: @+28  (the first table aligned to PAD ops)
+    //   {t3,t2,t1,t0} ^= src;  {d3,d2,d1,d0} ^= src, the first table aligned to PAD ops.
+    //
+    // t3,t2,t1,t0,d3,d2,d1,d0 are bit-addresses; src is hex.
     def sparse_double_exact_xor PAD, t3, t2, t1, t0, d3, d2, d1, d0, src @ first_flip, second_flip, end {
         wflip src+w, first_flip, src
         pad PAD
@@ -520,39 +537,70 @@ ns hex {
         wflip src+w, first_flip
     }
 
-    // --- the sparse_ chain used by doom's HOT emission sites --------------------------------
-    // Measured on the shipped game binary (doom FINDINGS AX): the xor family is 57.5% of executed
-    // ops but is emitted 425,745 times, and only 12.5% of those instances ever run. Padding the
-    // DEFINITION costs 121.8 words per instance for ALL of them -- +51,838,592 words, 38.6 points
-    // of the w=32 ceiling -- to speed up the ~10,000 that carry 80% of the ops. These let a HOT
-    // call site pass its own pad so the cold bulk stays at 16.
+    //  Time Complexity: @+4
+    // Space Complexity: @+28  (the first table aligned to PAD ops)
+    //   dst1 ^= src;  dst2 ^= src
     //
-    // Select call sites by OPS PER INSTANCE, not by ops: the spread across doom's sites is 150x,
-    // and the highest-ops site (sim.try_move, 7.3% of ops) is the WORST candidate, because it is
-    // also the largest by instance count (72,444) -- it would spend 17% of the size budget for
-    // 7% of the win.
-
+    // dst1,dst2,src are hexes.
     def sparse_double_xor PAD, dst1, dst2, src {
-        .sparse_double_exact_xor PAD, dst1+dbit+3, dst1+dbit+2, dst1+dbit+1, dst1+dbit+0,                                       dst2+dbit+3, dst2+dbit+2, dst2+dbit+1, dst2+dbit+0, src
+        .sparse_double_exact_xor PAD, \
+            dst1+dbit+3, dst1+dbit+2, dst1+dbit+1, dst1+dbit+0, \
+            dst2+dbit+3, dst2+dbit+2, dst2+dbit+1, dst2+dbit+0, \
+            src
     }
+
+    //  Time Complexity: @+4
+    // Space Complexity: @+28  (the first table aligned to PAD ops)
+    //   dst ^= src;  src = 0
+    //
+    // dst,src are hexes.
     def sparse_xor_zero PAD, dst, src {
         .sparse_double_xor PAD, dst, src, src
     }
+
+    //  Time Complexity: n(@+4)
+    // Space Complexity: n(@+28)  (each first table aligned to PAD ops)
+    //   dst[:n] ^= src[:n];  src[:n] = 0
+    //
+    // dst,src are hex[:n].
     def sparse_xor_zero PAD, n, dst, src {
         rep (n, i) .sparse_xor_zero PAD, dst+i*dw, src+i*dw
     }
+
+    //  Time Complexity: @
+    // Space Complexity: @+12  (the table aligned to PAD ops)
+    //   x = 0
+    //
+    // x is hex.
     def sparse_zero PAD, x {
         .sparse_xor PAD, x, x
     }
+
+    //  Time Complexity: n@
+    // Space Complexity: n(@+12)  (each table aligned to PAD ops)
+    //   x[:n] = 0
+    //
+    // x is hex[:n].
     def sparse_zero PAD, n, x {
         rep (n, i) .sparse_zero PAD, x+i*dw
     }
+
+    //  Time Complexity: 2@+1
+    // Space Complexity: 2@+25  (both tables aligned to PAD ops)
+    //   dst = src
+    //
+    // dst,src are hexes.
     def sparse_mov PAD, dst, src @ end {
         stl.comp_if1 dst==src, end
         .sparse_zero PAD, dst
         .sparse_xor PAD, dst, src
       end:
     }
+    //  Time Complexity: n(2@)
+    // Space Complexity: n(2@+24)  (each table aligned to PAD ops)
+    //   dst[:n] = src[:n]
+    //
+    // dst,src are hex[:n].
     def sparse_mov PAD, n, dst, src @ end {
         stl.comp_if1 dst==src, end
         .sparse_zero PAD, n, dst
