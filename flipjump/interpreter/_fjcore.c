@@ -25,34 +25,16 @@
 
 /* ---- large-page backing for the flat image -------------------------------------------------
  *
- * WHY. The flat image is walked by a pointer chase whose addresses are effectively random, so
- * the cost per op is dominated by how many distinct PAGES the working set spans, not by how many
- * bytes it is. MEASURED on doom-flipjump's E1M1 binary (2026-09-12, instrumented build of this
- * file, 14 frames, 580,128,989 word touches):
+ * The flat image is walked by a pointer chase whose addresses are effectively random, so the
+ * cost per op is dominated by how many distinct PAGES the working set spans: a large program's
+ * data stays cache-resident while its 4 KB page mappings do not, and nearly every scattered
+ * access pays a page walk. 2 MB pages make the same working set TLB-resident.
  *
- *     distinct 64 B lines touched : 26.67 MB   <- fits this machine's 24 MB L3
- *     distinct 4 KB pages touched : 23,397     <- an L2 TLB holds ~2,048
- *
- * So the DATA is cache-resident while its PAGE MAPPINGS are not, and nearly every scattered
- * access pays a page walk. An A/B on the same machine, holding the cache footprint fixed at
- * 26.67 MB and varying only the page count, measured:
- *
- *       2,048 pages ->  448.8 M accesses/s      (TLB-resident)
- *       3,414 pages ->  213.8
- *       6,827 pages ->  171.5
- *      22,994 pages ->  113.6                   (what the DOOM binary actually does)
- *     109,221 pages ->   59.3
- *
- * At 2 MB pages that same 26.67 MB needs 14 entries instead of 23,397. This is the only lever
- * measured to reach the TLB-resident regime; halving the element size to 4 bytes was measured
- * separately and moves 22,994 -> 11,497 pages, still 5x past the knee, worth only +2.7%.
- *
- * COST AND SAFETY. Large pages are locked, non-pageable memory and on Windows require the
- * caller to hold SeLockMemoryPrivilege (an administrator must grant "Lock pages in memory");
- * on Linux they require hugepages to be configured, and the MADV_HUGEPAGE path only ASKS.
- * Every failure falls back to the ordinary allocator, so this can only change speed, never
- * behaviour: the returned block is plain writable memory either way, and the interpreter does
- * not know which it got. FLIPJUMP_NO_LARGE_PAGES=1 forces the fallback.
+ * COST AND SAFETY. Large pages are locked, non-pageable memory: on Windows the caller must hold
+ * SeLockMemoryPrivilege (an administrator grants "Lock pages in memory"), and on Linux the
+ * MADV_HUGEPAGE path only ASKS. Every failure falls back to the ordinary allocator, so this can
+ * only change speed, never behaviour: the returned block is plain writable memory either way,
+ * and the interpreter does not know which it got. FLIPJUMP_NO_LARGE_PAGES=1 forces the fallback.
  */
 #if defined(_WIN32)
 #include <windows.h>
@@ -485,10 +467,10 @@ static inline int flat_is_garbage(const MemoryObject* m, uint64_t value)
  * once before any op runs, so the fast path is legitimate; the linear fallback stays for any
  * caller that reaches here with the flag clear, because being right matters more than the branch.
  *
- * It matters because doom-flipjump's game tier declares 424,743 segments and this sits behind the
- * sentinel test in the hot loop: at w<=32 the in-band bit-63 sentinel is exact and never gets
- * here, but 4-byte cells have no spare bit and must use a colliding magic, which would make every
- * false positive cost a full scan.
+ * It matters because a large program declares hundreds of thousands of segments and this sits
+ * behind the sentinel test in the hot loop: at w<=32 the in-band bit-63 sentinel is exact and
+ * never gets here, but 4-byte cells have no spare bit and must use a colliding magic, which would
+ * make every false positive cost a full scan.
  */
 static inline int flat_seg_contains(const MemoryObject* m, uint64_t word_address)
 {
@@ -538,7 +520,7 @@ static FJ_ALWAYS_INLINE void flat_store(MemoryObject* m, uint64_t i, uint64_t v)
 /* a flat word whose value matched the sentinel: decide whether it is REAL garbage (an
    out-of-segment touch - reported via flat_garbage, returns -1) or an in-segment word that
    legitimately holds the magic value (kept, returns 0).
-   ⚠ WHICH SCHEMES CAN COLLIDE: the w<=32 in-band bit-63 sentinel cannot -- a 32-bit word can
+   WHICH SCHEMES CAN COLLIDE: the w<=32 in-band bit-63 sentinel cannot -- a 32-bit word can
    never set bit 63 -- so a match there is always real garbage and no membership check is needed.
    Both MAGIC schemes CAN collide: every value is a legal word, so membership decides. That is
    true of w=64 (FLAT_GARBAGE_MAGIC) and, since stage C, of 4-byte cells at any width
@@ -715,9 +697,9 @@ static int mem_decide_storage(MemoryObject* m)
     /* SORT ONCE, HERE, so `flat_seg_contains` may binary-search. It could not before: the only
        calls to mem_ensure_segments_sorted are on the access-check paths, `add_segment` clears
        `segments_sorted`, and nothing sorted before the flat image was built -- which is why that
-       helper is a LINEAR SCAN. That is correct for unsorted ranges but is O(segment_count), and
-       doom-flipjump's game tier declares 424,743 segments, so a single sentinel collision inside
-       the hot loop would cost ~424k comparisons. This runs once, before any op executes. */
+       helper is a LINEAR SCAN. That is correct for unsorted ranges but is O(segment_count), so
+       on a program with hundreds of thousands of segments a single sentinel collision inside the
+       hot loop would cost as many comparisons. This runs once, before any op executes. */
     mem_ensure_segments_sorted(m);
     {
         /* ...and the fast path additionally needs the ranges to be DISJOINT, which nothing
@@ -793,7 +775,7 @@ static int mem_decide_storage(MemoryObject* m)
     m->flat_count = low_max_end;
     m->flat_covers_all = (max_end <= low_max_end);
     {
-        /* ⚠ GARBAGE_SENTINEL is bit 63 and TRUNCATES TO ZERO in a 4-byte cell -- holes would
+        /* GARBAGE_SENTINEL is bit 63 and truncates to zero in a 4-byte cell -- holes would
            read back as a legal 0 and out-of-segment reads would go silently undetected. */
         const uint64_t garbage_fill = (m->cell_bytes == 4) ? (uint64_t)FLAT_GARBAGE_MAGIC32
                                     : ((m->w <= 32) ? GARBAGE_SENTINEL : FLAT_GARBAGE_MAGIC);
@@ -1840,9 +1822,8 @@ static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
     if (!self->storage_decided) {
         Py_RETURN_NONE;
     }
-    /* ⚠ THIS STRING IS AN API. doom-flipjump's build.py asserts `storage_mode == "flat"` in
-       three places and both repos' tests compare it exactly, so the large-page fact is exposed
-       as the SEPARATE `large_pages` attribute below rather than as a suffix here. */
+    /* callers compare this string exactly, so the large-page fact is the separate
+       `large_pages` attribute below rather than a suffix here */
     return PyUnicode_FromString(self->flat ? (self->flat_covers_all ? "flat" : "hybrid") : "paged");
 }
 

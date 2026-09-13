@@ -8,16 +8,22 @@ and resolving labels into addresses while writing the result with the fjm Writer
 import gc
 from collections import defaultdict
 from pathlib import Path
-from typing import Deque, List, Dict, Tuple, Optional, NamedTuple
+from typing import Callable, Deque, List, Dict, Tuple, Optional, NamedTuple
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.functions import save_debugging_labels
 from flipjump.utils.classes import PrintTimer
 from flipjump.assembler.fj_parser import parse_macro_tree
-from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpException, FlipJumpWriteFjmException
+from flipjump.utils.exceptions import (
+    FlipJumpAssemblerException,
+    FlipJumpException,
+    FlipJumpExprException,
+    FlipJumpWriteFjmException,
+)
 from flipjump.assembler.inner_classes.ops import FlipJump, WordFlip, LastPhaseOp, NewSegment, ReserveBits, Padding
-from flipjump.assembler.preprocessor import resolve_macros, TablePool
+from flipjump.assembler.inner_classes.expr import Expr
+from flipjump.assembler.preprocessor import resolve_macros, TablePool, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -109,6 +115,7 @@ class BinaryData:
         'padding_ops_indices',
         'wflips_dict',
         'pinned',
+        'pinned_floor',
     )
 
     def __init__(
@@ -126,9 +133,11 @@ class BinaryData:
         """
         self.memory_width = memory_width
 
-        # {jump-word address: block base} for BlockPool. Empty/None for every other build, and the
-        # two use sites below are guarded on it, so this costs one truthiness test per op when off.
+        # {jump-word address: block base} for BlockPool; None for every other build, so the two use
+        # sites below cost one truthiness test per op when off. A flip smaller than a `pad 16`-aligned
+        # address only edits the variable's VALUE bits (hex.set, xor_by) and must not be rebased.
         self.pinned = pinned
+        self.pinned_floor = 16 * 2 * memory_width
 
         self.first_address = first_segment.start_address
         self.next_wflip_address = first_segment.wflip_start_address
@@ -197,23 +206,11 @@ class BinaryData:
 
     def insert_wflip_ops(self, word_address: int, flip_value: int, return_address: int) -> None:
         if self.pinned:
-            # The word rests at `base + digit`, so a writer INSTALLING A JUMP TARGET V must flip
-            # `V ^ base`. For this table's own arm that is just the table's INDEX in the block --
-            # the entire point -- and for every other dispatcher through the same word
-            # (stl.comp_if1, hex.shifts.*, hex.tables.*) it is the same rule and the same result.
-            #
-            # ⚠ BUT NOT EVERY WFLIP ON THIS WORD INSTALLS AN ADDRESS. `hex.set`/`xor_by` wflip the
-            # SAME word to toggle the hex's VALUE bits -- a relative edit, not an absolute one --
-            # and XORing base into that destroys the base:
-            #     word = base ; flip (val*dw ^ base) -> base ^ val*dw ^ base = val*dw
-            # which leaves the variable dispatching to a bare value. Measured: the toy died at
-            # `ip 1,536`, a word holding value bits and no base.
-            #
-            # The two are separable by magnitude. A hex's value occupies word-bits 6..9, so a
-            # value-field flip is under one table's worth of bits; every real jump target is a
-            # `pad 16`-aligned address, i.e. at least that. VALUE_FIELD_BITS is that boundary.
+            # the word rests at `base + digit`, so a writer installing a jump target V flips
+            # `V ^ base` - for the table's own arm just its index in the block, and the same rule
+            # for every other dispatcher through the word (stl.comp_if1, hex.shifts.*, hex.tables.*)
             base = self.pinned.get(word_address)
-            if base and flip_value >= 16 * 2 * self.memory_width:
+            if base and flip_value >= self.pinned_floor:
                 flip_value ^= base
         if 0 == flip_value:
             self.insert_fj_op(0, return_address)
@@ -275,47 +272,34 @@ class BinaryData:
         self.padding_ops_indices.clear()
 
 
-# Words below this are the runtime's, not the program's. `stl.IO` sits at bit address 64 -- the
-# interpreter reads and writes it as the IO port, and `bit.output` DISPATCHES through it, so it
-# looks exactly like an ordinary hex source to the grouper. Baking a block base into it corrupts
-# the program's second op: the blocked game build jumped `ip 64 -> POOL -> ip 64` and presented 0
-# frames in 116 ops. On that build the first label above stl.IO is at 16,384, so this floor
-# excludes the runtime's words and nothing the program owns.
-RESERVED_BELOW = 1024
+def resolve_pinned(
+    pinned_exprs: Dict[Expr, int],
+    labels: Dict[str, int],
+    reserved_below: int = RESERVED_BELOW,
+    exclude: Optional[Callable[[int, Dict[str, int]], bool]] = None,
+) -> Tuple[Dict[int, int], int]:
+    """({jump-word address: block base}, number of aliased addresses dropped).
 
-
-def resolve_pinned(pinned_exprs, labels: Dict[str, int],
-                   reserved_below: int = RESERVED_BELOW,
-                   exclude=None) -> Tuple[Dict[int, int], int]:
-    """({address: block base}, number of aliased addresses dropped).
-
-    ALIASING IS FATAL AND SILENT, which is why this is a function with a test rather than four
-    lines inside assemble(). BlockPool keys groups by the source word's EXPRESSION, because its
-    address is unknown while macros expand. Two different expressions can resolve to the SAME
-    address -- `(x + 32)` and `(x + w)` at w=32 -- and they were given different block bases.
-    Pinning that address to one of them sends every table in the other block to
-    `switch ^ wrong_base`, which is nowhere.
-
-    Un-pinning a word is always safe: it then rests at `digit`, the full address is written, and
-    both blocked and inline tables in it still work -- `(B + digit) ^ (V ^ B)` is `V + digit`, so
-    a consistent base cancels either way. So a collision drops the pin rather than picking a side.
+    BlockPool keys groups by the source word's EXPRESSION, because its address is unknown while
+    macros expand, and two different expressions can resolve to the SAME address (`(x + 32)` and
+    `(x + w)` at w=32) with different block bases. Pinning that address to either base sends every
+    table of the other block to `switch ^ wrong_base`, so a collision drops the pin instead: an
+    un-pinned word rests at `digit`, the full address is written, and both its blocked and inline
+    tables still work.
+    `exclude(address, labels) -> bool` lets the caller veto a pin on a word it owns (a pinned word
+    holds `base + value`, which anything reading it raw no longer recognises as the value).
     """
-    # `exclude(address, labels) -> bool` lets the CALLER veto a pin it knows is unsafe. The
-    # doom-flipjump case is the M1 self-reset: it classifies a cell as a read-only LUT when
-    # `word >> VAL_SHIFT > 15`, and a pinned word holds `base + value`, so every pinned state cell
-    # is misclassified and silently STOPS BEING RESTORED. Frame 2 is byte-exact, the reset skips
-    # those cells, frame 3 is stale -- which is exactly what the standalone gate saw (FINDINGS BH).
     pinned: Dict[int, int] = {}
     conflicts = set()
     for expr, base in pinned_exprs.items():
         try:
             address = expr.exact_eval(labels)
-        except Exception:                                                    # noqa: BLE001
-            continue                  # an unresolvable word simply is not pinned
+        except FlipJumpExprException:
+            continue  # an unresolvable word simply is not pinned
         if address < reserved_below:
-            continue                  # the runtime's word (stl.IO), not the program's
+            continue  # the runtime's word (stl.IO), not the program's
         if exclude is not None and exclude(address, labels):
-            continue                  # the caller owns this word
+            continue  # the caller owns this word
         if address in pinned and pinned[address] != base:
             conflicts.add(address)
         pinned[address] = base
@@ -347,8 +331,7 @@ def labels_resolve(
     if not isinstance(first_segment, NewSegment):
         raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_segment}).")
 
-    binary_data = BinaryData(memory_width, first_segment, labels,
-                             save_wflip_labels=save_wflip_labels, pinned=pinned)
+    binary_data = BinaryData(memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels, pinned=pinned)
 
     # PERF (doom-flipjump, 2026-08-20): this loop body runs once per emitted op -- ~42M times on the
     # doom-flipjump program, where this phase is 46% of a 29-minute assembly. Three changes, all
@@ -505,27 +488,22 @@ def assemble(
             )
 
         # BlockPool pins each source word to its block base. The base was chosen during macro
-        # expansion but the WORD is an expression -- variables are usually declared after the code
-        # -- so it is resolved here, now that every label is known.
+        # expansion but the WORD is an expression (variables are usually declared after the code),
+        # so it is resolved here, now that every label is known.
         pinned = None
-        if table_pool is not None and hasattr(table_pool, 'pinned_words'):
-            # ALIASING IS FATAL AND SILENT. Groups are keyed by the source word's EXPRESSION, since
-            # its address is unknown during macro expansion. Two different expressions can resolve
-            # to the SAME address -- `(x + 32)` and `(x + w)` at w=32 -- and they get different
-            # block bases. Pinning that address to one of them sends every table in the other
-            # block to `switch ^ wrong_base`, which is nowhere. Un-pinning a word is always safe
-            # (it then rests at `digit` and the full address is written), so a collision un-pins.
-            pinned, conflicts = resolve_pinned(table_pool.pinned_words(), labels,
-                                               exclude=getattr(table_pool, 'pin_exclude', None))
-            table_pool.pin_conflicts = conflicts
+        if table_pool is not None:
+            pinned, table_pool.pin_conflicts = resolve_pinned(
+                table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
+            )
             if not pinned:
                 pinned = None
 
         with PrintTimer('  labels resolve:  ', print_time=print_time):
             # the `:wflips:N` labels are debugging-file-only and unreachable from fj source; don't
             # build 16M of them for a caller that is not writing a debugging file.
-            labels_resolve(ops, labels, memory_width, fjm_writer,
-                           save_wflip_labels=debugging_file_path is not None, pinned=pinned)
+            labels_resolve(
+                ops, labels, memory_width, fjm_writer, save_wflip_labels=debugging_file_path is not None, pinned=pinned
+            )
 
         assert_first_op_assembled(fjm_writer)
 

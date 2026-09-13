@@ -11,7 +11,7 @@ import lzma
 import sys
 from pathlib import Path
 from struct import pack
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -25,7 +25,6 @@ from flipjump.fjm.fjm_consts import (
     FJMVersion,
 )
 from flipjump.utils.exceptions import FlipJumpWriteFjmException
-
 
 # PERF (doom-flipjump, 2026-08-20): the word array's typecode per memory-width.
 # `array` typecodes are platform-sized, so the itemsize is CHECKED at runtime before use and the
@@ -120,12 +119,12 @@ class Writer:
         self.reserved: int = 0
 
         self.segments: List[Tuple[int, int, int, int]] = []
-        # Sorted view of the segments' start addresses, so overlap validation is a bisect over
-        # disjoint intervals rather than a scan. See _validate_segment_addresses_not_overlapping.
+        # sorted views of the segments' start addresses, so overlap validation is a bisect over
+        # disjoint intervals rather than a scan (see _validate_segment_addresses_not_overlapping)
         self._sorted_segment_starts: List[int] = []
-        self._segment_index_by_start: dict = {}
+        self._segment_index_by_start: Dict[int, int] = {}
         self._sorted_data_starts: List[int] = []
-        self._segment_index_by_data_start: dict = {}
+        self._segment_index_by_data_start: Dict[int, int] = {}
         # PERF (doom-flipjump, 2026-08-20): a typed word array, not a list of python ints. It holds
         # every word of the program -- 84.8M of them on the doom-flipjump build -- and as a list
         # that is 8 bytes of pointer plus a 28-byte int object per word that is not in CPython's
@@ -186,12 +185,11 @@ class Writer:
         return False
 
     def _validate_segment_addresses_not_overlapping(self, new_segment_start: int, new_segment_length: int) -> None:
-        # PERF (doom-flipjump, 2026-09-07): this used to scan EVERY previous segment, so writing N
-        # segments was O(N^2). The assembler's table-placement pass emits one segment per relocated
-        # lookup table, which is tens of thousands on a real program -- 16k segments is 134M
-        # iterations of this loop. The intervals are disjoint by the very invariant being checked,
-        # so a sorted list admits a bisect: only the neighbours can collide. Same verdict, same
-        # message, same segment indices -- `_segment_index_by_start` keeps the reported `seg[i]`.
+        # PERF: this used to scan every previous segment, O(N^2) over a program - and the
+        # assembler's table-placement pass emits one segment per relocated table, tens of thousands
+        # of them. The intervals are disjoint by the very invariant being checked, so a sorted list
+        # admits a bisect: only the neighbours can collide. Same verdict, same message, same segment
+        # indices - `_segment_index_by_start` keeps the reported `seg[i]`.
         new_segment_end = new_segment_start + new_segment_length - 1
         neighbours = []
         position = bisect.bisect_left(self._sorted_segment_starts, new_segment_start)
@@ -217,8 +215,7 @@ class Writer:
     def _validate_segment_data_not_overlapping(self, new_data_start: int, new_data_length: int) -> None:
         if new_data_length == 0:
             return
-        # Same bisect as the address check above, for the same reason: this is O(N) per segment
-        # and the table-placement pass writes tens of thousands of them.
+        # the same bisect as the address check above, for the same reason
         new_data_end = new_data_start + new_data_length - 1
 
         neighbours = []

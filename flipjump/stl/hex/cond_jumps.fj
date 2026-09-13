@@ -202,7 +202,7 @@ ns hex {
     // Space Complexity:  n(7@+80) + 8
     //   like bit.cmp but SIGNED (two's complement): jumps to lt if a<b, eq if a==b, gt if a>b.
     //   a,b are hex[:n] holding signed values; they are NOT modified.
-    //   Method: flip the sign bit (MSB) of copies of a,b, then unsigned-compare ג€” this maps the
+    //   Method: flip the sign bit (MSB) of copies of a,b, then unsigned-compare — this maps the
     //   signed range monotonically onto the unsigned range, so it is correct over the whole range
     //   with no subtraction (hence no overflow).
     // @requires hex.cmp.init (or hex.init)

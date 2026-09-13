@@ -71,13 +71,12 @@ CMD_SET_PALETTE = 0x02
 CMD_UPDATE_SCREEN = 0x03
 CMD_UPDATE_RECTANGLE = 0x04
 CMD_UPDATE_SCREEN_RAW = 0x05
-CMD_UPDATE_SCREEN_REG = 0x06  # fj 1.5.1: hex.vec-2 (register-form) framebuffer, two 4-bit ops/pixel (DESIGN section 2.1)
-CMD_BEGIN_FRAME_COLLINES = 0x0B
-# fj 1.5.1 window controls. 0x10/0x11 are NOT free -- doom-flipjump's own wire format uses them
-# for STATE_CMD / THING_CMD -- so these start at 0x12.
-CMD_SET_WINDOW_TITLE = 0x12   # [0x12] <utf-8 bytes> 0x00      -- NUL-terminated, in-stream
-CMD_SET_WINDOW_ICON = 0x13    # [0x13][w][h] w*h palette indices, in-stream
-ICON_TRANSPARENT_INDEX = 0    # palette entry 0 is DOOM's conventional transparent/background  # fj 1.5.1: the column-run-list frame - no framebuffer, see the module docstring
+CMD_UPDATE_SCREEN_REG = 0x06  # fj 1.5.1: hex.vec-2 (register-form) framebuffer, two 4-bit ops/pixel
+CMD_BEGIN_FRAME_COLLINES = 0x0B  # fj 1.5.1: the column-run-list frame - no framebuffer, see the module docstring
+# fj 1.5.1 window controls. 0x10/0x11 are taken by doom-flipjump's own wire format, so these start at 0x12.
+CMD_SET_WINDOW_TITLE = 0x12  # [0x12] <utf-8 bytes> 0x00 - NUL-terminated, in-stream
+CMD_SET_WINDOW_ICON = 0x13  # [0x13][w][h] then w*h palette indices, in-stream
+ICON_TRANSPARENT_INDEX = 0  # the palette entry drawn as transparent in the window icon
 
 COLLINES_END = 0xFF  # ends the frame (at tag position) or the current column (inside a list)
 COLLINES_DITTO = 0xFE  # inside a list, at tag-follow position: copy the whole previous column
@@ -170,18 +169,15 @@ class InMemoryScreen(IODevice):
         if command == CMD_BEGIN_FRAME_COLLINES:
             return 1  # bare command; the run-lists that follow are not part of it
         if command == CMD_SET_WINDOW_TITLE:
-            # NUL-TERMINATED, so the length is not known up front. `_command_length` is consulted
+            # NUL-terminated, so the length is not known up front: `_command_length` is consulted
             # after every byte, so asking for "one more than I have" keeps the buffer filling and
-            # asking for "exactly what I have" fires it -- no streaming-mode flag needed (unlike
-            # CMD_BEGIN_FRAME_COLLINES, whose payload bytes could themselves be 0x00).
+            # asking for "exactly what I have" fires it
             buffered = self._command_buffer
             if len(buffered) > 1 and buffered[-1] == 0x00:
                 return len(buffered)
             return len(buffered) + 1
         if command == CMD_SET_WINDOW_ICON:
-            # [0x13][w][h] then w*h indices. The dimensions arrive INSIDE the command, so buffer
-            # the header first and then extend -- the same shape as CMD_UPDATE_SCREEN_RAW, which
-            # derives its length from the already-known screen size.
+            # the dimensions arrive inside the command, so buffer the header first and then extend
             if len(self._command_buffer) < 3:
                 return 3
             return 3 + self._command_buffer[1] * self._command_buffer[2]
@@ -341,9 +337,7 @@ class InMemoryScreen(IODevice):
                 if column == 0:
                     raise IODeviceException('collines DITTO for column 0 (no left neighbour to copy)')
                 for row in range(self.height):
-                    self.pixel_indices[row * self.width + column] = self.pixel_indices[
-                        row * self.width + column - 1
-                    ]
+                    self.pixel_indices[row * self.width + column] = self.pixel_indices[row * self.width + column - 1]
                 self._collines_column = None
                 return
             if byte > self.height:
@@ -414,8 +408,7 @@ class InMemoryScreen(IODevice):
             # picture. The eager attribute this replaced made that free; the property does not.
             frame_rgb = self.last_frame_rgb
             row_slices = [
-                frame_rgb[row * self.width : (row + 1) * self.width]  # noqa: E203
-                for row in range(self.height)
+                frame_rgb[row * self.width : (row + 1) * self.width] for row in range(self.height)  # noqa: E203
             ]
             rows = b''.join(b'\x00' + b''.join(bytes(rgb) for rgb in row_slice) for row_slice in row_slices)
             png_path = self.frames_dir / f'frame_{self.frame_count - 1:06d}.png'
