@@ -8,8 +8,9 @@ the property pinned throughout: a relocated or blocked program produces the SAME
 inline one, in fewer ops - a table is reached only by jump, so its address is free to choose.
 """
 
+from itertools import islice
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import pytest
 
@@ -79,6 +80,22 @@ stl.startup_and_init_all
 b: hex.vec 2
 """
 
+# `hex.xor e, d` arms d's jump word, so BlockPool pins d; the pointer read of d then jumps
+# through that word expecting `value*dw` and lands in the block instead of the decoder
+POINTER_PROGRAM = """
+stl.startup_and_init_all
+    hex.set d, 6
+    hex.xor e, d
+    hex.set v, 0xD
+    hex.xor_hex_from_ptr v, p
+    hex.print_as_digit v, 1
+    stl.loop
+d: hex.hex
+e: hex.hex
+v: hex.hex
+p: hex.vec w/4, d
+"""
+
 # bit.exact_xor's table ends in `dst;` - a fall-through into the next op - so it must be refused
 FALL_THROUGH_PROGRAM = """
 stl.startup_and_init_all
@@ -94,23 +111,28 @@ b: bit.vec 16, 0x0102
 
 
 def build_and_run(
-    source: str, tmp_path: Path, pool: Optional[TablePool], name: str = 'p', fixed_input: bytes = b''
+    source: str,
+    tmp_path: Path,
+    pool: Optional[TablePool],
+    name: str = 'p',
+    fixed_input: bytes = b'',
+    memory_width: int = W,
 ) -> Tuple[bytes, int, Path]:
     """assemble `source` with the stl (and the pool, if given), run it on `fixed_input`, and
     return (output, op count, fjm path)."""
     fj_path = tmp_path / f'{name}.fj'
     fj_path.write_text(source)
     fjm_path = tmp_path / f'{name}.fjm'
-    assemble([fj_path], fjm_path, memory_width=W, print_time=False, table_pool=pool)
+    assemble([fj_path], fjm_path, memory_width=memory_width, print_time=False, table_pool=pool)
     io_device = FixedIO(fixed_input)
     statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
     return io_device.get_output(allow_incomplete_output=True), statistics.op_counter, fjm_path
 
 
-def pool_segments(fjm_path: Path) -> List[int]:
+def pool_segments(fjm_path: Path, memory_width: int = W) -> List[int]:
     """the word addresses of the segments that landed in the pool"""
     reader = Reader(fjm_path)
-    return [s.segment_start for s in reader.memory_segments if s.segment_start * W >= POOL_BASE]
+    return [s.segment_start for s in reader.memory_segments if s.segment_start * memory_width >= POOL_BASE]
 
 
 def blocked(source: str, tmp_path: Path, span_bits: Optional[int] = None) -> Tuple[bytes, int, BlockPool]:
@@ -149,9 +171,19 @@ def _table_ops(entries: int, *, interior_label: bool = False, trailing_label: bo
 
 def test_offsets_are_handed_out_cheapest_popcount_first() -> None:
     pool = TablePool(W, POOL_BASE, run_ops=16, span_bits=16 * OP_BITS * 64)
-    offsets = pool._offsets
+    offsets = list(islice(pool._cheapest_offsets(), 100))
     assert offsets[:8] == [0, 1, 2, 4, 8, 16, 32, 3]
     assert sorted(offsets) == list(range(64))
+    assert offsets == sorted(range(64), key=lambda v: (bin(v).count('1'), v))
+
+
+def test_offsets_are_generated_lazily_so_w64_works() -> None:
+    # an unbounded pool at w=64 has 2^49 run offsets; they are never materialised
+    pool = TablePool(64, 1 << 40)
+    assert pool.reserve(16, 16) == (1 << 40, True, 0)
+    pool.commit((1 << 40) + 16 * 128)
+    blocked_pool = BlockPool(64, 1 << 40, counts={'g': 2}, widths={'g': 16})
+    assert blocked_pool.reserve(16, 16, group='g', group_expr=Expr('g')) == (1 << 40, True, 0)
 
 
 def test_run_ops_must_make_a_power_of_two_run() -> None:
@@ -423,13 +455,16 @@ def test_canonical_alias_merges_groups_that_name_one_word() -> None:
 # --- end to end: a relocated or blocked program is the same program, in fewer ops ---
 
 
-def test_relocated_tables_leave_the_output_unchanged(tmp_path: Path) -> None:
-    reference, reference_ops, inline_fjm = build_and_run(XOR_PROGRAM, tmp_path, None, name='inline')
+@pytest.mark.parametrize('memory_width', [32, 64])
+def test_relocated_tables_leave_the_output_unchanged(tmp_path: Path, memory_width: int) -> None:
+    reference, reference_ops, inline_fjm = build_and_run(
+        XOR_PROGRAM, tmp_path, None, name='inline', memory_width=memory_width
+    )
     assert reference and not pool_segments(inline_fjm)
-    pool = TablePool(W, POOL_BASE, run_ops=256)
-    output, ops, fjm_path = build_and_run(XOR_PROGRAM, tmp_path, pool)
+    pool = TablePool(memory_width, POOL_BASE, run_ops=256)
+    output, ops, fjm_path = build_and_run(XOR_PROGRAM, tmp_path, pool, memory_width=memory_width)
     assert output == reference
-    assert pool.allocated > 0 and pool_segments(fjm_path)
+    assert pool.allocated > 0 and pool_segments(fjm_path, memory_width)
     assert ops < reference_ops
 
 
@@ -454,6 +489,29 @@ def test_an_input_table_is_never_split(tmp_path: Path, blocking: bool) -> None:
         pool = TablePool(W, POOL_BASE)
     output, _, _ = build_and_run(INPUT_PROGRAM, tmp_path, pool, fixed_input=b'A')
     assert output == reference
+
+
+def test_a_pinned_word_read_through_a_pointer_needs_the_callers_exclusion(tmp_path: Path) -> None:
+    reference, _, _ = build_and_run(POINTER_PROGRAM, tmp_path, None, name='inline')
+    assert reference == b'B'
+    # relocation alone is fine: the word still holds its bare value
+    output, _, _ = build_and_run(POINTER_PROGRAM, tmp_path, TablePool(W, POOL_BASE), name='relocated')
+    assert output == reference
+    counting = BlockPool(W, POOL_BASE)
+    build_and_run(POINTER_PROGRAM, tmp_path, counting, name='counting')
+    assert counting.reads_words_raw
+    # pinning without a declaration of the cells pointers reach is refused, not miscompiled
+    with pytest.raises(FlipJumpException, match='pin_exclude'):
+        blocked_pool = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
+        build_and_run(POINTER_PROGRAM, tmp_path, blocked_pool, name='refused')
+    # with the pointed cell excluded from pinning the blocked program is the same program; the
+    # veto sees the bit address of the cell's JUMP word, `d + w`
+    blocked_pool = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
+    exclude: Callable[[int, Dict[str, int]], bool] = lambda address, labels: address == labels['d'] + W  # noqa: E731
+    blocked_pool.pin_exclude = exclude
+    output, _, _ = build_and_run(POINTER_PROGRAM, tmp_path, blocked_pool, name='excluded')
+    assert output == reference
+    assert blocked_pool.pinned_words()  # the other armed words are still pinned
 
 
 def test_a_fall_through_table_is_refused(tmp_path: Path) -> None:

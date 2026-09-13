@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import collections
 import sys
-from typing import Dict, Tuple, Iterable, Union, Deque, Set, List, Optional, NoReturn, Callable
+from typing import Dict, Tuple, Iterable, Iterator, Union, Deque, Set, List, Optional, NoReturn, Callable
 
 from flipjump.interpreter.debugging.macro_usage_graph import show_macro_usage_pie_graph
 from flipjump.utils.constants import (
@@ -52,6 +52,12 @@ wflip_start_label = '_.wflip_area_start_'
 # ordinary hex source. Such a word is neither relocated (PreprocessorData.begin_relocation) nor pinned
 # (assembler.resolve_pinned) - a block base baked into it would corrupt the program's startup.
 RESERVED_BELOW = 1024
+
+# the macros that read a cell RAW: they flip a bit of the pointed word and jump through it,
+# which lands on the pointer decoder only while the word holds exactly `value*dw`. A word that
+# BlockPool pinned holds `base + value*dw`, so a program that expands one of these must say which
+# cells a pointer can reach (TablePool.pin_exclude) before any word is pinned; see BlockPool.
+RAW_READERS = frozenset({'hex.pointers.read_cell_from_inners_ptrs'})
 
 
 class TablePool:
@@ -109,11 +115,11 @@ class TablePool:
         # assembler.resolve_pinned); a plain pool pins nothing, so both only matter for BlockPool
         self.pin_exclude: Optional[Callable[[int, LabelsDict], bool]] = None
         self.pin_conflicts = 0
+        self.reads_words_raw = False  # set by the preprocessor when a RAW_READERS macro expands
         self.allocated = 0
         self.declined = 0
         self.reserved_words = 0  # tables through the runtime's words, never relocated
         self._offsets = self._cheapest_offsets()
-        self._next_offset = 0
         self._cursor = 0  # bit address of the next free spot inside the current run
         self._run_end = 0
         # A table can be LONGER than the run it started in -- `hex.cmp`'s is 31 ops behind a
@@ -122,13 +128,23 @@ class TablePool:
         self._consumed: Set[int] = set()
         self.run_starts: List[int] = []
 
-    def _cheapest_offsets(self) -> List[int]:
-        """every run-aligned offset in the pool, cheapest popcount first"""
+    def _cheapest_offsets(self) -> Iterator[int]:
+        """every run-aligned offset in the pool, cheapest popcount first and ascending within a
+        popcount -- generated lazily, since an unbounded pool at w=64 has 2^49 of them"""
         reach = (1 << self.memory_width) - self.pool_base
         if self.span_bits is not None:
             reach = min(reach, self.span_bits)
         count = reach // self.run_bits
-        return sorted(range(count), key=lambda v: (bin(v).count('1'), v))
+        if count <= 0:
+            return
+        yield 0
+        for bits in range(1, count.bit_length() + 1):
+            offset = (1 << bits) - 1  # the smallest value with `bits` set bits
+            while offset < count:
+                yield offset
+                lowest = offset & -offset  # the next larger value with the same popcount
+                ripple = offset + lowest
+                offset = ripple | (((offset ^ ripple) >> 2) // lowest)
 
     def wants(self, macro_name: MacroName, labels_prefix: str = '') -> bool:
         """`labels_prefix` is the full macro-expansion path, i.e. the CALL SITE -- so a caller can
@@ -188,9 +204,7 @@ class TablePool:
 
     def _find_free_slots(self, slots_needed: int) -> Optional[int]:
         """the cheapest run offset with `slots_needed` consecutive free slots from it"""
-        while self._next_offset < len(self._offsets):
-            slot = self._offsets[self._next_offset]
-            self._next_offset += 1
+        for slot in self._offsets:
             if all((slot + extra) not in self._consumed for extra in range(slots_needed)):
                 if self.pool_base + (slot + slots_needed) * self.run_bits <= (1 << self.memory_width):
                     return slot
@@ -228,6 +242,16 @@ class BlockPool(TablePool):
     `flip_value ^= B` for any address-sized flip of a pinned word, so `stl.comp_if1`,
     `hex.shifts.*` and `hex.tables.*` keep working by construction - they wanted the word to become
     V, and (B + digit) ^ (V ^ B) is V + digit.
+
+    THE ONE THING A PINNED WORD CANNOT DO is be read raw. `hex.pointers`' read dance flips a bit
+    of the POINTED word and jumps through it, which reaches the decoder table only from
+    `value*dw`, not from `base + value*dw`; anything else that jumps through a cell expecting its
+    bare value has the same problem. Which cells a pointer will reach is runtime data, so the
+    caller declares it: `pin_exclude(address, labels) -> bool`, given the bit address of a cell's
+    JUMP word (`cell + w`), vetoes the pin of every cell a pointer (or any raw reader) can reach.
+    A program that expands a RAW_READERS macro and gives no `pin_exclude` is refused by assemble()
+    rather than miscompiled; `pin_exclude` may veto nothing when the caller knows no pointer
+    reaches an armed cell.
 
     TWO PASSES. A block's size must be known before its base is chosen, and the tables of a group
     are scattered through the program, so counting comes first:
@@ -1064,6 +1088,8 @@ def resolve_macro_aux(
     relocated = False
     table_end = -1
     current_macro = preprocessor_data.macros[macro_name]
+    if preprocessor_data.table_pool is not None and macro_name.name in RAW_READERS:
+        preprocessor_data.table_pool.reads_words_raw = True
     params_dict = get_params_dictionary(current_macro, args, current_macro.namespace, labels_prefix)
 
     preprocessor_data.insert_macro_start_label(labels_prefix, current_macro.code_position)

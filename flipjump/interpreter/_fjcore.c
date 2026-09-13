@@ -112,9 +112,14 @@ static void* fj_alloc_flat(size_t bytes, int* large)
             /* ADVISORY: the kernel may still decline (THP disabled, memory fragmented), so
                `large` here records "aligned and advised", not "definitely huge". Check
                /proc/<pid>/smaps AnonHugePages to see what was actually granted. */
-            *large = (madvise((void*)aligned, rounded, MADV_HUGEPAGE) == 0);
+            if (madvise((void*)aligned, rounded, MADV_HUGEPAGE) == 0) {
+                *large = 1;
+                return (void*)aligned;
+            }
 #endif
-            return (void*)aligned;
+            /* no huge-page advice, or refused: the mapping buys nothing over malloc, and only a
+               `large` block is released with munmap (fj_free_flat) -- so release it and fall back */
+            munmap((void*)aligned, rounded);
         }
     }
 #endif
