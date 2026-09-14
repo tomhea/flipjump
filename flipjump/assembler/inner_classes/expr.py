@@ -152,7 +152,8 @@ class Expr:
             # labels-resolve on the doom-flipjump program. Unary/ternary keep the general path.
             if len(args) == 2:
                 first, second = args
-                return op_string_to_function[op](first.exact_eval(labels), second.exact_eval(labels))
+                binary = op_string_to_function[op]
+                return binary(first.exact_eval(labels), second.exact_eval(labels))  # type: ignore[call-arg]
             return op_string_to_function[op](*[e.exact_eval(labels) for e in args])
         except FlipJumpExprException:
             raise

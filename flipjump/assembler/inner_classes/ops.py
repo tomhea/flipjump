@@ -52,7 +52,11 @@ class MacroName:
     # concept -- MacroName is immutable in practice (nothing ever rebinds .name/.parameter_num),
     # and it is the key of the `macros` dict, looked up twice per macro expansion (~3.4M times on
     # the doom-flipjump program). Both __hash__ and __eq__ used to build a fresh tuple per call.
-    __slots__ = ('name', 'parameter_num', '_hash',)
+    __slots__ = (
+        'name',
+        'parameter_num',
+        '_hash',
+    )
 
     def __init__(self, name: str, parameter_num: int = 0):
         self.name = name
@@ -100,7 +104,11 @@ class FlipJump:
     # emission is unaffected -- asserted by sha256 of the .fjm.
     # The slot list is DERIVED from this class's own __init__, not hand-written: the first
     # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = ('flip', 'jump', 'code_position',)
+    __slots__ = (
+        'flip',
+        'jump',
+        'code_position',
+    )
 
     def __init__(self, flip: Expr, jump: Expr, code_position: CodePosition):
         self.flip = flip
@@ -139,7 +147,12 @@ class WordFlip:
     # emission is unaffected -- asserted by sha256 of the .fjm.
     # The slot list is DERIVED from this class's own __init__, not hand-written: the first
     # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = ('word_address', 'flip_value', 'return_address', 'code_position',)
+    __slots__ = (
+        'word_address',
+        'flip_value',
+        'return_address',
+        'code_position',
+    )
 
     def __init__(self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition):
         self.word_address = word_address
@@ -195,7 +208,10 @@ class Pad:
     # emission is unaffected -- asserted by sha256 of the .fjm.
     # The slot list is DERIVED from this class's own __init__, not hand-written: the first
     # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = ('ops_alignment', 'code_position',)
+    __slots__ = (
+        'ops_alignment',
+        'code_position',
+    )
 
     def __init__(self, ops_alignment: Expr, code_position: CodePosition):
         self.ops_alignment = ops_alignment
@@ -230,7 +246,10 @@ class Segment:
     # emission is unaffected -- asserted by sha256 of the .fjm.
     # The slot list is DERIVED from this class's own __init__, not hand-written: the first
     # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = ('start_address', 'code_position',)
+    __slots__ = (
+        'start_address',
+        'code_position',
+    )
 
     def __init__(self, start_address: Expr, code_position: CodePosition):
         self.start_address = start_address
@@ -265,7 +284,10 @@ class Reserve:
     # emission is unaffected -- asserted by sha256 of the .fjm.
     # The slot list is DERIVED from this class's own __init__, not hand-written: the first
     # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = ('reserved_bit_size', 'code_position',)
+    __slots__ = (
+        'reserved_bit_size',
+        'code_position',
+    )
 
     def __init__(self, reserved_bit_size: Expr, code_position: CodePosition):
         self.reserved_bit_size = reserved_bit_size
@@ -295,7 +317,11 @@ class MacroCall:
     # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
     # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
     # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    __slots__ = ('macro_name', 'arguments', 'code_position',)
+    __slots__ = (
+        'macro_name',
+        'arguments',
+        'code_position',
+    )
 
     def __init__(self, macro_name: str, arguments: List[Expr], code_position: CodePosition):
         self.macro_name = MacroName(macro_name, len(arguments))
@@ -440,7 +466,10 @@ class Label:
     # emission is unaffected -- asserted by sha256 of the .fjm.
     # The slot list is DERIVED from this class's own __init__, not hand-written: the first
     # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = ('name', 'code_position',)
+    __slots__ = (
+        'name',
+        'code_position',
+    )
 
     def __init__(self, name: str, code_position: CodePosition):
         self.name = name
@@ -516,7 +545,10 @@ class NewSegment:
 
     # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
     # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    __slots__ = ('start_address', 'wflip_start_address',)
+    __slots__ = (
+        'start_address',
+        'wflip_start_address',
+    )
 
     def __init__(self, start_address: int):
         """

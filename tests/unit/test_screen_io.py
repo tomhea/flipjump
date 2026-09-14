@@ -246,3 +246,58 @@ def test_png_pixels_decode_correctly(tmp_path: Path) -> None:
     assert raw[0] == 0
     assert raw[1:4] == bytes([200, 100, 0])
     assert raw[4:7] == bytes([10, 20, 30])
+
+
+# --- window controls (0x12 title, 0x13 icon) ---
+
+
+def test_set_window_title_fires_on_the_nul(tmp_path: Path) -> None:
+    device, memory = make_screen(tmp_path)
+    init_4x2(device, memory)
+    write_byte(device, 0x12)  # CMD set_window_title
+    for char in b'DOOM':
+        write_byte(device, char)
+    assert device.window_title is None  # the title is not known until its terminator
+    write_byte(device, 0)
+    assert device.window_title == 'DOOM'
+    assert device.frame_count == 0  # a title is not a frame
+
+
+def test_set_window_title_decodes_utf8(tmp_path: Path) -> None:
+    device, memory = make_screen(tmp_path)
+    init_4x2(device, memory)
+    write_byte(device, 0x12)
+    for char in 'fj \u2665'.encode('utf-8') + b'\x00':
+        write_byte(device, char)
+    assert device.window_title == 'fj \u2665'
+
+
+def test_set_window_icon_records_the_indices(tmp_path: Path) -> None:
+    device, memory = make_screen(tmp_path)
+    init_4x2(device, memory)
+    write_byte(device, 0x13)  # CMD set_window_icon
+    write_byte(device, 2)  # width
+    write_byte(device, 2)  # height
+    for index in (0, 1, 1, 0):
+        write_byte(device, index)
+    assert device.window_icon == (2, 2, [0, 1, 1, 0])
+    assert device.frame_count == 0
+
+
+def test_window_commands_may_precede_init_screen(tmp_path: Path) -> None:
+    device, _ = make_screen(tmp_path)
+    write_byte(device, 0x12)
+    for char in b'T\x00':
+        write_byte(device, char)
+    write_byte(device, 0x13)
+    for byte in (1, 1, 3):
+        write_byte(device, byte)
+    assert device.window_title == 'T'
+    assert device.window_icon == (1, 1, [3])
+
+
+def test_unknown_screen_command_raises(tmp_path: Path) -> None:
+    device, memory = make_screen(tmp_path)
+    init_4x2(device, memory)
+    with pytest.raises(IODeviceException):
+        write_byte(device, 0x14)

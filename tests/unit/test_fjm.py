@@ -218,3 +218,26 @@ def test_assert_runnable_requires_first_op_at_address_zero(tmp_path: Path) -> No
         not_runnable.assert_runnable()
     # a normal program (a segment holding the first op at address 0) passes
     Reader(_write(tmp_path, 16, FJMVersion.NormalVersion, 0, [10, 20])).assert_runnable()
+
+
+def test_add_segments_out_of_order_still_detects_overlap(tmp_path: Path) -> None:
+    # the overlap check bisects a sorted view of the starts, so the neighbours of a new segment
+    # are the only candidates - whatever order the segments were added in
+    writer = Writer(tmp_path / 'x.fjm', 16, FJMVersion.NormalVersion)
+    for start in (64, 0, 32, 96):
+        writer.add_simple_segment_with_data(start, [0, 0, 0, 0])
+    with pytest.raises(FlipJumpWriteFjmException):
+        writer.add_simple_segment_with_data(34, [0, 0])  # inside the segment at 32
+    with pytest.raises(FlipJumpWriteFjmException):
+        writer.add_simple_segment_with_data(62, [0, 0, 0, 0])  # runs into the segment at 64
+    writer.add_simple_segment_with_data(36, [0, 0, 0, 0])  # the gap between 32 and 64
+    assert len(writer.segments) == 5
+
+
+def test_add_segment_overlapping_data_raises(tmp_path: Path) -> None:
+    # data overlap is only meaningful (and only checked) where the data is rewritten per segment
+    writer = Writer(tmp_path / 'x.fjm', 16, FJMVersion.RelativeJumpVersion)
+    data_start = writer.add_data([1, 2, 3, 4])
+    writer.add_segment(0, 4, data_start, 4)
+    with pytest.raises(FlipJumpWriteFjmException):
+        writer.add_segment(64, 2, data_start + 2, 2)

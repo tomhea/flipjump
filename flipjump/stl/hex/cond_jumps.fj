@@ -12,7 +12,7 @@ ns hex {
     def if_flags hex, flags, l0, l1 @ switch, clean, return, finish {
         wflip hex+w, switch, hex
 
-        pad 64
+        pad 16
       switch:
         rep(16, i) stl.fj    (flags>>i)&1 ? return+dbit+0 : 0,    clean
 
@@ -87,11 +87,7 @@ ns hex {
         wflip .tables.ret+w, ret, .cmp.dst
 
 
-        // widened for placement: `ret` is flipped as a wflip VALUE twice here -- once above to
-        // arm .cmp.dst and once below to arm the return table -- so its address is paid twice per
-        // compare. Kept at 32: this macro has ~26,000 expansions, and pad SPACE scales with TOTAL
-        // expansions while the saving scales only with the hot ones.
-        pad 16
+        pad 4
         //part2
       ret:
         wflip .tables.ret+w, ret, jumper_to_return_table //part3

@@ -8,16 +8,22 @@ and resolving labels into addresses while writing the result with the fjm Writer
 import gc
 from collections import defaultdict
 from pathlib import Path
-from typing import Deque, List, Dict, Tuple, Optional, NamedTuple
+from typing import Any, Callable, Deque, List, Dict, MutableSequence, Tuple, Optional, NamedTuple
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.functions import save_debugging_labels
 from flipjump.utils.classes import PrintTimer
 from flipjump.assembler.fj_parser import parse_macro_tree
-from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpException, FlipJumpWriteFjmException
+from flipjump.utils.exceptions import (
+    FlipJumpAssemblerException,
+    FlipJumpException,
+    FlipJumpExprException,
+    FlipJumpWriteFjmException,
+)
 from flipjump.assembler.inner_classes.ops import FlipJump, WordFlip, LastPhaseOp, NewSegment, ReserveBits, Padding
-from flipjump.assembler.preprocessor import resolve_macros
+from flipjump.assembler.inner_classes.expr import Expr
+from flipjump.assembler.preprocessor import resolve_macros, TablePool, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -40,8 +46,8 @@ def add_segment_to_fjm(
     fjm_writer: Writer,
     first_address: int,
     last_address: int,
-    fj_words: List[int],
-    wflip_words: List[int],
+    fj_words: MutableSequence[int],
+    wflip_words: MutableSequence[int],
 ) -> None:
     """
     The new segment will be placed in [first_address, last_address),
@@ -83,13 +89,13 @@ class WFlipSpot(NamedTuple):
     PERF (doom-flipjump, 2026-08-20): this was a plain @dataclass, and it is allocated once per
     wflip-chain link -- 16.1M times on the doom-flipjump program, which is the single most
     frequently constructed object in `labels_resolve`. A NamedTuple keeps the exact same
-    `.list/.index/.address` attribute access with none of the per-instance __dict__, and tuple
-    allocation comes off CPython's freelist. Purely a representation change: no field is added,
-    removed, renamed or reordered.
+    `.list/.word_index/.address` attribute access with none of the per-instance __dict__, and
+    tuple allocation comes off CPython's freelist (the index field is `word_index`: a NamedTuple
+    field cannot be called `index`, which tuple already defines).
     """
 
-    list: List[int]
-    index: int
+    list: MutableSequence[int]
+    word_index: int
     address: int
 
 
@@ -108,6 +114,8 @@ class BinaryData:
         'wflip_words',
         'padding_ops_indices',
         'wflips_dict',
+        'pinned',
+        'pinned_floor',
     )
 
     def __init__(
@@ -117,12 +125,19 @@ class BinaryData:
         labels: Dict[str, int],
         *,
         save_wflip_labels: bool = True,
+        pinned: Optional[Dict[int, int]] = None,
     ):
         """
         @param save_wflip_labels: whether to record a `:wflips:N` label per generated wflip-chain op.
         These labels exist ONLY for the debugging-file; see the note on _insert_wflip_label.
         """
         self.memory_width = memory_width
+
+        # {jump-word address: block base} for BlockPool; None for every other build, so the two use
+        # sites below cost one truthiness test per op when off. A flip smaller than a `pad 16`-aligned
+        # address only edits the variable's VALUE bits (hex.set, xor_by) and must not be rebased.
+        self.pinned = pinned
+        self.pinned_floor = 16 * 2 * memory_width
 
         self.first_address = first_segment.start_address
         self.next_wflip_address = first_segment.wflip_start_address
@@ -179,10 +194,24 @@ class BinaryData:
             self.wflips_so_far += 1
 
     def insert_fj_op(self, flip: int, jump: int) -> None:
+        if self.pinned:
+            # A pinned hex variable RESTS at `base + value` rather than at `value`, so the block's
+            # base is baked into its declaration here. Only the variable's own op can match: a
+            # wflip-chain op's jump word is at its own address, never at a pinned one.
+            base = self.pinned.get(self.first_address + (len(self.fj_words) + 1) * self.memory_width)
+            if base:
+                jump ^= base
         # `+=` on an array only accepts another array; extend() takes any iterable of ints.
         self.fj_words.extend((flip, jump))
 
     def insert_wflip_ops(self, word_address: int, flip_value: int, return_address: int) -> None:
+        if self.pinned:
+            # the word rests at `base + digit`, so a writer installing a jump target V flips
+            # `V ^ base` - for the table's own arm just its index in the block, and the same rule
+            # for every other dispatcher through the word (stl.comp_if1, hex.shifts.*, hex.tables.*)
+            base = self.pinned.get(word_address)
+            if base and flip_value >= self.pinned_floor:
+                flip_value ^= base
         if 0 == flip_value:
             self.insert_fj_op(0, return_address)
         else:
@@ -198,7 +227,7 @@ class BinaryData:
 
             # insert the first op
             self.insert_fj_op(flip_addresses.pop(), 0)
-            last_return_address_index = self.fj_words, len(self.fj_words) - 1
+            last_return_address_index: Tuple[MutableSequence[int], int] = self.fj_words, len(self.fj_words) - 1
 
             while flip_addresses:
                 flips_key = tuple(flip_addresses)
@@ -216,8 +245,8 @@ class BinaryData:
                     ops_list[last_address_index] = wflip_spot.address
                     return_dict[flips_key] = wflip_spot.address
 
-                    wflip_spot.list[wflip_spot.index] = flip_addresses.pop()
-                    last_return_address_index = wflip_spot.list, wflip_spot.index + 1
+                    wflip_spot.list[wflip_spot.word_index] = flip_addresses.pop()
+                    last_return_address_index = wflip_spot.list, wflip_spot.word_index + 1
 
             ops_list, last_address_index = last_return_address_index
             ops_list[last_address_index] = return_address
@@ -243,6 +272,42 @@ class BinaryData:
         self.padding_ops_indices.clear()
 
 
+def resolve_pinned(
+    pinned_exprs: Dict[Expr, int],
+    labels: Dict[str, int],
+    reserved_below: int = RESERVED_BELOW,
+    exclude: Optional[Callable[[int, Dict[str, int]], bool]] = None,
+) -> Tuple[Dict[int, int], int]:
+    """({jump-word address: block base}, number of aliased addresses dropped).
+
+    BlockPool keys groups by the source word's EXPRESSION, because its address is unknown while
+    macros expand, and two different expressions can resolve to the SAME address (`(x + 32)` and
+    `(x + w)` at w=32) with different block bases. Pinning that address to either base sends every
+    table of the other block to `switch ^ wrong_base`, so a collision drops the pin instead: an
+    un-pinned word rests at `digit`, the full address is written, and both its blocked and inline
+    tables still work.
+    `exclude(address, labels) -> bool` lets the caller veto a pin on a word it owns (a pinned word
+    holds `base + value`, which anything reading it raw no longer recognises as the value).
+    """
+    pinned: Dict[int, int] = {}
+    conflicts = set()
+    for expr, base in pinned_exprs.items():
+        try:
+            address = expr.exact_eval(labels)
+        except FlipJumpExprException:
+            continue  # an unresolvable word simply is not pinned
+        if address < reserved_below:
+            continue  # the runtime's word (stl.IO), not the program's
+        if exclude is not None and exclude(address, labels):
+            continue  # the caller owns this word
+        if address in pinned and pinned[address] != base:
+            conflicts.add(address)
+        pinned[address] = base
+    for address in conflicts:
+        del pinned[address]
+    return pinned, len(conflicts)
+
+
 def labels_resolve(
     ops: Deque[LastPhaseOp],
     labels: Dict[str, int],
@@ -250,6 +315,7 @@ def labels_resolve(
     fjm_writer: Writer,
     *,
     save_wflip_labels: bool = True,
+    pinned: Optional[Dict[int, int]] = None,
 ) -> None:
     """
     resolve the labels and expressions to get the list of fj ops, and add all the data and segments into the fjm_writer.
@@ -265,7 +331,7 @@ def labels_resolve(
     if not isinstance(first_segment, NewSegment):
         raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_segment}).")
 
-    binary_data = BinaryData(memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels)
+    binary_data = BinaryData(memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels, pinned=pinned)
 
     # PERF (doom-flipjump, 2026-08-20): this loop body runs once per emitted op -- ~42M times on the
     # doom-flipjump program, where this phase is 46% of a 29-minute assembly. Three changes, all
@@ -292,7 +358,9 @@ def labels_resolve(
     # did, via the popleft() of the first segment above -- and `assemble()` discards it right after.
     popleft = ops.popleft
     while ops:
-        op = popleft()
+        # dispatched on the exact class below; typed Any because mypy cannot narrow on `__class__ is`
+        # and an isinstance or a cast per op is a call per op in the loop that runs once per op
+        op: Any = popleft()
         op_class = op.__class__
 
         if op_class is FlipJump:
@@ -379,6 +447,7 @@ def assemble(
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     defines_file: Optional[Path] = None,
+    table_pool: Optional[TablePool] = None,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -391,6 +460,7 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param table_pool: if given, relocate lookup tables to low-popcount addresses (see TablePool).
     """
     # PERF (doom-flipjump, 2026-08-20): the cyclic garbage collector is off for the pipeline.
     # Assembly is one enormous monotonic allocation: the doom-flipjump program builds ~42M op objects
@@ -413,15 +483,36 @@ def assemble(
             ops, labels = resolve_macros(
                 memory_width,
                 macros,
+                table_pool=table_pool,
                 show_statistics=show_statistics,
                 max_recursion_depth=max_recursion_depth,
                 save_debug_labels=debugging_file_path is not None,
             )
 
+        # BlockPool pins each source word to its block base. The base was chosen during macro
+        # expansion but the WORD is an expression (variables are usually declared after the code),
+        # so it is resolved here, now that every label is known.
+        pinned = None
+        if table_pool is not None:
+            if table_pool.pinned_words() and table_pool.reads_words_raw and table_pool.pin_exclude is None:
+                raise FlipJumpAssemblerException(
+                    "the program reads cells through hex.pointers, and a word the BlockPool pinned cannot be "
+                    "read that way (it rests at base + value). Which cells a pointer reaches is runtime data: "
+                    "pass pin_exclude=(lambda address, labels: ...) vetoing every cell a pointer can read "
+                    "(it may veto nothing if none is an armed hex), or use TablePool."
+                )
+            pinned, table_pool.pin_conflicts = resolve_pinned(
+                table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
+            )
+            if not pinned:
+                pinned = None
+
         with PrintTimer('  labels resolve:  ', print_time=print_time):
             # the `:wflips:N` labels are debugging-file-only and unreachable from fj source; don't
             # build 16M of them for a caller that is not writing a debugging file.
-            labels_resolve(ops, labels, memory_width, fjm_writer, save_wflip_labels=debugging_file_path is not None)
+            labels_resolve(
+                ops, labels, memory_width, fjm_writer, save_wflip_labels=debugging_file_path is not None, pinned=pinned
+            )
 
         assert_first_op_assembled(fjm_writer)
 

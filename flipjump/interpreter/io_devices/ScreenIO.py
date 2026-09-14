@@ -71,8 +71,12 @@ CMD_SET_PALETTE = 0x02
 CMD_UPDATE_SCREEN = 0x03
 CMD_UPDATE_RECTANGLE = 0x04
 CMD_UPDATE_SCREEN_RAW = 0x05
-CMD_UPDATE_SCREEN_REG = 0x06  # fj 1.5.1: hex.vec-2 (register-form) framebuffer, two 4-bit ops/pixel (DESIGN section 2.1)
+CMD_UPDATE_SCREEN_REG = 0x06  # fj 1.5.1: hex.vec-2 (register-form) framebuffer, two 4-bit ops/pixel
 CMD_BEGIN_FRAME_COLLINES = 0x0B  # fj 1.5.1: the column-run-list frame - no framebuffer, see the module docstring
+# fj 1.5.1 window controls. 0x10/0x11 are taken by doom-flipjump's own wire format, so these start at 0x12.
+CMD_SET_WINDOW_TITLE = 0x12  # [0x12] <utf-8 bytes> 0x00 - NUL-terminated, in-stream
+CMD_SET_WINDOW_ICON = 0x13  # [0x13][w][h] then w*h palette indices, in-stream
+ICON_TRANSPARENT_INDEX = 0  # the palette entry drawn as transparent in the window icon
 
 COLLINES_END = 0xFF  # ends the frame (at tag position) or the current column (inside a list)
 COLLINES_DITTO = 0xFE  # inside a list, at tag-follow position: copy the whole previous column
@@ -118,6 +122,9 @@ class InMemoryScreen(IODevice):
         self._bits_count = 0
         self._command_buffer: List[int] = []
 
+        # the 0x12/0x13 window controls, as the program sent them: (title), (w, h, palette indices)
+        self.window_title: Optional[str] = None
+        self.window_icon: Optional[Tuple[int, int, List[int]]] = None
         # 0x0B column-run-list state. _collines_column is None both when the mode is off and
         # when it is on but between columns (expecting a tag), which _in_collines separates.
         self._in_collines = False
@@ -162,6 +169,19 @@ class InMemoryScreen(IODevice):
             return 1 + self.width * self.height
         if command == CMD_BEGIN_FRAME_COLLINES:
             return 1  # bare command; the run-lists that follow are not part of it
+        if command == CMD_SET_WINDOW_TITLE:
+            # NUL-terminated, so the length is not known up front: `_command_length` is consulted
+            # after every byte, so asking for "one more than I have" keeps the buffer filling and
+            # asking for "exactly what I have" fires it
+            buffered = self._command_buffer
+            if len(buffered) > 1 and buffered[-1] == 0x00:
+                return len(buffered)
+            return len(buffered) + 1
+        if command == CMD_SET_WINDOW_ICON:
+            # the dimensions arrive inside the command, so buffer the header first and then extend
+            if len(self._command_buffer) < 3:
+                return 3
+            return 3 + self._command_buffer[1] * self._command_buffer[2]
         raise IODeviceException(f'unknown screen-device command: {command:#x}')
 
     def _handle_byte(self, byte: int) -> None:
@@ -203,6 +223,10 @@ class InMemoryScreen(IODevice):
             )
         elif command == CMD_UPDATE_SCREEN_RAW:
             self._update_screen_raw(payload)
+        elif command == CMD_SET_WINDOW_TITLE:
+            self._set_window_title(bytes(payload[:-1]).decode('utf-8', 'replace'))
+        elif command == CMD_SET_WINDOW_ICON:
+            self._set_window_icon(payload[0], payload[1], list(payload[2:]))
         elif command == CMD_BEGIN_FRAME_COLLINES:
             self._begin_frame_collines()
 
@@ -222,6 +246,16 @@ class InMemoryScreen(IODevice):
             raise IODeviceException('the screen device is not attached to the interpreter memory')
         dw = 2 * self.device_memory.memory_width
         return [self.device_memory.read_data_byte(first_op_bit_address + k * dw) for k in range(count)]
+
+    def _set_window_title(self, text: str) -> None:
+        """Headless: record it, so a test can assert what the program asked for."""
+        self.window_title = text
+
+    def _set_window_icon(self, width: int, height: int, indices: List[int]) -> None:
+        """Headless: record the icon as (w, h, palette indices). The indices are resolved against
+        whatever palette 0x02 registered -- deliberately NOT snapshotted here, so a program may set
+        the icon before or after the palette and get the same picture either way."""
+        self.window_icon = (width, height, list(indices))
 
     def _set_palette(self, palette_bit_address: int) -> None:
         rgb_bytes = self._read_packed_bytes(palette_bit_address, 3 * self.palette_size)
@@ -304,9 +338,7 @@ class InMemoryScreen(IODevice):
                 if column == 0:
                     raise IODeviceException('collines DITTO for column 0 (no left neighbour to copy)')
                 for row in range(self.height):
-                    self.pixel_indices[row * self.width + column] = self.pixel_indices[
-                        row * self.width + column - 1
-                    ]
+                    self.pixel_indices[row * self.width + column] = self.pixel_indices[row * self.width + column - 1]
                 self._collines_column = None
                 return
             if byte > self.height:
@@ -377,8 +409,7 @@ class InMemoryScreen(IODevice):
             # picture. The eager attribute this replaced made that free; the property does not.
             frame_rgb = self.last_frame_rgb
             row_slices = [
-                frame_rgb[row * self.width : (row + 1) * self.width]  # noqa: E203
-                for row in range(self.height)
+                frame_rgb[row * self.width : (row + 1) * self.width] for row in range(self.height)  # noqa: E203
             ]
             rows = b''.join(b'\x00' + b''.join(bytes(rgb) for rgb in row_slice) for row_slice in row_slices)
             png_path = self.frames_dir / f'frame_{self.frame_count - 1:06d}.png'

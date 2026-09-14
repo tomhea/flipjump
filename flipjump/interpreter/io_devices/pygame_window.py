@@ -30,13 +30,15 @@ is not the same as "it is the tested configuration". `_import_pygame` requires `
 which only pygame-ce defines, and names the fix if it is missing.
 """
 
+import os
+import warnings
 from collections import deque
 from pathlib import Path
-from typing import Any, Deque, List, Optional, Tuple
+from typing import Any, Deque, List, Optional, Sequence, Tuple
 
 from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.interpreter.io_devices.KeyboardIO import KeyboardIO, KeyEventSource, ScriptedKeyEventSource
-from flipjump.interpreter.io_devices.ScreenIO import InMemoryScreen
+from flipjump.interpreter.io_devices.ScreenIO import ICON_TRANSPARENT_INDEX, InMemoryScreen
 from flipjump.interpreter.io_devices.device_memory import DeviceMemory
 from flipjump.utils.exceptions import IODeviceException
 
@@ -50,11 +52,22 @@ KEYCODE_CTRL = 0x85
 KEYCODE_ALT = 0x86
 
 # the size of the standalone window opened for a live keyboard that has no interactive screen
+# (`ensure_open_for_input`); a program that sends init_screen opens through `ensure_open` instead
 INPUT_WINDOW_SIZE = (320, 240)
+
+# how tall a program's window OPENS, in screen pixels; the width follows the program's aspect
+# ratio. `pg.SCALED` alone picks the largest integer scale that fits the desktop, which for a
+# small logical surface is a near-fullscreen window. The upscale is nearest-neighbour, so a
+# whole-number factor is crispest (400 or 500 for a 100-row surface); the user can still
+# drag-resize or F11 - SCALED | RESIZABLE stay on.
+WINDOW_HEIGHT = 480
 
 
 def _import_pygame() -> Any:
     try:
+        # pygame prints its version banner to stdout on import, which is the program's own output
+        # channel; this is pygame's supported way to silence it, and must be set before the import
+        os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
         import pygame
     except ImportError as import_error:
         raise IODeviceException(
@@ -111,6 +124,64 @@ class PygameWindow:
         # SCALED scales the small logical surface up to a window-sized one (and handles
         # fullscreen scaling); RESIZABLE lets the user drag-resize.
         self._screen_surface = pg.display.set_mode((width, height), pg.SCALED | pg.RESIZABLE)
+        # width follows the program's aspect, so the picture is scaled but never stretched
+        self._resize_window(max(1, round(WINDOW_HEIGHT * width / height)), WINDOW_HEIGHT)
+
+    def _os_window(self) -> Any:
+        """the OS window behind the display surface (pygame.window.Window).
+
+        `from_display_module` is pygame-ce's only handle to a window that `display.set_mode`
+        created; it is deprecated in favour of building on `pygame.Window` from the start, which
+        is a larger change than this module wants, so the deprecation warning is silenced here."""
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            return self._pygame.window.Window.from_display_module()
+
+    def _resize_window(self, width: int, height: int) -> None:
+        """Shrink the OS window without touching the logical surface - SCALED keeps doing the
+        upscale, so the program still draws into its own width x height.
+
+        Best effort: a video driver that refuses (SDL_VIDEODRIVER=dummy, some remote desktops)
+        keeps pygame's default size rather than failing the run; the program's output does not
+        depend on it."""
+        try:
+            self._os_window().size = (width, height)
+        except self._pygame.error:
+            pass
+
+    def set_title(self, title: str) -> None:
+        """set the caption now and remember it: `ensure_open` re-applies `self._title` whenever it
+        (re)creates the surface, so the title survives a resize"""
+        self._title = title
+        if self._screen_surface is not None:
+            self._pygame.display.set_caption(title)
+
+    def set_icon(
+        self,
+        width: int,
+        height: int,
+        indices: Sequence[int],
+        palette: Sequence[Tuple[int, int, int]],
+        transparent_index: Optional[int] = None,
+    ) -> None:
+        """set the window icon from palette indices, the form the program sends them in.
+        `transparent_index` becomes a colorkey rather than an alpha channel."""
+        pg = self._pygame
+        pg.display.init()
+        surface = pg.Surface((width, height))
+        for y in range(height):
+            row = y * width
+            for x in range(width):
+                idx = indices[row + x]
+                surface.set_at((x, y), palette[idx] if idx < len(palette) else (0, 0, 0))
+        if transparent_index is not None and transparent_index < len(palette):
+            surface.set_colorkey(palette[transparent_index])
+        # `pg.display.set_icon` only takes effect before `set_mode`, and the icon arrives over the
+        # output stream after the window is open, so it goes through the live window
+        try:
+            self._os_window().set_icon(surface)
+        except pg.error:
+            pg.display.set_icon(surface)
 
     def ensure_open_for_input(self) -> None:
         """open a small window (if none is open yet) so SDL can deliver key events - for a
@@ -170,7 +241,8 @@ class PygameWindow:
         frame_surface.set_palette(palette)
         self._blit(frame_surface)
 
-    def _blit(self, frame_surface) -> None:
+    def _blit(self, frame_surface: Any) -> None:
+        assert self._screen_surface is not None
         self._screen_surface.blit(frame_surface, (0, 0))
         self._pygame.display.flip()
 
@@ -201,17 +273,35 @@ class InteractiveScreen(InMemoryScreen):
     def __init__(self, *, frames_dir: Optional[Path] = None, window: Optional[PygameWindow] = None):
         super().__init__(frames_dir=frames_dir)
         self.window = window if window is not None else PygameWindow()
+        self._palette_set = False
 
     def _init_screen(self, width: int, height: int, bpp: int, palette_size: int) -> None:
         super()._init_screen(width, height, bpp, palette_size)
         self.window.ensure_open(width, height)
 
+    def _set_window_title(self, text: str) -> None:
+        super()._set_window_title(text)
+        self.window.set_title(text)
+
+    def _set_window_icon(self, width: int, height: int, indices: List[int]) -> None:
+        super()._set_window_icon(width, height, indices)
+        # if the program set the icon before its palette, `self.palette` is still the init_screen
+        # zero-fill and the icon would be black; it is applied once a palette arrives
+        if self._palette_set:
+            self.window.set_icon(width, height, indices, self.palette, ICON_TRANSPARENT_INDEX)
+
+    def _set_palette(self, palette_bit_address: int) -> None:
+        super()._set_palette(palette_bit_address)
+        self._palette_set = True
+        if self.window_icon is not None:
+            width, height, indices = self.window_icon
+            self.window.set_icon(width, height, indices, self.palette, ICON_TRANSPARENT_INDEX)
+
     def _present(self) -> None:
         super()._present()
         # the INDEXED path: hand SDL the palette indices and let it expand them. `last_frame_rgb`
         # is lazy (see InMemoryScreen), so a windowed run never builds the per-pixel RGB list.
-        self.window.draw_indexed(self.width, self.height,
-                                 bytes(self.pixel_indices), list(self.palette))
+        self.window.draw_indexed(self.width, self.height, bytes(self.pixel_indices), list(self.palette))
         self.window.pump_events()
 
 
