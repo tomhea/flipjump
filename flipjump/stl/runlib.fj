@@ -26,8 +26,8 @@ ns hex {
         // op 2^PTR_CELL_BITS, dbit+PTR_WIDE_BITS sends it to the wide one at op
         // 2^PTR_WIDE_BITS -- so both tables can sit in the same program and each pointer
         // macro picks the one it wants. The two never overlap (256..511 and 65536..131071
-        // at 8 and 16), they share ret_after_read_byte, and one read_byte register serves
-        // both, sized to the wider of the two.
+        // at 8 and 16) and share one read_byte register, sized to the wider -- but NOT a return:
+        // the narrow table ends at ret_after_read_byte, the wide one at ret_after_read_wide.
         //
         // That is the whole point: a narrow read costs exactly what it costs today, and
         // ONLY the sites that actually use hex.read_cell / hex.write_cell pay the wide
