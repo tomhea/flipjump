@@ -70,44 +70,44 @@ ns hex {
         def shl_bit_once dst, next @ switch, xor_by, end {
             wflip dst+w, switch, dst
 
-            // Both tables are written out as plain `a;b` ops, as exact_xor's is, so that the
-            // assembler sees ONE table from the pad to the disarm below and a table pool can
-            // relocate it. `rep` and a nested table macro are the same ops, but invisible to it.
+            // Both tables are written out as plain `a;b` ops, as exact_xor's is, so the assembler
+            // sees a single table from the pad to the disarm below, and a table pool can relocate
+            // it. `rep` and a nested table macro emit the same ops but hide them from it.
             pad 16
           switch:
-            ;xor_by+0*dw                //  0
-            ;xor_by+3*dw                //  1
-            ;xor_by+6*dw                //  2
-            ;xor_by+5*dw                //  3
-            ;xor_by+12*dw               //  4
-            ;xor_by+15*dw               //  5
-            ;xor_by+10*dw               //  6
-            ;xor_by+9*dw                //  7
-            next+dbit+0;xor_by+8*dw     //  8
-            next+dbit+0;xor_by+11*dw    //  9
-            next+dbit+0;xor_by+14*dw    // 10
-            next+dbit+0;xor_by+13*dw    // 11
-            next+dbit+0;xor_by+4*dw     // 12
-            next+dbit+0;xor_by+7*dw     // 13
-            next+dbit+0;xor_by+2*dw     // 14
-            next+dbit+0;xor_by+1*dw     // 15
-          xor_by:          // entry d xors d into dst, top bit first (clean_table_entry__table)
-            ;end                        //  0
-            dst+dbit+0;end              //  1
-            dst+dbit+1;end              //  2
-            dst+dbit+1;xor_by+1*dw      //  3
-            dst+dbit+2;end              //  4
-            dst+dbit+2;xor_by+1*dw      //  5
-            dst+dbit+2;xor_by+2*dw      //  6
-            dst+dbit+2;xor_by+3*dw      //  7
-            dst+dbit+3;end              //  8
-            dst+dbit+3;xor_by+1*dw      //  9
-            dst+dbit+3;xor_by+2*dw      // 10
-            dst+dbit+3;xor_by+3*dw      // 11
-            dst+dbit+3;xor_by+4*dw      // 12
-            dst+dbit+3;xor_by+5*dw      // 13
-            dst+dbit+3;xor_by+6*dw      // 14
-            dst+dbit+3;xor_by+7*dw      // 15
+                       ;xor_by+0*dw   //  0
+                       ;xor_by+3*dw   //  1
+                       ;xor_by+6*dw   //  2
+                       ;xor_by+5*dw   //  3
+                       ;xor_by+12*dw  //  4
+                       ;xor_by+15*dw  //  5
+                       ;xor_by+10*dw  //  6
+                       ;xor_by+9*dw   //  7
+            next+dbit+0;xor_by+8*dw   //  8
+            next+dbit+0;xor_by+11*dw  //  9
+            next+dbit+0;xor_by+14*dw  // 10
+            next+dbit+0;xor_by+13*dw  // 11
+            next+dbit+0;xor_by+4*dw   // 12
+            next+dbit+0;xor_by+7*dw   // 13
+            next+dbit+0;xor_by+2*dw   // 14
+            next+dbit+0;xor_by+1*dw   // 15
+          xor_by:    // entry d xors d into dst, top bit first
+                       ;end           //  0
+             dst+dbit+0;end           //  1
+             dst+dbit+1;end           //  2
+             dst+dbit+1;xor_by+1*dw   //  3
+             dst+dbit+2;end           //  4
+             dst+dbit+2;xor_by+1*dw   //  5
+             dst+dbit+2;xor_by+2*dw   //  6
+             dst+dbit+2;xor_by+3*dw   //  7
+             dst+dbit+3;end           //  8
+             dst+dbit+3;xor_by+1*dw   //  9
+             dst+dbit+3;xor_by+2*dw   // 10
+             dst+dbit+3;xor_by+3*dw   // 11
+             dst+dbit+3;xor_by+4*dw   // 12
+             dst+dbit+3;xor_by+5*dw   // 13
+             dst+dbit+3;xor_by+6*dw   // 14
+             dst+dbit+3;xor_by+7*dw   // 15
 
           end:
             wflip dst+w, switch
@@ -123,44 +123,42 @@ ns hex {
         def shr_bit_once dst, next @ switch, xor_by, end {
             wflip dst+w, switch, dst
 
-            // Both tables are written out as plain `a;b` ops, as exact_xor's is, so that the
-            // assembler sees ONE table from the pad to the disarm below and a table pool can
-            // relocate it. `rep` and a nested table macro are the same ops, but invisible to it.
+            // written out literally, as shl_bit_once's tables are (see there)
             pad 16
           switch:
-            ;xor_by+0*dw                //  0
-            next+dbit+3;xor_by+1*dw     //  1
-            ;xor_by+3*dw                //  2
-            next+dbit+3;xor_by+2*dw     //  3
-            ;xor_by+6*dw                //  4
-            next+dbit+3;xor_by+7*dw     //  5
-            ;xor_by+5*dw                //  6
-            next+dbit+3;xor_by+4*dw     //  7
-            ;xor_by+12*dw               //  8
-            next+dbit+3;xor_by+13*dw    //  9
-            ;xor_by+15*dw               // 10
-            next+dbit+3;xor_by+14*dw    // 11
-            ;xor_by+10*dw               // 12
-            next+dbit+3;xor_by+11*dw    // 13
-            ;xor_by+9*dw                // 14
-            next+dbit+3;xor_by+8*dw     // 15
-          xor_by:          // entry d xors d into dst, top bit first (clean_table_entry__table)
-            ;end                        //  0
-            dst+dbit+0;end              //  1
-            dst+dbit+1;end              //  2
-            dst+dbit+1;xor_by+1*dw      //  3
-            dst+dbit+2;end              //  4
-            dst+dbit+2;xor_by+1*dw      //  5
-            dst+dbit+2;xor_by+2*dw      //  6
-            dst+dbit+2;xor_by+3*dw      //  7
-            dst+dbit+3;end              //  8
-            dst+dbit+3;xor_by+1*dw      //  9
-            dst+dbit+3;xor_by+2*dw      // 10
-            dst+dbit+3;xor_by+3*dw      // 11
-            dst+dbit+3;xor_by+4*dw      // 12
-            dst+dbit+3;xor_by+5*dw      // 13
-            dst+dbit+3;xor_by+6*dw      // 14
-            dst+dbit+3;xor_by+7*dw      // 15
+                       ;xor_by+0*dw   //  0
+            next+dbit+3;xor_by+1*dw   //  1
+                       ;xor_by+3*dw   //  2
+            next+dbit+3;xor_by+2*dw   //  3
+                       ;xor_by+6*dw   //  4
+            next+dbit+3;xor_by+7*dw   //  5
+                       ;xor_by+5*dw   //  6
+            next+dbit+3;xor_by+4*dw   //  7
+                       ;xor_by+12*dw  //  8
+            next+dbit+3;xor_by+13*dw  //  9
+                       ;xor_by+15*dw  // 10
+            next+dbit+3;xor_by+14*dw  // 11
+                       ;xor_by+10*dw  // 12
+            next+dbit+3;xor_by+11*dw  // 13
+                       ;xor_by+9*dw   // 14
+            next+dbit+3;xor_by+8*dw   // 15
+          xor_by:    // entry d xors d into dst, top bit first
+                       ;end           //  0
+             dst+dbit+0;end           //  1
+             dst+dbit+1;end           //  2
+             dst+dbit+1;xor_by+1*dw   //  3
+             dst+dbit+2;end           //  4
+             dst+dbit+2;xor_by+1*dw   //  5
+             dst+dbit+2;xor_by+2*dw   //  6
+             dst+dbit+2;xor_by+3*dw   //  7
+             dst+dbit+3;end           //  8
+             dst+dbit+3;xor_by+1*dw   //  9
+             dst+dbit+3;xor_by+2*dw   // 10
+             dst+dbit+3;xor_by+3*dw   // 11
+             dst+dbit+3;xor_by+4*dw   // 12
+             dst+dbit+3;xor_by+5*dw   // 13
+             dst+dbit+3;xor_by+6*dw   // 14
+             dst+dbit+3;xor_by+7*dw   // 15
 
           end:
             wflip dst+w, switch
