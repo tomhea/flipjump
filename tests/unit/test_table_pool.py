@@ -107,6 +107,20 @@ b: bit.vec 16, 0x0102
 """
 
 
+# every hex digit appears once, so each shift reaches all 16 entries of both of its tables
+SHIFT_PROGRAM = """
+stl.startup_and_init_all
+    hex.shl_bit 16, a
+    hex.shr_bit 16, b
+    hex.print_as_digit 16, a, 0
+    hex.print_as_digit 16, b, 0
+    stl.loop
+a: hex.vec 16, 0xFEDCBA9876543210
+b: hex.vec 16, 0xFEDCBA9876543210
+"""
+SHIFT_MACROS = frozenset({'hex.shifts.shl_bit_once', 'hex.shifts.shr_bit_once'})
+
+
 # --- helpers ---
 
 
@@ -532,6 +546,25 @@ def test_blocked_tables_leave_the_output_unchanged_and_cost_fewer_ops(source: st
     output, ops, placing = blocked(source, tmp_path)
     assert output == reference
     assert placing.allocated > 0 and placing.pinned_words()
+    assert ops < reference_ops
+
+
+def test_the_shift_tables_are_tables_a_pool_can_see(tmp_path: Path) -> None:
+    # shl_bit_once / shr_bit_once dispatch like exact_xor, but built their tables with `rep` and a
+    # nested table macro - the same ops, invisible to relocatable_table_end, so a pool that wanted
+    # them registered none and they paid a full address on every arm
+    reference, reference_ops, _ = build_and_run(SHIFT_PROGRAM, tmp_path, None, name='inline')
+    assert reference == b'fdb97530eca864207f6e5d4c3b2a1908'
+    wants: Callable[[MacroName, str], bool] = lambda macro_name, labels_prefix: (  # noqa: E731
+        macro_name.name in SHIFT_MACROS
+    )
+    counting = BlockPool(W, POOL_BASE, wants=wants)
+    build_and_run(SHIFT_PROGRAM, tmp_path, counting, name='counting')
+    assert sum(counting.counts.values()) == 32  # shl_bit 16 + shr_bit 16, one table per call
+    placing = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths, wants=wants)
+    output, ops, _ = build_and_run(SHIFT_PROGRAM, tmp_path, placing, name='placing')
+    assert output == reference
+    assert placing.allocated == 32 and placing.pinned_words()
     assert ops < reference_ops
 
 
