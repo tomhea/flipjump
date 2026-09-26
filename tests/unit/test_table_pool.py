@@ -623,6 +623,36 @@ def test_eviction_counts_the_hole_hot_first_placement_leaves() -> None:
     assert len(hot.broken_groups) == hot.evicted_low_value == 1  # none lost to placement order
 
 
+def test_eviction_counts_the_holes_among_hot_blocks() -> None:
+    # heat order h1 (1 slot), then h2 (4 slots, aligned to 4): 3 slots stay empty, so 9 one-slot
+    # groups need 17 of 16 slots and one must be evicted by value, not lost to placement order
+    counts = {'h1': 1, 'h2': 4, **{f'n{i}': 1 for i in range(9)}}
+    kwargs = dict(counts=counts, widths={g: 16 for g in counts}, span_bits=16 * 16 * OP_BITS, evict_by_value=True)
+    pool = BlockPool(W, POOL_BASE, heat={'h1': [], 'h2': []}, **kwargs)  # type: ignore[arg-type]
+    assert len(pool.broken_groups) == pool.evicted_low_value == 1
+
+
+def test_eviction_stops_once_the_biggest_block_is_gone() -> None:
+    # `big` (8 slots) is evicted first; that also removes the hole in front of it, so the 9 one-slot
+    # groups then fit: exactly one eviction
+    counts = {'h': 1, 'big': 8, **{f's{i}': 1 for i in range(9)}}
+    kwargs = dict(counts=counts, widths={g: 16 for g in counts}, span_bits=16 * 16 * OP_BITS, evict_by_value=True)
+    pool = BlockPool(W, POOL_BASE, heat={'h': []}, **kwargs)  # type: ignore[arg-type]
+    assert pool.evicted_low_value == 1 and 'big' not in pool.groups and len(pool.groups) == 10
+
+
+def test_eviction_without_heat_keeps_the_plain_sum() -> None:
+    # no list must evict exactly as 1.5.1 does, also where the pool base is not aligned to the
+    # biggest block: the plain sum (15 slots) fits, nothing is evicted, `big` takes its aligned
+    # slot and `q`, `r` are lost to placement order
+    base = POOL_BASE + 16 * OP_BITS
+    counts = {'big': 8, 'q': 3, 'r': 4}
+    pool = BlockPool(
+        W, base, counts=counts, widths={g: 16 for g in counts}, span_bits=16 * 16 * OP_BITS, evict_by_value=True
+    )
+    assert pool.evicted_low_value == 0 and set(pool.groups) == {'big'}
+
+
 def test_hot_groups_are_placed_first_from_the_pool_base() -> None:
     kwargs = dict(counts={'big': 8, 'small': 1}, widths={'big': 16, 'small': 16})
     plain = BlockPool(W, POOL_BASE, **kwargs)  # type: ignore[arg-type]
