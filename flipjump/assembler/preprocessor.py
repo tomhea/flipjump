@@ -7,8 +7,10 @@ macro, and produces the flat op-list that the assembler then resolves into addre
 from __future__ import annotations
 
 import collections
+import re
 import sys
 from typing import Dict, Tuple, Iterable, Iterator, Union, Deque, Set, List, Optional, NoReturn, Callable
+from typing import Mapping, Sequence
 
 from flipjump.interpreter.debugging.macro_usage_graph import show_macro_usage_pie_graph
 from flipjump.utils.constants import (
@@ -58,6 +60,17 @@ RESERVED_BELOW = 1024
 # BlockPool pinned holds `base + value*dw`, so a program that expands one of these must say which
 # cells a pointer can reach (TablePool.pin_exclude) before any word is pinned; see BlockPool.
 RAW_READERS = frozenset({'hex.pointers.read_cell_from_inners_ptrs'})
+
+# a call site's coordinates in a macro-expansion path or a group expression: `f3:l120:` (a program
+# file) or `s1:l40:` (an stl file) - CodePosition.short_str() and its separator
+_SITE_COORDINATES = re.compile(r'(?<![\w.])[fs]\d+:l\d+:')
+
+
+def heat_key(path: str) -> str:
+    """a macro-expansion path (or a group expression) without its call-site coordinates. A heat list
+    names sites and groups this way, so a site keeps its heat when lines above it move; sites that
+    then share a key are told apart by the order the program reaches them (BlockPool's `heat`)."""
+    return _SITE_COORDINATES.sub('', path)
 
 
 class TablePool:
@@ -156,9 +169,15 @@ class TablePool:
         return True if self._wants is None else self._wants(macro_name, labels_prefix)
 
     def reserve(
-        self, ops_alignment: int, table_ops: int, group: Optional[str] = None, group_expr: Optional[Expr] = None
+        self,
+        ops_alignment: int,
+        table_ops: int,
+        group: Optional[str] = None,
+        group_expr: Optional[Expr] = None,
+        labels_prefix: str = '',
     ) -> Optional[Tuple[int, bool, int]]:
-        """(address, starts_a_new_run, gap_ops) for a table of `table_ops` ops.
+        """(address, starts_a_new_run, gap_ops) for a table of `table_ops` ops. `labels_prefix` is the
+        table's macro-expansion path (only BlockPool's `heat` reads it).
 
         The SIZE is passed in rather than discovered afterwards, because a table may be bigger than
         the run it would start in -- `hex.cmp`'s is 31 ops behind a `pad 4` -- and a table that
@@ -263,6 +282,13 @@ class BlockPool(TablePool):
 
     Blocks are power-of-two sized and aligned to their own size, so the base has no bits where the
     index goes and the arming XOR adds rather than subtracts.
+
+    PIN PROTECTION (`heat`, opt-in). Two things re-roll a hot word's cost when the program changes:
+    its group can lose its block (and so its pin), and indices follow ENCOUNTER order, so the
+    cheapest ones go to whichever code the program happens to reach first, not to the hottest
+    tables. A profile's heat list fixes both for the groups it names: a hot group is never evicted,
+    raises if it gets no block, and is always pinned; and in each slot width its k-th listed site
+    gets the k-th cheapest index (see _hot_index).
     """
 
     def __init__(
@@ -282,6 +308,7 @@ class BlockPool(TablePool):
         width_hist: Optional[Dict[str, Dict[int, int]]] = None,
         width_buckets: bool = False,
         wants: Optional[Callable[[MacroName, str], bool]] = None,
+        heat: Optional[Mapping[str, Sequence[Tuple[str, int, int]]]] = None,
     ):
         super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits, wants=wants)
         self.counts = {} if counts is None else dict(counts)
@@ -336,7 +363,21 @@ class BlockPool(TablePool):
         self.spread = max(1, spread)
         self.spread_min_count = spread_min_count
         self._cheap_index_cache: Dict[int, List[int]] = {}
+        # pin protection: {heat_key(group): [(heat_key(site path), occurrence, slot_ops), ...]}, each
+        # group's hot sites hottest first; `occurrence` numbers the sites that share a key, in the
+        # order the program reaches them. None (the default) changes nothing.
+        self.heat = heat
+        self.hot_sites: Dict[str, Dict[Tuple[str, int], Tuple[int, int]]] = {}  # group -> site -> (width, rank)
+        self.hot_ranks: Dict[Tuple[str, int], int] = {}  # (group, width) -> ranks reserved for its sites
+        self._hot_seen: Dict[Tuple[str, str], int] = {}  # (group, site) -> occurrences reached so far
+        self._hot_next: Dict[Tuple[str, int], int] = {}  # (group, width) -> unlisted tables so far
+        self.hot_missing: List[str] = []  # listed groups this program does not have
+        self.hot_ambiguous: List[str] = []  # listed keys that name two of its groups
+        self.hot_sites_matched = 0
+        self.hot_sites_width_changed = 0
         if not self.counting:
+            if heat:
+                self._resolve_heat(heat)
             self._preallocate()
 
     def canonical_alias(self, labels: LabelsDict) -> Dict[str, str]:
@@ -357,13 +398,75 @@ class BlockPool(TablePool):
                 alias[group] = first
         return alias
 
-    def _cheap_indices(self, slots: int, need: int) -> List[int]:
-        """the `need` lowest-popcount indices inside a block of `slots`, cheapest first"""
+    def _cheapest_order(self, slots: int) -> List[int]:
+        """every index of a block of `slots`, lowest popcount first (cached and shared: read only)"""
         cached = self._cheap_index_cache.get(slots)
         if cached is None:
             cached = sorted(range(slots), key=lambda v: (bin(v).count('1'), v))
             self._cheap_index_cache[slots] = cached
-        return cached[:need]
+        return cached
+
+    def _cheap_indices(self, slots: int, need: int) -> List[int]:
+        """the `need` lowest-popcount indices inside a block of `slots`, cheapest first"""
+        return self._cheapest_order(slots)[:need]
+
+    def _resolve_heat(self, heat: Mapping[str, Sequence[Tuple[str, int, int]]]) -> None:
+        """match the heat list's groups to this program's and rank each group's sites per width"""
+        by_key: Dict[str, List[str]] = {}
+        for group in self.counts:
+            by_key.setdefault(heat_key(group), []).append(group)
+        for key, sites in heat.items():
+            groups = by_key.get(key, [])
+            if len(groups) != 1:
+                (self.hot_ambiguous if groups else self.hot_missing).append(key)
+                continue
+            group = groups[0]
+            ranked: Dict[Tuple[str, int], Tuple[int, int]] = {}
+            for site, occurrence, slot_ops in sites:
+                if (site, occurrence) in ranked:
+                    raise FlipJumpPreprocessorException(
+                        f'pin protection: the heat list names {site!r} #{occurrence} of {key} twice'
+                    )
+                width = slot_ops if self.width_buckets else 0  # uniform slots are all one width
+                rank = self.hot_ranks.get((group, width), 0)
+                ranked[(site, occurrence)] = (width, rank)
+                self.hot_ranks[(group, width)] = rank + 1
+            self.hot_sites[group] = ranked
+
+    def _hot_index(self, group: str, width: int, slots: int, labels_prefix: str) -> Optional[int]:
+        """A table's index in a HOT group (None: this width is full).
+
+        A listed site takes the cheapest index its rank reserved; every other table takes the next
+        one after all the reserved ranks. Both are positions in ONE cheapest-first order of the
+        block's slots and the two ranges are disjoint, so no two tables share a slot, and a listed
+        site the program no longer has only leaves its index unused.
+        """
+        site = heat_key(labels_prefix)
+        occurrence = self._hot_seen.get((group, site), 0)
+        self._hot_seen[(group, site)] = occurrence + 1
+        listed = self.hot_sites[group].get((site, occurrence))
+        if listed is not None and listed[0] != width:
+            self.hot_sites_width_changed += 1  # its table changed width since the profile
+            listed = None
+        if listed is not None:
+            self.hot_sites_matched += 1
+            rank = listed[1]
+        else:
+            unlisted = self._hot_next.get((group, width), 0)
+            self._hot_next[(group, width)] = unlisted + 1
+            rank = self.hot_ranks.get((group, width), 0) + unlisted
+        return self._cheapest_order(slots)[rank] if rank < slots else None
+
+    def heat_report(self) -> Dict[str, int]:
+        """what the heat list found in this program"""
+        return {
+            'hot_groups': len(self.hot_sites),
+            'hot_groups_missing': len(self.hot_missing),
+            'hot_groups_ambiguous': len(self.hot_ambiguous),
+            'hot_sites_listed': sum(len(sites) for sites in self.hot_sites.values()),
+            'hot_sites_matched': self.hot_sites_matched,
+            'hot_sites_width_changed': self.hot_sites_width_changed,
+        }
 
     def _bucket_layout(self, group: str) -> Tuple[Dict[int, Tuple[int, int, int]], int]:
         """{slot_ops -> (offset_bits_within_block, slots, count)}, total_block_bits.
@@ -448,7 +551,8 @@ class BlockPool(TablePool):
             capacity = limit - self.pool_base
             demand = sum(bits.values())
             if demand > capacity:
-                for group in sorted(keep, key=lambda g: (self.counts.get(g, 1) / bits[g], g)):
+                evictable = keep - set(self.hot_sites)  # a hot group is never evicted
+                for group in sorted(evictable, key=lambda g: (self.counts.get(g, 1) / bits[g], g)):
                     if demand <= capacity:
                         break
                     keep.discard(group)
@@ -467,6 +571,11 @@ class BlockPool(TablePool):
             self._next_index[group] = 0
             cursor = base + block_bits
         self._used = cursor - self.pool_base
+        lost = sorted(group for group in self.hot_sites if group not in self.groups)
+        if lost:
+            raise FlipJumpPreprocessorException(
+                f'pin protection: {len(lost)} hot group(s) got no block - the pool is full: {lost[:3]}'
+            )
 
     def _decline(self, group: str, cause: str) -> None:
         """a table the pass cannot place. Except for a group that got no block at all, this breaks
@@ -482,7 +591,12 @@ class BlockPool(TablePool):
             self.broken_groups.add(group)
 
     def reserve(
-        self, ops_alignment: int, table_ops: int, group: Optional[str] = None, group_expr: Optional[Expr] = None
+        self,
+        ops_alignment: int,
+        table_ops: int,
+        group: Optional[str] = None,
+        group_expr: Optional[Expr] = None,
+        labels_prefix: str = '',
     ) -> Optional[Tuple[int, bool, int]]:
         if group is None:
             self.ungrouped += 1  # no disarm wflip found: cannot be blocked
@@ -501,24 +615,31 @@ class BlockPool(TablePool):
             self._decline(group, 'no_block')  # no block was reserved for it (see _preallocate)
             return None
         if self.width_buckets:
-            return self._reserve_bucketed(ops_alignment, table_ops, group, group_expr)
+            return self._reserve_bucketed(ops_alignment, table_ops, group, group_expr, labels_prefix)
         slots, slot_bits = self._uniform_shape(group)
         if table_ops * self.op_bits > slot_bits or ops_alignment * self.op_bits > slot_bits:
             self._decline(group, 'too_wide')  # wider than the counting pass saw
             return None
-        index = self._next_index[group]
-        count = self.counts.get(group, 1)
-        if self.spread > 1 and count >= self.spread_min_count:
-            # an overflow table must decline, never fall back to a raw index: the cheap-index list
-            # is a subset of range(slots), so a raw index past its end can collide with a mapped
-            # one already handed out (two tables at one address)
-            if index >= count:
+        if group in self.hot_sites:
+            hot = self._hot_index(group, 0, slots, labels_prefix)
+            if hot is None:
                 self._decline(group, 'overflow')
                 return None
-            index = self._cheap_indices(slots, count)[index]
-        if index >= slots:
-            self._decline(group, 'overflow')  # more tables than the counting pass saw
-            return None
+            index = hot
+        else:
+            index = self._next_index[group]
+            count = self.counts.get(group, 1)
+            if self.spread > 1 and count >= self.spread_min_count:
+                # an overflow table must decline, never fall back to a raw index: the cheap-index
+                # list is a subset of range(slots), so a raw index past its end can collide with a
+                # mapped one already handed out (two tables at one address)
+                if index >= count:
+                    self._decline(group, 'overflow')
+                    return None
+                index = self._cheap_indices(slots, count)[index]
+            if index >= slots:
+                self._decline(group, 'overflow')  # more tables than the counting pass saw
+                return None
         base, previous_expr = self.groups[group]
         self.groups[group] = (base, group_expr if group_expr is not None else previous_expr)
         self._next_index[group] = self._next_index[group] + 1
@@ -528,7 +649,7 @@ class BlockPool(TablePool):
         return address, True, 0  # its own segment; blocks are sparse by construction
 
     def _reserve_bucketed(
-        self, ops_alignment: int, table_ops: int, group: str, group_expr: Optional[Expr]
+        self, ops_alignment: int, table_ops: int, group: str, group_expr: Optional[Expr], labels_prefix: str = ''
     ) -> Optional[Tuple[int, bool, int]]:
         """`reserve` for width-bucketed blocks: the table picks the sub-block matching ITS width.
 
@@ -549,16 +670,23 @@ class BlockPool(TablePool):
         offset, slots, bucket_count = entry
         key = (group, slot_ops)
         raw = self._bucket_next.get(key, 0)
-        index = raw
-        total_count = self.counts.get(group, 1)
-        if self.spread > 1 and total_count >= self.spread_min_count:
-            if raw >= bucket_count:  # same rule as the uniform path: decline, never a raw index
+        if group in self.hot_sites:
+            hot = self._hot_index(group, slot_ops, slots, labels_prefix)
+            if hot is None:
                 self._decline(group, 'overflow')
                 return None
-            index = self._cheap_indices(slots, bucket_count)[raw]
-        if index >= slots:
-            self._decline(group, 'overflow')
-            return None
+            index = hot
+        else:
+            index = raw
+            total_count = self.counts.get(group, 1)
+            if self.spread > 1 and total_count >= self.spread_min_count:
+                if raw >= bucket_count:  # same rule as the uniform path: decline, never a raw index
+                    self._decline(group, 'overflow')
+                    return None
+                index = self._cheap_indices(slots, bucket_count)[raw]
+            if index >= slots:
+                self._decline(group, 'overflow')
+                return None
         base, previous_expr = self.groups[group]
         self.groups[group] = (base, group_expr if group_expr is not None else previous_expr)
         self._bucket_next[key] = raw + 1
@@ -574,15 +702,16 @@ class BlockPool(TablePool):
         """{source-word Expr: block base} - the caller resolves the Expr once labels are known.
 
         Groups that failed to place every table are EXCLUDED (see broken_groups) unless
-        `pin_broken` is set. The arithmetic says an inline table survives pinning - the word rests
-        at `value*dw ^ base`, an inline table at `A` is armed with `A ^ base`, and
-        `(value*dw ^ base) ^ (A ^ base)` is `A + value*dw` - so a declined table then pays a worse
-        popcount rather than becoming unreachable; the exclusion is the conservative default.
+        `pin_broken` is set, or the group is hot (`heat`). The arithmetic says an inline table
+        survives pinning - the word rests at `value*dw ^ base`, an inline table at `A` is armed with
+        `A ^ base`, and `(value*dw ^ base) ^ (A ^ base)` is `A + value*dw` - so a declined table then
+        pays a worse popcount rather than becoming unreachable; the exclusion is the conservative
+        default.
         """
         return {
             expr: base
             for group, (base, expr) in self.groups.items()
-            if expr is not None and (self.pin_broken or group not in self.broken_groups)
+            if expr is not None and (self.pin_broken or group in self.hot_sites or group not in self.broken_groups)
         }
 
 
@@ -747,7 +876,7 @@ class PreprocessorData:
         if group_expr is not None and self._is_runtime_word(group_expr):
             pool.reserved_words += 1
             return False
-        reserved = pool.reserve(ops_alignment, table_ops, group, group_expr)
+        reserved = pool.reserve(ops_alignment, table_ops, group, group_expr, labels_prefix)
         if reserved is None:
             return False
         address, starts_new_run, gap_ops = reserved
