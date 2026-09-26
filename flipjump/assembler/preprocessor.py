@@ -582,8 +582,9 @@ class BlockPool(TablePool):
             # something is dropped either way; dropping by ascending tables-per-bit spends the pool
             # on the groups with the most dispatch sites (`counts` counts SITES, not calls)
             capacity = limit - self.pool_base
-            # the demand is where the layout would END: the plain sum of the blocks when they are
-            # placed biggest first, but hot-first placement can leave holes (see the docstring)
+            # with hot groups the demand is where the layout would END (hot-first placement can
+            # leave holes, see the docstring); with no list it stays 1.5.1's plain sum, byte for
+            # byte, even where an unaligned pool base makes the layout end later
             hot_end = self.pool_base
             for group in self.hot_sites:
                 hot_end = -(-hot_end // bits[group]) * bits[group] + bits[group]
