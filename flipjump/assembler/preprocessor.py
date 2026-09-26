@@ -9,8 +9,21 @@ from __future__ import annotations
 import collections
 import re
 import sys
-from typing import Dict, Tuple, Iterable, Iterator, Union, Deque, Set, List, Optional, NoReturn, Callable
-from typing import Mapping, Sequence
+from typing import (
+    Dict,
+    Tuple,
+    Iterable,
+    Iterator,
+    Union,
+    Deque,
+    Set,
+    List,
+    Optional,
+    NoReturn,
+    Callable,
+    Mapping,
+    Sequence,
+)
 
 from flipjump.interpreter.debugging.macro_usage_graph import show_macro_usage_pie_graph
 from flipjump.utils.constants import (
@@ -286,9 +299,11 @@ class BlockPool(TablePool):
     PIN PROTECTION (`heat`, opt-in). Two things re-roll a hot word's cost when the program changes:
     its group can lose its block (and so its pin), and indices follow ENCOUNTER order, so the
     cheapest ones go to whichever code the program happens to reach first, not to the hottest
-    tables. A profile's heat list fixes both for the groups it names: a hot group is never evicted,
-    raises if it gets no block, and is always pinned; and in each slot width its k-th listed site
-    gets the k-th cheapest index (see _hot_index).
+    tables. A profile's heat list fixes both for the groups it names: hot groups are placed FIRST,
+    in heat order, from pool_base (so no new group moves them, and their bases stay low - a writer
+    that jumps outside the block, or arms a declined table, flips `V ^ base`); a hot group is never
+    evicted, raises if it gets no block, and is always pinned; and in each slot width its k-th
+    listed site gets the k-th cheapest index (see _hot_index).
     """
 
     def __init__(
@@ -366,7 +381,6 @@ class BlockPool(TablePool):
         # pin protection: {heat_key(group): [(heat_key(site path), occurrence, slot_ops), ...]}, each
         # group's hot sites hottest first; `occurrence` numbers the sites that share a key, in the
         # order the program reaches them. None (the default) changes nothing.
-        self.heat = heat
         self.hot_sites: Dict[str, Dict[Tuple[str, int], Tuple[int, int]]] = {}  # group -> site -> (width, rank)
         self.hot_ranks: Dict[Tuple[str, int], int] = {}  # (group, width) -> ranks reserved for its sites
         self._hot_seen: Dict[Tuple[str, str], int] = {}  # (group, site) -> occurrences reached so far
@@ -433,18 +447,26 @@ class BlockPool(TablePool):
                 self.hot_ranks[(group, width)] = rank + 1
             self.hot_sites[group] = ranked
 
-    def _hot_index(self, group: str, width: int, slots: int, labels_prefix: str) -> Optional[int]:
+    def _hot_site(self, group: str, labels_prefix: str) -> Tuple[str, int]:
+        """(site key, occurrence) of the table being reserved in a hot group. Counted for EVERY
+        table, before anything can decline it, because the heat list numbers occurrences over every
+        table the counting pass saw, a too-wide one included."""
+        site = heat_key(labels_prefix)
+        occurrence = self._hot_seen.get((group, site), 0)
+        self._hot_seen[(group, site)] = occurrence + 1
+        return site, occurrence
+
+    def _hot_index(self, group: str, width: int, slots: int, site: Tuple[str, int]) -> Optional[int]:
         """A table's index in a HOT group (None: this width is full).
 
         A listed site takes the cheapest index its rank reserved; every other table takes the next
         one after all the reserved ranks. Both are positions in ONE cheapest-first order of the
-        block's slots and the two ranges are disjoint, so no two tables share a slot, and a listed
-        site the program no longer has only leaves its index unused.
+        block's slots and the two ranges are disjoint, so no two tables share a slot. A listed site
+        the program no longer has leaves its index unused, and since each width is sized for its
+        tables PLUS its reserved ranks (_uniform_shape, _bucket_layout), that never pushes a table
+        out.
         """
-        site = heat_key(labels_prefix)
-        occurrence = self._hot_seen.get((group, site), 0)
-        self._hot_seen[(group, site)] = occurrence + 1
-        listed = self.hot_sites[group].get((site, occurrence))
+        listed = self.hot_sites[group].get(site)
         if listed is not None and listed[0] != width:
             self.hot_sites_width_changed += 1  # its table changed width since the profile
             listed = None
@@ -498,7 +520,8 @@ class BlockPool(TablePool):
             spread = self.spread if (self.spread > 1 and total_count >= self.spread_min_count) else 1
             sized: Dict[int, Tuple[int, int]] = {}
             for slot_ops, count in buckets.items():
-                slots = (1 << max(0, (count - 1).bit_length())) * spread
+                need = count + self.hot_ranks.get((group, slot_ops), 0)  # a hot width holds its ranks too
+                slots = (1 << max(0, (need - 1).bit_length())) * spread
                 sized[slot_ops] = (slots, slots * slot_ops * self.op_bits)
             offset = 0
             for slot_ops in sorted(sized, key=lambda k: (-sized[k][1], -k)):
@@ -520,7 +543,8 @@ class BlockPool(TablePool):
         """(slots, slot_bits) for a group -- both powers of two, so index*slot_bits is a clean
         bit field and the arming XOR adds rather than subtracts."""
         count = self.counts.get(group, 1)
-        slots = 1 << max(0, (count - 1).bit_length())
+        need = count + self.hot_ranks.get((group, 0), 0)  # a hot group holds its reserved ranks too
+        slots = 1 << max(0, (need - 1).bit_length())
         if self.spread > 1 and count >= self.spread_min_count:
             slots *= self.spread
         width = min(max(self.widths.get(group, 16), 1), self.max_slot_ops)
@@ -528,7 +552,8 @@ class BlockPool(TablePool):
         return slots, slot_ops * self.op_bits
 
     def _preallocate(self) -> None:
-        """Assign every block a base up front, BIGGEST FIRST.
+        """Assign every block a base up front: the hot groups first, in heat order, then the rest
+        BIGGEST FIRST.
 
         Blocks are power-of-two sized and aligned to their own size, so allocating them in
         encounter order leaves a hole in front of each one, up to a whole block's worth; in
@@ -560,7 +585,9 @@ class BlockPool(TablePool):
                     self.evicted_low_value += 1
                     demand -= bits[group]
 
-        order = sorted(keep, key=lambda g: (-bits[g], g))
+        order = [g for g in self.hot_sites if g in keep] + sorted(
+            (g for g in keep if g not in self.hot_sites), key=lambda g: (-bits[g], g)
+        )
         for group in order:
             block_bits = bits[group]
             base = -(-cursor // block_bits) * block_bits
@@ -611,17 +638,18 @@ class BlockPool(TablePool):
             hist = self.width_hist.setdefault(group, {})
             hist[width] = hist.get(width, 0) + 1
             return None  # the counting pass must not change the layout
+        hot_site = self._hot_site(group, labels_prefix) if group in self.hot_sites else None
         if group not in self.groups:
             self._decline(group, 'no_block')  # no block was reserved for it (see _preallocate)
             return None
         if self.width_buckets:
-            return self._reserve_bucketed(ops_alignment, table_ops, group, group_expr, labels_prefix)
+            return self._reserve_bucketed(ops_alignment, table_ops, group, group_expr, hot_site)
         slots, slot_bits = self._uniform_shape(group)
         if table_ops * self.op_bits > slot_bits or ops_alignment * self.op_bits > slot_bits:
             self._decline(group, 'too_wide')  # wider than the counting pass saw
             return None
-        if group in self.hot_sites:
-            hot = self._hot_index(group, 0, slots, labels_prefix)
+        if hot_site is not None:
+            hot = self._hot_index(group, 0, slots, hot_site)
             if hot is None:
                 self._decline(group, 'overflow')
                 return None
@@ -649,7 +677,12 @@ class BlockPool(TablePool):
         return address, True, 0  # its own segment; blocks are sparse by construction
 
     def _reserve_bucketed(
-        self, ops_alignment: int, table_ops: int, group: str, group_expr: Optional[Expr], labels_prefix: str = ''
+        self,
+        ops_alignment: int,
+        table_ops: int,
+        group: str,
+        group_expr: Optional[Expr],
+        hot_site: Optional[Tuple[str, int]] = None,
     ) -> Optional[Tuple[int, bool, int]]:
         """`reserve` for width-bucketed blocks: the table picks the sub-block matching ITS width.
 
@@ -670,8 +703,8 @@ class BlockPool(TablePool):
         offset, slots, bucket_count = entry
         key = (group, slot_ops)
         raw = self._bucket_next.get(key, 0)
-        if group in self.hot_sites:
-            hot = self._hot_index(group, slot_ops, slots, labels_prefix)
+        if hot_site is not None:
+            hot = self._hot_index(group, slot_ops, slots, hot_site)
             if hot is None:
                 self._decline(group, 'overflow')
                 return None

@@ -504,7 +504,8 @@ def test_hot_sites_rank_within_their_width_bucket() -> None:
     )
     pool = BlockPool(W, POOL_BASE, heat={'g': [('b', 0, 16), ('a', 0, 64)]}, **kwargs)  # type: ignore[arg-type]
     wide, narrow = 64 * OP_BITS, 16 * OP_BITS
-    narrow_bucket = 2 * wide  # the 64-op bucket is laid out first (layout biggest first)
+    # each width holds its 2 tables plus its 1 reserved rank: 4 slots; the 64-op bucket comes first
+    narrow_bucket = 4 * wide
     got = [
         pool.reserve(16, width, group='g', group_expr=Expr('g'), labels_prefix=site)
         for site, width in (('f1:l1:x', 64), ('f1:l2:a', 64), ('f1:l3:y', 16), ('f1:l4:b', 16))
@@ -517,6 +518,64 @@ def test_hot_sites_rank_within_their_width_bucket() -> None:
     ]
 
 
+def test_three_listed_sites_take_three_distinct_cheapest_indices() -> None:
+    heat = {'g': [('a', 0, 16), ('b', 0, 16), ('c', 0, 16)]}
+    pool = BlockPool(W, POOL_BASE, counts={'g': 4}, widths={'g': 16}, heat=heat)
+    # 4 tables + 3 reserved ranks -> 8 slots, cheapest first 0, 1, 2, 4, 3, ...
+    assert _place(pool, ['f1:l1:c', 'f1:l2:x', 'f1:l3:b', 'f1:l4:a']) == {
+        'f1:l1:c': 2,
+        'f1:l2:x': 4,
+        'f1:l3:b': 1,
+        'f1:l4:a': 0,
+    }
+
+
+def test_a_listed_site_whose_width_changed_is_placed_as_unlisted() -> None:
+    # `a` was profiled as a 16-op table and is now 64 ops wide; `c` is listed at 64 ops. Taking `a`'s
+    # old rank in the 64-op width would put it in `c`'s slot.
+    pool = BlockPool(
+        W,
+        POOL_BASE,
+        counts={'g': 3},
+        widths={'g': 64},
+        width_hist={'g': {64: 2, 16: 1}},
+        width_buckets=True,
+        max_slot_ops=512,
+        heat={'g': [('a', 0, 16), ('c', 0, 64)]},
+    )
+    got = {
+        site: pool.reserve(16, width, group='g', group_expr=Expr('g'), labels_prefix=f'f1:l{line}:{site}')
+        for line, (site, width) in enumerate((('a', 64), ('c', 64), ('b', 16)))
+    }
+    assert got['a'] == (POOL_BASE + 64 * OP_BITS, True, 0)  # unlisted in its new width: after `c`'s rank
+    assert got['c'] == (POOL_BASE, True, 0)
+    assert pool.hot_sites_width_changed == 1 and pool.hot_sites_matched == 1
+
+
+def test_occurrences_count_the_tables_that_decline() -> None:
+    # the counting pass saw both tables, so the heat list numbers the 16-op one as occurrence 1
+    pool = BlockPool(W, POOL_BASE, counts={'g': 2}, widths={'g': 64}, heat={'g': [('site', 1, 16)]})
+    assert pool.reserve(16, 64, group='g', group_expr=Expr('g'), labels_prefix='f1:l1:site') is None  # too wide
+    assert pool.reserve(16, 16, group='g', group_expr=Expr('g'), labels_prefix='f1:l2:site') == (POOL_BASE, True, 0)
+    assert pool.hot_sites_matched == 1
+
+
+def test_a_listed_site_the_program_lost_pushes_no_table_out() -> None:
+    sites = [f'f1:l{line}:t' for line in range(4)]
+    for heat in (None, {'g': [('gone', 0, 16)]}):
+        pool = BlockPool(W, POOL_BASE, counts={'g': 4}, widths={'g': 16}, heat=heat)
+        assert sorted(_place(pool, sites).values()) == ([0, 1, 2, 3] if heat is None else [1, 2, 3, 4])
+        assert pool.declined == 0 and not pool.broken_groups
+
+
+def test_hot_groups_are_placed_first_from_the_pool_base() -> None:
+    kwargs = dict(counts={'big': 8, 'small': 1}, widths={'big': 16, 'small': 16})
+    plain = BlockPool(W, POOL_BASE, **kwargs)  # type: ignore[arg-type]
+    assert plain.groups['big'][0] == POOL_BASE  # biggest first
+    hot = BlockPool(W, POOL_BASE, heat={'small': [('h', 0, 16)]}, **kwargs)  # type: ignore[arg-type]
+    assert hot.groups['small'][0] == POOL_BASE and hot.groups['big'][0] > POOL_BASE
+
+
 def test_sites_that_share_a_key_are_told_apart_by_occurrence() -> None:
     # two calls of one macro on different lines strip to one key; the heat list names the second
     pool = BlockPool(W, POOL_BASE, counts={'g': 2}, widths={'g': 16}, heat={'g': [('site', 1, 16)]})
@@ -527,17 +586,17 @@ def test_a_hot_group_is_pinned_even_when_it_breaks() -> None:
     kwargs = dict(counts={'g': 2}, widths={'g': 16})
     for heat, pinned in ((None, False), ({'g': [('h', 0, 16)]}, True)):
         pool = BlockPool(W, POOL_BASE, heat=heat, **kwargs)  # type: ignore[arg-type]
-        for line in range(3):  # 2 slots: the third table overflows and breaks the group
+        for line in range(5):  # at most 4 slots (2 counted + 1 reserved rank): the fifth overflows
             pool.reserve(16, 16, group='g', group_expr=Expr('g'), labels_prefix=f'f1:l{line}:t')
         assert pool.broken_groups == {'g'}
         assert bool(pool.pinned_words()) == pinned
 
 
 def test_a_hot_group_that_gets_no_block_raises() -> None:
-    kwargs = dict(counts={'a': 1, 'g': 2}, widths={'a': 16, 'g': 16}, span_bits=2 * 16 * OP_BITS)
-    assert 'a' in BlockPool(W, POOL_BASE, **kwargs).broken_groups  # type: ignore[arg-type]  # silent without heat
+    kwargs = dict(counts={'a': 1, 'g': 2}, widths={'a': 16, 'g': 16}, span_bits=16 * OP_BITS)
+    assert 'g' in BlockPool(W, POOL_BASE, **kwargs).broken_groups  # type: ignore[arg-type]  # silent without heat
     with pytest.raises(FlipJumpPreprocessorException, match='pin protection'):
-        BlockPool(W, POOL_BASE, heat={'a': [('h', 0, 16)]}, **kwargs)  # type: ignore[arg-type]
+        BlockPool(W, POOL_BASE, heat={'g': [('h', 0, 16)]}, **kwargs)  # type: ignore[arg-type]
 
 
 def test_eviction_never_drops_a_hot_group() -> None:
@@ -600,6 +659,7 @@ def test_a_heat_ordered_program_is_the_same_program_in_fewer_ops(tmp_path: Path)
     # the busiest group's LAST table, which encounter order hands its dearest index
     group = max(counting.counts, key=lambda g: (counting.counts[g], g))
     last_site = heat_key([site for g, site in counting.sites if g == group][-1])
+    assert last_site.endswith('hex.exact_xor(5)')  # a real table's path, not an empty one
     occurrence = sum(1 for g, site in counting.sites if g == group and heat_key(site) == last_site) - 1
     placing = BlockPool(
         W,
