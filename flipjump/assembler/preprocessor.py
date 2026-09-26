@@ -520,8 +520,10 @@ class BlockPool(TablePool):
             spread = self.spread if (self.spread > 1 and total_count >= self.spread_min_count) else 1
             sized: Dict[int, Tuple[int, int]] = {}
             for slot_ops, count in buckets.items():
+                slots = (1 << max(0, (count - 1).bit_length())) * spread
                 need = count + self.hot_ranks.get((group, slot_ops), 0)  # a hot width holds its ranks too
-                slots = (1 << max(0, (need - 1).bit_length())) * spread
+                while slots < need:  # double only when they do not fit: a spread width has room
+                    slots *= 2
                 sized[slot_ops] = (slots, slots * slot_ops * self.op_bits)
             offset = 0
             for slot_ops in sorted(sized, key=lambda k: (-sized[k][1], -k)):
@@ -543,10 +545,12 @@ class BlockPool(TablePool):
         """(slots, slot_bits) for a group -- both powers of two, so index*slot_bits is a clean
         bit field and the arming XOR adds rather than subtracts."""
         count = self.counts.get(group, 1)
-        need = count + self.hot_ranks.get((group, 0), 0)  # a hot group holds its reserved ranks too
-        slots = 1 << max(0, (need - 1).bit_length())
+        slots = 1 << max(0, (count - 1).bit_length())
         if self.spread > 1 and count >= self.spread_min_count:
             slots *= self.spread
+        need = count + self.hot_ranks.get((group, 0), 0)  # a hot group holds its reserved ranks too
+        while slots < need:  # double only when they do not fit: a spread group has room
+            slots *= 2
         width = min(max(self.widths.get(group, 16), 1), self.max_slot_ops)
         slot_ops = 1 << max(0, (width - 1).bit_length())
         return slots, slot_ops * self.op_bits

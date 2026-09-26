@@ -568,6 +568,20 @@ def test_a_listed_site_the_program_lost_pushes_no_table_out() -> None:
         assert pool.declined == 0 and not pool.broken_groups
 
 
+def test_a_hot_width_grows_only_when_its_ranks_do_not_fit() -> None:
+    # 300 tables with spread 2 own 1,024 slots, so 300 reserved ranks (600 in all) fit and the block
+    # keeps its size; sizing the next power of two of 600 before the spread would double it
+    kwargs = dict(counts={'g': 300}, widths={'g': 16}, spread=2, spread_min_count=256)
+    plain = BlockPool(W, POOL_BASE, **kwargs)  # type: ignore[arg-type]
+    heat = {'g': [(f's{i}', 0, 16) for i in range(300)]}
+    hot = BlockPool(W, POOL_BASE, heat=heat, **kwargs)  # type: ignore[arg-type]
+    assert hot._block_bits('g') == plain._block_bits('g')
+    # 4 tables own 4 slots: 3 more ranks do not fit, so the block doubles
+    small = BlockPool(W, POOL_BASE, counts={'g': 4}, widths={'g': 16})
+    grown = BlockPool(W, POOL_BASE, counts={'g': 4}, widths={'g': 16}, heat={'g': [(s, 0, 16) for s in 'abc']})
+    assert grown._block_bits('g') == 2 * small._block_bits('g')
+
+
 def test_hot_groups_are_placed_first_from_the_pool_base() -> None:
     kwargs = dict(counts={'big': 8, 'small': 1}, widths={'big': 16, 'small': 16})
     plain = BlockPool(W, POOL_BASE, **kwargs)  # type: ignore[arg-type]
