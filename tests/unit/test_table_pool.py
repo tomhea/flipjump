@@ -582,6 +582,47 @@ def test_a_hot_width_grows_only_when_its_ranks_do_not_fit() -> None:
     assert grown._block_bits('g') == 2 * small._block_bits('g')
 
 
+def test_a_hot_bucket_grows_only_when_its_ranks_do_not_fit() -> None:
+    # the width-bucket layout, which doom builds with: the same rule, width by width
+    kwargs = dict(
+        counts={'g': 300},
+        widths={'g': 16},
+        width_hist={'g': {16: 300}},
+        width_buckets=True,
+        max_slot_ops=512,
+        spread=2,
+        spread_min_count=256,
+    )
+    plain = BlockPool(W, POOL_BASE, **kwargs)  # type: ignore[arg-type]
+    heat = {'g': [(f's{i}', 0, 16) for i in range(300)]}
+    hot = BlockPool(W, POOL_BASE, heat=heat, **kwargs)  # type: ignore[arg-type]
+    assert hot._block_bits('g') == plain._block_bits('g')
+
+
+def test_a_bucket_pool_group_without_a_histogram_keeps_room_for_its_ranks() -> None:
+    # width buckets on, but no width histogram for the group: its layout falls back to the uniform
+    # shape, which must still find the ranks the bucket mode keyed by width
+    pool = BlockPool(W, POOL_BASE, counts={'g': 4}, widths={'g': 16}, width_buckets=True, heat={'g': [('gone', 0, 16)]})
+    sites = [f'f1:l{line}:t' for line in range(4)]
+    assert sorted(_place(pool, sites).values()) == [1, 2, 3, 4]
+    assert pool.declined == 0 and not pool.broken_groups
+
+
+def test_eviction_counts_the_hole_hot_first_placement_leaves() -> None:
+    # 16 slots; `h` first leaves a hole in front of `big` (8 slots, aligned to 8), so the plain
+    # sum of 14 slots fits and the layout does not. Every group lost must be one evicted by value.
+    kwargs = dict(
+        counts={'h': 1, 'big': 8, 'mid': 4, 'low': 1},
+        widths={'h': 16, 'big': 16, 'mid': 16, 'low': 16},
+        span_bits=16 * 16 * OP_BITS,
+        evict_by_value=True,
+    )
+    assert set(BlockPool(W, POOL_BASE, **kwargs).groups) == {'h', 'big', 'mid', 'low'}  # type: ignore[arg-type]
+    hot = BlockPool(W, POOL_BASE, heat={'h': [('x', 0, 16)]}, **kwargs)  # type: ignore[arg-type]
+    assert 'h' in hot.groups
+    assert len(hot.broken_groups) == hot.evicted_low_value == 1  # none lost to placement order
+
+
 def test_hot_groups_are_placed_first_from_the_pool_base() -> None:
     kwargs = dict(counts={'big': 8, 'small': 1}, widths={'big': 16, 'small': 16})
     plain = BlockPool(W, POOL_BASE, **kwargs)  # type: ignore[arg-type]
@@ -600,7 +641,9 @@ def test_a_hot_group_is_pinned_even_when_it_breaks() -> None:
     kwargs = dict(counts={'g': 2}, widths={'g': 16})
     for heat, pinned in ((None, False), ({'g': [('h', 0, 16)]}, True)):
         pool = BlockPool(W, POOL_BASE, heat=heat, **kwargs)  # type: ignore[arg-type]
-        for line in range(5):  # at most 4 slots (2 counted + 1 reserved rank): the fifth overflows
+        # 2 tables counted: with no list the third overflows; with one (2 + 1 rank -> 4 slots,
+        # rank 0 kept for `h`) the fourth does
+        for line in range(5):
             pool.reserve(16, 16, group='g', group_expr=Expr('g'), labels_prefix=f'f1:l{line}:t')
         assert pool.broken_groups == {'g'}
         assert bool(pool.pinned_words()) == pinned
@@ -626,7 +669,14 @@ def test_heat_names_are_matched_without_coordinates_and_reported() -> None:
     pool = BlockPool(W, POOL_BASE, counts=counts, widths={g: 16 for g in counts}, heat=heat)
     assert set(pool.hot_sites) == {'((f2:l7:x + 64) + 32)'}
     assert pool.hot_missing == ['(gone + 32)'] and pool.hot_ambiguous == ['(twice + 32)']
-    assert pool.heat_report()['hot_groups'] == 1
+    assert pool.heat_report() == {
+        'hot_groups': 1,
+        'hot_groups_missing': 1,
+        'hot_groups_ambiguous': 1,
+        'hot_sites_listed': 1,
+        'hot_sites_matched': 0,
+        'hot_sites_width_changed': 0,
+    }
 
 
 def test_the_heat_list_may_not_name_a_site_twice() -> None:

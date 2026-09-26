@@ -545,14 +545,16 @@ class BlockPool(TablePool):
         """(slots, slot_bits) for a group -- both powers of two, so index*slot_bits is a clean
         bit field and the arming XOR adds rather than subtracts."""
         count = self.counts.get(group, 1)
+        width = min(max(self.widths.get(group, 16), 1), self.max_slot_ops)
+        slot_ops = 1 << max(0, (width - 1).bit_length())
         slots = 1 << max(0, (count - 1).bit_length())
         if self.spread > 1 and count >= self.spread_min_count:
             slots *= self.spread
-        need = count + self.hot_ranks.get((group, 0), 0)  # a hot group holds its reserved ranks too
+        # a hot group holds its reserved ranks too; bucket mode (whose group without a width
+        # histogram lands here) keys them by the slot width, uniform mode by 0
+        need = count + self.hot_ranks.get((group, slot_ops if self.width_buckets else 0), 0)
         while slots < need:  # double only when they do not fit: a spread group has room
             slots *= 2
-        width = min(max(self.widths.get(group, 16), 1), self.max_slot_ops)
-        slot_ops = 1 << max(0, (width - 1).bit_length())
         return slots, slot_ops * self.op_bits
 
     def _preallocate(self) -> None:
@@ -562,8 +564,10 @@ class BlockPool(TablePool):
         Blocks are power-of-two sized and aligned to their own size, so allocating them in
         encounter order leaves a hole in front of each one, up to a whole block's worth; in
         descending size each block lands on an address the previous ones already aligned past.
-        Doing it here rather than during expansion also makes allocation independent of the order
-        macros are reached, which two assemblies of the same program need in order to agree.
+        Hot-first placement can therefore leave holes among the hot blocks and one in front of the
+        biggest block after them, and `evict_by_value` counts them. Doing it here rather than
+        during expansion also makes allocation independent of the order macros are reached, which
+        two assemblies of the same program need in order to agree.
         """
         bits = {g: self._block_bits(g) for g in self.counts}
         cursor = self.pool_base
@@ -578,16 +582,32 @@ class BlockPool(TablePool):
             # something is dropped either way; dropping by ascending tables-per-bit spends the pool
             # on the groups with the most dispatch sites (`counts` counts SITES, not calls)
             capacity = limit - self.pool_base
-            demand = sum(bits.values())
-            if demand > capacity:
+            # the demand is where the layout would END: the plain sum of the blocks when they are
+            # placed biggest first, but hot-first placement can leave holes (see the docstring)
+            hot_end = self.pool_base
+            for group in self.hot_sites:
+                hot_end = -(-hot_end // bits[group]) * bits[group] + bits[group]
+            sizes = collections.Counter(bits[g] for g in keep if g not in self.hot_sites)
+            rest = sum(size * n for size, n in sizes.items())
+
+            def demand() -> int:
+                if not self.hot_sites:
+                    return rest
+                biggest = max(sizes) if sizes else 1
+                return -(-hot_end // biggest) * biggest + rest - self.pool_base
+
+            if demand() > capacity:
                 evictable = keep - set(self.hot_sites)  # a hot group is never evicted
                 for group in sorted(evictable, key=lambda g: (self.counts.get(g, 1) / bits[g], g)):
-                    if demand <= capacity:
+                    if demand() <= capacity:
                         break
                     keep.discard(group)
                     self.broken_groups.add(group)  # same contract as a no-room break
                     self.evicted_low_value += 1
-                    demand -= bits[group]
+                    rest -= bits[group]
+                    sizes[bits[group]] -= 1
+                    if not sizes[bits[group]]:
+                        del sizes[bits[group]]
 
         order = [g for g in self.hot_sites if g in keep] + sorted(
             (g for g in keep if g not in self.hot_sites), key=lambda g: (-bits[g], g)
