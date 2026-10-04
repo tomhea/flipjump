@@ -22,7 +22,18 @@ finished picture as COLUMN RUN-LISTS and the device holds nothing but a fill cur
   inside a list, byte pairs [y2][colour] fill rows [cursor, y2) of that column with palette
   index colour and move the cursor to y2, so a column is written top-down and never revisited;
          0xFF      ends the column (the tail below the cursor keeps last frame's pixels)
-         0xFE      DITTO - copy column x-1 wholesale, the run-list's one compression form
+         0xFE      DITTO - copy column x-1 wholesale, and end the column
+         0xFD y    PARTIAL DITTO - copy rows [cursor, y) of column x-1 into column x; cursor = y;
+                   the list continues (pairs, another token, or 0xFF)
+         0xFC y    KEEP - leave rows [cursor, y) as they are (last frame's pixels, or what an earlier
+                   record wrote this frame); cursor = y; the list continues
+  so a column may be [x][0xFD][y][pairs...][0xFF] (its top copied from the left neighbour) or
+  [x][0xFC][y][pairs...][0xFF] (an overlay below row y). the rules: a y2 or a token's y must lie in
+  [cursor, height]; the two dittos need a left neighbour (not column 0); KEEP needs none.
+  0xFD and 0xFC exist ONLY on a screen of at most 0xFB (251) rows (COLLINES_TOKENS_MAX_HEIGHT): there
+  neither byte can be a legal y2 (y2 <= height), so no stream that decoded before the tokens changes
+  meaning. on a taller screen they keep their old reading - a plain y2 (0xFC on a 252-row screen) or
+  the "past the screen" error. (0xFF/0xFE are recognised at every height, so no y2 is ever 0xFE/0xFF.)
 the cursor only moves forward, which is what lets the device be this dumb: the program has
 already resolved occlusion by the time a run is emitted. a screen must be initialized first
 (0x01) - the column/row bounds come from it.
@@ -80,6 +91,10 @@ ICON_TRANSPARENT_INDEX = 0  # the palette entry drawn as transparent in the wind
 
 COLLINES_END = 0xFF  # ends the frame (at tag position) or the current column (inside a list)
 COLLINES_DITTO = 0xFE  # inside a list, at tag-follow position: copy the whole previous column
+# inside a list, where a y2 is expected, on a screen of at most COLLINES_TOKENS_MAX_HEIGHT rows only:
+COLLINES_PARTIAL_DITTO = 0xFD  # [0xFD][y]: copy rows [cursor, y) from column x-1; cursor = y; list continues
+COLLINES_KEEP = 0xFC  # [0xFC][y]: leave rows [cursor, y) as they are; cursor = y; list continues
+COLLINES_TOKENS_MAX_HEIGHT = 0xFB  # the tallest screen on which 0xFC/0xFD cannot be a legal y2
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
@@ -131,6 +146,7 @@ class InMemoryScreen(IODevice):
         self._collines_column: Optional[int] = None
         self._collines_row = 0
         self._collines_y2: Optional[int] = None  # a y2 byte awaiting its colour mate
+        self._collines_token: Optional[int] = None  # a 0xFD/0xFC token awaiting its row byte
 
     def attach_memory(self, device_memory: DeviceMemory) -> None:
         self.device_memory = device_memory
@@ -314,6 +330,7 @@ class InMemoryScreen(IODevice):
         self._collines_column = None
         self._collines_row = 0
         self._collines_y2 = None
+        self._collines_token = None
 
     def _handle_collines_byte(self, byte: int) -> None:
         """one byte of a 0x0B frame. see the module docstring for the grammar."""
@@ -325,9 +342,27 @@ class InMemoryScreen(IODevice):
             if byte >= self.width:
                 raise IODeviceException(f'collines column {byte} is outside the {self.width}-column screen')
             self._collines_column, self._collines_row, self._collines_y2 = byte, 0, None
+            self._collines_token = None
             return
 
-        if self._collines_y2 is None:  # at a y2 byte, a ditto, or the column's end
+        if self._collines_token is not None:  # the row byte of a PARTIAL DITTO / KEEP
+            token, self._collines_token = self._collines_token, None
+            name = 'PARTIAL DITTO' if token == COLLINES_PARTIAL_DITTO else 'KEEP'
+            if byte > self.height:
+                raise IODeviceException(f'collines {name} to row {byte}, past the {self.height}-row screen')
+            if byte < self._collines_row:
+                raise IODeviceException(
+                    f'collines {name} to row {byte}, behind the fill cursor at {self._collines_row}'
+                    ' (the cursor only moves forward)'
+                )
+            if token == COLLINES_PARTIAL_DITTO:
+                column, width = self._collines_column, self.width
+                for row in range(self._collines_row, byte):
+                    self.pixel_indices[row * width + column] = self.pixel_indices[row * width + column - 1]
+            self._collines_row = byte  # KEEP writes nothing: the rows keep what they hold
+            return
+
+        if self._collines_y2 is None:  # at a y2 byte, a ditto, a PARTIAL DITTO / KEEP, or the column's end
             if byte == COLLINES_END:
                 self._collines_column = None
                 return
@@ -340,6 +375,12 @@ class InMemoryScreen(IODevice):
                 for row in range(self.height):
                     self.pixel_indices[row * self.width + column] = self.pixel_indices[row * self.width + column - 1]
                 self._collines_column = None
+                return
+            if byte in (COLLINES_PARTIAL_DITTO, COLLINES_KEEP) and self.height <= COLLINES_TOKENS_MAX_HEIGHT:
+                # on a taller screen the byte keeps its old reading (a y2) - see the module docstring
+                if byte == COLLINES_PARTIAL_DITTO and self._collines_column == 0:
+                    raise IODeviceException('collines PARTIAL DITTO for column 0 (no left neighbour to copy)')
+                self._collines_token = byte
                 return
             if byte > self.height:
                 raise IODeviceException(f'collines run ends at row {byte}, past the {self.height}-row screen')
