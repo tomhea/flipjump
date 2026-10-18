@@ -2069,15 +2069,18 @@ def _group_offsets(pool: BlockPool, spec: Sequence[Tuple[str, int, int]], addres
     return out
 
 
+@pytest.mark.parametrize('scan', [None, 1], ids=['window-64', 'window-1'])
 @pytest.mark.parametrize('mutant', [None, 'whole_slot_zero_only'])
 def test_pack_layouts_of_random_pools_keep_every_index_and_overlap_nothing(
-    mutant: Optional[str], monkeypatch: pytest.MonkeyPatch
+    mutant: Optional[str], scan: Optional[int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """seeded random pools (as the one-pass property test, without evict_by_value, which pack refuses): with
     `pack`, every table keeps its offset inside its block - so every arm flips what it flips without pack -
     every block base is aligned to its block's size, no two tables overlap, and the blocks never end later
     than without pack. R9: a pack whose model of a block's used slots is wrong (only its first slot) must be
     caught by the overlap check."""
+    if scan is not None:  # the search window at its narrowest: still a valid layout, only a longer one
+        monkeypatch.setattr(preprocessor._FreeSpace, 'SCAN', scan)
     if mutant:
         real = BlockPool._used_slots
         monkeypatch.setattr(BlockPool, '_used_slots', lambda self, group: real(self, group)[:1])
@@ -2113,12 +2116,13 @@ def test_pack_layouts_of_random_pools_keep_every_index_and_overlap_nothing(
             if index not in tables.inline
         )
         overlaps += sum(end > start for (_, end), (start, _) in zip(taken, taken[1:]))
-        assert packed._used <= plain._used
+        if scan is None:
+            assert packed._used <= plain._used
         smaller += packed._used < plain._used
     if mutant:
         assert overlaps > 0, 'the overlap check passed a pack that ignores its blocks used slots'
     else:
-        assert overlaps == 0 and smaller >= 20, (overlaps, smaller)
+        assert overlaps == 0 and smaller >= (20 if scan is None else 1), (overlaps, smaller)
 
 
 @pytest.mark.parametrize('layout', list(ONE_PASS_LAYOUTS))

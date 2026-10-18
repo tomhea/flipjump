@@ -12,6 +12,7 @@ import dataclasses
 import re
 import sys
 from array import array
+from itertools import islice
 from typing import (
     Any,
     Dict,
@@ -481,7 +482,16 @@ class TablePool:
 
 class _FreeSpace:
     """`pack`'s free list: disjoint [lo, hi) bit intervals, kept by the bit length of their size so a
-    search skips every interval too short to hold a block"""
+    search skips every interval too short to hold a block.
+
+    A search reads at most SCAN intervals of each size class (lowest first): one long enough may still
+    hold no aligned base, and on a 63K-group census an unbounded scan of such intervals cost 64 of the
+    layout's 67 seconds. A block that finds none in the window goes to a larger class or higher up -
+    the layout stays a pure function of the census. Measured on doom-flipjump's E1M2 census (spread 1
+    and 2): the same extents to the word as the unbounded search, in 2 s and 5 s instead of 73 s and
+    203 s."""
+
+    SCAN = 64
 
     def __init__(self, lo: int, hi: int) -> None:
         self.by_size: Dict[int, List[Tuple[int, int]]] = {}
@@ -502,7 +512,7 @@ class _FreeSpace:
         for size in sorted(self.by_size):
             if size < need.bit_length():
                 continue  # every interval of this size class is shorter than `need`
-            for lo, hi in self.by_size[size]:
+            for lo, hi in islice(self.by_size[size], self.SCAN):
                 if best is not None and lo >= best[0]:
                     break
                 base = -(-lo // align) * align
