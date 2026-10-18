@@ -6,6 +6,7 @@ macro, and produces the flat op-list that the assembler then resolves into addre
 
 from __future__ import annotations
 
+import bisect
 import collections
 import dataclasses
 import re
@@ -478,6 +479,39 @@ class TablePool:
         resolved into the binary. A plain pool has no use for them."""
 
 
+class _FreeSpace:
+    """`pack`'s free list: disjoint [lo, hi) bit intervals, kept by the bit length of their size so a
+    search skips every interval too short to hold a block"""
+
+    def __init__(self, lo: int, hi: int) -> None:
+        self.by_size: Dict[int, List[Tuple[int, int]]] = {}
+        self.give(lo, hi)
+
+    def give(self, lo: int, hi: int) -> None:
+        if hi > lo:
+            bisect.insort(self.by_size.setdefault((hi - lo).bit_length(), []), (lo, hi))
+
+    def take(self, lo: int, hi: int) -> None:
+        intervals = self.by_size[(hi - lo).bit_length()]
+        intervals.pop(bisect.bisect_left(intervals, (lo, hi)))
+
+    def find(self, need: int, align: int) -> Optional[Tuple[int, int, int]]:
+        """(base, lo, hi): the lowest `align`-aligned base with [base, base + need) inside one free
+        interval [lo, hi), or None"""
+        best: Optional[Tuple[int, int, int]] = None
+        for size in sorted(self.by_size):
+            if size < need.bit_length():
+                continue  # every interval of this size class is shorter than `need`
+            for lo, hi in self.by_size[size]:
+                if best is not None and lo >= best[0]:
+                    break
+                base = -(-lo // align) * align
+                if base + need <= hi:
+                    best = (base, lo, hi)
+                    break
+        return best
+
+
 class BlockPool(TablePool):
     """Give every table dispatched through ONE jump word a block, so the arm flips an INDEX.
 
@@ -612,6 +646,7 @@ class BlockPool(TablePool):
         merge_aliases: bool = False,
         overflow_base: Optional[int] = None,
         unblocked: Optional[Sequence[str]] = None,
+        pack: bool = False,
     ):
         """
         (see TablePool for memory_width, pool_base, span_bits and wants, and the class docstring)
@@ -630,6 +665,11 @@ class BlockPool(TablePool):
         or its wflip area.
         @param unblocked: with counts - groups to leave without a block (BlockCensus.unblocked: what
         a one-pass pool sized from its own census left out to make room for its overflow region).
+        @param pack: lay the blocks out by the slots their tables USE (see _layout_packed): a block keeps
+        its size, its alignment and every table's index - so every arm flips what it flips without
+        pack - but the space inside it that no table of its own uses (a bucket's tail, the
+        power-of-two round-up, the slots the cheapest-index order skips) holds other, smaller blocks.
+        Only where blocks sit changes. Off by default: the layout is unchanged.
         """
         if merge_aliases and not (one_pass and counts is None):
             raise ValueError(
@@ -644,6 +684,8 @@ class BlockPool(TablePool):
             raise ValueError('overflow_base: the program starts at 0, the overflow region must be above it')
         if unblocked and counts is None:
             raise ValueError('unblocked: only a pool given counts leaves groups of them without a block')
+        if pack and evict_by_value:
+            raise ValueError('pack: evict_by_value prices blocks by their whole size; the two are not combined')
         super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits, wants=wants)
         self.counts = {} if counts is None else dict(counts)
         # a slot must hold the BIGGEST table of its group (`hex.cmp`'s is 31 ops behind a `pad 4`),
@@ -658,6 +700,7 @@ class BlockPool(TablePool):
         # the widest table (see _bucket_layout)
         self.width_buckets = width_buckets
         self._layout_cache: Dict[str, Tuple[Dict[int, Tuple[int, int, int]], int]] = {}
+        self._pack_runs: Dict[str, Dict[int, Tuple[int, List[Tuple[int, int]]]]] = {}
         self._bucket_next: Dict[Tuple[str, int], int] = {}
         # ONE PASS (opt-in): tables are deferred during the expansion and placed after it (see the
         # class docstring); with no counts the blocks are sized from that expansion's own census
@@ -717,6 +760,8 @@ class BlockPool(TablePool):
         # bit) before allocating, instead of whichever groups the biggest-first cursor reaches last
         self.evict_by_value = evict_by_value
         self.evicted_low_value = 0
+        # opt-in: blocks share the space their own tables leave unused (_layout_packed)
+        self.pack = pack
         # opt-in: pin a group even though some of its tables were declined (see pinned_words)
         self.pin_broken = pin_broken
         self.groups: Dict[str, Tuple[int, Optional[Expr]]] = {}  # group -> (base, source-word Expr)
@@ -896,6 +941,7 @@ class BlockPool(TablePool):
                 ranked[(site, occurrence)] = (width, rank)
                 self.hot_ranks[(group, width)] = rank + 1
             self.hot_sites[group] = ranked
+        self._pack_runs.clear()
 
     def _hot_site(self, group: str, labels_prefix: str) -> Tuple[str, int]:
         """(site key, occurrence) of the table being reserved in a hot group. Counted for EVERY
@@ -1024,6 +1070,8 @@ class BlockPool(TablePool):
     ) -> Tuple[Dict[str, int], List[str], int]:
         """({group: base} of the blocks in `order` that fit below `limit`, the groups that do not, and
         the end of the last block placed): each block aligned to its own size, from pool_base up"""
+        if self.pack:
+            return self._layout_packed(order, bits, limit)
         cursor = self.pool_base
         bases: Dict[str, int] = {}
         unfit: List[str] = []
@@ -1036,6 +1084,92 @@ class BlockPool(TablePool):
             bases[group] = base
             cursor = base + block_bits
         return bases, unfit, cursor
+
+    def _bucket_runs(self, group: str) -> Dict[int, Tuple[int, List[Tuple[int, int]]]]:
+        """{slot_ops: (bucket offset in bits, [(lo, hi) index runs its tables can take])} - the model
+        `pack` lays out by and holds `reserve` to (_pack_refuses). Per bucket (one implicit bucket on the
+        uniform path): a hot group takes the first `count + ranks` of the cheapest-first order (its
+        listed sites their ranks, the others after them: _hot_index); a spread group the first `count`
+        of it; every other group the raw indices 0 .. count-1, one run."""
+        cached = self._pack_runs.get(group)
+        if cached is not None:
+            return cached
+        ob = self.op_bits
+        if self.width_buckets:
+            layout = self._bucket_layout(group)[0]
+        else:
+            n_slots, slot_bits = self._uniform_shape(group)
+            layout = {slot_bits // ob: (0, n_slots, self.counts.get(group, 1))}
+        spread = self.spread > 1 and self.counts.get(group, 1) >= self.spread_min_count
+        hot = group in self.hot_sites
+        result: Dict[int, Tuple[int, List[Tuple[int, int]]]] = {}
+        for slot_ops, (offset, slots, count) in layout.items():
+            if hot or spread:
+                ranks = self.hot_ranks.get((group, slot_ops if self.width_buckets else 0), 0) if hot else 0
+                used = sorted(self._cheapest_order(slots)[: count + ranks])
+                runs: List[Tuple[int, int]] = []
+                start = prev = used[0]
+                for index in used[1:]:
+                    if index != prev + 1:
+                        runs.append((start, prev + 1))
+                        start = index
+                    prev = index
+                runs.append((start, prev + 1))
+            else:
+                runs = [(0, count)]
+            result[slot_ops] = (offset, runs)
+        self._pack_runs[group] = result
+        return result
+
+    def _used_slots(self, group: str) -> List[Tuple[int, int]]:
+        """[(lo, hi)] bit offsets inside `group`'s block its tables can occupy, sorted (_bucket_runs)"""
+        ob = self.op_bits
+        out = [
+            (offset + lo * slot_ops * ob, offset + hi * slot_ops * ob)
+            for slot_ops, (offset, runs) in self._bucket_runs(group).items()
+            for lo, hi in runs
+        ]
+        out.sort()
+        return out
+
+    def _pack_refuses(self, group: str, slot_ops: int, index: int) -> bool:
+        """pack: a table whose index lies outside its group's modelled runs (counts that are stale - more
+        tables than the census) must decline: another block may sit in that slot"""
+        if not self.pack:
+            return False
+        entry = self._bucket_runs(group).get(slot_ops)
+        return entry is None or not any(lo <= index < hi for lo, hi in entry[1])
+
+    def _layout_packed(
+        self, order: Sequence[str], bits: Mapping[str, int], limit: int
+    ) -> Tuple[Dict[str, int], List[str], int]:
+        """`_layout` for `pack`: each block, in `order`, at the LOWEST base aligned to its own size whose
+        [base, base + end of its used slots) is free; then only its used slots are taken - the space
+        between them, and above them up to the block's size, goes back to the free list for the blocks
+        after it. A table keeps its index, so its address is `base + the same offset`, and no two blocks'
+        used slots overlap (each is placed inside free space). The end is the highest used bit."""
+        free = _FreeSpace(self.pool_base, limit)
+        bases: Dict[str, int] = {}
+        unfit: List[str] = []
+        end = self.pool_base
+        for group in order:
+            runs = self._used_slots(group)
+            need = runs[-1][1]
+            found = free.find(need, bits[group])
+            if found is None:
+                unfit.append(group)
+                continue
+            base, lo, hi = found
+            free.take(lo, hi)
+            free.give(lo, base)
+            cursor = base
+            for run_lo, run_hi in runs:
+                free.give(cursor, base + run_lo)
+                cursor = base + run_hi
+            free.give(base + need, hi)
+            bases[group] = base
+            end = max(end, base + need)
+        return bases, unfit, end
 
     def _preallocate(self, unblocked: Collection[str] = ()) -> None:
         """Assign every block a base up front: the hot groups first, in heat order, then the rest
@@ -1175,6 +1309,9 @@ class BlockPool(TablePool):
                 self._decline(group, 'overflow')
                 return None
             index = hot
+            if self._pack_refuses(group, slot_bits // self.op_bits, index):
+                self._decline(group, 'overflow')
+                return None
         else:
             index = self._next_index[group]
             count = self.counts.get(group, 1)
@@ -1186,7 +1323,7 @@ class BlockPool(TablePool):
                     self._decline(group, 'overflow')
                     return None
                 index = self._cheap_indices(slots, count)[index]
-            if index >= slots:
+            if index >= slots or self._pack_refuses(group, slot_bits // self.op_bits, index):
                 self._decline(group, 'overflow')  # more tables than the counting pass saw
                 return None
         base, previous_expr = self.groups[group]
@@ -1230,6 +1367,9 @@ class BlockPool(TablePool):
                 self._decline(group, 'overflow')
                 return None
             index = hot
+            if self._pack_refuses(group, slot_ops, index):
+                self._decline(group, 'overflow')
+                return None
         else:
             index = raw
             total_count = self.counts.get(group, 1)
@@ -1238,7 +1378,7 @@ class BlockPool(TablePool):
                     self._decline(group, 'overflow')
                     return None
                 index = self._cheap_indices(slots, bucket_count)[raw]
-            if index >= slots:
+            if index >= slots or self._pack_refuses(group, slot_ops, index):
                 self._decline(group, 'overflow')
                 return None
         base, previous_expr = self.groups[group]
@@ -1317,6 +1457,7 @@ class BlockPool(TablePool):
                 recording.counts, recording.widths, recording.width_hist, self.alias
             )
             self._layout_cache.clear()
+            self._pack_runs.clear()
         if self._heat:
             self._resolve_heat(self._heat)
         if self.sizes_from_census and self.overflow_base is None:

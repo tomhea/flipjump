@@ -2055,3 +2055,102 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
     extra_label, site = two_labels - one_label, with_site - one_label
     print(f'deferred table: {one_label:.1f} B, a 2nd label +{extra_label:.1f} B, a site +{site:.1f} B')
     assert one_label < 64 and extra_label < 24 and site < 16
+
+
+# ── pack: blocks share the space their own tables leave unused ──────────────────────────────────────────────
+
+
+def _group_offsets(pool: BlockPool, spec: Sequence[Tuple[str, int, int]], addresses: Sequence[int]) -> List[int]:
+    """each table's offset from its group's block base (-1: it got no block)"""
+    out = []
+    for (group, _, _), address in zip(spec, addresses):
+        group = pool.alias.get(group, group)
+        out.append(address - pool.groups[group][0] if address and group in pool.groups else -1)
+    return out
+
+
+@pytest.mark.parametrize('mutant', [None, 'whole_slot_zero_only'])
+def test_pack_layouts_of_random_pools_keep_every_index_and_overlap_nothing(
+    mutant: Optional[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """seeded random pools (as the one-pass property test, without evict_by_value, which pack refuses): with
+    `pack`, every table keeps its offset inside its block - so every arm flips what it flips without pack -
+    every block base is aligned to its block's size, no two tables overlap, and the blocks never end later
+    than without pack. R9: a pack whose model of a block's used slots is wrong (only its first slot) must be
+    caught by the overlap check."""
+    if mutant:
+        real = BlockPool._used_slots
+        monkeypatch.setattr(BlockPool, '_used_slots', lambda self, group: real(self, group)[:1])
+    rng = random.Random(3691)  # nosec B311 -- a seeded test fixture, not security
+    overlaps = smaller = 0
+    for _ in range(200):
+        groups = [f'g{i}' for i in range(rng.randint(1, 30))]
+        spec: List[Tuple[str, int, int]] = []
+        for group in groups:
+            shapes = rng.sample(PROPERTY_SHAPES, rng.randint(1, 2))
+            count = min(400, max(1, int(rng.paretovariate(1.2) * rng.choice([1, 2, 4]))))
+            spec += [(group, *rng.choice(shapes)) for _ in range(count)]
+        rng.shuffle(spec)
+        options: Dict[str, Any] = {
+            'spread': rng.choice([1, 2]),
+            'spread_min_count': rng.choice([4, 256]),
+            'width_buckets': rng.random() < 0.5,
+            'max_slot_ops': rng.choice([16, 32, 64]),
+        }
+        if rng.random() < 0.3:
+            hot = rng.choice(groups)
+            options['heat'] = {
+                hot: [('', occurrence, rng.choice([8, 16, 32])) for occurrence in range(rng.randint(0, 2))]
+            }
+        plain, plain_addresses, _ = _one_pass_placed(spec, **options)
+        packed, addresses, tables = _one_pass_placed(spec, pack=True, **options)
+        assert not packed.unblocked and not packed.overflowed and not plain.unblocked
+        assert _group_offsets(packed, spec, addresses) == _group_offsets(plain, spec, plain_addresses)
+        assert all(base % packed._block_bits(group) == 0 for group, (base, _) in packed.groups.items())
+        taken = sorted(
+            (address, address + ops * OP_BITS)
+            for index, ((_, _, ops), address) in enumerate(zip(spec, addresses))
+            if index not in tables.inline
+        )
+        overlaps += sum(end > start for (_, end), (start, _) in zip(taken, taken[1:]))
+        assert packed._used <= plain._used
+        smaller += packed._used < plain._used
+    if mutant:
+        assert overlaps > 0, 'the overlap check passed a pack that ignores its blocks used slots'
+    else:
+        assert overlaps == 0 and smaller >= 20, (overlaps, smaller)
+
+
+@pytest.mark.parametrize('layout', list(ONE_PASS_LAYOUTS))
+@pytest.mark.parametrize('case', list(ONE_PASS_CASES))
+def test_pack_builds_a_program_that_runs_like_the_inline_one(tmp_path: Path, case: str, layout: str) -> None:
+    """a packed one-pass build: the same output as the program with its tables inline, every table at
+    its unpacked offset from its block's base, and a pool no bigger"""
+    source, case_kwargs = ONE_PASS_CASES[case]
+    kwargs = {**case_kwargs, **ONE_PASS_LAYOUTS[layout]}
+    reference, _, _ = build_and_run(source, tmp_path, None, name='inline')
+    plain = BlockPool(W, POOL_BASE, one_pass=True, **kwargs)
+    plain_output, plain_ops, _ = build_and_run(source, tmp_path, plain, name='plain')
+    packed = BlockPool(W, POOL_BASE, one_pass=True, pack=True, **kwargs)
+    output, ops, _ = build_and_run(source, tmp_path, packed, name='packed')
+    assert output == plain_output == reference
+    assert packed.deferred == plain.deferred > 0 and packed.overflowed == packed.declined == 0
+    assert packed._used <= plain._used
+    for group in plain.groups:
+        assert packed._bucket_layout(group) == plain._bucket_layout(group)
+
+
+def test_pack_declines_a_table_outside_its_groups_model() -> None:
+    """stale counts: a group counted at 3 tables (a 4-slot block) but offered 4 - the fourth index lies
+    outside the slots pack modelled (another block may sit there), so it is declined; unpacked, the
+    block's spare slot takes it"""
+    for packed in (False, True):
+        pool = BlockPool(W, POOL_BASE, counts={'a': 3, 'b': 1}, widths={'a': 16, 'b': 16}, pack=packed)
+        got = [pool.reserve(16, 16, 'a', Expr('a'), '') for _ in range(4)]
+        assert all(got[:3])
+        assert (got[3] is None) == packed and pool.declined_overflow == int(packed)
+
+
+def test_pack_is_refused_with_evict_by_value() -> None:
+    with pytest.raises(ValueError, match='pack'):
+        BlockPool(W, POOL_BASE, counts={'a': 1}, pack=True, evict_by_value=True)
