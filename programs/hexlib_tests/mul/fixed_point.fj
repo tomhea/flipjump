@@ -582,6 +582,8 @@ test_mul_const 1, 0x3, 0x80, 0x0
 test_mul_const 1, 0x7, 0xff, 0x9
 test_mul_const 1, 0xe, 0x4ecb, 0xa
 test_mul_const 1, 0x3, 0xf, 0xd
+// dst not aliasing src, and dirty (two lines: dst, then src unchanged)
+test_mul_const_apart 4, 0x1234, 10, 0xb608
 test_mul_low 2, 0x49, 0x11, 0xd9
 test_mul_low 2, 0xff, 0xff, 0x1
 test_mul_low 2, 0x1b, 0xff, 0xe5
@@ -749,6 +751,16 @@ def test_mul_const n, a, c, expected @ x, end {
     check n, x, expected
     ;end
   x: hex.vec n, a
+  end:
+}
+
+def test_mul_const_apart n, a, c, expected @ x, y, end {
+    hex.mul_const n, y, x, c
+    check n, y, expected
+    check n, x, a
+    ;end
+  x: hex.vec n, a
+  y: hex.vec n, 0x9e3c
   end:
 }
 

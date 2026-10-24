@@ -28,6 +28,8 @@ test_add_mul 16, 0xffffffffffffffff, 0xffffffffffffffff, 15, 0
 test_add_mul 16, 0xd58c913983b934ed, 0xb902da41ba460d84, 2, 1
 // n = 0 is a no-op
 test_add_mul_n0
+// n = 0 entered with a dirty multiply-carry: add_mul 0 clears it, as n >= 1 does (the control is test_mul_clear_carry 0, 0xf)
+test_add_mul_n0_dirty
 // hex.mul.clear_carry clears a dirty multiply-carry; and without it, the dirt is seen (the control)
 test_mul_clear_carry 1, 0
 test_mul_clear_carry 0, 0xf
@@ -105,6 +107,29 @@ def test_mul_clear_carry clear, expected @ f, carry, zero, lt, eq, gt, expected_
   carry: hex.hex
   zero: hex.hex
   expected_carry: hex.hex expected
+  end:
+    stl.output '\n'
+}
+
+// dirty the multiply-carry (to 0xf); hex.add_mul 0; then carry = 0 * 0 + the multiply-carry == 0.
+def test_add_mul_n0_dirty @ f, carry, zero, lt, eq, gt, expected_carry, end {
+    dirty_mul_carry f
+    hex.add_mul 0, carry, zero, zero
+    hex.add_mul carry, zero
+    hex.cmp 1, carry, expected_carry, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  f: hex.hex 0xf
+  carry: hex.hex
+  zero: hex.hex
+  expected_carry: hex.hex 0
   end:
     stl.output '\n'
 }

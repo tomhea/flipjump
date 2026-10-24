@@ -19,6 +19,7 @@ ns hex {
     // @requires hex.add.init (or hex.init)
     def add n, dst, src @ end {
         rep(n > 0, i) .add.chain n, dst, src, end, end
+        rep(n == 0, i) .add.clear_carry
       end:
     }
 
@@ -28,7 +29,7 @@ ns hex {
     // @requires hex.add.init (or hex.init)
     def add_shifted dst_n, src_n, dst, src, hex_shift @ do_inc, end {
         rep(src_n > 0, i) .add.chain src_n, dst+hex_shift*dw, src, end, do_inc
-        rep(src_n == 0, i) stl.fj 0, end
+        rep(src_n == 0, i) .add.clear_carry end, end
       do_inc:
         rep(dst_n - (src_n + hex_shift), i) .inc.step dst+(src_n + hex_shift + i)*dw, end
       end:
@@ -188,6 +189,7 @@ ns hex {
     // @requires hex.sub.init (or hex.init)
     def sub n, dst, src @ end {
         rep(n > 0, i) .sub.chain n, dst, src, end, end
+        rep(n == 0, i) .sub.clear_carry
       end:
     }
 
@@ -197,7 +199,7 @@ ns hex {
     // @requires hex.sub.init (or hex.init)
     def sub_shifted dst_n, src_n, dst, src, hex_shift @ do_dec, end {
         rep(src_n > 0, i) .sub.chain src_n, dst+hex_shift*dw, src, end, do_dec
-        rep(src_n == 0, i) stl.fj 0, end
+        rep(src_n == 0, i) .sub.clear_carry end, end
       do_dec:
         rep(dst_n - (src_n + hex_shift), i) .dec.step dst+(src_n + hex_shift + i)*dw, end
       end:

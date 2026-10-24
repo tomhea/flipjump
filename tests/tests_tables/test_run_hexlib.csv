@@ -36,14 +36,14 @@ hexlib-or, tests/compiled/hexlib_tests/2params/or.fjm, ,tests/inout/hexlib_tests
 hexlib-or_n, tests/compiled/hexlib_tests/2params/or_n.fjm, ,tests/inout/hexlib_tests/2params/100equals.out, False,False
 hexlib-and, tests/compiled/hexlib_tests/2params/and.fjm, ,tests/inout/hexlib_tests/2params/and.out, False,False
 hexlib-and_n, tests/compiled/hexlib_tests/2params/and_n.fjm, ,tests/inout/hexlib_tests/2params/100equals.out, False,False
-hexlib-chain_n, tests/compiled/hexlib_tests/2params/chain_n.fjm, ,tests/inout/hexlib_tests/2params/174equals.out, False,False
+hexlib-chain_n, tests/compiled/hexlib_tests/2params/chain_n.fjm, ,tests/inout/hexlib_tests/2params/chain_n.out, False,False
 
 hexlib-add-mul-4, tests/compiled/hexlib_tests/mul/add_mul4.fjm, ,tests/inout/hexlib_tests/mul/add_mul4.out, False,False
 hexlib-add-mul-8, tests/compiled/hexlib_tests/mul/add_mul8.fjm, ,tests/inout/hexlib_tests/mul/add_mul8.out, False,False
 hexlib-add-mul-32, tests/compiled/hexlib_tests/mul/add_mul32.fjm, ,tests/inout/hexlib_tests/mul/add_mul32.out, False,False
 hexlib-add-mul-64, tests/compiled/hexlib_tests/mul/add_mul64.fjm, ,tests/inout/hexlib_tests/mul/add_mul64.out, False,False
-hexlib-add-mul-n, tests/compiled/hexlib_tests/mul/add_mul_n.fjm, ,tests/inout/hexlib_tests/mul/24equals.out, False,False
-hexlib-fixed_point, tests/compiled/hexlib_tests/mul/fixed_point.fjm, ,tests/inout/hexlib_tests/mul/879equals.out, False,False
+hexlib-add-mul-n, tests/compiled/hexlib_tests/mul/add_mul_n.fjm, ,tests/inout/hexlib_tests/mul/25equals.out, False,False
+hexlib-fixed_point, tests/compiled/hexlib_tests/mul/fixed_point.fjm, ,tests/inout/hexlib_tests/mul/881equals.out, False,False
 hexlib-mul-16, tests/compiled/hexlib_tests/mul/mul16.fjm, ,tests/inout/hexlib_tests/mul/mul16.out, False,False
 hexlib-mul-32, tests/compiled/hexlib_tests/mul/mul32.fjm, ,tests/inout/hexlib_tests/mul/mul32.out, False,False
 hexlib-mul-64, tests/compiled/hexlib_tests/mul/mul64.fjm, ,tests/inout/hexlib_tests/mul/mul64.out, False,False

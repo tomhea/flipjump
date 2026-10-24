@@ -185,6 +185,14 @@ test_n0_or
 test_n0_and
 test_n0_add_shifted
 test_n0_sub_shifted
+// n = 0 (src_n = 0) entered with a dirty carry: the op clears it, as n >= 1 does (else 'c' before the '=')
+test_n0_dirty_add
+test_n0_dirty_sub
+test_n0_dirty_add_shifted
+test_n0_dirty_sub_shifted
+// the control: a dirty carry with no op between is seen ('c')
+test_dirty_carry_control_add
+test_dirty_carry_control_sub
 
 stl.loop
 
@@ -308,6 +316,62 @@ def test_n0_sub_shifted @ s, x, y, end {
   x: hex.vec 2, 0x75
   y: hex.hex 3
   end:
+}
+
+// n = 0 with a dirty carry: no 'c' (the carry was cleared), then s:x is unchanged.
+def test_n0_dirty_add @ s, x, y, end {
+    hex.add.set_carry
+    hex.add 0, x, y
+    check_add_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_dirty_sub @ s, x, y, end {
+    hex.sub.set_carry
+    hex.sub 0, x, y
+    check_sub_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_dirty_add_shifted @ s, x, y, end {
+    hex.add.set_carry
+    hex.add_shifted 2, 0, x, y, 0
+    check_add_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_dirty_sub_shifted @ s, x, y, end {
+    hex.sub.set_carry
+    hex.sub_shifted 2, 0, x, y, 0
+    check_sub_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_dirty_carry_control_add {
+    hex.add.set_carry
+    check_add_carry
+    stl.output '\n'
+}
+def test_dirty_carry_control_sub {
+    hex.sub.set_carry
+    check_sub_carry
+    stl.output '\n'
 }
 
 // prints 'c' if the add / sub carry is set (the n-hex ops must leave it clear).

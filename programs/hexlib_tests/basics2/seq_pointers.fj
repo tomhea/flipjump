@@ -108,7 +108,7 @@ def test_read_byte_n array, n, k, expected @ dst, end < p, v {
     hex.read_back v
     check 2, v, (expected >> (8*(n-1))) & 0xff
     ;end
-  dst: hex.vec 2*n
+  dst: hex.vec 2*n, 0x5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c & ((1 << (8*n)) - 1)     // dirty: the op zeroes it first
   end:
 }
 
@@ -121,7 +121,7 @@ def test_read_hex_n array, n, k, expected @ dst, end < p, v {
     hex.read_back v
     check 1, v, (expected >> (4*(n-1))) & 0xf
     ;end
-  dst: hex.vec n
+  dst: hex.vec n, 0x5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c & ((1 << (4*n)) - 1)     // dirty: the op zeroes it first
   end:
 }
 

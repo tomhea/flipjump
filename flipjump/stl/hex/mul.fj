@@ -22,6 +22,7 @@ ns hex {
     // @requires hex.add.init (or hex.init)
     def add_mul n, res, a, b {
         rep(n > 0, i) .mul.chain n, res, a, b
+        rep(n == 0, i) .mul.clear_carry
     }
 
     //  Time Complexity: n(4@+39)
@@ -97,7 +98,7 @@ ns hex {
         //
         // The two clear_carry dances and the n add_mul dances are one chain of .ret jumps (see chain_step).
         // @Assumes: n >= 1.
-        // @requires hex.add.init (or hex.init)
+        // @requires hex.add.init & hex.mul.init (or hex.init)
         def chain n, res, a, b @ head, tail, return < .dst, .ret, ..tables.res {
             ..xor .dst, b
             .chained_clear_carry 0
