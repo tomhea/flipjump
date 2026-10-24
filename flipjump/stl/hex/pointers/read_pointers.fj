@@ -48,8 +48,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(5@+28) + w(0.5@+4)
-    // Space Complexity: n((w-#w)(@+18) + 3@+61)
+    //  Time Complexity: n(4@+28) + w(0.5@+4)
+    // Space Complexity: n((w-#w)(@+18) + 2@+49)
     //   like:  dst[:n] = *ptr[:n]
     // dst is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.xor_cells_from_inners_ptrs).
@@ -149,8 +149,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: n(5@+28) + w(0.75@+5) + sw(7@+23)                  (sw: entry_address's)
-    // Space Complexity: n((w-#w)(@+18) + 3@+61)
+    //  Time Complexity: n(4@+28) + w(0.75@+5) + sw(7@+23)                  (sw: entry_address's)
+    // Space Complexity: n((w-#w)(@+18) + 2@+49)
     //   dst[:n] = table[idx]    (the idx-th entry of a constant array of hex[:n] entries)
     //
     // table is a constant address; entry k is the n hex data-ops at table + k*n*dw (a hex.vec n value).
@@ -207,6 +207,7 @@ ns hex {
         def entry_address dst, table, size, idx_n, idx {
             .entry_address dst, table, size*dw, idx_n, idx, (idx_n+((#(size*dw))+3)/4 < w/4) ? idx_n+((#(size*dw))+3)/4 : w/4
         }
+        // the same, with c = size*2w and sw = the hexes idx*c needs.
         def entry_address dst, table, c, idx_n, idx, sw @ scaled, end {
             ..zero sw, scaled
             ..xor idx_n, scaled, idx

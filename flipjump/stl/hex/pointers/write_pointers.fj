@@ -89,8 +89,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity:  n(11@+38) + w(0.5@+4)
-    // Space Complexity:  n((w-#w)(@+18) + 9@+122)
+    //  Time Complexity:  n(10@+38) + w(0.5@+4)
+    // Space Complexity:  n((w-#w)(@+18) + 8@+110)
     //   like:  *ptr[:n] = src[:n]
     // src is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.write_cells).
@@ -185,8 +185,8 @@ ns hex {
 
 ns hex {
     ns pointers {
-        //  Time Complexity: n((6h+5)@ + 12h+26)
-        // Space Complexity: n((w-#w)(@+18) + (6h+3)@ + 88h+34)
+        //  Time Complexity: n((7h+3)@ + 12h+26)
+        // Space Complexity: n((w-#w)(@+18) + (7h+1)@ + 100h+10)
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       *(ptr+i*2w) = src[i*h:(i+1)*h]      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
         //
@@ -200,20 +200,20 @@ ns hex {
             wflip .ret_after_read_byte+w, .to_flip
         }
 
-        //  Time Complexity: (6h+5)@ + 12h+26
-        // Space Complexity: (w-#w)(@+18) + (6h+3)@ + 88h+34
+        //  Time Complexity: (7h+3)@ + 12h+26
+        // Space Complexity: (w-#w)(@+18) + (7h+1)@ + 100h+10
         //  the armed fields += 2w;  then write_cell h, src.
         def advance_and_write_cell h, src {
             .advance
             .write_cell h, src
         }
 
-        //  Time Complexity: (6h+3)@ + 12h+20
-        // Space Complexity: (6h+3)@ + 88h+34
+        //  Time Complexity: (7h+1)@ + 12h+20
+        // Space Complexity: (7h+1)@ + 100h+10
         //   *armed[:h] = src[:h]     (like write_hex / write_byte without the arm, and with .ret_after_read_byte set)
         // @Assumes: .ret_after_read_byte holds to_flip (see write_cells).
         def write_cell h, src @ read, cleanup < .read_byte, .to_flip, .to_jump {
-            ..zero .PTR_CELL_BITS/4, .read_byte
+            ..zero h, .read_byte
             wflip .to_flip, dbit+.PTR_CELL_BITS
             wflip .to_flip+w, read, .to_flip
             pad 4
