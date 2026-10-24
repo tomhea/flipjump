@@ -556,9 +556,10 @@ def test_a_tight_flat_window_moves_some_tables_and_keeps_the_rest_inline(tmp_pat
     every = pool.allocated + pool.overflowed
     partial = []
     for words in range(plain_span, plain_span + 200, 16):
-        pool, pooled, _ = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W, flat_max_words=words)
+        pool, pooled, span = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W, flat_max_words=words)
         moved = pool.allocated + pool.overflowed
         assert pooled == plain and moved + pool.past_window >= every and pool.end <= words * W
+        assert span <= words or not moved  # the whole program, wflip areas included, inside the window
         if 0 < moved < every:
             partial.append(words)
     assert partial
@@ -639,3 +640,18 @@ def test_a_flat_pool_that_places_no_table_is_no_pool(tmp_path: Path) -> None:
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     assert pool.end == 0 and pool.pool_start() == 1 << 64
     assert (tmp_path / 'pooled.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()
+
+
+def test_without_the_wflip_bound_the_wflip_areas_end_past_the_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the control of the bound: the wflip areas go after the pool, and only their bound keeps them inside the window
+    # (resolve_macros_with_pool keeps every table inline where they might not fit)
+    monkeypatch.setattr(assembler, '_wflip_ops_bound', lambda stream, labels, table_pool: 0)
+    _, plain_span = _plain(tmp_path, _TABLES_AROUND_THE_BULK, W)
+    past = []
+    for words in range(plain_span, plain_span + 200, 16):
+        pool, _, span = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W, flat_max_words=words)
+        if pool.allocated + pool.overflowed and span > words:
+            past.append(words)
+    assert past

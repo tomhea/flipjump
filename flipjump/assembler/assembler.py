@@ -781,11 +781,77 @@ def resolve_macros_with_pool(
     replanning = table_pool if isinstance(table_pool, BlockPool) and table_pool.auto_base else None
     if replanning is not None:
         kwargs['consume_main'] = False
+    why_inline = ''
     for attempt in itertools.count():
         ops, labels = resolve_macros(memory_width, macros, table_pool=table_pool, **kwargs)
-        if replanning is None or not replanning.replan(attempt):
+        if replanning is None:
             return ops, labels
+        if replanning.replan(attempt):
+            continue
+        if why_inline:
+            replanning.base_reason = why_inline
+            return ops, labels
+        wflips_at = replanning.wflips_at()
+        try:
+            wflip_ops = 0 if wflips_at is None else _wflip_ops_bound(ops, labels, replanning)
+        except FlipJumpException:
+            return ops, labels  # labels_resolve says what is wrong, and where
+        if wflips_at is None or wflips_at + wflip_ops * 2 * memory_width <= min(
+            1 << memory_width, replanning.flat_limit or 1 << memory_width
+        ):
+            return ops, labels
+        # the wflip areas, after the pool, might not end below the flat maximum (nor in the memory): no table moves
+        why_inline = (
+            f'none: the wflip areas after the pool at {hex(replanning.pool_base)} could take {wflip_ops} ops, past '
+            f'{hex(min(1 << memory_width, replanning.flat_limit or 1 << memory_width))}: every table stays inline'
+        )
+        replanning.replan(attempt, every=True)
     raise AssertionError('unreachable')
+
+
+def _wflip_ops_bound(stream: OpStream, labels: Dict[str, int], table_pool: TablePool) -> int:
+    """at most how many ops the wflip areas take: each wflip's chain but its first op, into the padding emitted before
+    it while its segment has some left (as BinaryData.get_wflip_spot takes it), no tail shared - a word the pool may
+    pin flipped by an address as it is, or xor its block base, whichever has more bits"""
+    pins, _ = resolve_pinned(table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude)
+    area = padding = 0
+    slots = iter(stream.vals)
+    next_slot = slots.__next__
+    for kind in stream.kinds:
+        if kind == op_stream.WFLIP:
+            word = next_slot()
+            if word < 0:
+                word = _deferred_value(stream, ~word, next_slot, labels, None)
+            value = next_slot()
+            kind_of_value = VALUE_NUMBER
+            if value < 0:
+                kind_of_value = _deferred_value_kind(stream, ~value)
+                value = _deferred_value(stream, ~value, next_slot, labels, None)
+            return_address = next_slot()
+            if return_address < 0:
+                _deferred_value(stream, ~return_address, next_slot, labels, None)
+            next_slot()  # the position
+            bits = bin(value).count('1')
+            if kind_of_value == VALUE_ADDRESS and word in pins:
+                bits = max(bits, bin(value ^ pins[word]).count('1'))
+            chain = max(bits - 1, 0)
+            taken = min(chain, padding)
+            padding -= taken
+            area += chain - taken
+        elif kind in (op_stream.FJ, op_stream.FJ_POS):
+            for _ in range(2):
+                value = next_slot()
+                if value < 0:
+                    _deferred_value(stream, ~value, next_slot, labels, None)
+            if kind == op_stream.FJ_POS:
+                next_slot()  # the position
+        elif kind == op_stream.PAD:
+            padding += next_slot()
+        else:
+            next_slot()
+            if kind == op_stream.OBJ:
+                padding = 0  # a segment or a reserve starts: the padding before it is not taken after it
+    return area
 
 
 def assert_first_op_assembled(fjm_writer: Writer) -> None:

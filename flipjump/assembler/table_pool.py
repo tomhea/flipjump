@@ -1120,12 +1120,13 @@ class BlockPool(TablePool):
         pool._flat_args = (flat_max_words, kwargs)
         return pool
 
-    def replan(self, attempt: int) -> bool:
+    def replan(self, attempt: int, every: bool = False) -> bool:
         """for_flat, after an expansion that placed tables past the flat maximum (past_names: one pass cannot take
         back a table it moved, and the code after it left it no room): lay out afresh, keeping those tables inline
-        (keep_inline) - from the 4th attempt on, every table. False when there is nothing to replan: assemble()
-        expands the program again while this is True."""
-        if not self.past_names:
+        (keep_inline) - from the 4th attempt on, or with `every` (the wflip areas after the pool might not fit:
+        assembler.resolve_macros_with_pool), every table. False when there is nothing to replan: assemble() expands
+        the program again while this is True."""
+        if not self.past_names and not every:
             return False
         keep = self.keep_inline.union(self.past_names)
         flat_max_words, kwargs = self._flat_args
@@ -1133,7 +1134,7 @@ class BlockPool(TablePool):
         self.__dict__.clear()
         self.__dict__.update(fresh.__dict__)
         self.keep_inline = keep
-        if attempt >= 3:
+        if attempt >= 3 or every:
             self.capacity = 0  # every table stays inline: the program without the pool
         return True
 
