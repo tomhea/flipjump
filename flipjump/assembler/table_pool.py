@@ -363,21 +363,26 @@ class OffsetGuard:
         cut = f'the `pad {ops_alignment}` at {hex(address)}, {_PADS_DIFFERENTLY}'
         if self.falls_to == address:
             self._refuse('$', f'falls through to {cut}')
-        self._moved_cut(address, cut)
-
-    def segment_ended(self, address: int) -> None:
-        """the code of a segment ends at the inline `address`, moved up (tables moved out of it): the next segment's
-        code did not move with it, so a distance across the end changes too (see pad_realigned)"""
-        # (+1: a label at the end stays with the code before it)
-        self._moved_cut(address + 1, f'the end of the segment at {hex(address)}, {_SEGMENT_MOVED}')
-
-    def _moved_cut(self, address: int, cut: str) -> None:
-        """cut at `address`, where the code after it moves by another distance than the code before it: an operand
-        already emitted that reaches across it came too late to keep a table inline, and is refused"""
         for label_address, target, label in self._pending:
             if label_address <= address <= target:
                 self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
         self._cut(address, cut)
+
+    def segment_started(self, address: int) -> None:
+        """a segment starts at the inline `address`, where it does without the pool: its code is a piece of its own,
+        unmoved until a table moves out of it (see shift_class). An operand already emitted from code a table moved
+        that reaches into it came too late to keep a table inline, and is refused."""
+        cut = f'{_SEGMENT_START} at {hex(address)}, {_SEGMENT_STAYS}'
+        for label_address, target, label in self._pending:
+            if label_address <= address <= target and self.shift_class(self.piece(label, label_address)) >= 0:
+                self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
+        self._cut(address, cut)
+
+    def shift_class(self, piece: int) -> int:
+        """-1 for a piece whose code is where it is without the pool: the program's first, or one a segment starts
+        (each up to the first table that moves out of it), else the piece itself - an address in one piece and an
+        address in another keep their distance only if both are -1"""
+        return -1 if piece == 0 or self._anchor_tables[piece - 1].startswith(_SEGMENT_START) else piece
 
     def tables_inline(self) -> Dict[int, int]:
         """{inline address a `pad` aligned or a segment starts at: the bits the pad aligned it to}: a table there
@@ -385,8 +390,8 @@ class OffsetGuard:
         return self.pads
 
     def _cut(self, anchor: int, table: str) -> None:
-        """cut the inline stream into pieces at `anchor`: a moved table's place, a `pad` that realigned, or the end of
-        a segment whose code moved"""
+        """cut the inline stream into pieces at `anchor`: a moved table's place, a `pad` that realigned, or a
+        segment's start"""
         anchors = self.anchors
         index = bisect.bisect_right(anchors, anchor)
         before = index - bisect.bisect_left(anchors, anchor)
@@ -449,12 +454,11 @@ class OffsetGuard:
             return
         if target >= self.inline_end:
             self._refuse_inside(operand or _operand(label, offset), target)
-        anchors = self.anchors
         piece = self.piece(label, address)
-        if piece < len(anchors) and target >= anchors[piece]:
-            self._refuse(operand or _operand(label, offset), self._across(piece, label, offset))
-        if piece and target < anchors[piece - 1]:
-            self._refuse(operand or _operand(label, offset), self._across(piece - 1, label, offset))
+        aim = bisect.bisect_right(self.anchors, target)
+        if aim != piece and not self.shift_class(aim) == self.shift_class(piece) == -1:
+            index = piece if aim > piece else piece - 1
+            self._refuse(operand or _operand(label, offset), self._across(index, label, offset))
         if (offset > 0 or label in self.watched) and self.emitting is not None and target >= self.emitting():
             self._pending.append((address, target, label))  # a table may move out below it: it stays inline
 
@@ -510,7 +514,7 @@ class OffsetGuard:
         if len(coefficients) == 1:
             return False  # `2 * L`, the `L` of `L >> 6`: an address as a number
         pieces = sorted(self.piece(label, labels[label]) for label in coefficients)
-        if pieces[0] != pieces[-1]:
+        if len({self.shift_class(piece) for piece in pieces}) > 1:
             cut = self._anchor_tables[pieces[0]]
             self._refuse(
                 operand,
@@ -533,7 +537,7 @@ class OffsetGuard:
     def _across(self, anchor_index: int, label: str, offset: int) -> str:
         anchor = self.anchors[anchor_index]
         cut = self._anchor_tables[anchor_index]
-        if cut.startswith('the '):  # a pad that realigned, or a segment's end
+        if cut.startswith('the '):  # a pad that realigned, or a segment's start
             return f'names {label}, declared before {cut}' if offset == 0 else f'reaches across {cut}'
         if offset == 0:
             return (
@@ -566,8 +570,11 @@ class OffsetGuard:
 
 # why an operand across a `pad` that realigned is refused (OffsetGuard.pad_realigned)
 _PADS_DIFFERENTLY = 'which pads to another op once a table before it moved out: it would no longer point where it did'
-# ...and across the end of a segment a table moved out of (OffsetGuard.segment_ended)
-_SEGMENT_MOVED = 'whose code moved up once a table moved out of it, while the next segment did not'
+# ...and across a segment's start (OffsetGuard.segment_started)
+_SEGMENT_START = 'the start of the segment'
+_SEGMENT_STAYS = (
+    'which stays where it is while code a table moved out of moves: it would no longer be the same distance'
+)
 
 
 def _is_one_sum(expr: Expr) -> bool:

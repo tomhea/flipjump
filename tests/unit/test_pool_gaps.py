@@ -72,8 +72,8 @@ GUARD_C37 = (
     r'f1:l5:hex.xor\(2\)---s16:l12:hex.exact_xor\(5\)---switch'
 )
 GUARD_C38 = (
-    r'the operand .*\(S - M\).* takes the distance across the end of the segment at 0x1e00, whose code moved up once '
-    r'a table moved out of it, while the next segment did not'
+    r'the operand .*\(S - M\).* takes the distance across the start of the segment at 0x4000, which stays where it '
+    r'is while code a table moved out of moves'
 )
 REACHES = 'an operand reaches over its place'
 BELOW = 'a flip below its window could arm a table there'
@@ -129,6 +129,7 @@ CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
     # the final review
     ('c37_rep_count_across_table', 32): {'cli': GUARD_C37, 'two_pass': GUARD_C37, 'table': GUARD_C37},
     ('c38_distance_into_numeric_segment', 32): {'cli': GUARD_C38, 'two_pass': GUARD_C38, 'table': GUARD_C38},
+    ('c39_distance_into_earlier_segment', 32): {'cli': GUARD_C38, 'two_pass': GUARD_C38, 'table': GUARD_C38},
 }
 # (program, pool): (the tables the pool kept inline, the words it left unpinned), by reason - every other SAME
 # program needs neither
@@ -294,7 +295,8 @@ DISABLED: Dict[str, List[Check]] = {
     'c36_opaque_label_plus_offset': [(table_pool_module, '_moves_with', lambda expr, label, address, value: False)],
     # the final review's: a rep's count the expansion evaluates, a distance across a segment's end
     'c37_rep_count_across_table': [(PreprocessorData, 'check_evaluated', lambda self, expr, value, is_address=0: None)],
-    'c38_distance_into_numeric_segment': [(OffsetGuard, 'segment_ended', lambda self, address: None)],
+    'c38_distance_into_numeric_segment': [(OffsetGuard, 'segment_started', lambda self, address: None)],
+    'c39_distance_into_earlier_segment': [(OffsetGuard, 'segment_started', lambda self, address: None)],
 }
 
 

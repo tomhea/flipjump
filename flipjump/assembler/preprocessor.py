@@ -569,10 +569,9 @@ class PreprocessorData:
         self._label_positions.append(None)
         self.curr_segment_index += 1
         self._code_end = max(self._code_end, self.curr_address)
-        if self._shift:  # this segment's code moved up, and the next one's does not (OffsetGuard.segment_ended)
-            assert self.offset_guard is not None
-            self.offset_guard.segment_ended(self.curr_address)
         self._shift = 0  # a segment starts where it does without the pool too
+        if self.offset_guard is not None:
+            self.offset_guard.segment_started(next_segment_start)
         self._aligned(next_segment_start, 0)
 
         self.patch_last_wflip_address()
