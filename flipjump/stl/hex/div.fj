@@ -70,7 +70,7 @@ ns hex {
     }
 
     //  Time Complexity: n^2(2@+8) + n*nb(30@+100)   so if nb==n:  n^2(32@+108)
-    // Space Complexity: n(8.5@+132)  + nb(20.5@+311)    so if nb==n:  n(29@+443)
+    // Space Complexity: n(11.5@+158)  + nb(26.5@+419)    so if nb==n:  n(38@+577)
     //   if b==0: goto div0
     //   q = a/b  (signed division)
     //   r = a%b  (signed modulo - signed according to rem_opt:)
@@ -157,7 +157,7 @@ ns hex {
 
 ns hex {
     //  Time Complexity: n^2(68@+232)    (hex.idiv's at (2n, n): every compare full and every subtract taken, as its line counts)
-    // Space Complexity: n(57@+877)
+    // Space Complexity: n(54.5@+799)
     //   if b==0: goto div0
     //   dst[:n] = (a[:n] << 4f) / b[:n]    (signed fixed-point divide, truncated toward zero)
     //

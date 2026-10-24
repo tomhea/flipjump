@@ -108,8 +108,8 @@ ns hex {
         rep(n, i) .input_as_hex hex + (n-1-i)*dw, error
     }
 
-    //  Time Complexity: nd(7@+53)    (d = number of digits)
-    // Space Complexity: n(7@+136)
+    //  Time Complexity: nd(7@+53) + n(2@)    (d = number of digits)
+    // Space Complexity: n(9@+161)
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
     // Reads ASCII '0'..'9' and STOPS at the first non-digit byte, which is stored in stop_byte[:2].
     // @requires hex.init
@@ -132,8 +132,8 @@ ns hex {
       done:
     }
 
-    //  Time Complexity: nd(7@+53)    (d = number of digits)
-    // Space Complexity: n(8.5@+153)
+    //  Time Complexity: nd(7@+53) + n(2@)    (d = number of digits)
+    // Space Complexity: n(10.5@+178)
     //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
     // Reads an optional leading '-', then ASCII '0'..'9', and STOPS at the first non-digit byte,
     // which gets stored in stop_byte[:2] (note that a leading '+' stops with dst=0).
@@ -170,8 +170,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: nd(7@+53)    (d = number of digits)
-    // Space Complexity: n(7@+154)
+    //  Time Complexity: nd(7@+53) + n(2@)    (d = number of digits)
+    // Space Complexity: n(9@+161)
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
     // Reads ASCII '0'..'9' until a '\n' or '\0' (EOF) terminator; jumps to error on any other byte.
     // @requires hex.init
@@ -185,8 +185,8 @@ ns hex {
       ok:
     }
 
-    //  Time Complexity: nd(7@+53)    (d = number of digits)
-    // Space Complexity: n(8.5@+171)
+    //  Time Complexity: nd(7@+53) + n(2@)    (d = number of digits)
+    // Space Complexity: n(10.5@+178)
     //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
     // Reads an optional leading '-', then ASCII '0'..'9' until a '\n'/'\0' terminator; jumps to error on any other byte
     // @requires hex.init
