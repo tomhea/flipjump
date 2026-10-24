@@ -75,8 +75,8 @@ ns hex {
             rep(sw > w/8, i) .ptr_index_wide n, sw, dst, ptr, index
         }
 
-        //  Time Complexity: sw(7@+23) + n@ + w(0.5@)
-        // Space Complexity: sw(5.5@+137) + n(@+12) + w(0.875@+9.25)
+        //  Time Complexity: sw(7@+23) + w(0.5@)
+        // Space Complexity: sw(5.5@+137) + w(0.875@+9.25)
         //   dst[:w/4] = ptr + index*2w    (index*2w fits sw hexes)
         // @requires hex.add.init (or hex.init)
         def ptr_index_narrow n, sw, dst, ptr, index @ scaled, end {
@@ -90,8 +90,8 @@ ns hex {
           end:
         }
 
-        //  Time Complexity: sw(3@+9) + n@ + w(@+3.5)
-        // Space Complexity: sw(3@+84) + n(@+12) + w(@+16.5)
+        //  Time Complexity: sw(3@+9) + w(@+3.5)
+        // Space Complexity: sw(3@+84) + w(@+16.5)
         //   dst[:w/4] = ptr + index*2w    (index*2w fits sw hexes)
         // @requires hex.add.init (or hex.init)
         def ptr_index_wide n, sw, dst, ptr, index {

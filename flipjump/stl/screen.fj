@@ -24,7 +24,7 @@ ns screen {
         stl.output_char format
     }
 
-    // Complexity: 24(last-first+1) + 2format + 16  (+ the padding to the byte)
+    // Complexity: 24(last-first+1)  (+ the padding to the byte)
     //   define_palette: [0x02] [slot:8] [first:B] [last:B]  then (last-first+1) x [R:8] [G:8] [B:8]
     // rgb is a constant: entry first+i is its bytes 3i, 3i+1, 3i+2 (R, G, B; R the least-significant).
     // format is init_screen's (B = format bits per colour; indexed formats only); slot, first, last are constants.

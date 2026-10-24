@@ -293,8 +293,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: (n^2/2 + nf)(3@+38) + n(14.5@+73) + f(2@+4)     (+ f^2(1.5@+19) + f(9.5@+73) when b is negative)
-    // Space Complexity: (n+f)^2(1.5@+27) + n(14.5@+150) + f(11.5@+118)
+    //  Time Complexity: (n^2/2 + nf)(3@+38)     (+ f^2(1.5@+19) when b is negative)
+    // Space Complexity: (n+f)^2(1.5@+27)
     //   dst[:n] = (a[:n] * b[:n]) >> 4f    (signed fixed-point multiply - the same result as fixed_mul)
     //
     // Computes only the n+f low hexes of the product (the only ones the result can see), with mul_low's rows:
@@ -320,8 +320,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n(3@) + on*n(3@+14) + (#c-1)n(@+1)          (on = the on-bits of c)
-    // Space Complexity: n(3@+36) + on*n(3@+54) + (#c-1)n(@+28)
+    //  Time Complexity: on*n(3@+14) + (#c-1)n(@+1)          (on = the on-bits of c)
+    // Space Complexity: on*n(3@+54) + (#c-1)n(@+28)
     //   dst[:n] = src[:n] * c    (c is a constant, c >= 0)
     //
     // The strength-reduced constant multiply: every on-bit of c adds a shifted src. No multiplication tables.

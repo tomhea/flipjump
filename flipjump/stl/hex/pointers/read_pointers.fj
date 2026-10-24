@@ -149,8 +149,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: n(5@+28) + w(0.75@+5) + sw(7@+23) + idx_n@                  (sw: entry_address's)
-    // Space Complexity: n((w-#w)(@+18) + 3@+61) + sw(5.5@+137) + idx_n(@+12)
+    //  Time Complexity: n(5@+28) + w(0.75@+5) + sw(7@+23)                  (sw: entry_address's)
+    // Space Complexity: n((w-#w)(@+18) + 3@+61)
     //   dst[:n] = table[idx]    (the idx-th entry of a constant array of hex[:n] entries)
     //
     // table is a constant address; entry k is the n hex data-ops at table + k*n*dw (a hex.vec n value).
@@ -179,8 +179,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: nb(6@+32) + w(0.75@+5) + sw(7@+23) + idx_n@                 (sw: entry_address's)
-    // Space Complexity: nb((w-#w)(@+18) + 4@+89) + sw(5.5@+137) + idx_n(@+12)
+    //  Time Complexity: nb(6@+32) + w(0.75@+5) + sw(7@+23)                 (sw: entry_address's)
+    // Space Complexity: nb((w-#w)(@+18) + 4@+89)
     //   dst[:2nb] = table[idx]    (the idx-th entry of a constant array of nb-byte entries)
     //
     // table is a constant address; entry k is the nb byte data-ops at table + k*nb*dw, little-endian
@@ -196,8 +196,8 @@ ns hex {
     }
 
     ns pointers {
-        //  Time Complexity: sw(7@+23) + idx_n@     (size*2w a power of 2; else hex.mul_const's for sw(3@+9))
-        // Space Complexity: sw(5.5@+137) + idx_n(@+12) + w(0.625@+7.25)
+        //  Time Complexity: sw(7@+23)     (size*2w a power of 2; else hex.mul_const's for sw(3@+9))
+        // Space Complexity: sw(5.5@+137) + w(0.625@+7.25)
         //   dst[:w/4] = table + idx*size*2w    (the address of the idx-th size-ops entry of the array at table)
         //
         // table is a constant address; size is a constant (> 0); idx is an unsigned hex[:idx_n] (idx_n <= w/4).
