@@ -67,7 +67,7 @@ GUARD_C35 = (
     r'to another op once a table before it moved out: it would no longer point where it did'
 )
 REACHES = 'an operand reaches over its place'
-BELOW = 'a flip below its window, with a table there'
+BELOW = 'a flip below its window could arm a table there'
 GUARDED = [
     'c06_label_before_pad',
     'c07a_reach_in_plus',
@@ -110,7 +110,7 @@ CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
     ('c27_bitwise_arm', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N5: un-pinned
     ('c28_segment_back', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N6
     ('c29_label_difference_value', 32): {'cli': GUARD_C29, 'two_pass': GUARD_C29, 'table': GUARD_C29},  # N2
-    ('c30_count_bits_stays_pinned', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N5, R3-1: un-pinned
+    ('c30_count_bits_stays_pinned', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N5, R3-1: pinned
     # the gap hunt's third round
     ('c32_numeric_arm_below_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # R3-1: un-pinned
     ('c33_bitwise_arm_below_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # R3-2: un-pinned
@@ -142,8 +142,6 @@ FALLBACKS: Dict[Tuple[str, str], Tuple[Dict[str, int], Dict[str, int]]] = {
     ('c26_pointer_write_only', 'two_pass'): POINTERS,
     ('c27_bitwise_arm', 'cli'): ({}, {'a bit flip above its window': 1}),
     ('c27_bitwise_arm', 'two_pass'): ({}, {'a bit flip above its window': 1}),
-    ('c30_count_bits_stays_pinned', 'cli'): ({}, {BELOW: 1}),
-    ('c30_count_bits_stays_pinned', 'two_pass'): ({}, {BELOW: 1}),
     ('c32_numeric_arm_below_window', 'cli'): ({}, {BELOW: 1}),
     ('c32_numeric_arm_below_window', 'two_pass'): ({}, {BELOW: 1}),
     ('c33_bitwise_arm_below_window', 'cli'): ({}, {BELOW: 1}),
@@ -251,22 +249,17 @@ def test_a_program_that_reaches_the_pool_says_so(tmp_path: Path) -> None:
         )
 
 
-def test_count_bits_keeps_its_pin_unless_a_table_lies_below_its_window(tmp_path: Path) -> None:
+def test_count_bits_keeps_its_pin(tmp_path: Path) -> None:
     # N5: hex.count_bits flips dst+dbit+4/5 inside the 64-op table it armed dst with: a move the base does not change.
-    # R3-1: but its own 16-op table lies at op 16, below that window, where the same flip of an unarmed dst would
-    # point - a flip the pool cannot tell from an arm, so dst is unpinned. With no table below, it stays pinned.
+    # R3-1: its own 16-op table lies at op 16, below that window, where the same flip of an UNARMED dst would point -
+    # but nothing jumps through dst except its arms, so no flip of it is one: dst stays pinned. With an op that jumps
+    # to dst's op (as C32's arm by a number does), it would not
     source = GAPS / 'c30_count_bits_stays_pinned.fj'
     pool = BlockPool.for_flat(W)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
-    assert pool.pinned_words() and pool.unpins == {BELOW: 1}
-    lowest = pool.offset_guard.lowest_pad() if pool.offset_guard else None
-    assert lowest == 0x400  # count_switch, behind a `pad 16`
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(OffsetGuard, 'lowest_pad', lambda self: 0x1000)  # no table below the 64-op window (2^12)
-        pool = BlockPool.for_flat(W)
-        assemble([source], tmp_path / 'pinned.fjm', memory_width=W, print_time=False, table_pool=pool)
-        assert pool.pinned_words() and pool.unpins == {}
-        assert run(tmp_path / 'pinned.fjm', 30) == run(tmp_path / 'pooled.fjm', 30)
+    assert pool.pinned_words() and pool.unpins == {}
+    tables = pool.offset_guard.tables_inline() if pool.offset_guard else {}
+    assert tables[0x400] == 10  # count_switch, behind a `pad 16`, a value dst's flips can make
 
 
 def _old_alignment(self: OffsetGuard, address: int) -> int:
@@ -280,7 +273,7 @@ def _old_alignment(self: OffsetGuard, address: int) -> int:
 # each third-round finding's check, disabled: {program: [(the owner of a check, its name, its stand-in)]}. C34's
 # segment at 0x4000 is a table below the wide window too, so R3-1's check catches it as well: both are disabled.
 Check = Tuple[Any, str, Any]
-NO_LOW_TABLE: Check = (OffsetGuard, 'lowest_pad', lambda self: None)
+NO_LOW_TABLE: Check = (OffsetGuard, 'tables_inline', lambda self: {})
 DISABLED: Dict[str, List[Check]] = {
     'c32_numeric_arm_below_window': [NO_LOW_TABLE],
     'c33_bitwise_arm_below_window': [NO_LOW_TABLE],
@@ -310,7 +303,7 @@ def test_without_its_check_a_third_round_program_miscompiles(
 def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # R3-3 alone: with no table below the window (R3-1's check off), C34's numeric arm is still above the moved
     # table's window - unpinned, and the same; widened by T2's address (as before R3-3), it is kept and miscompiles
-    monkeypatch.setattr(OffsetGuard, 'lowest_pad', lambda self: None)
+    monkeypatch.setattr(OffsetGuard, 'tables_inline', lambda self: {})
     source = GAPS / 'c34_numeric_arm_wide_window.fj'
     pool = _pool('cli', W, source, tmp_path)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
@@ -635,3 +628,14 @@ def test_a_flat_pool_with_only_overflow_tables_lays_the_wflip_areas_after_them(t
     plain, _ = _plain(tmp_path, _XOR, W)
     pool, pooled, _ = _flat(tmp_path, _XOR, W, counts={})
     assert pool.allocated == 0 and pool.overflowed and pool.wflips_at() == pool.end and pooled == plain
+
+
+def test_a_flat_pool_that_places_no_table_is_no_pool(tmp_path: Path) -> None:
+    # hello_world_with_str moves no table: its base above the code would sit inside its wflip area, so a pool with
+    # no table has no start - the binary is the plain one, byte for byte
+    source = [PROGRAMS_DIR / 'print_tests' / 'hello_world_with_str.fj']
+    assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
+    pool = BlockPool.for_flat(64)
+    assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
+    assert pool.end == 0 and pool.pool_start() == 1 << 64
+    assert (tmp_path / 'pooled.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()

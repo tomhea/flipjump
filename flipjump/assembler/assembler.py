@@ -11,7 +11,7 @@ import itertools
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, Deque, Iterable, List, Dict, MutableSequence, Set, Tuple, Optional, Union
+from typing import Any, Callable, Deque, Iterable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -388,7 +388,7 @@ def unpin(
     table_alignment: Callable[[int], int] = lambda address: 0,
     *,
     raw: bool = False,
-    lowest_pad: Optional[int] = None,
+    pads: Optional[Dict[int, int]] = None,
 ) -> None:
     """Un-pin every word of `pinned` ({jump-word address: block base}) whose pin could not hold, counting each in
     `reasons` by why. An un-pinned word rests at its value and is armed with the whole address - always right, only
@@ -396,9 +396,11 @@ def unpin(
     arms it - a wflip by a label plus a constant, flipped xor the base - or stays below its window_top: not a
     number or a value computed from labels above it (`wflip x+w, 0x4000`, `T1 ^ T2`), no `a;b` flip above it (arming
     bit by bit), no wflip across two words; and a flip below it (a number is a value there, as `hex.set`'s are) may
-    not arm the word either: it is not pinned while a table it could reach lies below its window - `lowest_pad`,
-    the lowest inline address a `pad` aligned or a segment starts at. (A pinned word is assumed never to be jumped
-    through unarmed, nor armed with a number to an op no pad or segment aligned.) `table_alignment(address)`: the
+    not arm the word either: it is not pinned while an op that is no arm of it jumps to its op (through it) and a
+    table below its window - an inline address a `pad` aligned or a segment starts at (`pads`: {address: the bits
+    the pad aligned it to}) - is a value its flips and its rest value can make (tables_armed_below). (A pinned word
+    is assumed never to be jumped through unarmed but by such an op, nor armed with a number to an op no pad or
+    segment aligned.) `table_alignment(address)`: the
     bits the table armed at `address` is aligned to (a moved table: its size; an inline one: its `pad`, else 0).
     `raw`: the program reads or writes words through the pointer runtime, and no pin_exclude says which - no pin
     can hold."""
@@ -417,6 +419,8 @@ def unpin(
     numbers: Dict[int, int] = {}  # word -> the bits numbers flip into it
     computed: Dict[int, int] = {}  # word -> the bits values computed from labels flip into it
     with_op: Set[int] = set()
+    rests: Dict[int, int] = {}  # word -> the value its op rests at (its jump)
+    jumped: Set[int] = set()  # the words whose op an op jumps to that is no arm of the word (jumping through it)
     address = 0
     slots = iter(stream.vals)
     next_slot = slots.__next__
@@ -435,8 +439,10 @@ def unpin(
                 value = _deferred_value(stream, ~value, next_slot, labels, None)
             return_address = next_slot()
             if return_address < 0:
-                _deferred_value(stream, ~return_address, next_slot, labels, None)
+                return_address = _deferred_value(stream, ~return_address, next_slot, labels, None)
             next_slot()  # the position
+            if return_address + w in arms and (kind_of_value != VALUE_ADDRESS or word != return_address + w):
+                jumped.add(return_address + w)
             if word % w:
                 for touched in (word - word % w, word - word % w + w):
                     if touched in arms:
@@ -452,22 +458,27 @@ def unpin(
             address = obj.start_address if isinstance(obj, NewSegment) else obj.first_address_after_reserved
         else:
             if kind == FJ_PACKED:
-                flip = next_slot() >> 32
+                packed = next_slot()
+                flip, jump = packed >> 32, packed & op_stream.PACKED_JUMP_MASK
             else:
                 flip = next_slot()
                 if flip < 0:
                     flip = _deferred_value(stream, ~flip, next_slot, labels, None)
                 jump = next_slot()
                 if jump < 0:
-                    _deferred_value(stream, ~jump, next_slot, labels, None)
+                    jump = _deferred_value(stream, ~jump, next_slot, labels, None)
                 if kind == FJ_POS:
                     next_slot()  # the position
             if address + w in arms:
                 with_op.add(address + w)
+                rests[address + w] = jump
+            if jump + w in arms:
+                jumped.add(jump + w)
             word = flip - flip % w
             if word in arms:
                 flipped_bits[word] = flipped_bits.get(word, 0) | 1 << (flip - word)
             address += 2 * w
+    low = sorted((pads or {}).items())
     for word, base in list(pinned.items()):
         top = window_top(base, arms[word])
         above = ~((1 << top) - 1)
@@ -479,12 +490,23 @@ def unpin(
             drop(word, 'armed with a number')
         elif computed.get(word, 0) & above:
             drop(word, 'armed with a value computed from labels')
-        elif (
-            lowest_pad is not None
-            and lowest_pad < 1 << top
-            and (flipped_bits.get(word, 0) | numbers.get(word, 0) | computed.get(word, 0))
+        elif word in jumped and tables_armed_below(
+            low, top, rests.get(word, 0), flipped_bits.get(word, 0) | numbers.get(word, 0) | computed.get(word, 0)
         ):
-            drop(word, 'a flip below its window, with a table there')
+            drop(word, 'a flip below its window could arm a table there')
+
+
+def tables_armed_below(pads: Sequence[Tuple[int, int]], top: int, rest: int, flips: int) -> bool:
+    """could a word resting at `rest`, flipped by the bits of `flips` (not by an arm), hold an address in a table of
+    `pads` ([(address, the bits a pad aligned it to)], ascending) below 2^top, with a flip's help? Every value it holds
+    has the bits of `rest` that no flip toggles, and no bit outside `rest | flips`."""
+    for address, bits in pads:
+        if address >> top:
+            break
+        above = ~((1 << bits) - 1)  # a table's address, above the bits its entries differ in
+        if address & flips & above and not address & ~(rest | flips) and not rest & ~flips & above & ~address:
+            return True
+    return False
 
 
 def _label_address(stream: OpStream, encoded: int, labels: Dict[str, int]) -> int:
@@ -853,7 +875,7 @@ def assemble(
                     table_pool.unpins,
                     guard.alignment,
                     raw=raw,
-                    lowest_pad=guard.lowest_pad(),
+                    pads=guard.tables_inline(),
                 )
             if not pinned:
                 pinned = None

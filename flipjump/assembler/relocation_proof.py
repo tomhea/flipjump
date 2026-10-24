@@ -248,7 +248,7 @@ def prove_relocation(
             {},
             guard.alignment,
             raw=raw,
-            lowest_pad=guard.lowest_pad(),
+            pads=guard.tables_inline(),
         )
 
     def arm_alignment(plain_address: int) -> int:
@@ -270,6 +270,7 @@ def prove_relocation(
     unchecked: List[str] = []
     inline = pooled_inline()
     pairs: List[Tuple[_Op, int, _Op]] = []  # (plain op, pooled address, pooled op) of the pin check
+    jumped: Set[int] = set()  # the pinned words an op jumps through (see _check_pins)
     for plain_address, op in _ops(plain_stream, memory_width):
         if op is None:
             continue
@@ -285,6 +286,14 @@ def prove_relocation(
             continue
         if pinned and _touches_a_pin(pooled_address, pooled_op, pooled_labels, pinned, memory_width):
             pairs.append((op, pooled_address, pooled_op))
+        if pinned:  # an op that jumps to a pinned word's op, and is no arm of it: it jumps through the word
+            target = _operands(pooled_op)[-1].exact_eval(pooled_labels) + memory_width
+            if target in pinned and not (
+                isinstance(op, WordFlip)
+                and _is_one_address(op.flip_value)
+                and pooled_op.word_address.exact_eval(pooled_labels) == target  # type: ignore[union-attr]
+            ):
+                jumped.add(target)
         for index, (plain_operand, pooled_operand) in enumerate(zip(_operands(op), _operands(pooled_op))):
             is_value = isinstance(op, WordFlip) and index == 1
             actual = pooled_operand.exact_eval(pooled_labels)
@@ -331,7 +340,8 @@ def prove_relocation(
             pairs,
             mismatch,
             arm_alignment,
-            min((address for address in plain_pads if address not in moved), default=None),  # the tables that stay
+            sorted((address, bits) for address, bits in plain_pads.items() if address not in moved),  # they stay
+            jumped,
             table_pool.wflips_at(),
         )
     return RelocationProof(mismatches, unchecked)
@@ -348,13 +358,16 @@ def _check_pins(
     pairs: List[Tuple[_Op, int, _Op]],
     mismatch: Callable[[str], None],
     arm_alignment: Callable[[int], int],
-    lowest_table: Optional[int],
+    tables: List[Tuple[int, int]],
+    jumped: Set[int],
     wflips_at: Optional[int],
 ) -> None:
     """the assembled words of the pinned program (see the module docstring): each pinned word rests at its value
     xor its base; each wflip of it flips an address it is armed with xor the base, or a value inside its window as
     it is; each `a;b` flip of it stays inside its window; none of these while a table it could arm (the plain
-    program's lowest, `lowest_table`) lies below its window; and no pointer runtime reaches it"""
+    program's `tables`: [(address, the bits a pad aligned it to)], of the ops that did not move) lies below its window
+    whose address those flips and its rest value can make, while an op that is no arm of it jumps through it
+    (`jumped`); and no pointer runtime reaches it"""
     if raw and pinned:
         mismatch(
             'the program uses the pointer runtime and no pin_exclude says which words it reaches, yet words are pinned'
@@ -385,6 +398,7 @@ def _check_pins(
         for word, base in pinned.items()
     }
     flipped: Dict[int, int] = {}  # word -> the bits its non-arm flips flip
+    rests: Dict[int, int] = {}  # word -> the value it rests at, without the base
     rested = set()
     for plain_op, address, pooled_op in pairs:
         if isinstance(pooled_op, FlipJump):
@@ -400,7 +414,8 @@ def _check_pins(
             if base is None:
                 continue
             rested.add(address + w)
-            expected = pooled_op.jump.exact_eval(labels) ^ base
+            rests[address + w] = pooled_op.jump.exact_eval(labels)
+            expected = rests[address + w] ^ base
             if image.word(address + w) != expected:
                 mismatch(f'the pinned word at {hex(address + w)} does not rest at its value xor its base')
             continue
@@ -426,11 +441,21 @@ def _check_pins(
     for word in sorted(set(pinned) - rested)[:3]:
         mismatch(f'the pinned word at {hex(word)} is no op: it cannot rest at its base')
     for word, bits in sorted(flipped.items()):
-        if bits and lowest_table is not None and lowest_table <= windows[word]:
-            mismatch(
-                f'the pinned word at {hex(word)} is flipped by {hex(bits)} inside its window, which a number could '
-                f'arm: the plain program has a table at {hex(lowest_table)}, below it'
-            )
+        if word not in jumped:
+            continue  # nothing jumps through it but its arms: no flip of it is one
+        rest = rests.get(word, 0)
+        for table, aligned in tables:
+            if table > windows[word]:
+                break
+            # the values the word can hold keep rest's bits that no flip toggles, and have no bit outside rest | bits
+            high = table >> aligned << aligned
+            fixed = (rest & ~bits) >> aligned << aligned
+            if high & bits and not high & ~(rest | bits) and not fixed & ~high:
+                mismatch(
+                    f'the pinned word at {hex(word)} (resting at {hex(rest)}) is flipped by {hex(bits)} inside its '
+                    f'window, which could arm the table at {hex(table)} of the plain program, below it'
+                )
+                break
 
 
 def _is_linear(operand: Expr) -> bool:

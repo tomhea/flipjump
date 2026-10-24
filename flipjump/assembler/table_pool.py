@@ -369,10 +369,10 @@ class OffsetGuard:
                 self._refuse(_operand(label, target - label_address), self._across_pad(pad, address))
         self._cut(address, pad)
 
-    def lowest_pad(self) -> Optional[int]:
-        """the lowest inline address a `pad` aligned or a segment starts at (None: there is none): a table there
+    def tables_inline(self) -> Dict[int, int]:
+        """{inline address a `pad` aligned or a segment starts at: the bits the pad aligned it to}: a table there
         could be armed with a number (see assembler.unpin)"""
-        return min(self.pads, default=None)
+        return self.pads
 
     def _cut(self, anchor: int, table: str) -> None:
         """cut the inline stream into pieces at `anchor`: a moved table's place, or a `pad` that realigned"""
@@ -1164,8 +1164,9 @@ class BlockPool(TablePool):
                 f'end past the flat maximum {hex(limit)}'
             )
         self.span_bits = max(limit - self.pool_base, 0)
-        if cheapest:  # TablePool scatters to the end of its span: give it room for its tables, not the window
-            self.span_bits = min(self.span_bits, 1 << (4 * max(need, 1) - 1).bit_length())
+        if cheapest:  # TablePool scatters its tables over its span, cheapest offsets first: room for 256 times their
+            # runs (about 8 more offsets of each popcount than a span that only fits them), not the window
+            self.span_bits = min(self.span_bits, 1 << (256 * max(need, 1) - 1).bit_length())
         self.base_reason = f'{hex(self.pool_base)}: {why} (which ends at {hex(end)})'
         if compact + need <= 1 << self.memory_width:
             return True
@@ -1928,7 +1929,10 @@ class BlockPool(TablePool):
         return placed
 
     def pool_start(self) -> int:
-        """the lowest address the pool places a table at: its blocks, or the overflow region below them"""
+        """the lowest address the pool places a table at: its blocks, or the overflow region below them (for_flat
+        with no table placed: none - the top of memory)"""
+        if self.auto_base and not self.end:
+            return 1 << self.memory_width
         return self.pool_base if self.overflow_base is None else min(self.pool_base, self.overflow_base)
 
     def pinned_words(self) -> Dict[Expr, int]:

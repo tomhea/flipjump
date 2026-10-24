@@ -190,8 +190,8 @@ def test_the_programs_of_the_later_gap_hunts_pass_the_proof(name: str, pool: str
         ('c23_numeric_address_arm', 'outside its window'),
         ('c26_pointer_write_only', 'pointer runtime'),
         ('c27_bitwise_arm', 'flips bit 10 of the pinned word'),
-        ('c32_numeric_arm_below_window', 'which a number could arm'),
-        ('c33_bitwise_arm_below_window', 'which a number could arm'),
+        ('c32_numeric_arm_below_window', 'which could arm the table at 0x200'),
+        ('c33_bitwise_arm_below_window', 'which could arm the table at 0x200'),
         ('c34_numeric_arm_wide_window', 'outside its window'),
     ],
 )
