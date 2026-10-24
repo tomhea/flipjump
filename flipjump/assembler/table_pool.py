@@ -1166,8 +1166,9 @@ class BlockPool(TablePool):
             )
         self.span_bits = max(limit - self.pool_base, 0)
         if cheapest:  # TablePool scatters its tables over its span, cheapest offsets first: room for 256 times their
-            # runs (about 8 more offsets of each popcount than a span that only fits them), not the window
-            self.span_bits = min(self.span_bits, 1 << (256 * max(need, 1) - 1).bit_length())
+            # runs (about 8 more offsets of each popcount than a span that only fits them), not the window - at most
+            # half of what the window leaves, the rest for the wflip areas after the pool
+            self.span_bits = min(self.span_bits // 2, 1 << (256 * max(need, 1) - 1).bit_length())
         self.base_reason = f'{hex(self.pool_base)}: {why} (which ends at {hex(end)})'
         if compact + need <= 1 << self.memory_width:
             return True
