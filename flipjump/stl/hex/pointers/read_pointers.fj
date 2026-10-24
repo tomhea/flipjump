@@ -157,7 +157,7 @@ ns hex {
     }
 
     //  Time Complexity: idx_n(8@+23) + w(0.75@+5) + 27@+74
-    // Space Complexity: idx_n(6@+153) + w(1.125@+29.25) + 23@+382
+    // Space Complexity: idx_n(6.5@+149) + w(1.125@+29.25) + 24@+374
     //   dst[:2] = table[idx]    (the idx-th entry of a constant array of bytes)
     //
     // table is a constant address; entry k is the byte data-op at table + k*dw (;byte*dw).
@@ -189,7 +189,7 @@ ns hex {
 
     ns pointers {
         //  Time Complexity: sw(7@+23) + idx_n@ + w(0.25@+1) + 4@+15     (size*2w a power of 2; else hex.mul_const's for sw(3@+9))
-        // Space Complexity: sw(5@+141) + idx_n(@+12) + w(0.625@+7.25) + 4@+28
+        // Space Complexity: sw(5.5@+137) + idx_n(@+12) + w(0.625@+7.25) + 4@+28
         //   dst[:w/4] = table + idx*size*2w    (the address of the idx-th size-ops entry of the array at table)
         //
         // table is a constant address; size is a constant (> 0); idx is an unsigned hex[:idx_n] (idx_n <= w/4).

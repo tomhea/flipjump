@@ -62,7 +62,7 @@ ns hex {
 
 
     //  Time Complexity: @-2
-    // Space Complexity: 8.5@-18    (less when targets repeat: the return wflips to one target share a chain)
+    // Space Complexity: 8.5@-18
     //   jump to t<x>    (a 16-way jump on the value of the hex x)
     //
     // if_flags' trick: x's jump word is armed with switch, each entry disarms it and jumps on, so x is unchanged.
