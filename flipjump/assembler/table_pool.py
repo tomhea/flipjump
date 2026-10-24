@@ -803,8 +803,9 @@ class TablePool:
 
     def wflips_at(self) -> Optional[int]:
         """where the wflip areas go (assembler.BinaryData), if not right after their segments' code: after the
-        pool, for a pool based right above the program (BlockPool.for_flat) that placed a table"""
-        return self.end if self.auto_base and self.allocated else None
+        pool, for a pool based right above the program (BlockPool.for_flat) that placed a table (in a block, a run or
+        the overflow region)"""
+        return self.end if self.auto_base and self.end else None
 
     def pinned_words(self) -> Dict[Expr, int]:
         """{source-word Expr: block base} to bake into the program; a plain pool pins nothing"""

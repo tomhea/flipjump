@@ -627,3 +627,11 @@ def test_the_cli_pool_gets_only_its_intended_arguments(tmp_path: Path, monkeypat
     assert (pool.max_slot_ops, pool.spread, pool.spread_min_count, pool.run_bits) == (32, 1, 256, 16 * 2 * 32)
     assert not (pool.pin_broken or pool.width_buckets or pool.evict_by_value or pool.merge_aliases or pool._heat)
     assert pool.one_pass and pool.overflow_base is None and pool.counts and not pool.alias
+
+
+def test_a_flat_pool_with_only_overflow_tables_lays_the_wflip_areas_after_them(tmp_path: Path) -> None:
+    # counts that name no group give no block: every table goes to the overflow region, right above the program -
+    # and the wflip areas after it (else the main one would run into the pool)
+    plain, _ = _plain(tmp_path, _XOR, W)
+    pool, pooled, _ = _flat(tmp_path, _XOR, W, counts={})
+    assert pool.allocated == 0 and pool.overflowed and pool.wflips_at() == pool.end and pooled == plain
