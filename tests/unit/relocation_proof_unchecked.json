@@ -85,6 +85,7 @@
  "pair_ns1": 65,
  "pair_ns2": 65,
  "pair_ns3": 65,
+ "prime_sieve": 3473,
  "print_dec": 5,
  "print_hex_int": 1,
  "print_int_preserves_input": 18,

@@ -8,7 +8,7 @@ assemble_and_run_test_output helpers.
 import lzma
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import List, Optional, Set
+from typing import Callable, List, Optional, Set, Union
 
 from flipjump.assembler import assembler
 from flipjump.assembler.table_pool import TablePool
@@ -30,6 +30,19 @@ from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 from flipjump.utils.functions import get_file_tuples, get_temp_directory_suffix
 from flipjump.interpreter.fjm_run import TerminationStatistics
 
+# a table pool, or a REQUEST for one: a factory such as BlockPool.for_flat (what `fj --pool-tables` makes) or
+# TablePool.for_flat, called with the memory width and the run's flat window (flat_max_words), so a function that
+# assembles AND runs sizes the pool to the window it runs in. A pool lays out one assembly, and a factory makes a
+# fresh one per call: the same request serves every width and every call.
+TablePoolRequest = Union[TablePool, Callable[[int, Optional[int]], TablePool], None]
+
+
+def _table_pool(request: TablePoolRequest, memory_width: int, flat_max_words: Optional[int]) -> Optional[TablePool]:
+    """the pool a table_pool argument asks for (see TablePoolRequest)"""
+    if request is None or isinstance(request, TablePool):
+        return request
+    return request(memory_width, flat_max_words)
+
 
 def assemble(
     fj_file_paths: List[Path],
@@ -45,7 +58,7 @@ def assemble(
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines_file: Optional[Path] = None,
-    table_pool: Optional[TablePool] = None,
+    table_pool: TablePoolRequest = None,
     run_flags: int = 0,
     io_mode: int = 0,
 ) -> None:
@@ -70,7 +83,9 @@ def assemble(
     macros) to addresses that are cheap to arm, so every table dispatch runs fewer ops. Behaviour does not
     change: only declared, `$`-free tables move, reached through their labels. It costs a bigger address span
     and a .fjm segment per table, and a declared table that breaks a rule the pool relies on is a compilation
-    error. See flipjump/assembler/table_pool.py; `fj --pool-tables` makes a one-pass BlockPool.
+    error. See flipjump/assembler/table_pool.py; `fj --pool-tables` makes BlockPool.for_flat(memory_width, its
+    --flat-max-words). A pool, or a request for one (TablePoolRequest: BlockPool.for_flat, called here with no flat
+    window - the automatic-flat threshold).
     :param run_flags: written into the .fjm: how it runs by default (fjm_consts.RUN_FLAG_*)
     :param io_mode: written into the .fjm: the io device it runs with by default (fjm_consts.IO_MODE_*)
 
@@ -95,7 +110,7 @@ def assemble(
         print_time=print_time,
         max_recursion_depth=max_recursion_depth,
         defines_file=defines_file,
-        table_pool=table_pool,
+        table_pool=_table_pool(table_pool, memory_width, None),
     )
 
 
@@ -373,7 +388,7 @@ def assemble_and_run(
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines_file: Optional[Path] = None,
-    table_pool: Optional[TablePool] = None,
+    table_pool: TablePoolRequest = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
     flat_required: bool = False,
@@ -384,7 +399,8 @@ def assemble_and_run(
     @note: This function combines the functionality of `assemble()` and `run()`.
     For more information about the parameters, see the documentation of these functions.
     @param table_pool: if given, move the tables declared relocatable to addresses that are cheap to arm (see
-    assemble() and flipjump/assembler/table_pool.py).
+    assemble() and flipjump/assembler/table_pool.py). A request (BlockPool.for_flat) is given flat_max_words, so the
+    pool ends below the window the program runs in.
 
     @return: the run's termination-statistics.
     """
@@ -434,7 +450,7 @@ def assemble_and_debug(
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines_file: Optional[Path] = None,
-    table_pool: Optional[TablePool] = None,
+    table_pool: TablePoolRequest = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
     flat_required: bool = False,
@@ -445,7 +461,8 @@ def assemble_and_debug(
     @note: This function combines the functionality of `assemble()` and `debug()`.
     For more information about the parameters, see the documentation of these functions.
     @param table_pool: if given, move the tables declared relocatable to addresses that are cheap to arm (see
-    assemble() and flipjump/assembler/table_pool.py).
+    assemble() and flipjump/assembler/table_pool.py). A request (BlockPool.for_flat) is given flat_max_words, so the
+    pool ends below the window the program runs in.
 
     @return: the run's termination-statistics.
     """
@@ -468,7 +485,7 @@ def assemble_and_debug(
             io_mode=io_mode,
             lzma_preset=lzma_preset,
             defines_file=defines_file,
-            table_pool=table_pool,
+            table_pool=_table_pool(table_pool, memory_width, flat_max_words),
         )
 
         termination_statistics = debug(
@@ -512,7 +529,7 @@ def assemble_and_run_test_output(
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines_file: Optional[Path] = None,
-    table_pool: Optional[TablePool] = None,
+    table_pool: TablePoolRequest = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
     flat_required: bool = False,
@@ -524,7 +541,8 @@ def assemble_and_run_test_output(
     @note: This function combines the functionality of `assemble()` and `test()`.
     For more information about the parameters, see the documentation of these functions.
     @param table_pool: if given, move the tables declared relocatable to addresses that are cheap to arm (see
-    assemble() and flipjump/assembler/table_pool.py).
+    assemble() and flipjump/assembler/table_pool.py). A request (BlockPool.for_flat) is given flat_max_words, so the
+    pool ends below the window the program runs in.
     @raises AssertionError: if should_raise_assertion_error, and the run finished unexpectedly or with an
     unexpected output.
 
@@ -555,7 +573,7 @@ def assemble_and_run_test_output(
             io_mode=io_mode,
             lzma_preset=lzma_preset,
             defines_file=defines_file,
-            table_pool=table_pool,
+            table_pool=_table_pool(table_pool, memory_width, flat_max_words),
         )
 
         test_succeeded = run_test_output(

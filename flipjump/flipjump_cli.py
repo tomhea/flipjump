@@ -20,7 +20,6 @@ from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
     IO_MODE_NAMES,
-    RUN_FLAG_FLAT_MEMORY,
     bad_io_mode_message,
     bad_run_flags_message,
 )
@@ -185,11 +184,6 @@ def assemble(
     verify_fj_files(error_func, file_tuples)
 
     version = get_version(args.version, args.outfile is not None, error_func)
-    if args.pool_tables and args.width == 64 and (args.run_flags or 0) & RUN_FLAG_FLAT_MEMORY:
-        error_func(
-            '--pool-tables puts the tables at 2^63, so a flat-memory window (--run-flags 1) would span 2^57 words; '
-            'run it in paged memory.'
-        )
     if version == FJMVersion.BaseVersion and (args.run_flags or args.io_mode):
         error_func('fjm version 0 has no header room for --run-flags / --io-mode; use version 1 or above.')
     fjm_writer = Writer(
@@ -200,6 +194,8 @@ def assemble(
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
+    # right above the program, ending below the flat window: --flat-max-words, else the automatic-flat threshold
+    table_pool = BlockPool.for_flat(args.width, args.flat_max_words) if args.pool_tables else None
     assembler.assemble(
         file_tuples,
         args.width,
@@ -210,9 +206,10 @@ def assemble(
         print_time=not args.silent,
         max_recursion_depth=args.max_recursion_depth,
         defines_file=defines_file,
-        # based at half the memory: the program, from address 0, must stay below it
-        table_pool=BlockPool(args.width, 1 << (args.width - 1), one_pass=True) if args.pool_tables else None,
+        table_pool=table_pool,
     )
+    if table_pool is not None and not args.silent:
+        print(f'  table pool:      {table_pool.allocated} tables moved, based at {table_pool.base_reason}')
 
 
 def get_fjm_file_path(args: argparse.Namespace, error_func: ErrorFunc, temp_dir_name: str) -> Path:
@@ -316,7 +313,8 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         "is at most 2^24 words, else 2^23). memory below "
         "the window runs in the fast flat array; segments reaching above it keep the slower paged "
         "mode for that part (hybrid). raising it costs startup time and memory (8 bytes per word of "
-        "window), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable sets the same limit",
+        "window), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable sets the same limit. "
+        "when assembling with --pool-tables, the table pool ends below it",
     )
 
     def _io_mode(value: str) -> str:
@@ -418,11 +416,13 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         "runs fewer ops. only declared, `$`-free tables move, and the program runs the same: where moving a table "
         "would change an operand that names a label (an offset from another label into or across the table), the "
         "table stays inline, and where pinning a word would, the word is not pinned; an operand that comes too late "
-        "to keep its table inline is refused. it costs a .fjm that spans to the upper half of memory (a "
-        "flat-memory run maps all of it), and a segment per moved table. with it, `__relocatable__` is a reserved "
-        "namespace, and a relocatable that uses `$`, declares a label outside its ops, leaves itself through its "
-        "own label, holds more than labels and `a;b` ops, or has no power-of-two `pad` right before its call is an "
-        "error; and a program that reaches the upper half of memory is refused",
+        "to keep its table inline is refused. the pool sits right above the program (at the first power of two "
+        "above its end, or, where the pool would not fit below the flat window there, at its end rounded up to its "
+        "largest block) and ends below the flat window - --flat-max-words, else the automatic-flat threshold "
+        "(2^24 words) - so a program that runs flat without the pool runs flat with it; a table with no room below "
+        "it stays inline. it costs a segment per moved table. with it, `__relocatable__` is a reserved namespace, "
+        "and a relocatable that uses `$`, declares a label outside its ops, leaves itself through its own label, "
+        "holds more than labels and `a;b` ops, or has no power-of-two `pad` right before its call is an error",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')

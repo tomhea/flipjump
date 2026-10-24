@@ -49,6 +49,7 @@ from flipjump.assembler.table_pool import (  # noqa: F401 - the pool is importab
     DECLINE_STALE,
     DEFER_INLINE,
     DEFER_OUT,
+    DEFER_PAST_WINDOW,
     DEFER_TOO_WIDE,
     DeferredTables,
     OffsetGuard,
@@ -231,6 +232,7 @@ class PreprocessorData:
         # (a table pool is on) how many ops the program without the pool is ahead of this one in this segment: the
         # moved tables' ops and pads, and the pads that padded differently since (see align_current_address)
         self._shift = 0
+        self._code_end = 0  # (a table pool is on) where the code of the segments closed so far ends, at most
 
         # ONE-PASS BLOCKING (off unless the pool is a BlockPool(one_pass=True)): a table the pool
         # takes is emitted into the pool's stream behind a NewSegment with no address yet, and waits
@@ -297,6 +299,8 @@ class PreprocessorData:
         """
         pool = self.table_pool
         if pool is None or not pool.has_room():
+            if pool is not None and pool.flat_limit is not None:
+                pool.past_window += 1  # (for_flat's last resort: BlockPool.replan) it stays inline
             return False
         if self.offset_guard is not None:
             unsafe = self.offset_guard.may_move(self.curr_address)
@@ -312,6 +316,8 @@ class PreprocessorData:
             )
         reserved = pool.reserve(ops_alignment, table_ops, group, group_expr, labels_prefix)
         if reserved is None:
+            if pool.flat_limit is not None:
+                pool.past_window += 1  # no room below the flat maximum: it stays inline
             return False
         address, starts_new_run, gap_ops = reserved
         self._table_moved(table, ops_alignment, table_ops)
@@ -410,6 +416,17 @@ class PreprocessorData:
             return False
         assert group is not None and self._deferred is not None  # defer() keeps an ungrouped table inline
         site = pool.kept_site(labels_prefix)
+        table_bits = table_ops * 2 * self.memory_width
+        if verdict == DEFER_OUT and pool.flat_limit is not None:
+            so_far = max(self._code_end, self.curr_address) + pool.deferred_bits
+            if table in pool.keep_inline or so_far + table_bits > pool.flat_limit:
+                # the code and the tables so far leave it no room below the maximum (or, BlockPool.replan, an
+                # earlier expansion found none)
+                verdict = DEFER_PAST_WINDOW
+                pool.past_window += 1
+                pool.deferred -= 1
+            else:
+                pool.deferred_bits += table_bits
         if verdict != DEFER_OUT:
             self._deferred.add(group, group_expr, ops_alignment, table_ops, site, None, verdict)
             return False  # aligned and emitted in place, exactly as a placing pass declines it
@@ -429,14 +446,20 @@ class PreprocessorData:
         tables = self._deferred
         assert tables is not None
         op_bits = 2 * self.memory_width
-        addresses = pool.place_deferred(tables, self.labels)
         guard = self.offset_guard
+        # the program without the tables ends where its code does, or past every address an operand reaches
+        end = max(self._code_end, self.curr_address, 0 if guard is None else guard.reach + 1)
+        addresses = pool.place_deferred(tables, self.labels, end)
+        if guard is not None:
+            guard.inline_end = pool.pool_start()  # (for_flat: where the pool went)
         moved = 0  # the tables that left the stream, in the order they did (OffsetGuard.tables)
         for index, address in enumerate(addresses):
             if not address:
                 continue  # it stayed inline: its labels are in place already
             if guard is not None:
                 guard.table_placed(address, address + tables.sizes[index] * op_bits, guard.moved_tables[moved])
+                if pool.flat_limit is not None and address + tables.sizes[index] * op_bits > pool.flat_limit:
+                    pool.past_names.append(guard.moved_tables[moved])  # past the window (see BlockPool.replan)
                 moved += 1
             for label, offset in tables.labels_of(index):
                 self.labels[label] = address + offset
@@ -545,6 +568,7 @@ class PreprocessorData:
         self.labels[f'{wflip_start_label}{self.curr_segment_index}'] = self.curr_address
         self._label_positions.append(None)
         self.curr_segment_index += 1
+        self._code_end = max(self._code_end, self.curr_address)
         self._shift = 0  # a segment starts where it does without the pool too
         self._aligned(next_segment_start, 0)
 

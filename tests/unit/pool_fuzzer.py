@@ -184,14 +184,14 @@ class Generator:
 
 
 def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], TablePool]]:
-    """name -> a factory, called in order: `fj --pool-tables`'s pool, a doom-like one, one with too small a span
-    (the overflow region), one leaving groups without a block, one with an overflow region above the blocks, the
-    two-pass recipe, a TablePool and one with long runs"""
+    """name -> a factory, called in order: `fj --pool-tables`'s pool, the same one based at half the memory, a
+    doom-like one, one with too small a span (the overflow region), one leaving groups without a block, one with an
+    overflow region above the blocks, the two-pass recipe, a TablePool and one with long runs"""
     base = 1 << (memory_width - 1)
     made: Dict[str, BlockPool] = {}
 
     def cli() -> TablePool:
-        made['cli'] = BlockPool(memory_width, base, one_pass=True)
+        made['cli'] = BlockPool.for_flat(memory_width)
         return made['cli']
 
     def tight() -> TablePool:
@@ -233,6 +233,7 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
 
     return {
         'cli': cli,
+        'half': lambda: BlockPool(memory_width, base, one_pass=True),
         'doomish': doomish,
         'tight': tight,
         'unblocked': unblocked,
@@ -270,7 +271,7 @@ def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0
             findings.append(f'{seed} w={memory_width} {name}: the pooled run differs from the plain one')
     if cli_same is not None:
         macros = parse_macro_tree(get_file_tuples([str(source)]), memory_width, True)
-        proof = prove_relocation(memory_width, macros, BlockPool(memory_width, 1 << (memory_width - 1), one_pass=True))
+        proof = prove_relocation(memory_width, macros, BlockPool.for_flat(memory_width))
         if bool(proof.mismatches) == cli_same:
             findings.append(
                 f'{seed} w={memory_width} proof: {proof.mismatches[:1]} where the cli pool runs the same: {cli_same}'

@@ -32,7 +32,7 @@ from array import array
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
 
-from flipjump.assembler.assembler import labels_resolve, resolve_pinned, unpin
+from flipjump.assembler.assembler import labels_resolve, resolve_macros_with_pool, resolve_pinned, unpin
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum
@@ -141,8 +141,8 @@ def prove_relocation(
     plain_stream, plain_labels = resolve_macros(
         memory_width, macros, save_debug_labels=False, fold_labels=False, relocatable_extents=extents, pads=plain_pads
     )
-    pooled_stream, pooled_labels = resolve_macros(
-        memory_width, macros, save_debug_labels=False, fold_labels=False, table_pool=table_pool
+    pooled_stream, pooled_labels = resolve_macros_with_pool(
+        memory_width, macros, table_pool, save_debug_labels=False, fold_labels=False
     )
     pool_start = table_pool.pool_start()
     mismatches: List[str] = []
@@ -332,6 +332,7 @@ def prove_relocation(
             mismatch,
             arm_alignment,
             min((address for address in plain_pads if address not in moved), default=None),  # the tables that stay
+            table_pool.wflips_at(),
         )
     return RelocationProof(mismatches, unchecked)
 
@@ -348,6 +349,7 @@ def _check_pins(
     mismatch: Callable[[str], None],
     arm_alignment: Callable[[int], int],
     lowest_table: Optional[int],
+    wflips_at: Optional[int],
 ) -> None:
     """the assembled words of the pinned program (see the module docstring): each pinned word rests at its value
     xor its base; each wflip of it flips an address it is armed with xor the base, or a value inside its window as
@@ -358,7 +360,16 @@ def _check_pins(
             'the program uses the pointer runtime and no pin_exclude says which words it reaches, yet words are pinned'
         )
     writer = Writer(Path('relocation_proof.fjm'), memory_width, FJMVersion.NormalVersion)
-    labels_resolve(stream, labels, memory_width, writer, save_wflip_labels=False, pinned=pinned, pool_start=pool_start)
+    labels_resolve(
+        stream,
+        labels,
+        memory_width,
+        writer,
+        save_wflip_labels=False,
+        pinned=pinned,
+        pool_start=pool_start,
+        wflips_at=wflips_at,
+    )
     image = _Image(writer, memory_width)
     w = memory_width
     # each word's window: below its base's alignment and the widest table it is armed with (none: no window)

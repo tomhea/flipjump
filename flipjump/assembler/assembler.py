@@ -7,10 +7,11 @@ and resolving labels into addresses while writing the result with the fjm Writer
 
 import dataclasses
 import gc
+import itertools
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Deque, Iterable, List, Dict, MutableSequence, Set, Tuple, Optional, Union
+from typing import Any, Callable, Deque, Iterable, List, Dict, MutableSequence, Set, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -23,12 +24,21 @@ from flipjump.utils.exceptions import (
     FlipJumpExprException,
     FlipJumpWriteFjmException,
 )
-from flipjump.assembler.inner_classes.ops import FlipJump, WordFlip, LastPhaseOp, NewSegment, ReserveBits, Padding
+from flipjump.assembler.inner_classes.ops import (
+    FlipJump,
+    WordFlip,
+    LastPhaseOp,
+    Macro,
+    MacroName,
+    NewSegment,
+    ReserveBits,
+    Padding,
+)
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.table_pool import OffsetGuard, TablePool, RESERVED_BELOW
+from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool, RESERVED_BELOW, reached_the_pool
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -112,6 +122,7 @@ class BinaryData:
         'pinned',
         'baked',
         'pool_start',
+        'wflips_at',
     )
 
     def __init__(
@@ -123,11 +134,14 @@ class BinaryData:
         save_wflip_labels: bool = True,
         pinned: Optional[Dict[int, int]] = None,
         pool_start: Optional[int] = None,
+        wflips_at: Optional[int] = None,
     ):
         """
         @param save_wflip_labels: whether to record a `:wflips:N` label per generated wflip-chain op
         @param pinned: {jump-word address: block base} of BlockPool's pinned words
         @param pool_start: where a table pool starts: a segment below it may not reach it
+        @param wflips_at: if given, every segment's wflip area is laid out from here, one after the other, rather
+        than right after its code (a pool based right above the program: TablePool.wflips_at)
         """
         self.memory_width = memory_width
 
@@ -138,7 +152,8 @@ class BinaryData:
         self.pool_start = pool_start
 
         self.first_address = first_segment.start_address
-        self.next_wflip_address = first_segment.wflip_start_address
+        self.wflips_at = wflips_at
+        self.next_wflip_address = first_segment.wflip_start_address if wflips_at is None else wflips_at
 
         self.labels = labels
         self.wflips_so_far = 0
@@ -171,6 +186,16 @@ class BinaryData:
         return wflip_spot
 
     def close_and_add_segment(self, fjm_writer: Writer) -> None:
+        if self.wflips_at is not None:  # the code here, and its wflip area after the pool
+            code_end = self.first_address + len(self.fj_words) * self.memory_width
+            if self.pool_start is not None and self.first_address < self.pool_start < code_end:
+                raise reached_the_pool(code_end, self.pool_start)
+            fj_words, wflip_words = self.fj_words, self.wflip_words
+            add_segment_to_fjm(self.memory_width, fjm_writer, self.first_address, code_end, fj_words, [], take=True)
+            add_segment_to_fjm(self.memory_width, fjm_writer, self.wflips_at, self.next_wflip_address, wflip_words, [])
+            self.wflips_at = self.next_wflip_address
+            self._new_buffers()
+            return
         if self.next_wflip_address == self.first_address:
             return
         if self.pool_start is not None and self.first_address < self.pool_start < self.next_wflip_address:
@@ -286,7 +311,7 @@ class BinaryData:
         self.close_and_add_segment(fjm_writer)
 
         self.first_address = first_address
-        self.next_wflip_address = wflip_first_address
+        self.next_wflip_address = wflip_first_address if self.wflips_at is None else self.wflips_at
 
         del self.padding_ops_indices[:]  # (an array has no clear())
 
@@ -612,6 +637,7 @@ def labels_resolve(
     on_progress: Optional[Callable[[float], None]] = None,
     pool_start: Optional[int] = None,
     offset_guard: Optional[OffsetGuard] = None,
+    wflips_at: Optional[int] = None,
 ) -> None:
     """
     resolve the labels and expressions to get the list of fj ops, and add all the data and segments into the fjm_writer.
@@ -624,6 +650,7 @@ def labels_resolve(
     @param pinned: {jump-word address: block base} of the words a BlockPool pinned (see BinaryData.pinned_value)
     @param pool_start: where a table pool starts, if one placed tables: no other segment may reach it
     @param offset_guard: the table pool's, from the preprocessor: it checks the operands that waited for a label
+    @param wflips_at: if given, where the wflip areas go (see BinaryData)
     """
     if isinstance(ops, OpStream):
         first_object = ops.first_object()
@@ -637,6 +664,7 @@ def labels_resolve(
             save_wflip_labels=save_wflip_labels,
             pinned=pinned,
             pool_start=pool_start,
+            wflips_at=wflips_at,
         )
         _guard_where(offset_guard, binary_data)
         _labels_resolve_stream(ops, binary_data, labels, fjm_writer, on_progress, offset_guard)
@@ -649,7 +677,13 @@ def labels_resolve(
         raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_segment}).")
 
     binary_data = BinaryData(
-        memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels, pinned=pinned, pool_start=pool_start
+        memory_width,
+        first_segment,
+        labels,
+        save_wflip_labels=save_wflip_labels,
+        pinned=pinned,
+        pool_start=pool_start,
+        wflips_at=wflips_at,
     )
     _guard_where(offset_guard, binary_data)
 
@@ -716,6 +750,22 @@ def _refuse_unbaked_pins(binary_data: BinaryData) -> None:
         )
 
 
+def resolve_macros_with_pool(
+    memory_width: int, macros: Dict[MacroName, Macro], table_pool: Optional[TablePool], **kwargs: Any
+) -> Tuple[OpStream, Dict[str, int]]:
+    """resolve_macros(memory_width, macros, table_pool=table_pool, **kwargs) - and again while a pool based right
+    above the program replans it (BlockPool.replan: tables it placed past the flat maximum stay inline), which
+    keeps the macro tree (consume_main is then off)"""
+    replanning = table_pool if isinstance(table_pool, BlockPool) and table_pool.auto_base else None
+    if replanning is not None:
+        kwargs['consume_main'] = False
+    for attempt in itertools.count():
+        ops, labels = resolve_macros(memory_width, macros, table_pool=table_pool, **kwargs)
+        if replanning is None or not replanning.replan(attempt):
+            return ops, labels
+    raise AssertionError('unreachable')
+
+
 def assert_first_op_assembled(fjm_writer: Writer) -> None:
     """
     A FlipJump program starts executing at address 0, so the assembled .fjm must hold its
@@ -765,10 +815,10 @@ def assemble(
 
         with ProgressBar('  macro resolve:   ', print_time=print_time, total=1.0) as progress:
             # the `...---:start:` macro-start labels are read only by the debugging file
-            ops, labels = resolve_macros(
+            ops, labels = resolve_macros_with_pool(
                 memory_width,
                 macros,
-                table_pool=table_pool,
+                table_pool,
                 show_statistics=show_statistics,
                 max_recursion_depth=max_recursion_depth,
                 save_debug_labels=debugging_file_path is not None,
@@ -820,6 +870,7 @@ def assemble(
                 on_progress=progress.update if progress.active else None,
                 pool_start=pool_start,
                 offset_guard=None if table_pool is None else table_pool.offset_guard,
+                wflips_at=None if table_pool is None else table_pool.wflips_at(),
             )
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression

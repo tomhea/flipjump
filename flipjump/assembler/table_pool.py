@@ -33,6 +33,7 @@ from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprEx
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.op_stream import linear_parts
 from flipjump.assembler.inner_classes.ops import NewSegment
+from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS, env_flat_max_words
 
 LabelsDict = Dict[str, int]
 
@@ -158,6 +159,16 @@ def merge_aliased_groups(
 DEFER_OUT = 'out'  # it leaves the op stream, and is placed once the expansion is done
 DEFER_TOO_WIDE = 'too_wide'  # it stays inline - no slot can hold it - and is declined in its turn
 DEFER_INLINE = 'inline'  # it stays inline and is never offered again: it has no group
+DEFER_PAST_WINDOW = 'past_window'  # it stays inline: the program and the tables so far leave it no room below the
+# flat maximum (for_flat), and is never placed - its group is not pinned
+
+
+def flat_limit(memory_width: int, flat_max_words: Optional[int] = None) -> int:
+    """the bit address a for_flat pool ends at or below, so the program runs in the native engine's flat window:
+    `flat_max_words` words (`--flat-max-words`), else FLIPJUMP_FLAT_MAX_WORDS as the engine reads it, else the
+    automatic-flat threshold (run_defaults.FLAT_MEMORY_AUTO_MAX_WORDS) - and never past the memory"""
+    words = flat_max_words or env_flat_max_words() or FLAT_MEMORY_AUTO_MAX_WORDS
+    return min(1 << memory_width, words * memory_width)
 
 
 class DeferredTables:
@@ -304,6 +315,7 @@ class OffsetGuard:
         'where',
         'emitting',
         'pads',
+        'reach',
     )
 
     def __init__(self, inline_end: int, labels: LabelsDict):
@@ -329,6 +341,7 @@ class OffsetGuard:
         self.emitting: Optional[Callable[[], int]] = None  # the next inline address the preprocessor emits at
         # inline address -> the bits a `pad` aligned it to (0: a segment starts there), the preprocessor's
         self.pads: Dict[int, int] = {}
+        self.reach = 0  # the highest address an operand checked so far lands at (BlockPool.for_flat bases above it)
 
     def may_move(self, anchor: int) -> Optional[str]:
         """why the table about to move out of `anchor` must stay inline, or None"""
@@ -410,6 +423,8 @@ class OffsetGuard:
     def check(self, label: str, address: int, offset: int, operand: Optional[str] = None) -> None:
         """the operand `label + offset` (or a sum that is one: `operand`), where `label` is at `address`"""
         target = address + offset
+        if target > self.reach:
+            self.reach = target
         if address >= self.inline_end:
             table = self.table_at(address)
             if table < 0:
@@ -447,8 +462,10 @@ class OffsetGuard:
                 if _moves_with(expr, label, address, value):
                     # computed on beyond its sum, yet L plus what it adds (`(L | 0) + 15*dw`): checked as that
                     self.check(label, address, value - address, str(expr))
-        if is_address and parts and not names_a_table and value >= self.inline_end:
-            self._refuse_inside(str(expr), value)
+        if is_address and parts and not names_a_table:
+            if value >= self.inline_end:
+                self._refuse_inside(str(expr), value)
+            self.reach = max(self.reach, value)
 
     def check_emitted(self, expr: Expr, is_address: bool = False) -> None:
         """the operand `expr` the preprocessor keeps for labels_resolve (`is_address`: not a wflip's value): checked
@@ -607,7 +624,8 @@ class TablePool:
         @param pool_base: first address of the pool. MUST be above everything the main stream can
         reach, or a relocated table will overwrite code -- nothing here checks that.
         @param run_ops: ops per contiguous run. One .fjm segment per run, so a short run buys a
-        lower mean popcount and costs more segments.
+        lower mean popcount and costs more segments. The default, 256, is the first table-placement build's (a big
+        program's), not tuned on other programs; BlockPool's one-pass placement of a raw program uses 16.
         @param capacity: stop relocating after this many tables (None = unlimited)
         @param span_bits: how far above pool_base the pool may reach (None = to the top of memory).
         Worth setting: offsets are handed out cheapest-popcount-first, so an unbounded pool scatters
@@ -636,6 +654,17 @@ class TablePool:
         self.allocated = 0
         self.declined = 0
         self.reserved_words = 0  # tables through the runtime's words, never relocated
+        # for_flat: the pool ends at or below `flat_limit` (bits); `past_window` tables stayed inline (or, one pass,
+        # were placed past it) for want of room there; `base_reason` says where the pool went, and why
+        self.flat_limit: Optional[int] = None
+        self.auto_base = False  # (BlockPool.for_flat) pool_base is chosen once the program's end is known
+        self.past_window = 0
+        self.base_reason = ''
+        self.deferred_bits = 0  # (one pass) the ops of the tables that left the stream, in bits
+        self.keep_inline: Set[str] = set()  # (BlockPool.replan) the tables (start labels) that stay inline
+        self.past_names: List[str] = []  # (one pass) the moved tables placed past flat_limit, by start label
+        self._flat_args: Tuple[Optional[int], Dict[str, Any]] = (None, {})
+        self.end = 0  # the end of the last table placed (the pool's end)
         self._offsets = self._cheapest_offsets()
         self._cursor = 0  # bit address of the next free spot inside the current run
         self._run_end = 0
@@ -755,6 +784,27 @@ class TablePool:
                 f'({hex(end_address)} > {hex(self._run_end)}). reserve() was given the wrong size.'
             )
         self._cursor = end_address
+        self.end = max(self.end, end_address)
+
+    @classmethod
+    def for_flat(cls, memory_width: int, flat_max_words: Optional[int] = None, **kwargs: Any) -> TablePool:
+        """A pool that ends below the flat maximum (flat_limit: `flat_max_words`, by default the automatic-flat
+        threshold), so a program that runs flat without the pool runs flat with it. A TablePool places a table as
+        the expansion reaches it, before the program's end is known, so it takes the upper half of the window (its
+        base the largest power of two at most half of it): a table it has no room for stays inline (past_window),
+        and a program that reaches the pool is refused. BlockPool.for_flat (`fj --pool-tables`) bases the pool right
+        above the program instead. `kwargs` go to the constructor (run_ops, ...)."""
+        limit = flat_limit(memory_width, flat_max_words)
+        base = 1 << ((limit // 2).bit_length() - 1)
+        pool = cls(memory_width, base, span_bits=limit - base, **kwargs)
+        pool.flat_limit = limit
+        pool.base_reason = f'{hex(base)}: the upper half of the flat window, which ends at {hex(limit)}'
+        return pool
+
+    def wflips_at(self) -> Optional[int]:
+        """where the wflip areas go (assembler.BinaryData), if not right after their segments' code: after the
+        pool, for a pool based right above the program (BlockPool.for_flat) that placed a table"""
+        return self.end if self.auto_base and self.allocated else None
 
     def pinned_words(self) -> Dict[Expr, int]:
         """{source-word Expr: block base} to bake into the program; a plain pool pins nothing"""
@@ -868,8 +918,9 @@ class BlockPool(TablePool):
     (not for ungrouped ones): with the full site path when the subclass overrides `reserve`,
     with just its heat key when only pin protection reads it, else with '' (see kept_site).
 
-    PIN PROTECTION (`heat`, opt-in). Two things re-roll a hot word's cost when the program changes:
-    its group can lose its block (and so its pin), and indices follow ENCOUNTER order, so the
+    PIN PROTECTION (`heat`, opt-in, for re-placing a PROFILED program: a build loop that keeps its hot words at the
+    same cost across rebuilds; never set by `fj --pool-tables`). Two things re-roll a hot word's cost when the
+    program changes: its group can lose its block (and so its pin), and indices follow ENCOUNTER order, so the
     cheapest ones go to whichever code the program happens to reach first, not to the hottest
     tables. A profile's heat list fixes both for the groups it names: hot groups are placed FIRST,
     in heat order, from pool_base (so no new group moves them, and their bases stay low - a writer
@@ -917,6 +968,16 @@ class BlockPool(TablePool):
         or its wflip area.
         @param unblocked: with counts - groups to leave without a block (BlockCensus.unblocked: what
         a one-pass pool sized from its own census left out to make room for its overflow region).
+        The tuning knobs are opt-in; `fj --pool-tables` passes none of them:
+        @param max_slot_ops: the widest table a slot holds (wider ones stay inline). 32 is the stl's: `hex.cmp`'s
+        31-op table is the widest stl table that should get a slot (one 514-op table would set every slot of its
+        group to 1024 ops).
+        @param spread: give a group of at least `spread_min_count` tables `spread` times the slots, and hand out
+        only the cheapest indices. `spread_min_count` (256) acts only with spread > 1, which is off (1) by default.
+        @param pin_broken: pin a group although some of its tables did not get a slot. Correct only because EVERY
+        arm of the group's word is rewritten xor its base, an inline table's too (the base cancels: see
+        pinned_words) - so a word some flip arms in another way breaks it; off by default.
+        @param heat: pin protection (see the class docstring), for re-placing a profiled program only.
         """
         if merge_aliases and not (one_pass and counts is None):
             raise ValueError(
@@ -1038,6 +1099,102 @@ class BlockPool(TablePool):
             if heat:
                 self._resolve_heat(heat)
             self._preallocate(self.unblocked)
+
+    @classmethod
+    def for_flat(cls, memory_width: int, flat_max_words: Optional[int] = None, **kwargs: Any) -> BlockPool:
+        """`fj --pool-tables`'s pool: one pass, ending below the flat maximum (flat_limit: `flat_max_words`, by
+        default the automatic-flat threshold), so a program that runs flat without the pool runs flat with it.
+
+        Its base is chosen once the expansion is done (_flat_base): the first power of two above the program's end
+        - its code, every segment and reserve, and every address an operand reaches - so an arm costs only its
+        offset's bits; or, where the blocks would not end below the maximum there, the program's end rounded up to
+        the largest block (compact: a few more bits per address); `base_reason` says which, and why. The wflip
+        areas (the assembler's chains, which no program can name) go right after the pool (wflips_at). A table the
+        program and the tables before it leave no room for below the maximum stays inline (past_window); where the
+        tables that left the stream still do not fit, the pool runs past the maximum, and they are counted too.
+        `kwargs` go to the constructor."""
+        pool = cls(memory_width, 1 << memory_width, one_pass=True, **kwargs)
+        pool.flat_limit = flat_limit(memory_width, flat_max_words)
+        pool.auto_base = True
+        pool._flat_args = (flat_max_words, kwargs)
+        return pool
+
+    def replan(self, attempt: int) -> bool:
+        """for_flat, after an expansion that placed tables past the flat maximum (past_names: one pass cannot take
+        back a table it moved, and the code after it left it no room): lay out afresh, keeping those tables inline
+        (keep_inline) - from the 4th attempt on, every table. False when there is nothing to replan: assemble()
+        expands the program again while this is True."""
+        if not self.past_names:
+            return False
+        keep = self.keep_inline.union(self.past_names)
+        flat_max_words, kwargs = self._flat_args
+        fresh = type(self).for_flat(self.memory_width, flat_max_words, **kwargs)
+        self.__dict__.clear()
+        self.__dict__.update(fresh.__dict__)
+        self.keep_inline = keep
+        if attempt >= 3:
+            self.capacity = 0  # every table stays inline: the program without the pool
+        return True
+
+    def _flat_base(self, end: int, tables: DeferredTables, cheapest: bool) -> bool:
+        """for_flat: base the pool above the program, which ends at `end` (see for_flat), within flat_limit. False
+        when the memory has no room above the program at all."""
+        assert self.flat_limit is not None
+        limit = self.flat_limit
+        if cheapest:  # TablePool's runs, each table's ops rounded up to its alignment
+            sizes = [
+                -(-max(tables.sizes[index], tables.aligns[index]) * self.op_bits // self.run_bits) * self.run_bits
+                for index in range(len(tables))
+                if index not in tables.inline
+            ]
+            largest = max(sizes, default=self.run_bits)
+        else:
+            sizes = [self._block_bits(group) for group in self.counts]
+            largest = max(sizes, default=self.op_bits)
+        need = sum(sizes)
+        power = 1 << max(0, (end - 1).bit_length())
+        compact = -(-end // largest) * largest
+        if -(-power // largest) * largest + need <= limit:
+            self.pool_base, why = power, 'the first power of two above the program'
+        else:
+            self.pool_base = compact
+            why = (
+                f'the program\'s end rounded up to its largest block ({hex(largest)}): at {hex(power)} the pool would '
+                f'end past the flat maximum {hex(limit)}'
+            )
+        self.span_bits = max(limit - self.pool_base, 0)
+        if cheapest:  # TablePool scatters to the end of its span: give it room for its tables, not the window
+            self.span_bits = min(self.span_bits, 1 << (4 * max(need, 1) - 1).bit_length())
+        self.base_reason = f'{hex(self.pool_base)}: {why} (which ends at {hex(end)})'
+        if compact + need <= 1 << self.memory_width:
+            return True
+        self.base_reason = f'none: the memory has no room above the program (which ends at {hex(end)})'
+        return False
+
+    def _park(self, tables: DeferredTables) -> Sequence[int]:
+        """for_flat with no room above the program: every table that left the stream gets an address past the flat
+        maximum, which no assembly uses - each is counted, and replan keeps it inline in the next expansion"""
+        assert self.flat_limit is not None
+        addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
+        cursor = self.flat_limit
+        for index in range(len(tables)):
+            if index not in tables.inline:
+                align = tables.aligns[index] * self.op_bits
+                addresses[index] = cursor = -(-cursor // align) * align
+                cursor += tables.sizes[index] * self.op_bits
+        return addresses
+
+    def _past_the_window(self, tables: DeferredTables, addresses: Sequence[int]) -> Sequence[int]:
+        """the pool's end (`end`), and for_flat, the tables placed past flat_limit (counted in past_window)"""
+        for index, address in enumerate(addresses):
+            if address:
+                table_end = address + tables.sizes[index] * self.op_bits
+                self.end = max(self.end, table_end)
+                if self.flat_limit is not None and table_end > self.flat_limit:
+                    self.past_window += 1
+        if self.flat_limit is not None and self.end > self.flat_limit:
+            self.base_reason += f'; the pool ends at {hex(self.end)}, past the flat maximum {hex(self.flat_limit)}'
+        return addresses
 
     def canonical_alias(self, labels: LabelsDict) -> Dict[str, str]:
         """{group -> canonical group} for groups whose expressions resolve to the SAME address.
@@ -1541,9 +1698,10 @@ class BlockPool(TablePool):
             return sys.intern(heat_key(labels_prefix))  # _hot_site compares nothing else
         return ''
 
-    def place_deferred(self, tables: DeferredTables, labels: LabelsDict) -> Sequence[int]:
+    def place_deferred(self, tables: DeferredTables, labels: LabelsDict, end: int = 0) -> Sequence[int]:
         """one_pass: the address of every queued table (0 for one that stayed inline: no table can
-        sit at 0, the program's start), in the order the expansion reached them.
+        sit at 0, the program's start), in the order the expansion reached them. `end`: where the program without
+        the tables ends (for_flat bases the pool above it).
 
         Sizes the blocks - from this expansion's own census when the pool was given no counts (merged
         by the alias `labels` imply among its groups, if merge_aliases; a group word that names a
@@ -1568,13 +1726,26 @@ class BlockPool(TablePool):
         if self._heat:
             self._resolve_heat(self._heat)
         elif self.reads_words_raw and self.pin_exclude is None:
-            return self._place_cheapest(tables)
+            if self.auto_base and not self._flat_base(end, tables, cheapest=True):
+                return self._past_the_window(tables, self._park(tables))
+            return self._past_the_window(tables, self._place_cheapest(tables))
+        if self.auto_base and not self._flat_base(end, tables, cheapest=False):
+            return self._past_the_window(tables, self._park(tables))
         if self.sizes_from_census and self.overflow_base is None:
-            self.unblocked = self._choose_unblocked(tables)
+            try:
+                self.unblocked = self._choose_unblocked(tables)
+            except FlipJumpPreprocessorException:
+                if not self.auto_base:
+                    raise
+                self.span_bits = None  # the tables that left the stream do not fit below the maximum: past it
+                self.unblocked = self._choose_unblocked(tables)
         self._preallocate(self.unblocked)
         addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
         overflow: List[Tuple[int, int, int]] = []  # (index, ops_alignment, table_ops), encounter order
         for index, group, group_expr, ops_alignment, table_ops, site, inline_cause in tables:
+            if inline_cause == DEFER_PAST_WINDOW:  # inline, and its group's word with it: not pinned
+                self.broken_groups.add(self.alias.get(group, group))
+                continue
             reserved = self.reserve(ops_alignment, table_ops, group, group_expr, site)
             if inline_cause is not None:  # too wide: reserve() declines it, exactly as at its pad
                 if reserved is not None:  # defer() and reserve() disagree on what is too wide
@@ -1587,7 +1758,7 @@ class BlockPool(TablePool):
                 addresses[index] = reserved[0]
         for index, address in self._place_overflow(overflow):
             addresses[index] = address
-        return addresses
+        return self._past_the_window(tables, addresses)
 
     def _place_cheapest(self, tables: DeferredTables) -> Sequence[int]:
         """place_deferred for a program that reads words raw (the pointer runtime, and no pin_exclude): no pin can
@@ -1596,19 +1767,24 @@ class BlockPool(TablePool):
         is counted unpinned for the pointer runtime; a table too wide for any slot stays inline, as it would."""
         addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
         groups = set()
+        overflow: List[Tuple[int, int, int]] = []  # (index, ops_alignment, table_ops): no run had room
         for index, group, _, ops_alignment, table_ops, _, inline_cause in tables:
             if inline_cause is not None:
-                self._decline(group, 'too_wide')
+                if inline_cause != DEFER_PAST_WINDOW:
+                    self._decline(group, 'too_wide')
                 continue
+            groups.add(group)
             reserved = TablePool.reserve(self, ops_alignment, table_ops)
             if reserved is None:
-                raise FlipJumpPreprocessorException(
-                    f'one-pass placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for '
-                    f'a table of {table_ops} ops. Raise span_bits.'
-                )
+                overflow.append((index, ops_alignment, table_ops))
+                continue
             TablePool.commit(self, reserved[0] + table_ops * self.op_bits)
             addresses[index] = reserved[0]
-            groups.add(group)
+        cursor = self._pool_limit()  # the runs' span is full: right after it
+        for index, ops_alignment, table_ops in overflow:
+            addresses[index] = -(-cursor // (ops_alignment * self.op_bits)) * (ops_alignment * self.op_bits)
+            cursor = addresses[index] + table_ops * self.op_bits
+            self.overflowed += 1
         if groups:
             self.unpins['the pointer runtime'] = len(groups)
         return addresses

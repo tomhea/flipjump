@@ -52,7 +52,7 @@ def _macros(files: List[str], memory_width: int, use_stl: bool = True) -> Dict[M
 
 
 def _cli_pool(memory_width: int) -> BlockPool:
-    return BlockPool(memory_width, 1 << (memory_width - 1), one_pass=True)  # the pool of fj --pool-tables
+    return BlockPool.for_flat(memory_width)  # the pool of fj --pool-tables
 
 
 @pytest.mark.parametrize('program', TEST_TABLE_PROGRAMS, ids=[program[0] for program in TEST_TABLE_PROGRAMS])
@@ -273,12 +273,11 @@ def test_a_moved_op_that_no_declaration_holds_fails_the_proof(monkeypatch: pytes
 
 def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -> None:
     files = [str(PROGRAMS_DIR / 'hexlib_tests' / '2params' / 'and.fj')]
-    real_resolve = getattr(relocation_proof, 'resolve_macros')
+    real_resolve = getattr(relocation_proof, 'resolve_macros_with_pool')
 
     def corrupting(*args: Any, **kwargs: Any) -> Any:
         stream, labels = real_resolve(*args, **kwargs)
-        if kwargs.get('table_pool') is None:
-            return stream, labels
+        pool_start = args[2].pool_start()
 
         class Corrupted:
             """the pooled stream, with the jump of its first moved op one op further"""
@@ -287,7 +286,7 @@ def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -
                 in_pool, done = False, False
                 for op in stream.iter_ops():
                     if isinstance(op, NewSegment):
-                        in_pool = op.start_address >= (1 << 63)
+                        in_pool = op.start_address >= pool_start
                     elif in_pool and not done and isinstance(op, FlipJump):
                         op = FlipJump(op.flip, Expr(('+', (op.jump, Expr(128)))), op.code_position)
                         done = True
@@ -296,7 +295,7 @@ def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -
         return Corrupted(), labels
 
     assert prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches == []
-    monkeypatch.setattr('flipjump.assembler.relocation_proof.resolve_macros', corrupting)
+    monkeypatch.setattr('flipjump.assembler.relocation_proof.resolve_macros_with_pool', corrupting)
     monkeypatch.setattr('flipjump.assembler.relocation_proof.labels_resolve', lambda *args, **kwargs: None)
     monkeypatch.setattr('flipjump.assembler.relocation_proof.unpin', lambda *args, **kwargs: None)
     mismatches = prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches

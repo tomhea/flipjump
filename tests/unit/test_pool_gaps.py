@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
-from flipjump import assemble, assemble_run_according_to_cmd_line_args
+from flipjump import assemble, assemble_run_according_to_cmd_line_args, flipjump_quickstart
+from flipjump.fjm.fjm_reader import read_fjm_header
+from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
 from flipjump.assembler import assembler, table_pool as table_pool_module
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.relocation_proof import prove_relocation
@@ -32,9 +34,11 @@ POOL_BASE = 1 << 26
 def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> TablePool:
     base = 1 << (memory_width - 1)
     if kind == 'cli':  # fj --pool-tables
-        return BlockPool(memory_width, base, one_pass=True)
+        return BlockPool.for_flat(memory_width)
     if kind == 'table':
         return TablePool(memory_width, base, run_ops=16)
+    if kind == 'half':  # fj --pool-tables's pool, based at half the memory
+        return BlockPool(memory_width, base, one_pass=True)
     counting = BlockPool(memory_width, base)
     assemble([source], tmp_path / 'count.fjm', memory_width=memory_width, print_time=False, table_pool=counting)
     return BlockPool(memory_width, base, counts=counting.counts, widths=counting.widths)
@@ -47,13 +51,13 @@ GUARD_C06 = (
 )
 GUARD_C07_PLUS = (
     r'the operand `T \+ 64` of the op at 0x80 \(after the label f1:l11:stl.startup---code_start\) leaves the moved '
-    r'table T at 0x80000000: an offset from a moved table\'s label must stay inside it'
+    r'table T at 0x[0-9a-f]+: an offset from a moved table\'s label must stay inside it'
 )
 GUARD_C07_COMPOUND = (
     r'the operand `\(\(T \+ 64\) \| 0\)` of the op at 0x80 \(after the label f1:l11:stl.startup---code_start\) '
-    r'leaves the moved table T at 0x80000000: an offset from a moved table\'s label must stay inside it'
+    r'leaves the moved table T at 0x[0-9a-f]+: an offset from a moved table\'s label must stay inside it'
 )
-GUARD_C25 = r'the operand `f1:l19:go\(1\)---T \+ 64` .* leaves the moved table f1:l19:go\(1\)---T at 0x80000000'
+GUARD_C25 = r'the operand `f1:l19:go\(1\)---T \+ 64` .* leaves the moved table f1:l19:go\(1\)---T at 0x[0-9a-f]+'
 GUARD_C29 = (
     r'the operand `\(\(\(\(b - a\) >> 6\) & 15\) \* 64\)` of the op at 0x140 \(in the top level\) takes the distance '
     r'across the place of the table f1:l8:hex.xor\(2\)---s16:l12:hex.exact_xor\(5\)---switch, which moved out of 0x100'
@@ -82,8 +86,9 @@ CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
     ('c05_label_offset_out_of_table', 32): {'cli': 'leaves the table through', 'table': 'leaves the table through'},
     ('c05b_trailing_label', 32): {'cli': 'declares a label after its last op', 'table': 'after its last op'},  # B5
     ('c09_pad3', 32): {'cli': 'power-of-two pad', 'table': 'power-of-two pad'},  # B6
-    ('c10_wflip_area_crosses_pool', 16): {'cli': 'its wflip area reach', 'table': 'its wflip area reach'},  # M1
-    ('c11_segment_above_pool', 16): {'cli': 'inside the table pool'},  # M2
+    # M1, M2: a pool at half the memory is reached; fj --pool-tables's is based above the program
+    ('c10_wflip_area_crosses_pool', 16): {'cli': SAME, 'table': 'its wflip area reach'},
+    ('c11_segment_above_pool', 16): {'cli': SAME, 'half': 'inside the table pool'},
     ('c14_accidental_namespace', 32): {'cli': 'needs a `pad`'},  # M6: a reserved namespace with the pool
     ('c13_label_between_pad_and_call', 32): {'cli': SAME, 'table': SAME},
     ('c15_nested_namespaces', 32): {'cli': SAME, 'table': SAME},
@@ -251,14 +256,14 @@ def test_count_bits_keeps_its_pin_unless_a_table_lies_below_its_window(tmp_path:
     # R3-1: but its own 16-op table lies at op 16, below that window, where the same flip of an unarmed dst would
     # point - a flip the pool cannot tell from an arm, so dst is unpinned. With no table below, it stays pinned.
     source = GAPS / 'c30_count_bits_stays_pinned.fj'
-    pool = BlockPool(W, 1 << (W - 1), one_pass=True)
+    pool = BlockPool.for_flat(W)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
     assert pool.pinned_words() and pool.unpins == {BELOW: 1}
     lowest = pool.offset_guard.lowest_pad() if pool.offset_guard else None
     assert lowest == 0x400  # count_switch, behind a `pad 16`
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(OffsetGuard, 'lowest_pad', lambda self: 0x1000)  # no table below the 64-op window (2^12)
-        pool = BlockPool(W, 1 << (W - 1), one_pass=True)
+        pool = BlockPool.for_flat(W)
         assemble([source], tmp_path / 'pinned.fjm', memory_width=W, print_time=False, table_pool=pool)
         assert pool.pinned_words() and pool.unpins == {}
         assert run(tmp_path / 'pinned.fjm', 30) == run(tmp_path / 'pooled.fjm', 30)
@@ -317,7 +322,7 @@ def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monke
 
 def _proof(name: str) -> List[str]:
     files = get_file_tuples([str(GAPS / f'{name}.fj')], no_stl=False)
-    return prove_relocation(W, parse_macro_tree(files, W, True), BlockPool(W, 1 << (W - 1), one_pass=True)).mismatches
+    return prove_relocation(W, parse_macro_tree(files, W, True), BlockPool.for_flat(W)).mismatches
 
 
 @pytest.mark.parametrize(
@@ -411,11 +416,20 @@ def test_an_overflow_region_below_the_program_is_refused(tmp_path: Path) -> None
         assemble([_source(tmp_path)], tmp_path / 'a.fjm', memory_width=W, print_time=False, table_pool=pool)
 
 
-def test_a_flat_memory_run_of_a_w64_pooled_program_is_refused(tmp_path: Path) -> None:
-    # M5: the tables sit at 2^63, so a flat window would map 2^57 words
-    args = ['--asm', '-s', '-o', str(tmp_path / 'a.fjm'), '-w', '64', '--pool-tables', '--run-flags', '1']
-    with pytest.raises(SystemExit):
+def test_a_w64_pooled_program_runs_flat(tmp_path: Path) -> None:
+    # M5, the flat spec: fj --pool-tables bases the pool right above the program, so a flat-memory run (the run flag,
+    # compiled in: the window is required) of a w=64 program maps a small window, and prints what the plain one does
+    for name, extra in (('plain', []), ('pooled', ['--pool-tables'])):
+        args = ['--asm', '-s', '-o', str(tmp_path / f'{name}.fjm'), '-w', '64', '--run-flags', '1', *extra]
         assemble_run_according_to_cmd_line_args(cmd_line_args=[*args, str(_source(tmp_path))])
+    plain, pooled = read_fjm_header(tmp_path / 'plain.fjm'), read_fjm_header(tmp_path / 'pooled.fjm')
+    assert pooled.span_words <= 2 * plain.span_words <= FLAT_MEMORY_AUTO_MAX_WORDS
+    outputs = []
+    for name in ('plain', 'pooled'):
+        io_device = FixedIO(b'')
+        flipjump_quickstart.run(tmp_path / f'{name}.fjm', io_device=io_device, print_time=False, flat_required=True)
+        outputs.append(io_device.get_output())
+    assert outputs[0] == outputs[1] == b'6'
 
 
 def test_a_tablepool_slot_is_aligned_and_a_passed_slot_is_used_later() -> None:
@@ -453,15 +467,163 @@ def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: P
     source = [PROGRAMS_DIR / 'hexlib_tests' / 'basics2' / 'pointer_setters.fj']
     assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
     plain = _ops(tmp_path / 'plain.fjm')
-    pool = BlockPool(64, 1 << 63, one_pass=True)
+    pool = BlockPool.for_flat(64)
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
     assert pool.reads_words_raw and pool.allocated and pool.pinned_words() == {}
     assert pool.unpins == {'the pointer runtime': 76}
     assert pooled[0] == plain[0] and pooled[1] < plain[1]
     # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run MORE ops
-    blocked_pool = BlockPool(64, 1 << 63, one_pass=True)
+    blocked_pool = BlockPool.for_flat(64)
     blocked_pool.pin_exclude = lambda address, labels: True
     assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
     blocked = _ops(tmp_path / 'blocked.fjm')
     assert blocked_pool.pinned_words() and blocked[0] == plain[0] and blocked[1] > plain[1]
+
+
+# the flat spec: fj --pool-tables's pool (BlockPool.for_flat) sits right above the program and ends below the flat
+# window. _INIT_FIRST's tables come after hex.init's bulk, so a tight window leaves them no room.
+_INIT_FIRST = """
+stl.startup
+    ;code
+hex.init
+code:
+    hex.xor x, y
+    hex.xor y, x
+    hex.or x, y
+    hex.and y, x
+    hex.print_as_digit x, 0
+    hex.print_as_digit y, 0
+    stl.loop
+x: hex.hex 3
+y: hex.hex 5
+"""
+
+
+def _flat(tmp_path: Path, text: str, memory_width: int, **pool: Any) -> Tuple[BlockPool, Tuple[str, str], int]:
+    """(the pool, the run, the .fjm's span in words) of `text` assembled with BlockPool.for_flat(**pool)"""
+    source = _source(tmp_path, text)
+    table_pool = BlockPool.for_flat(memory_width, **pool)
+    assemble([source], tmp_path / 'flat.fjm', memory_width=memory_width, print_time=False, table_pool=table_pool)
+    return table_pool, run(tmp_path / 'flat.fjm', 30), read_fjm_header(tmp_path / 'flat.fjm').span_words
+
+
+def _plain(tmp_path: Path, text: str, memory_width: int) -> Tuple[Tuple[str, str], int]:
+    """(the run, the span in words) of `text` without a pool"""
+    assemble([_source(tmp_path, text)], tmp_path / 'plain.fjm', memory_width=memory_width, print_time=False)
+    return run(tmp_path / 'plain.fjm', 30), read_fjm_header(tmp_path / 'plain.fjm').span_words
+
+
+@pytest.mark.parametrize('memory_width', [16, 32, 64])
+def test_the_default_flat_layout_is_compact(tmp_path: Path, memory_width: int) -> None:
+    # the pool's base is the first power of two above the program's end (one set bit), the wflip areas after it
+    text = _XOR if memory_width == 16 else _INIT_FIRST
+    plain, plain_span = _plain(tmp_path, text, memory_width)
+    pool, pooled, span = _flat(tmp_path, text, memory_width)
+    base = pool.pool_start()
+    assert pool.allocated and pooled == plain and pool.past_window == 0
+    assert base & (base - 1) == 0 and 'the first power of two above the program' in pool.base_reason
+    assert base < 2 * plain_span * memory_width and span < 2 * plain_span
+
+
+def test_a_program_ending_just_past_a_power_of_two_takes_the_compact_base(tmp_path: Path) -> None:
+    # the program ends at 0x10040, just past 2^16: at 2^17 the pool would not end below a 0x14000-bit window, so it
+    # is based at the program's end rounded up to its largest block
+    text = _XOR + 'segment 0x10000\n    ;0\n'
+    plain, _ = _plain(tmp_path, text, W)
+    pool, pooled, _ = _flat(tmp_path, text, W)
+    assert pool.pool_start() == 0x20000 and pooled == plain
+    pool, pooled, _ = _flat(tmp_path, text, W, flat_max_words=0x14000 // W)
+    assert 0x10040 <= pool.pool_start() < 0x20000 and pool.pool_start() & (pool.pool_start() - 1)
+    assert "the program's end rounded up to its largest block" in pool.base_reason
+    assert pool.allocated and pool.end <= 0x14000 and pooled == plain and pool.past_window == 0
+
+
+# tables before and after hex.init's bulk: in a tight window the ones after it find no room below the window
+_TABLES_AROUND_THE_BULK = """
+stl.startup
+    hex.xor x, y
+    hex.or x, y
+    ;code
+hex.init
+code:
+    hex.xor y, x
+    hex.and y, x
+    hex.print_as_digit x, 0
+    hex.print_as_digit y, 0
+    stl.loop
+x: hex.hex 3
+y: hex.hex 5
+"""
+
+
+def test_a_tight_flat_window_moves_some_tables_and_keeps_the_rest_inline(tmp_path: Path) -> None:
+    plain, plain_span = _plain(tmp_path, _TABLES_AROUND_THE_BULK, W)
+    pool, pooled, _ = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W)
+    every = pool.allocated + pool.overflowed
+    partial = []
+    for words in range(plain_span, plain_span + 200, 16):
+        pool, pooled, _ = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W, flat_max_words=words)
+        moved = pool.allocated + pool.overflowed
+        assert pooled == plain and moved + pool.past_window >= every and pool.end <= words * W
+        if 0 < moved < every:
+            partial.append(words)
+    assert partial
+
+
+def test_a_tight_flat_window_moves_fewer_tables_safely(tmp_path: Path) -> None:
+    plain, plain_span = _plain(tmp_path, _INIT_FIRST, W)
+    pool, pooled, _ = _flat(tmp_path, _INIT_FIRST, W)
+    moved = pool.allocated + pool.overflowed
+    assert moved and pool.past_window == 0 and pooled == plain
+    # a window the pool fits in only compactly: every table moves, fewer get a block
+    pool, pooled, span = _flat(tmp_path, _INIT_FIRST, W, flat_max_words=plain_span)
+    assert pool.allocated + pool.overflowed == moved and pool.past_window == 0 and pooled == plain
+    assert span <= plain_span and pool.end <= plain_span * W
+    # a window the program's code alone overfills: no table has room - each stays inline, counted, and the binary is
+    # the plain one
+    pool, pooled, span = _flat(tmp_path, _INIT_FIRST, W, flat_max_words=plain_span // 2)
+    assert pool.allocated + pool.overflowed == 0 and pool.past_window >= moved and pooled == plain
+    assert (tmp_path / 'flat.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()
+
+
+def test_a_table_pool_for_a_flat_window_takes_its_upper_half() -> None:
+    pool = TablePool.for_flat(W, 1 << 20)
+    assert pool.pool_start() == (1 << 20) * W // 2 and pool.span_bits == (1 << 20) * W // 2
+    assert TablePool.for_flat(64).flat_limit == FLAT_MEMORY_AUTO_MAX_WORDS * 64
+
+
+def test_a_combined_helper_hands_its_flat_window_to_a_pool_request(tmp_path: Path) -> None:
+    # assemble_and_run_test_output (and assemble_and_debug, which assemble_and_run calls) call a request with their
+    # own memory width and flat_max_words, so assembling and running cannot disagree; a pool is used as it is
+    asked: List[Tuple[int, Optional[int]]] = []
+
+    def request(memory_width: int, flat_max_words: Optional[int]) -> TablePool:
+        asked.append((memory_width, flat_max_words))
+        return BlockPool.for_flat(memory_width, flat_max_words)
+
+    for helper_pool in (request, BlockPool.for_flat(64, 1 << 20)):
+        assert flipjump_quickstart.assemble_and_run_test_output(
+            [_source(tmp_path)], b'', b'6', print_time=False, table_pool=helper_pool, flat_max_words=1 << 20
+        )
+    assert asked == [(64, 1 << 20)]
+
+
+def test_the_cli_pool_gets_only_its_intended_arguments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # G4: fj --pool-tables passes the width and --flat-max-words, and no tuning knob
+    made: List[Tuple[Tuple[Any, ...], Dict[str, Any], BlockPool]] = []
+    real = BlockPool.for_flat.__func__  # type: ignore[attr-defined]
+
+    def for_flat(cls: Any, *args: Any, **kwargs: Any) -> BlockPool:
+        pool: BlockPool = real(cls, *args, **kwargs)
+        made.append((args, kwargs, pool))
+        return pool
+
+    monkeypatch.setattr(BlockPool, 'for_flat', classmethod(for_flat))
+    args = ['--asm', '-s', '-o', str(tmp_path / 'a.fjm'), '-w', '32', '--pool-tables', '--flat-max-words', '4096']
+    assemble_run_according_to_cmd_line_args(cmd_line_args=[*args, str(_source(tmp_path))])
+    ((given, kwargs, pool),) = made
+    assert given == (32, 4096) and kwargs == {} and pool.flat_limit == 4096 * 32
+    assert (pool.max_slot_ops, pool.spread, pool.spread_min_count, pool.run_bits) == (32, 1, 256, 16 * 2 * 32)
+    assert not (pool.pin_broken or pool.width_buckets or pool.evict_by_value or pool.merge_aliases or pool._heat)
+    assert pool.one_pass and pool.overflow_base is None and pool.counts and not pool.alias

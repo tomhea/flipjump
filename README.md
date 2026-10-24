@@ -153,9 +153,11 @@ fj --run hello_world.fjm
 of `hex.exact_xor` and its kin, and of the bit shifts) to addresses that are cheap to arm. The program runs the same:
 where moving a table would change an operand that names a label (an offset from another label into or across the
 table), the table stays where it is, or - if the operand comes too late for that - the program is refused with the
-reason. The tables move to the upper half of memory, so the `.fjm` spans to there; a program that reaches it is
-refused too. With it, `__relocatable__` is a reserved namespace: a macro whose innermost namespace has that name is a
-table the pool may move.
+reason. The tables move right above the program - to the first power of two above its end, or, where the pool would
+not fit below the flat window there, to its end rounded up to the pool's largest block - and the pool ends below that
+window: `--flat-max-words`, else the automatic-flat threshold (2^24 words), so a program that runs flat without the
+pool runs flat with it. A table with no room below the window stays inline. With it, `__relocatable__` is a reserved
+namespace: a macro whose innermost namespace has that name is a table the pool may move.
 
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
