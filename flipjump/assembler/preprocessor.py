@@ -153,6 +153,7 @@ class PreprocessorData:
         table_pool: Optional[TablePool] = None,
         fold_labels: bool = True,
         relocatable_extents: Optional[List[Tuple[int, int]]] = None,
+        pads: Optional[Dict[int, int]] = None,
     ):
         """
         @param memory_width: the memory-width
@@ -165,6 +166,8 @@ class PreprocessorData:
         @param fold_labels: fold an operand of declared labels into a number (see resolve_macros)
         @param relocatable_extents: if given, [start, end) of every relocatable table expanded in place is
         appended to it
+        @param pads: if given, {address: the bits a `pad` aligned it to, 0 where only a segment starts} is filled in
+        (a table pool's OffsetGuard gets one too)
         """
         self.memory_width = memory_width
         self.macros = macros
@@ -219,11 +222,15 @@ class PreprocessorData:
             self.offset_guard.where = self._where
             self.offset_guard.emitting = self._emitting
         self.result_ops.guard = self.pool_ops.guard = self.offset_guard
+        self.pads = pads if self.offset_guard is None else self.offset_guard.pads
         self._dollar_ops: Dict[int, Dict[int, bool]] = {}  # id(macro) -> its ops that name `$` (see dollar_ops)
         self._pointer_runtime_users: Dict[int, bool] = {}  # id(macro) -> it names POINTER_RUNTIME_LABELS
         self.emit_target: OpStream = self.result_ops
         self._reloc_stack: List[Tuple[int, OpStream]] = []
         self._pool_segment: Optional[NewSegment] = None
+        # (a table pool is on) how many ops the program without the pool is ahead of this one in this segment: the
+        # moved tables' ops and pads, and the pads that padded differently since (see align_current_address)
+        self._shift = 0
 
         # ONE-PASS BLOCKING (off unless the pool is a BlockPool(one_pass=True)): a table the pool
         # takes is emitted into the pool's stream behind a NewSegment with no address yet, and waits
@@ -307,7 +314,7 @@ class PreprocessorData:
         if reserved is None:
             return False
         address, starts_new_run, gap_ops = reserved
-        self._table_moved(table)
+        self._table_moved(table, ops_alignment, table_ops)
         if self.offset_guard is not None:
             self.offset_guard.table_placed(address, address + table_ops * 2 * self.memory_width, table)
         self._reloc_stack.append((self.curr_address, self.emit_target))
@@ -323,10 +330,12 @@ class PreprocessorData:
         self.curr_address = address
         return True
 
-    def _table_moved(self, table: str) -> None:
-        """the table (its start label) leaves the inline stream here (see OffsetGuard)"""
+    def _table_moved(self, table: str, ops_alignment: int, table_ops: int) -> None:
+        """the table (its start label), behind a `pad ops_alignment`, leaves the inline stream here (see OffsetGuard)"""
         if self.offset_guard is not None:
             self.offset_guard.table_moved(self.curr_address, table)
+        plain = self.curr_address // (2 * self.memory_width) + self._shift  # where the program without the pool is
+        self._shift += (-plain) % ops_alignment + table_ops
 
     def _emitting(self) -> int:
         """the next inline address (OffsetGuard: a table moving out of it or above can still stay inline)"""
@@ -404,7 +413,7 @@ class PreprocessorData:
         if verdict != DEFER_OUT:
             self._deferred.add(group, group_expr, ops_alignment, table_ops, site, None, verdict)
             return False  # aligned and emitted in place, exactly as a placing pass declines it
-        self._table_moved(table)
+        self._table_moved(table, ops_alignment, table_ops)
         segment = NewSegment(0)  # its address is decided once the expansion is done
         self.pool_ops.append(segment)
         self._deferred.add(group, group_expr, ops_alignment, table_ops, site, segment)
@@ -536,6 +545,8 @@ class PreprocessorData:
         self.labels[f'{wflip_start_label}{self.curr_segment_index}'] = self.curr_address
         self._label_positions.append(None)
         self.curr_segment_index += 1
+        self._shift = 0  # a segment starts where it does without the pool too
+        self._aligned(next_segment_start, 0)
 
         self.patch_last_wflip_address()
 
@@ -612,8 +623,23 @@ class PreprocessorData:
                 f"(this usually happens after a 'reserve' or 'segment' that isn't 2*w-aligned).",
             )
         ops_to_pad = (-self.curr_address // op_size) % ops_alignment
+        if self.offset_guard is not None:
+            # without the pool the pad starts `_shift` ops further: if it pads differently, the distance across it
+            # changes (OffsetGuard.pad_realigned)
+            plain_pad = (-(self.curr_address // op_size + self._shift)) % ops_alignment
+            if plain_pad != ops_to_pad:
+                self.offset_guard.pad_realigned(self.curr_address, ops_alignment)
+                self._shift += plain_pad - ops_to_pad
         self.curr_address += ops_to_pad * op_size
         self.emit(Padding(ops_to_pad))
+        if ops_alignment > 1:
+            bits = ops_alignment * op_size
+            self._aligned(self.curr_address, (bits & -bits).bit_length() - 1)
+
+    def _aligned(self, address: int, bits: int) -> None:
+        """a `pad` aligned the inline `address` to `bits` bits, or (bits 0) a segment starts there (see `pads`)"""
+        if self.pads is not None and address:
+            self.pads[address] = max(self.pads.get(address, 0), bits)
 
     def deferred_labels_note(self, op: Union[RepCall, Pad, Segment, Reserve]) -> str:
         """why an expression evaluated during the expansion may have failed: it names the label of a
@@ -1003,6 +1029,7 @@ def resolve_macros(
     consume_main: bool = False,
     fold_labels: bool = True,
     relocatable_extents: Optional[List[Tuple[int, int]]] = None,
+    pads: Optional[Dict[int, int]] = None,
 ) -> Tuple[OpsQueue, LabelsDict]:
     """
     unwind the macro tree to a serialized-queue of ops,
@@ -1027,6 +1054,8 @@ def resolve_macros(
     label keeps its expression (the relocation proof reads them). It cannot change the emitted .fjm.
     @param relocatable_extents: if given, [start, end) of every relocatable table expanded in place is
     appended to it (the relocation proof reads them).
+    @param pads: if given, {address: the bits a `pad` aligned it to, 0 where only a segment starts} is filled in
+    (the relocation proof reads it).
     @return: tuple of the queue of ops, and the labels' dictionary
     """
     preprocessor_data = PreprocessorData(
@@ -1037,6 +1066,7 @@ def resolve_macros(
         table_pool=table_pool,
         fold_labels=fold_labels,
         relocatable_extents=relocatable_extents,
+        pads=pads,
     )
     preprocessor_data.consume_main = consume_main
     if on_progress is not None:

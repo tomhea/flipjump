@@ -199,8 +199,8 @@ class OpStream:
 
     # ---- writing ----
 
-    def _operand(self, expr: Expr) -> bool:
-        """append expr's slot(s); True if it is deferred (not a literal)"""
+    def _operand(self, expr: Expr, is_address: bool = True) -> bool:
+        """append expr's slot(s); True if it is deferred (not a literal). `is_address`: not a wflip's value"""
         value: Any = expr.value
         vals = self.vals
         if value.__class__ is int:
@@ -223,7 +223,7 @@ class OpStream:
             if linear is not None and linear[0] is not None and self._label_plus(linear[0], linear[1]):
                 return linear[0] not in self.labels
             if self.guard is not None:
-                self.guard.check_emitted(expr)
+                self.guard.check_emitted(expr, is_address)
         refs = self.refs
         vals.append(~(len(refs) << 2 | TAG_EXPR))
         refs.append(expr)
@@ -258,8 +258,8 @@ class OpStream:
         if address is not None:
             self.guard.check(name, address, const)
 
-    def _operand_in(self, expr: Expr, params: Dict[str, Expr]) -> bool:
-        """_operand(expr.eval_new(params)) - the same slots - building no Expr for a +/- operand.
+    def _operand_in(self, expr: Expr, params: Dict[str, Expr], is_address: bool = True) -> bool:
+        """_operand(expr.eval_new(params), is_address) - the same slots - building no Expr for a +/- operand.
         (The hot path of the expansion: the common shapes are spelled out.)"""
         value: Any = expr.value
         if value.__class__ is str:
@@ -272,29 +272,29 @@ class OpStream:
                     if 0 <= value <= LITERAL_MAX:
                         self.vals.append(value)
                         return False
-                    return self._operand(substitute)
+                    return self._operand(substitute, is_address)
                 if value.__class__ is str:
                     name, const = value, 0
                 else:
                     linear = _linear_memo(substitute)
                     if linear is None or linear[0] is None:
-                        return self._operand(substitute)
+                        return self._operand(substitute, is_address)
                     name, const = linear  # type: ignore[assignment]
         elif value.__class__ is int:
             if 0 <= value <= LITERAL_MAX:
                 self.vals.append(value)
                 return False
-            return self._operand(expr)
+            return self._operand(expr, is_address)
         else:
             linear = _linear_in(expr, params)
             if linear is None:
-                return self._operand(expr.eval_new(params))
+                return self._operand(expr.eval_new(params), is_address)
             name, const = linear  # type: ignore[assignment]
             if name is None:
                 if 0 <= const <= LITERAL_MAX:
                     self.vals.append(const)
                     return False
-                return self._operand(expr.eval_new(params))
+                return self._operand(expr.eval_new(params), is_address)
         if self.guard is not None and (const or name in self.guard.watched):
             self._guarded(name, const)
         known = self.labels.get(name)
@@ -312,7 +312,7 @@ class OpStream:
                 self.vals.append(const)
             refs.append(name)
             return True
-        return self._operand(expr.eval_new(params))
+        return self._operand(expr.eval_new(params), is_address)
 
     def add_flip_jump_in(self, flip: Expr, jump: Expr, params: Dict[str, Expr], code_position: CodePosition) -> None:
         """add_flip_jump(flip.eval_new(params), jump.eval_new(params), code_position), the same slots"""
@@ -360,7 +360,7 @@ class OpStream:
         if self.keep_label_values:
             self._value(flip_value.eval_new(params))
         else:
-            self._operand_in(flip_value, params)
+            self._operand_in(flip_value, params, False)
         self._operand_in(return_address, params)
         self._end_word_flip(code_position)
 
@@ -398,7 +398,7 @@ class OpStream:
         if self.keep_label_values:
             self._value(flip_value)
         else:
-            self._operand(flip_value)
+            self._operand(flip_value, False)
         self._operand(return_address)
         self._end_word_flip(code_position)
 

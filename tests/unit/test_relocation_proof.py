@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterator, List, Tuple
 
 import pytest
 
-from flipjump.assembler import assembler, relocation_proof
+from flipjump.assembler import assembler, relocation_proof, table_pool as table_pool_module
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment
@@ -135,12 +135,26 @@ def test_an_operand_computed_from_a_moved_label_fails_the_proof(name: str) -> No
 
 
 def test_an_operand_computed_from_unmoved_labels_is_counted_unchecked(tmp_path: Path) -> None:
+    # `(print_a | 0)` moves with print_a: an address, compared (R3-5); `(print_a >> 6) & 15` is print_a's address
+    # used as a number: unchecked
     base = OUTSIDE_OFFSET_PROGRAM.replace('    ;before + 2*dw\n', '    ;tbl_start + 2*dw\n')
     unchecked = prove_relocation(W, _macros(_write(tmp_path, base), W), TablePool(W, POOL_BASE)).unchecked
     source = base.replace('    ;tbl_start + 2*dw\n', '    ;tbl_start + 2*dw\n    ;(print_a | 0)\n')
     proof = prove_relocation(W, _macros(_write(tmp_path, source), W), TablePool(W, POOL_BASE))
+    assert proof.mismatches == [] and len(proof.unchecked) == len(unchecked)
+    source = base.replace('    ;tbl_start + 2*dw\n', '    ;tbl_start + 2*dw\n    ;(print_a >> 6) & 15\n')
+    proof = prove_relocation(W, _macros(_write(tmp_path, source), W), TablePool(W, POOL_BASE))
     assert proof.mismatches == [] and len(proof.unchecked) == len(unchecked) + 1
-    assert '(print_a | 0)' in proof.unchecked[-1]
+    assert '((print_a >> 6) & 15)' in proof.unchecked[-1]
+
+
+def test_an_address_computed_on_from_one_label_is_compared(monkeypatch: pytest.MonkeyPatch) -> None:
+    # R3-5: `(L | 0) + 15*dw` is L plus what it adds - compared whole, so with the guard's check disabled the
+    # moved table it reaches over fails the proof
+    assert prove_relocation(W, _macros(_gap('c36_opaque_label_plus_offset'), W), _cli_pool(W)).mismatches == []
+    monkeypatch.setattr(table_pool_module, '_moves_with', lambda expr, label, address, value: False)
+    mismatches = prove_relocation(W, _macros(_gap('c36_opaque_label_plus_offset'), W), _cli_pool(W)).mismatches
+    assert any('((L | 0) + 960) should be' in mismatch for mismatch in mismatches), mismatches
 
 
 ROUND_2 = [
@@ -153,12 +167,16 @@ ROUND_2 = [
     'c27_bitwise_arm',
     'c28_segment_back',
     'c30_count_bits_stays_pinned',
+    'c32_numeric_arm_below_window',
+    'c33_bitwise_arm_below_window',
+    'c34_numeric_arm_wide_window',
+    'c36_opaque_label_plus_offset',
 ]
 
 
 @pytest.mark.parametrize('pool', ['cli', 'table'])
 @pytest.mark.parametrize('name', ROUND_2)
-def test_the_programs_of_the_second_gap_hunt_pass_the_proof(name: str, pool: str) -> None:
+def test_the_programs_of_the_later_gap_hunts_pass_the_proof(name: str, pool: str) -> None:
     table_pool = _cli_pool(W) if pool == 'cli' else TablePool(W, 1 << (W - 1), run_ops=16)
     assert prove_relocation(W, _macros(_gap(name), W), table_pool).mismatches == []
 
@@ -171,6 +189,9 @@ def test_the_programs_of_the_second_gap_hunt_pass_the_proof(name: str, pool: str
         ('c23_numeric_address_arm', 'outside its window'),
         ('c26_pointer_write_only', 'pointer runtime'),
         ('c27_bitwise_arm', 'flips bit 10 of the pinned word'),
+        ('c32_numeric_arm_below_window', 'which a number could arm'),
+        ('c33_bitwise_arm_below_window', 'which a number could arm'),
+        ('c34_numeric_arm_wide_window', 'outside its window'),
     ],
 )
 def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch, name: str, mismatch: str) -> None:

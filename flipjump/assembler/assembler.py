@@ -354,29 +354,29 @@ def window_top(base: int, alignments: Iterable[int]) -> int:
     return min(top, max(alignments)) if alignments else top
 
 
-def alignment(address: int) -> int:
-    """the bits an address is aligned to"""
-    return (address & -address).bit_length() - 1 if address else 1 << 30
-
-
 def unpin(
     stream: OpStream,
     labels: Dict[str, int],
     memory_width: int,
     pinned: Dict[int, int],
     reasons: Dict[str, int],
-    table_alignment: Callable[[int], int] = alignment,
+    table_alignment: Callable[[int], int] = lambda address: 0,
     *,
     raw: bool = False,
+    lowest_pad: Optional[int] = None,
 ) -> None:
     """Un-pin every word of `pinned` ({jump-word address: block base}) whose pin could not hold, counting each in
     `reasons` by why. An un-pinned word rests at its value and is armed with the whole address - always right, only
     slower. A pin holds when the word has an op of its own (to rest at base + value) and every flip of it either
     arms it - a wflip by a label plus a constant, flipped xor the base - or stays below its window_top: not a
     number or a value computed from labels above it (`wflip x+w, 0x4000`, `T1 ^ T2`), no `a;b` flip above it (arming
-    bit by bit), no wflip across two words. `table_alignment(address)`: the bits the table armed at `address` is
-    aligned to (a moved table: its size; else the address's own alignment). `raw`: the program reads or writes
-    words through the pointer runtime, and no pin_exclude says which - no pin can hold."""
+    bit by bit), no wflip across two words; and a flip below it (a number is a value there, as `hex.set`'s are) may
+    not arm the word either: it is not pinned while a table it could reach lies below its window - `lowest_pad`,
+    the lowest inline address a `pad` aligned or a segment starts at. (A pinned word is assumed never to be jumped
+    through unarmed, nor armed with a number to an op no pad or segment aligned.) `table_alignment(address)`: the
+    bits the table armed at `address` is aligned to (a moved table: its size; an inline one: its `pad`, else 0).
+    `raw`: the program reads or writes words through the pointer runtime, and no pin_exclude says which - no pin
+    can hold."""
 
     def drop(word: int, reason: str) -> None:
         if pinned.pop(word, None) is not None:
@@ -444,7 +444,8 @@ def unpin(
                 flipped_bits[word] = flipped_bits.get(word, 0) | 1 << (flip - word)
             address += 2 * w
     for word, base in list(pinned.items()):
-        above = ~((1 << window_top(base, arms[word])) - 1)
+        top = window_top(base, arms[word])
+        above = ~((1 << top) - 1)
         if word not in with_op:
             drop(word, 'no op of its own')
         elif flipped_bits.get(word, 0) & above:
@@ -453,6 +454,12 @@ def unpin(
             drop(word, 'armed with a number')
         elif computed.get(word, 0) & above:
             drop(word, 'armed with a value computed from labels')
+        elif (
+            lowest_pad is not None
+            and lowest_pad < 1 << top
+            and (flipped_bits.get(word, 0) | numbers.get(word, 0) | computed.get(word, 0))
+        ):
+            drop(word, 'a flip below its window, with a table there')
 
 
 def _label_address(stream: OpStream, encoded: int, labels: Dict[str, int]) -> int:
@@ -787,8 +794,17 @@ def assemble(
             if pinned:  # each pin that cannot hold is dropped (the pool's unpins say why)
                 raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
                 guard = table_pool.offset_guard
-                table_alignment = alignment if guard is None else guard.alignment
-                unpin(ops, labels, memory_width, pinned, table_pool.unpins, table_alignment, raw=raw)
+                assert guard is not None  # a pool's preprocessor made it
+                unpin(
+                    ops,
+                    labels,
+                    memory_width,
+                    pinned,
+                    table_pool.unpins,
+                    guard.alignment,
+                    raw=raw,
+                    lowest_pad=guard.lowest_pad(),
+                )
             if not pinned:
                 pinned = None
 

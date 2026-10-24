@@ -36,10 +36,11 @@ from flipjump.assembler.inner_classes.ops import NewSegment
 
 LabelsDict = Dict[str, int]
 
-# bit addresses below this are the runtime's, not the program's: `stl.IO` sits at bit address 64
-# and the interpreter intercepts flips there, yet `bit.output` dispatches through it like an
-# ordinary hex source. Such a word is neither relocated (PreprocessorData.begin_relocation) nor pinned
-# (assembler.resolve_pinned) - a block base baked into it would corrupt the program's startup.
+# bit addresses below this are the runtime's, not the program's: `stl.IO` is op 1, bits [2w, 4w) (the output
+# flips at 2w and 2w+1, and the input bit at 3w+#w, are in it), and 1024 covers every w <= 256. The interpreter
+# intercepts flips there, yet `bit.output` dispatches through it like an ordinary hex source. Such a word is neither
+# relocated (PreprocessorData.begin_relocation) nor pinned (assembler.resolve_pinned) - a block base baked into it
+# would corrupt the program's startup.
 RESERVED_BELOW = 1024
 
 # the pointer runtime's words: a macro that names one reads or writes a cell through a pointer - it flips
@@ -302,6 +303,7 @@ class OffsetGuard:
         '_names',
         'where',
         'emitting',
+        'pads',
     )
 
     def __init__(self, inline_end: int, labels: LabelsDict):
@@ -318,24 +320,49 @@ class OffsetGuard:
         self.stranded: Dict[str, Tuple[int, int]] = {}
         self.watched: Set[str] = set()  # the labels checked with no offset too: the stranded ones, and `$`
         self.falls_to = -1  # (the preprocessor's) where the last op that falls through to the next op falls to
-        self._pending: List[Tuple[int, int]] = []  # (label address, target) of operands reaching past the code
+        # (label address, target, label) of the operands reaching past the code
+        self._pending: List[Tuple[int, int, str]] = []
         self._starts: List[int] = []  # the moved tables' [start, end), by start
         self._ends: List[int] = []
         self._names: List[str] = []
         self.where: Callable[[], str] = lambda: ''
         self.emitting: Optional[Callable[[], int]] = None  # the next inline address the preprocessor emits at
+        # inline address -> the bits a `pad` aligned it to (0: a segment starts there), the preprocessor's
+        self.pads: Dict[int, int] = {}
 
     def may_move(self, anchor: int) -> Optional[str]:
         """why the table about to move out of `anchor` must stay inline, or None"""
         if self.falls_to == anchor:
             return 'the op before it falls through to it'
-        for address, target in self._pending:
+        for address, target, _ in self._pending:
             if address <= anchor <= target:
                 return 'an operand reaches over its place'
         return None
 
     def table_moved(self, anchor: int, table: str) -> None:
         """the table (its start label) left the inline stream at `anchor`"""
+        self._cut(anchor, table)
+        self.moved_tables.append(table)
+
+    def pad_realigned(self, address: int, ops_alignment: int) -> None:
+        """the `pad` at the inline `address` pads to another op than without the pool (a table moved out before it,
+        by ops that are no multiple of the pad): the distance across it changes, as across a moved table's place. An
+        operand already emitted that reaches across it came too late to keep a table inline, and is refused."""
+        pad = f'`pad {ops_alignment}`'
+        if self.falls_to == address:
+            self._refuse('$', f'falls through to the {pad} at {hex(address)}, {_PADS_DIFFERENTLY}')
+        for label_address, target, label in self._pending:
+            if label_address <= address <= target:
+                self._refuse(_operand(label, target - label_address), self._across_pad(pad, address))
+        self._cut(address, pad)
+
+    def lowest_pad(self) -> Optional[int]:
+        """the lowest inline address a `pad` aligned or a segment starts at (None: there is none): a table there
+        could be armed with a number (see assembler.unpin)"""
+        return min(self.pads, default=None)
+
+    def _cut(self, anchor: int, table: str) -> None:
+        """cut the inline stream into pieces at `anchor`: a moved table's place, or a `pad` that realigned"""
         anchors = self.anchors
         index = bisect.bisect_right(anchors, anchor)
         before = index - bisect.bisect_left(anchors, anchor)
@@ -351,7 +378,6 @@ class OffsetGuard:
                 break  # (a two-pass pool's tables are declared in between: skip them)
         anchors.insert(index, anchor)
         self._anchor_tables.insert(index, table)
-        self.moved_tables.append(table)
         self._pending = [entry for entry in self._pending if entry[1] >= anchor]
 
     def table_placed(self, start: int, end: int, table: str) -> None:
@@ -367,11 +393,12 @@ class OffsetGuard:
         return index if index >= 0 and address < self._ends[index] else -1
 
     def alignment(self, address: int) -> int:
-        """the bits the table at `address` is aligned to: a moved table's size, else the address's own alignment"""
+        """the bits the table at `address` is aligned to: a moved table's size, an inline one's `pad` (0 with no pad
+        there: an address's own alignment is no table's)"""
         table = self.table_at(address)
         if table >= 0:
             return (self._ends[table] - self._starts[table] - 1).bit_length()
-        return (address & -address).bit_length() - 1 if address else 1 << 30
+        return self.pads.get(address, 0)
 
     def piece(self, label: str, address: int) -> int:
         """the piece of the inline label `label`, at `address`: the anchors below it"""
@@ -403,7 +430,7 @@ class OffsetGuard:
         if piece and target < anchors[piece - 1]:
             self._refuse(operand or _operand(label, offset), self._across(piece - 1, label, offset))
         if (offset > 0 or label in self.watched) and self.emitting is not None and target >= self.emitting():
-            self._pending.append((address, target))  # a table may move out below it: it stays inline
+            self._pending.append((address, target, label))  # a table may move out below it: it stays inline
 
     def check_expr(self, expr: Expr, value: int, is_address: bool = True) -> None:
         """the operand `expr`, whose value is `value`, every label of it declared. An address computed from labels
@@ -412,15 +439,23 @@ class OffsetGuard:
         names_a_table = False
         for coefficients, constant in parts:
             names_a_table = self._check_part(coefficients, constant, str(expr)) or names_a_table
+        if is_address and not _is_one_sum(expr):
+            named = expr.all_unknown_labels()
+            if len(named) == 1:
+                label = next(iter(named))
+                address = self.labels[label]
+                if _moves_with(expr, label, address, value):
+                    # computed on beyond its sum, yet L plus what it adds (`(L | 0) + 15*dw`): checked as that
+                    self.check(label, address, value - address, str(expr))
         if is_address and parts and not names_a_table and value >= self.inline_end:
             self._refuse_inside(str(expr), value)
 
-    def check_emitted(self, expr: Expr) -> None:
-        """the operand `expr` the preprocessor keeps for labels_resolve: checked now if its labels are declared,
-        so a table it reaches over can still stay inline"""
+    def check_emitted(self, expr: Expr, is_address: bool = False) -> None:
+        """the operand `expr` the preprocessor keeps for labels_resolve (`is_address`: not a wflip's value): checked
+        now if its labels are declared, so a table it reaches over can still stay inline"""
         labels = self.labels
         if all(label in labels for label in expr.all_unknown_labels()):
-            self.check_expr(expr, expr.exact_eval(labels), is_address=False)
+            self.check_expr(expr, expr.exact_eval(labels), is_address)
 
     def _check_part(self, coefficients: Dict[str, int], constant: int, operand: str) -> bool:
         """one +/- sum of `operand` (linear_parts); True if it names a moved table's label"""
@@ -448,10 +483,15 @@ class OffsetGuard:
             return False  # `2 * L`, the `L` of `L >> 6`: an address as a number
         pieces = sorted(self.piece(label, labels[label]) for label in coefficients)
         if pieces[0] != pieces[-1]:
+            cut = self._anchor_tables[pieces[0]]
             self._refuse(
                 operand,
-                f'takes the distance across the place of the table {self._anchor_tables[pieces[0]]}, which moved out '
-                f'of {hex(self.anchors[pieces[0]])}, so it would no longer be the same',
+                (
+                    f'takes the distance across the {cut} at {hex(self.anchors[pieces[0]])}, {_PADS_DIFFERENTLY}'
+                    if cut.startswith('`pad')
+                    else f'takes the distance across the place of the table {cut}, which moved out '
+                    f'of {hex(self.anchors[pieces[0]])}, so it would no longer be the same'
+                ),
             )
         if total == 1:
             label = next(iter(coefficients))
@@ -464,6 +504,11 @@ class OffsetGuard:
 
     def _across(self, anchor_index: int, label: str, offset: int) -> str:
         anchor = self.anchors[anchor_index]
+        cut = self._anchor_tables[anchor_index]
+        if cut.startswith('`pad'):
+            if offset == 0:
+                return f'names {label}, declared before the {cut} at {hex(anchor)}, {_PADS_DIFFERENTLY}'
+            return self._across_pad(cut, anchor)
         if offset == 0:
             return (
                 f'names {label}, declared at {hex(anchor)} before the `pad` of the table '
@@ -474,6 +519,10 @@ class OffsetGuard:
             f'reaches across the place of the table {self._anchor_tables[anchor_index]}, which moved out of '
             f'{hex(anchor)}, so it would no longer point where it did'
         )
+
+    @staticmethod
+    def _across_pad(pad: str, address: int) -> str:
+        return f'reaches across the {pad} at {hex(address)}, {_PADS_DIFFERENTLY}'
 
     def _refuse_inside(self, operand: str, target: int) -> None:
         """an operand that is not one of a moved table's labels plus a constant lands in the pool, at `target`"""
@@ -491,6 +540,32 @@ class OffsetGuard:
             f'table-placement: the operand `{operand}`{self.where()} {what}. Address a moved table by its own labels, '
             f'or assemble without a table pool.'
         )
+
+
+# why an operand across a `pad` that realigned is refused (OffsetGuard.pad_realigned)
+_PADS_DIFFERENTLY = 'which pads to another op once a table before it moved out: it would no longer point where it did'
+
+
+def _is_one_sum(expr: Expr) -> bool:
+    """is all of `expr` one sum - of labels and numbers, by +, - and * by a number (see linear_parts)?"""
+    value = expr.value
+    if not isinstance(value, tuple):
+        return True
+    op, args = value
+    if len(args) != 2 or op not in ('+', '-', '*') or not all(_is_one_sum(arg) for arg in args):
+        return False
+    return op != '*' or not args[0].all_unknown_labels() or not args[1].all_unknown_labels()
+
+
+def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
+    """does `expr` (naming only `label`, at `address`; its value `value`) move with its label - one far, aligned
+    move of it moves the value as far? Then it is the label plus what it adds; else the label's address is used as a
+    number (`(L >> 6) & 15`, a pointer's bit), which is not checked."""
+    far = 1 << (max(address, value).bit_length() + 1)
+    try:
+        return expr.exact_eval({label: address + far}) == value + far
+    except FlipJumpExprException:
+        return False
 
 
 def _operand(label: str, offset: int) -> str:
