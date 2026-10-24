@@ -76,7 +76,7 @@ A configurable json file that maintains ordered lists of the standard library fi
 Every macro is documented with:
 - Its **time complexity** (and if it's significantly different, the **space complexity** as well).
   - The complexities use the **@** sign, which is the log2 of the total number of fj ops in this program (can be it usually will be between 15-25).
-  - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _address_; And it is widely used.
+  - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _value_ (usually an address, so about @/2); And it is widely used.
   - A chained step's wflip (`wflip .ret+w, prev_return ^ return`, see `hex.tables.chained_jump`) flips the xor of two nearby pad-16 return addresses, so it costs 2.3 on average (median 2, 90% at most 4; measured over the hexlib tests' 47,598 steps), not @/2.
 - An explanation about what the macro does (usually in a python-like syntax).
 - The type of each of the parameters (bit/hex/bit.vec/hex.vec/constant/address and so on).
