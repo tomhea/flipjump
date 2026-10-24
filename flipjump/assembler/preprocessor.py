@@ -569,6 +569,9 @@ class PreprocessorData:
         self._label_positions.append(None)
         self.curr_segment_index += 1
         self._code_end = max(self._code_end, self.curr_address)
+        if self._shift:  # this segment's code moved up, and the next one's does not (OffsetGuard.segment_ended)
+            assert self.offset_guard is not None
+            self.offset_guard.segment_ended(self.curr_address)
         self._shift = 0  # a segment starts where it does without the pool too
         self._aligned(next_segment_start, 0)
 
@@ -659,6 +662,13 @@ class PreprocessorData:
         if ops_alignment > 1:
             bits = ops_alignment * op_size
             self._aligned(self.curr_address, (bits & -bits).bit_length() - 1)
+
+    def check_evaluated(self, expr: Expr, value: int, is_address: bool = False) -> None:
+        """(a table pool is on) an expression the expansion evaluates - a rep's count, a pad, a reserve's size, a
+        segment's address - is checked as an operand is (OffsetGuard): a distance across a moved table's place would
+        change it, and the program with it"""
+        if self.offset_guard is not None and expr.all_unknown_labels():
+            self.offset_guard.check_expr(expr, value, is_address)
 
     def _aligned(self, address: int, bits: int) -> None:
         """a `pad` aligned the inline `address` to `bits` bits, or (bits 0) a segment starts there (see `pads`)"""
@@ -944,6 +954,7 @@ def resolve_macro_aux(
         elif isinstance(op, Pad):
             op = op.eval_new(params_dict)
             ops_alignment = get_pad_ops_alignment(op, preprocessor_data)
+            preprocessor_data.check_evaluated(op.ops_alignment, ops_alignment)
             # a `pad` right before a relocatable call aligns a declared table: with a table pool it may be
             # emitted at a pool address instead, and the interrupted stream resumes after the call
             table = None
@@ -1005,7 +1016,9 @@ def resolve_macro_aux(
             ) + f"{op.code_position.short_str()}:rep:{op.iterator_name}"
             op = op.rename_iterator(hygienic_iterator)
             op = op.eval_new(params_dict)
+            times = op.repeat_times
             rep_times = get_rep_times(op, preprocessor_data)
+            preprocessor_data.check_evaluated(times, rep_times)
             if rep_times == 0:
                 continue
             next_macro_path = (
@@ -1029,10 +1042,12 @@ def resolve_macro_aux(
             op = op.eval_new(params_dict)
             next_segment_start = get_next_segment_start(op, preprocessor_data)
             preprocessor_data.insert_segment(next_segment_start)
+            preprocessor_data.check_evaluated(op.start_address, next_segment_start, True)
 
         elif isinstance(op, Reserve):
             op = op.eval_new(params_dict)
             reserved_bits_size = get_reserved_bits_size(op, preprocessor_data)
+            preprocessor_data.check_evaluated(op.reserved_bit_size, reserved_bits_size)
             preprocessor_data.insert_reserve(reserved_bits_size)
 
         else:

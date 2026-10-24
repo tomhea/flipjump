@@ -1,0 +1,13 @@
+// C38 (the final review): a distance from a label after a moved table's place to a label in a segment at a number:
+// the code after the place moves up, the segment does not, so the distance changes - with no anchor between the two.
+stl.startup
+    hex.print_as_digit 2, size, 0
+    stl.output '\n'
+    hex.xor y, x
+M:
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0
+size: hex.vec 2, ((S - M) / dw) & 0xff
+segment 0x4000
+S:  ;S

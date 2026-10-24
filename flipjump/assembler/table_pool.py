@@ -361,13 +361,24 @@ class OffsetGuard:
         """the `pad` at the inline `address` pads to another op than without the pool (a table moved out before it,
         by ops that are no multiple of the pad): the distance across it changes, as across a moved table's place. An
         operand already emitted that reaches across it came too late to keep a table inline, and is refused."""
-        pad = f'`pad {ops_alignment}`'
+        cut = f'the `pad {ops_alignment}` at {hex(address)}, {_PADS_DIFFERENTLY}'
         if self.falls_to == address:
-            self._refuse('$', f'falls through to the {pad} at {hex(address)}, {_PADS_DIFFERENTLY}')
+            self._refuse('$', f'falls through to {cut}')
+        self._moved_cut(address, cut)
+
+    def segment_ended(self, address: int) -> None:
+        """the code of a segment ends at the inline `address`, moved up (tables moved out of it): the next segment's
+        code did not move with it, so a distance across the end changes too (see pad_realigned)"""
+        # (+1: a label at the end stays with the code before it)
+        self._moved_cut(address + 1, f'the end of the segment at {hex(address)}, {_SEGMENT_MOVED}')
+
+    def _moved_cut(self, address: int, cut: str) -> None:
+        """cut at `address`, where the code after it moves by another distance than the code before it: an operand
+        already emitted that reaches across it came too late to keep a table inline, and is refused"""
         for label_address, target, label in self._pending:
             if label_address <= address <= target:
-                self._refuse(_operand(label, target - label_address), self._across_pad(pad, address))
-        self._cut(address, pad)
+                self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
+        self._cut(address, cut)
 
     def tables_inline(self) -> Dict[int, int]:
         """{inline address a `pad` aligned or a segment starts at: the bits the pad aligned it to}: a table there
@@ -375,7 +386,8 @@ class OffsetGuard:
         return self.pads
 
     def _cut(self, anchor: int, table: str) -> None:
-        """cut the inline stream into pieces at `anchor`: a moved table's place, or a `pad` that realigned"""
+        """cut the inline stream into pieces at `anchor`: a moved table's place, a `pad` that realigned, or the end of
+        a segment whose code moved"""
         anchors = self.anchors
         index = bisect.bisect_right(anchors, anchor)
         before = index - bisect.bisect_left(anchors, anchor)
@@ -504,8 +516,8 @@ class OffsetGuard:
             self._refuse(
                 operand,
                 (
-                    f'takes the distance across the {cut} at {hex(self.anchors[pieces[0]])}, {_PADS_DIFFERENTLY}'
-                    if cut.startswith('`pad')
+                    f'takes the distance across {cut}'
+                    if cut.startswith('the ')
                     else f'takes the distance across the place of the table {cut}, which moved out '
                     f'of {hex(self.anchors[pieces[0]])}, so it would no longer be the same'
                 ),
@@ -522,10 +534,8 @@ class OffsetGuard:
     def _across(self, anchor_index: int, label: str, offset: int) -> str:
         anchor = self.anchors[anchor_index]
         cut = self._anchor_tables[anchor_index]
-        if cut.startswith('`pad'):
-            if offset == 0:
-                return f'names {label}, declared before the {cut} at {hex(anchor)}, {_PADS_DIFFERENTLY}'
-            return self._across_pad(cut, anchor)
+        if cut.startswith('the '):  # a pad that realigned, or a segment's end
+            return f'names {label}, declared before {cut}' if offset == 0 else f'reaches across {cut}'
         if offset == 0:
             return (
                 f'names {label}, declared at {hex(anchor)} before the `pad` of the table '
@@ -536,10 +546,6 @@ class OffsetGuard:
             f'reaches across the place of the table {self._anchor_tables[anchor_index]}, which moved out of '
             f'{hex(anchor)}, so it would no longer point where it did'
         )
-
-    @staticmethod
-    def _across_pad(pad: str, address: int) -> str:
-        return f'reaches across the {pad} at {hex(address)}, {_PADS_DIFFERENTLY}'
 
     def _refuse_inside(self, operand: str, target: int) -> None:
         """an operand that is not one of a moved table's labels plus a constant lands in the pool, at `target`"""
@@ -561,6 +567,8 @@ class OffsetGuard:
 
 # why an operand across a `pad` that realigned is refused (OffsetGuard.pad_realigned)
 _PADS_DIFFERENTLY = 'which pads to another op once a table before it moved out: it would no longer point where it did'
+# ...and across the end of a segment a table moved out of (OffsetGuard.segment_ended)
+_SEGMENT_MOVED = 'whose code moved up once a table moved out of it, while the next segment did not'
 
 
 def _is_one_sum(expr: Expr) -> bool:
