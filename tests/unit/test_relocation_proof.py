@@ -16,6 +16,7 @@ from flipjump.assembler import assembler, relocation_proof, table_pool as table_
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment
+from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.assembler.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
@@ -196,9 +197,15 @@ def test_the_programs_of_the_later_gap_hunts_pass_the_proof(name: str, pool: str
 )
 def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch, name: str, mismatch: str) -> None:
     # the control: the assembler keeps every pin (assembler.unpin does nothing); the proof judges the pins from the
-    # plain program, not by the assembler's rules
+    # plain program, not by the assembler's rules. (A one-pass pool places a pointer-runtime program's tables in no
+    # block (R3-6): a two-pass pool, which places them in blocks during the expansion, pins their words.)
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
-    mismatches = prove_relocation(W, _macros(_gap(name), W), _cli_pool(W)).mismatches
+    pool = _cli_pool(W)
+    if mismatch == 'pointer runtime':
+        counting = BlockPool(W, 1 << (W - 1))
+        resolve_macros(W, _macros(_gap(name), W), table_pool=counting)
+        pool = BlockPool(W, 1 << (W - 1), counts=counting.counts, widths=counting.widths)
+    mismatches = prove_relocation(W, _macros(_gap(name), W), pool).mismatches
     assert any(mismatch in found for found in mismatches), mismatches
 
 

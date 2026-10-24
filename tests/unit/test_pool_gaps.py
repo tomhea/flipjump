@@ -17,8 +17,11 @@ from flipjump.assembler.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool
 from flipjump.utils.functions import get_file_tuples
 from flipjump.utils.exceptions import FlipJumpException
+from flipjump.interpreter import fjm_run
+from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from tests.unit.pool_fuzzer import run
 from tests.unit.test_table_pool import build_and_run, relocatable
+from tests.unit.unit_utils import PROGRAMS_DIR
 
 GAPS = Path(__file__).parent / 'pool_gaps'
 W = 32
@@ -435,3 +438,30 @@ def test_a_wflip_area_past_the_memory_says_so(tmp_path: Path) -> None:
     source = _source(tmp_path, f'stl.startup\n{wflips}    stl.loop\nz: hex.hex\n')
     with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width: the wflip area'):
         assemble([source], tmp_path / 'a.fjm', memory_width=16, print_time=False)
+
+
+def _ops(fjm: Path) -> Tuple[bytes, int]:
+    """(the output, the ops run) of a program that halts"""
+    io_device = FixedIO(b'')
+    statistics = fjm_run.run(fjm, io_device=io_device, print_time=False)
+    return io_device.get_output(), statistics.op_counter
+
+
+def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: Path) -> None:
+    # R3-6: the pointer runtime unpins every word, so fj --pool-tables places the tables cheapest-first, as a
+    # TablePool does: no block, no pinned word - and fewer ops than without the pool
+    source = [PROGRAMS_DIR / 'hexlib_tests' / 'basics2' / 'pointer_setters.fj']
+    assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
+    plain = _ops(tmp_path / 'plain.fjm')
+    pool = BlockPool(64, 1 << 63, one_pass=True)
+    assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
+    pooled = _ops(tmp_path / 'pooled.fjm')
+    assert pool.reads_words_raw and pool.allocated and pool.pinned_words() == {}
+    assert pool.unpins == {'the pointer runtime': 76}
+    assert pooled[0] == plain[0] and pooled[1] < plain[1]
+    # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run MORE ops
+    blocked_pool = BlockPool(64, 1 << 63, one_pass=True)
+    blocked_pool.pin_exclude = lambda address, labels: True
+    assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
+    blocked = _ops(tmp_path / 'blocked.fjm')
+    assert blocked_pool.pinned_words() and blocked[0] == plain[0] and blocked[1] > plain[1]

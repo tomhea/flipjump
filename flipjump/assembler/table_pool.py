@@ -1567,6 +1567,8 @@ class BlockPool(TablePool):
             self._layout_cache.clear()
         if self._heat:
             self._resolve_heat(self._heat)
+        elif self.reads_words_raw and self.pin_exclude is None:
+            return self._place_cheapest(tables)
         if self.sizes_from_census and self.overflow_base is None:
             self.unblocked = self._choose_unblocked(tables)
         self._preallocate(self.unblocked)
@@ -1585,6 +1587,30 @@ class BlockPool(TablePool):
                 addresses[index] = reserved[0]
         for index, address in self._place_overflow(overflow):
             addresses[index] = address
+        return addresses
+
+    def _place_cheapest(self, tables: DeferredTables) -> Sequence[int]:
+        """place_deferred for a program that reads words raw (the pointer runtime, and no pin_exclude): no pin can
+        hold (assembler.unpin), and an unpinned word armed with a block's address pays more than with a TablePool's,
+        so each table takes the cheapest free address, as TablePool.reserve hands them out. The word of each group
+        is counted unpinned for the pointer runtime; a table too wide for any slot stays inline, as it would."""
+        addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
+        groups = set()
+        for index, group, _, ops_alignment, table_ops, _, inline_cause in tables:
+            if inline_cause is not None:
+                self._decline(group, 'too_wide')
+                continue
+            reserved = TablePool.reserve(self, ops_alignment, table_ops)
+            if reserved is None:
+                raise FlipJumpPreprocessorException(
+                    f'one-pass placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for '
+                    f'a table of {table_ops} ops. Raise span_bits.'
+                )
+            TablePool.commit(self, reserved[0] + table_ops * self.op_bits)
+            addresses[index] = reserved[0]
+            groups.add(group)
+        if groups:
+            self.unpins['the pointer runtime'] = len(groups)
         return addresses
 
     def _choose_unblocked(self, tables: DeferredTables) -> List[str]:
