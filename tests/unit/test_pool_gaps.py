@@ -130,6 +130,7 @@ CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
     ('c37_rep_count_across_table', 32): {'cli': GUARD_C37, 'two_pass': GUARD_C37, 'table': GUARD_C37},
     ('c38_distance_into_numeric_segment', 32): {'cli': GUARD_C38, 'two_pass': GUARD_C38, 'table': GUARD_C38},
     ('c39_distance_into_earlier_segment', 32): {'cli': GUARD_C38, 'two_pass': GUARD_C38, 'table': GUARD_C38},
+    ('c40_unmoved_distance_across_segments', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},
 }
 # (program, pool): (the tables the pool kept inline, the words it left unpinned), by reason - every other SAME
 # program needs neither
