@@ -2,8 +2,8 @@
 
 
 ns hex {
-    //  Time Complexity: w( 0.5@+ 4) + 7@+13
-    // Space Complexity: w( 0.5@+22) + 7@+48
+    //  Time Complexity: w( 0.5@+ 4) + 5@+40
+    // Space Complexity: w( 0.5@+22) + 5@+64
     //   like:  dst = *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_hex dst, ptr {
@@ -11,8 +11,8 @@ ns hex {
         .xor_hex_from_ptr dst, ptr
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 9@+13
-    // Space Complexity: w( 0.5@+22) + 9@+72
+    //  Time Complexity: w( 0.5@+ 4) + 7@+40
+    // Space Complexity: w( 0.5@+22) + 7@+88
     //   like:  dst[:2] = *ptr
     // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def read_byte dst, ptr {
@@ -20,8 +20,8 @@ ns hex {
         .xor_byte_from_ptr dst, ptr
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+2*PTR_WIDE/4)@+13
-    // Space Complexity: w(0.5@+22) + (5+2*PTR_WIDE/4)@+24 + 24(PTR_WIDE/4)
+    //  Time Complexity: w(0.5@+4) + (1+3*PTR_WIDE/4)@+40
+    // Space Complexity: w(0.5@+22) + (1+3*PTR_WIDE/4)@ + 36(PTR_WIDE/4) + 16
     //   like:  dst[:PTR_WIDE/4] = *ptr
     //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
     // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
@@ -38,8 +38,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: w( 0.5@+ 4) + 16@+27
-    // Space Complexity: w(0.88@+25) + 12@+103
+    //  Time Complexity: w( 0.5@+ 4) + 12@+69
+    // Space Complexity: w(0.88@+25) + 8@+119
     //   like:  dst = *ptr
     //          ptr++
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -48,8 +48,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(w( 0.5@+ 4) + 16@+27)
-    // Space Complexity: n(w(0.88@+25) + 12@+103)
+    //  Time Complexity: n(5@+28) + w(0.5@+4)
+    // Space Complexity: n((w-#w)(@+18) + 3@+61)
     //   like:  dst[:n] = *ptr[:n]
     // dst is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.xor_cells_from_inners_ptrs).
@@ -61,8 +61,8 @@ ns hex {
         .pointers.xor_cells_from_inners_ptrs n, 1, dst
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 18@+27
-    // Space Complexity: w(0.88@+25) + 14@+127
+    //  Time Complexity: w( 0.5@+ 4) + 14@+69
+    // Space Complexity: w(0.88@+25) + 10@+143
     //   like:  dst[:2] = *ptr
     //          ptr++
     // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -71,8 +71,8 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(w( 0.5@+ 4) + 18@+27)
-    // Space Complexity: n(w(0.88@+25) + 14@+127)
+    //  Time Complexity: n(6@+32) + w(0.5@+4)
+    // Space Complexity: n((w-#w)(@+18) + 4@+89)
     //   like:  dst[:2n] = *ptr[:n]
     // dst is a hex[:2n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.xor_cells_from_inners_ptrs).
@@ -84,8 +84,8 @@ ns hex {
         .pointers.xor_cells_from_inners_ptrs n, 2, dst
     }
 
-    //  Time Complexity: w(0.88@+7) + (5+2*PTR_WIDE/4)@+27
-    // Space Complexity: w(1.26@+25) + (5+2*PTR_WIDE/4)@+24 + 24(PTR_WIDE/4) + 55
+    //  Time Complexity: w(0.5@+4) + (8+3*PTR_WIDE/4)@ + 69
+    // Space Complexity: w(0.88@+25) + (4+3*PTR_WIDE/4)@ + 36(PTR_WIDE/4) + 71
     //   like:  dst[:PTR_WIDE/4] = *ptr
     //          ptr++
     //   The pair-walking form of read_cell; its write twin is write_cell_and_inc.
@@ -100,8 +100,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity:  w(2.75@+9.25) + 7@+13
-    // Space Complexity:  w(2.75@+62)    + 7@+48
+    //  Time Complexity:  w(2.5@+9.75) + 8@+54
+    // Space Complexity:  w(2.5@+62.5) + 8@+90
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   dst = *(ptr + index*2w)   — read the index-th hex past *ptr.
     // dst is a hex; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index preserved.
@@ -111,8 +111,8 @@ ns hex {
         .read_hex dst, hex.pointers.nth_ptr
     }
 
-    //  Time Complexity:  w(2.75@+9.25) + 9@+13
-    // Space Complexity:  w(2.75@+62)    + 9@+72
+    //  Time Complexity:  w(2.5@+9.75) + 10@+54
+    // Space Complexity:  w(2.5@+62.5) + 10@+114
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   dst[:2] = *(ptr + index*2w)   — read the index-th byte past *ptr.
     // dst is a hex[:2]; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index preserved.
@@ -128,8 +128,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: 9@+13
-    // Space Complexity: 9@+72
+    //  Time Complexity: 7@+40
+    // Space Complexity: 7@+88
     //   dst[:2] = *armed    (hex.read_byte without its arm)
     // armed is the address the last pointer operation used: before an _and_inc's inc, the last cell of an n-cell
     //   op, ptr+index of an _nth_ op; 0 before any.
@@ -164,8 +164,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: idx_n(8@+23) + w(0.75@+5) + 27@+74
-    // Space Complexity: idx_n(6.5@+149) + w(1.125@+29.25) + 24@+374
+    //  Time Complexity: idx_n(8@+23) + w(0.75@+5) + 25@+101
+    // Space Complexity: idx_n(6.5@+149) + w(1.125@+29.25) + 22@+390
     //   dst[:2] = table[idx]    (the idx-th entry of a constant array of bytes)
     //
     // table is a constant address; entry k is the byte data-op at table + k*dw (;byte*dw).
