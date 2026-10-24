@@ -24,7 +24,7 @@ ns stl {
 
 // @requires the stack_init.
 ns stl {
-    //  Time Complexity: w(2@+11) + 20@+93
+    //  Time Complexity: w(2@+11) + 20@+78
     // Space Complexity: w(2.375@+50) + 16@+247
     //   Saves the return address to the stack and jumps to the given "address".
     //   When returned, it removes the return-address from the stack.
@@ -41,7 +41,7 @@ ns stl {
         hex.pop_ret_address return_label
     }
 
-    //  Time Complexity: w(2@+11) + 30@+115
+    //  Time Complexity: w(2@+11) + 30@+100
     // Space Complexity: w(2.375@+50) + 36@+269
     //   Saves the return address to the stack and jumps to the given "address".
     //   When returned, it removes the return-address from the stack, and pops "params_stack_length" cells from the stack.

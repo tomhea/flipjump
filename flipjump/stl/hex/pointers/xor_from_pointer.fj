@@ -1,5 +1,5 @@
 ns hex {
-    //  Time Complexity: w( 0.5@+ 4) + 4@+40
+    //  Time Complexity: w( 0.5@+ 4) + 4@+25
     // Space Complexity: w( 0.5@+22) + 4@+52
     //   like:  dst ^= *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -9,7 +9,7 @@ ns hex {
         .xor dst, hex.pointers.read_byte
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 5@+40
+    //  Time Complexity: w( 0.5@+ 4) + 5@+25
     // Space Complexity: w( 0.5@+22) + 5@+64
     //   like:  dst[:2] ^= *ptr
     // dst is a hex[2:]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -19,7 +19,7 @@ ns hex {
         .xor 2, dst, hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (1+2*PTR_WIDE/4)@+40
+    //  Time Complexity: w(0.5@+4) + (1+2*PTR_WIDE/4)@+25
     // Space Complexity: w(0.5@+22) + (1+2*PTR_WIDE/4)@ + 24(PTR_WIDE/4) + 16
     //   like:  dst[:PTR_WIDE/4] ^= *ptr
     //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
@@ -84,7 +84,7 @@ ns hex {
           cleanup:
         }
 
-        //  Time Complexity: (1+PTR_CELL_BITS/4)@+40   (3@+40 at the default 8)
+        //  Time Complexity: (1+PTR_CELL_BITS/4)@+25   (3@+25 at the default 8)
         // Space Complexity: (1+PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + 16
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       hex.pointers.read_byte[:PTR_CELL_BITS/4] = *ptr
@@ -94,7 +94,7 @@ ns hex {
             .read_cell_from_inners_ptrs .PTR_CELL_BITS, .ret_after_read_byte
         }
 
-        //  Time Complexity: (1+PTR_WIDE/4)@+40
+        //  Time Complexity: (1+PTR_WIDE/4)@+25
         // Space Complexity: (1+PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 16
         //   the same dance against the WIDE table, so it returns PTR_WIDE_BITS bits from one
         //   dereference. Only valid when PTR_WIDE_BITS is non-zero.
@@ -102,7 +102,7 @@ ns hex {
             .read_cell_from_inners_ptrs .PTR_WIDE_BITS, .ret_after_read_wide
         }
 
-        //  Time Complexity: (1+bits/4)@+40
+        //  Time Complexity: (1+bits/4)@+25
         // Space Complexity: (1+bits/4)@ + 3bits + 16
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       hex.pointers.read_byte[:bits/4] = *ptr

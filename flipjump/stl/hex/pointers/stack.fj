@@ -30,7 +30,7 @@ ns hex {
         .ptr_sub hex.pointers.sp, value
     }
 
-    //  Time Complexity: w(2@+11) + 20@+ 93
+    //  Time Complexity: w(2@+11) + 20@+ 78
     // Space Complexity: w(2.38@+50) + 16@+247
     //   Like:  stack[++sp] = return_address
     //   Pushes the given return_address to the next cell in the stack. Increments sp.
@@ -52,7 +52,7 @@ ns hex {
         .sp_dec
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 16@+ 81
+    //  Time Complexity: w( 0.5@+ 4) + 16@+ 66
     // Space Complexity: w(0.88@+25) + 12@+183
     //   Like:  stack[++sp] = hex
     //   Pushes the given hex to the next cell in the stack. Increments sp.
@@ -61,7 +61,7 @@ ns hex {
         .write_hex hex.pointers.sp, hex
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 22@+ 93
+    //  Time Complexity: w( 0.5@+ 4) + 22@+ 78
     // Space Complexity: w(0.88@+25) + 18@+271
     //   Like:  stack[++sp] = byte[:2]
     //   Pushes the given byte to the next cell in the stack. Increments sp.
@@ -71,7 +71,7 @@ ns hex {
         .write_byte hex.pointers.sp, byte
     }
 
-    //  Time Complexity: n(w(0.25@+ 2) + 11@+ 47)
+    //  Time Complexity: n(w(0.25@+ 2) + 11@+ 39)
     // Space Complexity: n(w(0.44@+13) + 9@+136)
     //   Like:  stack[sp+1:][:M] = hex[:n];  sp += n.
     //   Pushes the given hex[:n] to the next M cells in the stack. Increments sp by M.
@@ -87,7 +87,7 @@ ns hex {
         rep(n%2, i) .push_hex hex+(n-1)*dw
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 12@+ 77
+    //  Time Complexity: w( 0.5@+ 4) + 12@+ 62
     // Space Complexity: w(0.88@+25) + 8@+131
     //   Like:  hex = stack[sp--]
     //   Pops the current stack cell (only the least-significant-hex of it) into the given hex. Decrements sp.
@@ -97,7 +97,7 @@ ns hex {
         .sp_dec
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 14@+ 77
+    //  Time Complexity: w( 0.5@+ 4) + 14@+ 62
     // Space Complexity: w(0.88@+25) + 10@+155
     //   Like:  byte[:2] = stack[sp--]
     //   Pops the current stack cell into the given byte. Decrements sp.
@@ -107,7 +107,7 @@ ns hex {
         .sp_dec
     }
 
-    //  Time Complexity: n(w(0.25@+ 2) + 7@+39)
+    //  Time Complexity: n(w(0.25@+ 2) + 7@+31)
     // Space Complexity: n(w(0.44@+13) + 5@+78)
     //   Like:  sp -= M
     //          hex[:n] = stack[sp+1:][:M]
