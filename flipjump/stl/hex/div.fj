@@ -157,7 +157,7 @@ ns hex {
 
 ns hex {
     //  Time Complexity: n^2(32@+112)    (hex.idiv's loop at (2n, n); its own doc gives n^2(76@+216), an upper bound)
-    // Space Complexity: n(40@+1119)
+    // Space Complexity: n(57@+877)
     //   if b==0: goto div0
     //   dst[:n] = (a[:n] << 4f) / b[:n]    (signed fixed-point divide, truncated toward zero)
     //

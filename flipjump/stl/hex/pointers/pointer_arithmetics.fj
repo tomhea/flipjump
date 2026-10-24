@@ -52,7 +52,7 @@ ns hex {
     }
 
     //  Time Complexity: n(8@+23) + w(0.5@) + 18@+61          (if n+2 <= w/8; else n(4@+9) + w(@+3.5) + 9@+32)
-    // Space Complexity: n(6@+153) + w(0.875@+9.25) + 14@+310 (if n+2 <= w/8; else n(4@+96) + w(0.875@+17.5) + 6@+168)
+    // Space Complexity: n(6.5@+149) + w(0.875@+9.25) + 15@+302 (if n+2 <= w/8; else n(4@+96) + w(@+16.5) + 6@+168)
     // @note: The complexity is calculated for w=64 (index*2w needs n+2 hexes).
     //   dst[:w/4] = ptr + index*2w     (the address of the index-th dw-aligned op past *ptr)
     // dst, ptr are hex[:w/4]; index is an unsigned hex[:n] (n <= w/4).
@@ -76,7 +76,7 @@ ns hex {
         }
 
         //  Time Complexity: sw(7@+23) + n@ + w(0.5@) + 4@+15
-        // Space Complexity: sw(5@+141) + n(@+12) + w(0.875@+9.25) + 4@+28
+        // Space Complexity: sw(5.5@+137) + n(@+12) + w(0.875@+9.25) + 4@+28
         //   dst[:w/4] = ptr + index*2w    (index*2w fits sw hexes)
         // @requires hex.add.init (or hex.init)
         def ptr_index_narrow n, sw, dst, ptr, index @ scaled, end {
@@ -91,7 +91,7 @@ ns hex {
         }
 
         //  Time Complexity: sw(3@+9) + n@ + w(@+3.5) + 3@+14
-        // Space Complexity: sw(3@+84) + n(@+12) + w(0.875@+17.5)
+        // Space Complexity: sw(3@+84) + n(@+12) + w(@+16.5)
         //   dst[:w/4] = ptr + index*2w    (index*2w fits sw hexes)
         // @requires hex.add.init (or hex.init)
         def ptr_index_wide n, sw, dst, ptr, index {

@@ -91,7 +91,7 @@ ns hex {
         }
 
         //  Time Complexity: n(3@+14)
-        // Space Complexity: n(2.5@+58)
+        // Space Complexity: n(3@+54)
         //   carry = 0
         //   x[:n] += y[:n]
         //   carry = 0. jump to c0 if it was 0, and to c1 otherwise.
@@ -257,7 +257,7 @@ ns hex {
         }
 
         //  Time Complexity: n(3@+14)
-        // Space Complexity: n(2.5@+58)
+        // Space Complexity: n(3@+54)
         //   carry = 0
         //   x[:n] -= y[:n]
         //   carry = 0. jump to c0 if it was 0, and to c1 otherwise.

@@ -82,7 +82,7 @@ ns hex {
         }
 
         //  Time Complexity: n(3@+6)       (plus the table's own time per hex; 4@+4 for n == 1)
-        // Space Complexity: n(2.5@+58)    (4@+52 for n == 1)
+        // Space Complexity: n(3@+54)      (4@+52 for n == 1)
         //   for i in range(n):
         //     jump_to_table_entry dst[i], src[i], jumper_to_table
         //
@@ -94,7 +94,7 @@ ns hex {
         }
 
         //  Time Complexity: n(3@+6)       (plus the table's own time per hex)
-        // Space Complexity: n(2.5@+58)
+        // Space Complexity: n(3@+54)
         //   for i in range(n):
         //     jump_to_table_entry dst[i], src[i], jumper_to_table
         //
@@ -112,7 +112,7 @@ ns hex {
         }
 
         //  Time Complexity: 2      (avg. 2.3: #(prev_return ^ return), see the stl README; @/2-2 when prev_return is 0)
-        // Space Complexity: 1      (its chain tail is shared: the previous step's returns to jumper_to_table too)
+        // Space Complexity: 2      (@/2-2 when prev_return is 0)
         //   .ret = this macro's end (it was prev_return), and jump to jumper_to_table.
         //   The table returns to this macro's end, which is 16-padded: in a chain of identical steps the ends
         //   are a fixed (power of 2) stride apart, so moving .ret from one end to the next flips 1-2 bits.
@@ -129,7 +129,7 @@ ns hex {
         }
 
         //  Time Complexity: 2@+2
-        // Space Complexity: 2@+25
+        // Space Complexity: 2@+26
         //   The chained form of jump_to_table_entry: jumps to the table at entry (src<<4 | dst),
         //   and returns to this macro's end, with the result in .res (not yet xored into dst).
         // @Assumes: .ret holds prev_return (see chained_jump).
@@ -143,7 +143,7 @@ ns hex {
         }
 
         //  Time Complexity: 3@+6
-        // Space Complexity: 2.5@+58   (xor_zero's first wflip shares its chain tail with the previous step's)
+        // Space Complexity: 3@+54
         //   prev_dst ^= .res;  .res = 0
         //   then chained_jump_to_table_entry dst, src, jumper_to_table (chained to the previous step's end).
         // @Assumes: the previous step's end is this macro's start (see chained_jump).
