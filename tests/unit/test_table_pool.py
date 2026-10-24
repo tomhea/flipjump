@@ -368,7 +368,15 @@ def test_resolve_pinned_keeps_an_alias_with_one_base() -> None:
 def test_resolve_pinned_skips_the_runtime_words_and_unresolvable_ones() -> None:
     pinned, _ = resolve_pinned({Expr(64): 0x1000, Expr('missing'): 0x2000, Expr('z'): 0x3000}, {'z': 1 << 20})
     assert pinned == {1 << 20: 0x3000}
-    assert RESERVED_BELOW > 64  # stl.IO's word, which the runtime intercepts
+
+
+@pytest.mark.parametrize('memory_width', [8, 16, 32, 64])
+def test_the_runtimes_words_are_reserved_at_every_width(memory_width: int) -> None:
+    # G3: stl.IO is op 1, bits [2w, 4w) - the output flips at 2w and 2w+1, the input bit at 3w+#w (fjm_run's
+    # _handle_output and _handle_input) - and RESERVED_BELOW covers it at every width
+    w = memory_width
+    assert 2 * w <= 2 * w + 1 < 4 * w and 2 * w <= 3 * w + w.bit_length() < 4 * w
+    assert 4 * w <= RESERVED_BELOW
 
 
 def test_resolve_pinned_lets_the_caller_veto_a_word() -> None:
