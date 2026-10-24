@@ -19,7 +19,7 @@ ns hex {
         .xor 2, dst, hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (1+2*PTR_WIDE/4)@+25
+    //  Time Complexity: w(0.5@+4) + (1+2*PTR_WIDE/4)@ + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+2*PTR_WIDE/4)@ + 24(PTR_WIDE/4) + 16
     //   like:  dst[:PTR_WIDE/4] ^= *ptr
     //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
@@ -84,7 +84,7 @@ ns hex {
           cleanup:
         }
 
-        //  Time Complexity: (1+PTR_CELL_BITS/4)@+25   (3@+25 at the default 8)
+        //  Time Complexity: (1+PTR_CELL_BITS/4)@ + PTR_CELL_BITS/2 + 21   (at w=64, where dbit+bits has 5 on-bits; 3@+25 at the default 8)
         // Space Complexity: (1+PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + 16
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       hex.pointers.read_byte[:PTR_CELL_BITS/4] = *ptr
@@ -94,7 +94,7 @@ ns hex {
             .read_cell_from_inners_ptrs .PTR_CELL_BITS, .ret_after_read_byte
         }
 
-        //  Time Complexity: (1+PTR_WIDE/4)@+25
+        //  Time Complexity: (1+PTR_WIDE/4)@ + PTR_WIDE/2 + 21   (at w=64, where dbit+bits has 5 on-bits)
         // Space Complexity: (1+PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 16
         //   the same dance against the WIDE table, so it returns PTR_WIDE_BITS bits from one
         //   dereference. Only valid when PTR_WIDE_BITS is non-zero.
@@ -102,7 +102,7 @@ ns hex {
             .read_cell_from_inners_ptrs .PTR_WIDE_BITS, .ret_after_read_wide
         }
 
-        //  Time Complexity: (1+bits/4)@+25
+        //  Time Complexity: (1+bits/4)@ + bits/2 + 21   (at w=64, where dbit+bits has 5 on-bits)
         // Space Complexity: (1+bits/4)@ + 3bits + 16
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       hex.pointers.read_byte[:bits/4] = *ptr

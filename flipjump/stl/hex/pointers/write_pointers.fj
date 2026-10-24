@@ -13,7 +13,7 @@ ns hex {
         .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w( 0.5@+4) + (1+6*PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + 25   (13@+49 at the default 8)
+    //  Time Complexity: w( 0.5@+4) + (1+6*PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + PTR_CELL_BITS/2 + 21   (at w=64; 13@+49 at the default 8)
     // Space Complexity: w( 0.5@+22) + (1+6*PTR_CELL_BITS/4)@ + 88(PTR_CELL_BITS/4) + 16
     //   like:  *ptr = 0
     //   Zeroes the whole NARROW cell - all PTR_CELL_BITS bits. The read dance decodes that many
@@ -37,7 +37,7 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (1+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 25
+    //  Time Complexity: w(0.5@+4) + (1+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+7*PTR_WIDE/4)@ + 100(PTR_WIDE/4) + 16
     //   like:  *ptr = src[:PTR_WIDE/4]
     //   Writes a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
@@ -55,7 +55,7 @@ ns hex {
         .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (1+6*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 25
+    //  Time Complexity: w(0.5@+4) + (1+6*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+6*PTR_WIDE/4)@ + 88(PTR_WIDE/4) + 16
     //   like:  *ptr = 0     for a whole cell, all PTR_WIDE bits of it.
     //
@@ -123,7 +123,7 @@ ns hex {
         .pointers.write_cells n, 2, src
     }
 
-    //  Time Complexity: w(0.5@+4) + (8+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 54
+    //  Time Complexity: w(0.5@+4) + (8+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 50   (at w=64)
     // Space Complexity: w(0.88@+25) + (4+7*PTR_WIDE/4)@ + 100(PTR_WIDE/4) + 71
     //   like:  *ptr = src[:PTR_WIDE/4]
     //          ptr++
