@@ -15,7 +15,7 @@ ns hex {
         .xor_zero res, .tables.res
     }
 
-    //  Time Complexity: n(3@+38) + 7@+55
+    //  Time Complexity: n(3@+38)
     // Space Complexity: n(3@+54)
     //   res[n] += a[n] * b[1]
     //
@@ -91,7 +91,7 @@ ns hex {
             wflip .ret+w, return
         }
 
-        //  Time Complexity: n(3@+38) + 7@+55
+        //  Time Complexity: n(3@+38)
         // Space Complexity: n(3@+54)
         //   res[n] += a[n] * b[1]
         //
@@ -258,8 +258,8 @@ ns hex {
         rep(n, j) .mul_low.row n, j, res, a, b+j*dw
     }
     ns mul_low {
-        //  Time Complexity: (m-j)(3@+38) + 8@+54
-        // Space Complexity: (m-j)(3@+54) + 8@+63
+        //  Time Complexity: (m-j)(3@+38)
+        // Space Complexity: (m-j)(3@+54)
         //   res[j:m] += wa[:m-j] * wbj    (skipped when wbj is 0)
         // res is hex[:m], wa is hex[:m-j], wbj is a hex.
         def row m, j, res, wa, wbj @ skip {

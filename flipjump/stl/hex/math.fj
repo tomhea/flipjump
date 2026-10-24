@@ -34,8 +34,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n_const(3@+14)   + 4@+15
-    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+27
+    //  Time Complexity: n_const(3@+14)
+    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:n] += const
     // @requires hex.add.init (or hex.init)
     // const must be a positive constant.
@@ -51,8 +51,8 @@ ns hex {
         def add_hex_shifted_constant n, dst, const, hex_shift {
             .add_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
-        //  Time Complexity: n_const(3@+14)   + 4@+15
-        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+27
+        //  Time Complexity: n_const(3@+14)
+        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
         //   dst[:dst_n] += const << (4*hex_shift)
         // @requires hex.add.init (or hex.init)
         // const is a constant of size hex[:n_const]
@@ -203,8 +203,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n_const(3@+14)   + 4@+23
-    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+39
+    //  Time Complexity: n_const(3@+14)
+    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] -= const
     // @requires hex.sub.init (or hex.init)
     // n_const is the hex-length of const, without all of it's least-significant-hexes zeros.
@@ -218,8 +218,8 @@ ns hex {
         def sub_hex_shifted_constant n, dst, const, hex_shift {
             .sub_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
-        //  Time Complexity: n_const(3@+14)   + 4@+23
-        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+39
+        //  Time Complexity: n_const(3@+14)
+        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
         //   dst[:dst_n] -= const << (4*hex_shift)
         // @requires hex.sub.init (or hex.init)
         // const is a constant of size hex[:n_const]
