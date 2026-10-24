@@ -43,9 +43,9 @@ _header_extension_format = '<LLL'
 _header_extension_size = 4 + 4 + 4
 
 # the header's io_mode: the io device a program runs with when `fj --run` is not given --io.
-# (these were once the low/high halves of a u64 `flags` that nothing read. fj wrote 0 there unless
-# given `-f N`, so old files read unchanged: the standard io and no run flags. a file written with a
-# nonzero -f now reads as bad flags.)
+# (these were once the low/high halves of a u64 `flags` that nothing read and older fj wrote as 0 by
+# default, so old files read unchanged: the standard io and no run flags. nonzero old flags now read
+# as bad flags.)
 IO_MODE_STANDARD = 0
 IO_MODE_PC = 1
 IO_MODE_NAMES: Dict[int, str] = {IO_MODE_STANDARD: 'standard', IO_MODE_PC: 'pc'}
@@ -99,17 +99,16 @@ SUPPORTED_MEMORY_WIDTHS: frozenset[int] = frozenset({8, 16, 32, 64})
 
 _LZMA_FORMAT = lzma.FORMAT_RAW
 _LZMA_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [{"id": lzma.FILTER_LZMA2}]
+# preset 9's dictionary, the largest any preset writes with: a decoder this large reads every preset. The reader
+# allocates it only for a stream that the default (8 MiB) decoder cannot read: presets 7-9 can match farther back.
+_LZMA_MAX_DICT_SIZE = 1 << 26
+_LZMA_MAX_DICT_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [
+    {"id": lzma.FILTER_LZMA2, "dict_size": _LZMA_MAX_DICT_SIZE}
+]
 
 
-def _lzma_compression_filters(dw: int, preset: int, *, fast: bool = False) -> List[Dict[str, int]]:
-    """@param fast: use the fast match finder. ENCODER-ONLY -- dict_size is unchanged, so the
-    output is still readable by any reader (which passes no dict size at all). MEASURED on a
-    314 MB program image: 100.8 s -> 7.5 s of compression, for a 33% larger file."""
-    filters: Dict[str, int] = {"id": lzma.FILTER_LZMA2, "preset": preset, "nice_len": dw}
-    if fast:
-        filters["mode"] = lzma.MODE_FAST
-        filters["mf"] = lzma.MF_HC4
-    return [filters]
+def _lzma_compression_filters(dw: int, preset: int) -> List[Dict[str, int]]:
+    return [{"id": lzma.FILTER_LZMA2, "preset": preset, "nice_len": dw}]
 
 
 def _new_garbage_val() -> int:

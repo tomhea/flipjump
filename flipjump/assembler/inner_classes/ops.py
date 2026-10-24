@@ -16,11 +16,6 @@ from flipjump.utils.exceptions import FlipJumpExprException
 from flipjump.assembler.inner_classes.expr import Expr
 
 
-# PERF (doom-flipjump, 2026-08-20): slots=True. CodePosition is attached to EVERY op,
-# so on the real program (~42M ops) its per-instance __dict__ is one of the largest
-# single memory costs -- and the pipeline pages at scale. dataclass(slots=True) is a
-# layout change only; the field set is unchanged and emission is asserted identical by
-# .fjm sha256.
 @dataclass(slots=True)
 class CodePosition:
     """
@@ -46,17 +41,7 @@ class MacroName:
     Unique for every macro definition.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
-    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    # PERF (doom-flipjump, 2026-08-20): `_hash` is a cached field, not a new attribute of the
-    # concept -- MacroName is immutable in practice (nothing ever rebinds .name/.parameter_num),
-    # and it is the key of the `macros` dict, looked up twice per macro expansion (~3.4M times on
-    # the doom-flipjump program). Both __hash__ and __eq__ used to build a fresh tuple per call.
-    __slots__ = (
-        'name',
-        'parameter_num',
-        '_hash',
-    )
+    __slots__ = ('name', 'parameter_num', '_hash')
 
     def __init__(self, name: str, parameter_num: int = 0):
         self.name = name
@@ -75,8 +60,6 @@ class MacroName:
         return self._hash
 
     def __eq__(self, other: Any) -> bool:
-        # field-wise, but exactly equivalent to `isinstance(other, MacroName) and
-        # self.to_tuple() == other.to_tuple()` -- tuple comparison is element-wise in this order.
         if isinstance(other, MacroName):
             return self.name == other.name and self.parameter_num == other.parameter_num
         return False
@@ -85,10 +68,7 @@ class MacroName:
         return str(self)
 
 
-# MEMORY (doom-flipjump, 2026-10-19): one MacroName per (name, parameter count), shared by every call.
-# A MacroCall used to build its own - with its own copy of the name string - and the macro tree holds
-# millions of calls (a doom level's top-level code is mostly one-line macro calls). MacroName is
-# immutable in practice (nothing rebinds .name / .parameter_num), so sharing it changes nothing else.
+# one MacroName per (name, parameter_num): a program has millions of macro calls
 _macro_names: Dict[Tuple[str, int], MacroName] = {}
 
 
@@ -112,19 +92,7 @@ class FlipJump:
     The python representation of the "flip; jump" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
-    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
-    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
-    # classes are instantiated millions of times, and without __slots__ each instance
-    # carries a per-object __dict__. No attribute is added, removed or renamed, so
-    # emission is unaffected -- asserted by sha256 of the .fjm.
-    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
-    # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = (
-        'flip',
-        'jump',
-        'code_position',
-    )
+    __slots__ = ('flip', 'jump', 'code_position')
 
     def __init__(self, flip: Expr, jump: Expr, code_position: CodePosition):
         self.flip = flip
@@ -155,20 +123,7 @@ class WordFlip:
     The python representation of the "wflip address, value [, return_address]" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
-    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
-    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
-    # classes are instantiated millions of times, and without __slots__ each instance
-    # carries a per-object __dict__. No attribute is added, removed or renamed, so
-    # emission is unaffected -- asserted by sha256 of the .fjm.
-    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
-    # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = (
-        'word_address',
-        'flip_value',
-        'return_address',
-        'code_position',
-    )
+    __slots__ = ('word_address', 'flip_value', 'return_address', 'code_position')
 
     def __init__(self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition):
         self.word_address = word_address
@@ -216,18 +171,7 @@ class Pad:
     The python representation of the "pad ops_alignment" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
-    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
-    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
-    # classes are instantiated millions of times, and without __slots__ each instance
-    # carries a per-object __dict__. No attribute is added, removed or renamed, so
-    # emission is unaffected -- asserted by sha256 of the .fjm.
-    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
-    # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = (
-        'ops_alignment',
-        'code_position',
-    )
+    __slots__ = ('ops_alignment', 'code_position')
 
     def __init__(self, ops_alignment: Expr, code_position: CodePosition):
         self.ops_alignment = ops_alignment
@@ -254,18 +198,7 @@ class Segment:
     The python representation of the "segment start_address" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
-    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
-    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
-    # classes are instantiated millions of times, and without __slots__ each instance
-    # carries a per-object __dict__. No attribute is added, removed or renamed, so
-    # emission is unaffected -- asserted by sha256 of the .fjm.
-    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
-    # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = (
-        'start_address',
-        'code_position',
-    )
+    __slots__ = ('start_address', 'code_position')
 
     def __init__(self, start_address: Expr, code_position: CodePosition):
         self.start_address = start_address
@@ -292,18 +225,7 @@ class Reserve:
     The python representation of the "reserve bit_size" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
-    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
-    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
-    # classes are instantiated millions of times, and without __slots__ each instance
-    # carries a per-object __dict__. No attribute is added, removed or renamed, so
-    # emission is unaffected -- asserted by sha256 of the .fjm.
-    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
-    # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = (
-        'reserved_bit_size',
-        'code_position',
-    )
+    __slots__ = ('reserved_bit_size', 'code_position')
 
     def __init__(self, reserved_bit_size: Expr, code_position: CodePosition):
         self.reserved_bit_size = reserved_bit_size
@@ -330,14 +252,7 @@ class MacroCall:
     The python representation of the "macro-call [args...]" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
-    # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
-    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    __slots__ = (
-        'macro_name',
-        'arguments',
-        'code_position',
-    )
+    __slots__ = ('macro_name', 'arguments', 'code_position')
 
     def __init__(self, macro_name: str, arguments: List[Expr], code_position: CodePosition):
         self.macro_name = shared_macro_name(macro_name, len(arguments))
@@ -364,11 +279,7 @@ class RepCall:
     The python representation of the "rep(n, i) macro_call [args...]" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
-    # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
-    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    # `current_index` and `source_iterator_name` are assigned outside __init__ (by the preprocessor
-    # and by rename_iterator respectively) -- both are listed, or those assignments would raise.
+    # current_index and source_iterator_name are assigned outside __init__
     __slots__ = (
         'current_index',
         'repeat_times',
@@ -474,18 +385,7 @@ class Label:
     The python representation of the "label:" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__ -- a pure memory-layout change.
-    # MEASURED: a 129 MB program peaks at ~13.6 GB on a 16.8 GB machine and PAGES; every
-    # CPU model says that build should take ~800 s and it takes 6,332-8,054 s. These
-    # classes are instantiated millions of times, and without __slots__ each instance
-    # carries a per-object __dict__. No attribute is added, removed or renamed, so
-    # emission is unaffected -- asserted by sha256 of the .fjm.
-    # The slot list is DERIVED from this class's own __init__, not hand-written: the first
-    # attempt guessed WordFlip's fields and broke the parser at once.
-    __slots__ = (
-        'name',
-        'code_position',
-    )
+    __slots__ = ('name', 'code_position')
 
     def __init__(self, name: str, code_position: CodePosition):
         self.name = name
@@ -533,12 +433,7 @@ class Macro:
     namespace: str
     code_position: CodePosition
 
-    # PERF (doom-flipjump, 2026-08-20): [(f'{namespace}.{name}', name)] for every parameter and
-    # local-parameter, derived ONCE here at macro-DEFINITION time. get_params_dictionary() used to
-    # rebuild that f-string on every macro EXPANSION -- ~5M string formats on the doom-flipjump
-    # program, all of them recomputing the same few hundred names. Empty when the macro has no
-    # namespace. Safe to cache: a Macro is built once by the parser from fresh lists and never
-    # mutated afterwards.
+    # [(namespace.name, name)] of every param, built once per macro, not per expansion
     namespaced_params: List[Tuple[str, str]] = dataclasses.field(init=False, repr=False, default_factory=list)
 
     def __post_init__(self) -> None:
@@ -559,12 +454,7 @@ class NewSegment:
      of the "segment start_address" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
-    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
-    __slots__ = (
-        'start_address',
-        'wflip_start_address',
-    )
+    __slots__ = ('start_address', 'wflip_start_address')
 
     def __init__(self, start_address: int):
         """
@@ -582,8 +472,6 @@ class ReserveBits:
      of the "reserve bit_size" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__, derived from this class's own __init__.
-    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
     __slots__ = ('first_address_after_reserved',)
 
     def __init__(self, first_address_after_reserved: int):
@@ -599,9 +487,6 @@ class Padding:
      of the "pad ops_alignment" fj-assembly op.
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__, DERIVED from this class's own __init__ (the
-    # first __slots__ pass in this repo guessed WordFlip's fields and broke the parser at once).
-    # See the note on FlipJump: the pipeline is memory-bound at scale and pages.
     __slots__ = ('ops_count',)
 
     def __init__(self, ops_count: int):

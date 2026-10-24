@@ -96,7 +96,6 @@ class Writer:
         run_flags: int = 0,
         io_mode: int = 0,
         lzma_preset: int = lzma.PRESET_DEFAULT,
-        lzma_fast: bool = False,
     ):
         """
         the .fjm-file writer
@@ -106,8 +105,6 @@ class Writer:
         @param run_flags: how the program runs by default (fjm_consts.RUN_FLAG_*; `fj --run-flags` overrides it)
         @param io_mode: the io device it runs with by default (fjm_consts.IO_MODE_*; `fj --io` overrides it)
         @param lzma_preset: the preset to be used when compressing the .fjm data
-        @param lzma_fast: compress with the fast match finder (encoder-only; same dict_size, so any
-        reader still reads it). Much faster, ~33% larger.
         """
         if memory_width not in SUPPORTED_MEMORY_WIDTHS:
             raise FlipJumpWriteFjmException(f"Word size {memory_width} is not in {sorted(SUPPORTED_MEMORY_WIDTHS)}.")
@@ -126,7 +123,6 @@ class Writer:
             else:
                 self.lzma_preset = lzma_preset
 
-        self.lzma_fast = lzma_fast
         self.output_file = output_file
         self.word_size = memory_width
         self.version = version
@@ -157,7 +153,7 @@ class Writer:
         try:
             compressor = lzma.LZMACompressor(
                 format=_LZMA_FORMAT,
-                filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset, fast=self.lzma_fast),
+                filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset),
             )
             parts = []
             for offset in range(0, len(data), _COMPRESS_CHUNK):

@@ -57,13 +57,6 @@ class Expr:
     The python representation of a .fj expression (from labels, consts and math-ops)
     """
 
-    # PERF (doom-flipjump, 2026-08-20): __slots__. MEASURED: assembling a 129 MB program
-    # peaks at ~13.6 GB on a 16.8 GB machine and PAGES -- every CPU model says the build
-    # should take ~800 s and it takes 6,332-8,054 s. This class is instantiated millions of
-    # times (the real program has 24.4M labels and ~42M ops), and without __slots__ each
-    # instance carries a per-object __dict__. This is a pure memory-layout change: no
-    # attribute is added, removed or renamed, so emission is unaffected -- asserted by
-    # sha256 of the .fjm (scratchpad/asm_bench.py, which ships a negative control).
     __slots__ = ('value',)
 
     def __init__(self, expr: Union[int, str, Tuple[str, Tuple[Expr, ...]]]):
@@ -146,15 +139,12 @@ class Expr:
 
         op, args = value
         try:
-            # PERF (doom-flipjump, 2026-08-20): the binary case is spelled out. Nearly every fj
-            # operator is binary, and `f(*(e.exact_eval(labels) for e in args))` paid for a whole
-            # generator frame per expression NODE to deliver two values -- 17.0 s of a 321.7 s
-            # labels-resolve on the doom-flipjump program. Unary/ternary keep the general path.
+            # the common binary case, without a generator frame per node
             if len(args) == 2:
                 first, second = args
                 binary = op_string_to_function[op]
                 return binary(first.exact_eval(labels), second.exact_eval(labels))  # type: ignore[call-arg]
-            return op_string_to_function[op](*[e.exact_eval(labels) for e in args])
+            return op_string_to_function[op](*(e.exact_eval(labels) for e in args))
         except FlipJumpExprException:
             raise
         except Exception as e:

@@ -1,12 +1,8 @@
 """
 the compact op stream: what the preprocessor (macro resolve) emits and labels-resolve consumes.
 
-MEMORY (doom-flipjump, 2026-10-19). The preprocessor used to hand labels-resolve a deque holding one
-python object per emitted op - a FlipJump/WordFlip, plus a fresh Expr tree for every operand that
-eval_new changed: `$` became an `Expr(int)`, and `x + dbit + 3` with `x` bound to the caller's
-`va + 2*dw` became a three-level tree of Exprs and tuples. That is ~250 bytes per op, and a doom level
-emits 40-70M ops, so it was most of the assembler's peak (11.3 GB for E1M1, 17.2 GB for E1M2 on a
-15.6 GB machine). This stream keeps an op in ~17-60 bytes:
+One python object per op (and an Expr tree per operand) cost ~250 bytes. This stream keeps an op in
+~17-60 bytes:
 
     kinds: bytearray        - one byte per op (FJ, FJ_POS, WFLIP, PAD, OBJ below)
     vals:  array('q')       - the op's slots, in order (see each kind)
@@ -71,36 +67,15 @@ CONST_MIN = -(1 << 63)
 _ADD_SUB = ('+', '-')
 
 
-def _linear(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
-    """(label, constant) if expr is a +/- tree of at most one label (coefficient +1) and ints, else None"""
-    value: Any = expr.value
-    if value.__class__ is int:
-        return None, value
-    if value.__class__ is str:
-        return value, 0
-    op, args = value
-    if len(args) != 2 or op not in _ADD_SUB:
-        return None
-    left = _linear(args[0])
-    if left is None:
-        return None
-    right = _linear(args[1])
-    if right is None:
-        return None
-    if op == '+':
-        if left[0] is not None and right[0] is not None:
-            return None
-        return (left[0] if left[0] is not None else right[0]), left[1] + right[1]
-    if right[0] is not None:  # `c - x` / `x - y`: not a +1 coefficient
-        return None
-    return left[0], left[1] - right[1]
+_NO_PARAMS: Dict[str, Expr] = {}
 
 
 def _linear_in(expr: Expr, params: Dict[str, Expr]) -> Optional[Tuple[Optional[str], int]]:
-    """_linear(expr.eval_new(params)), without building the substituted tree: a name is replaced by its
-    params value once (as eval_new does - the values are already minimal), and the +/- tree is summed.
-    None where _linear would be None or where eval_new would fold something else (the caller then
-    takes the eval_new path, so every other operator - and its errors - stays eval_new's)."""
+    """(label, constant) if expr.eval_new(params) is a +/- tree of at most one label (coefficient +1) and
+    ints, else None - without building the substituted tree: a name is replaced by its params value once
+    (as eval_new does - the values are already minimal), and the +/- tree is summed. None also where
+    eval_new would fold something else (the caller then takes the eval_new path, so every other operator -
+    and its errors - stays eval_new's)."""
     value: Any = expr.value
     if value.__class__ is int:
         return None, value
@@ -122,12 +97,12 @@ def _linear_in(expr: Expr, params: Dict[str, Expr]) -> Optional[Tuple[Optional[s
         if left[0] is not None and right[0] is not None:
             return None
         return (left[0] if left[0] is not None else right[0]), left[1] + right[1]
-    if right[0] is not None:
+    if right[0] is not None:  # `c - x` / `x - y`: not a +1 coefficient
         return None
     return left[0], left[1] - right[1]
 
 
-# _linear of the macro arguments (the params values): an argument such as `va + 2*dw` is referenced by
+# the linear sums of the macro arguments (the params values): an argument such as `va + 2*dw` is referenced by
 # many ops of its expansion, so its sum is computed once. Keyed by the Expr object (Expr has identity
 # hashing, and the key keeps it alive, so an id cannot be reused); bounded by clearing.
 _LINEAR_MEMO: Dict[Expr, Optional[Tuple[Optional[str], int]]] = {}
@@ -145,7 +120,7 @@ def _linear_memo(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
     if linear is _MISSING:
         if len(_LINEAR_MEMO) >= _LINEAR_MEMO_LIMIT:
             _LINEAR_MEMO.clear()
-        linear = _LINEAR_MEMO[expr] = _linear(expr)
+        linear = _LINEAR_MEMO[expr] = _linear_in(expr, _NO_PARAMS)
     return linear  # type: ignore[no-any-return]
 
 
@@ -170,9 +145,6 @@ class OpStream:
     def __len__(self) -> int:
         return len(self.kinds)
 
-    def __bool__(self) -> bool:
-        return len(self.kinds) > 0
-
     # ---- writing ----
 
     def _operand(self, expr: Expr) -> bool:
@@ -193,7 +165,7 @@ class OpStream:
             refs.append(value)
             return True
         else:
-            linear = _linear(expr)
+            linear = _linear_in(expr, _NO_PARAMS)
             if linear is not None and linear[0] is not None and self._label_plus(linear[0], linear[1]):
                 return linear[0] not in self.labels
         refs = self.refs
@@ -279,12 +251,22 @@ class OpStream:
         """add_flip_jump(flip.eval_new(params), jump.eval_new(params), code_position), the same slots"""
         deferred = self._operand_in(flip, params)
         deferred = self._operand_in(jump, params) or deferred
+        self._end_flip_jump(deferred, code_position)
+
+    def _end_flip_jump(self, deferred: bool, code_position: CodePosition) -> None:
+        """the op's operand slots were just appended: end it as FJ_POS (with its position) or as a literal"""
         if deferred:
             self.kinds.append(FJ_POS)
             self.vals.append(len(self.refs))
             self.refs.append(code_position)
         else:
             self._literal_flip_jump()
+
+    def _end_word_flip(self, code_position: CodePosition) -> None:
+        """the op's three operands were just appended: end it with its position"""
+        self.kinds.append(WFLIP)
+        self.vals.append(len(self.refs))
+        self.refs.append(code_position)
 
     def _literal_flip_jump(self) -> None:
         """the op's two literal slots were just appended: one FJ_PACKED slot instead, where they fit"""
@@ -310,9 +292,7 @@ class OpStream:
         self._operand_in(word_address, params)
         self._operand_in(flip_value, params)
         self._operand_in(return_address, params)
-        self.kinds.append(WFLIP)
-        self.vals.append(len(self.refs))
-        self.refs.append(code_position)
+        self._end_word_flip(code_position)
 
     def add_flip_jump(self, flip: Expr, jump: Expr, code_position: CodePosition) -> None:
         f: Any = flip.value
@@ -324,12 +304,7 @@ class OpStream:
             return
         deferred = self._operand(flip)
         deferred = self._operand(jump) or deferred
-        if deferred:
-            self.kinds.append(FJ_POS)
-            self.vals.append(len(self.refs))
-            self.refs.append(code_position)
-        else:
-            self._literal_flip_jump()
+        self._end_flip_jump(deferred, code_position)
 
     def add_word_flip(
         self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition
@@ -337,9 +312,7 @@ class OpStream:
         self._operand(word_address)
         self._operand(flip_value)
         self._operand(return_address)
-        self.kinds.append(WFLIP)
-        self.vals.append(len(self.refs))
-        self.refs.append(code_position)
+        self._end_word_flip(code_position)
 
     def add_padding(self, ops_count: int) -> None:
         self.kinds.append(PAD)

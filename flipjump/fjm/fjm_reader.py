@@ -28,6 +28,7 @@ from flipjump.fjm.fjm_consts import (
     SUPPORTED_MEMORY_WIDTHS,
     _LZMA_FORMAT,
     _LZMA_DECOMPRESSION_FILTERS,
+    _LZMA_MAX_DICT_DECOMPRESSION_FILTERS,
     _new_garbage_val,
     FJMVersion,
     bad_io_mode_message,
@@ -147,6 +148,10 @@ class Reader:
     def _decompress_data(compressed_data: bytes) -> bytes:
         try:
             return lzma.decompress(compressed_data, format=_LZMA_FORMAT, filters=_LZMA_DECOMPRESSION_FILTERS)
+        except lzma.LZMAError:
+            pass  # presets 7-9 may match farther back than the default dictionary reaches
+        try:
+            return lzma.decompress(compressed_data, format=_LZMA_FORMAT, filters=_LZMA_MAX_DICT_DECOMPRESSION_FILTERS)
         except lzma.LZMAError as e:
             raise FlipJumpReadFjmException('Error: The compressed data is damaged; Unable to decompress.') from e
 
@@ -415,8 +420,9 @@ def _decompress_in_chunks(
 
     remaining = file_data
     first_stream = True
+    filters = _LZMA_DECOMPRESSION_FILTERS
     while True:
-        decompressor = lzma.LZMADecompressor(format=_LZMA_FORMAT, filters=_LZMA_DECOMPRESSION_FILTERS)
+        decompressor = lzma.LZMADecompressor(format=_LZMA_FORMAT, filters=filters)
         position = 0
         stream_start = size
         try:
@@ -427,16 +433,20 @@ def _decompress_in_chunks(
                 if on_progress is not None:
                     on_progress(min(1.0, (len(file_data) - len(remaining) + position) / len(file_data)))
         except lzma.LZMAError as e:
+            size = stream_start
+            if filters is _LZMA_DECOMPRESSION_FILTERS:
+                filters = _LZMA_MAX_DICT_DECOMPRESSION_FILTERS  # presets 7-9 may match farther back: decode again
+                continue
             if first_stream:
                 raise FlipJumpReadFjmException(damaged) from e
-            size = stream_start  # junk after the last stream: ignored, as lzma.decompress does
-            break
+            break  # junk after the last stream: ignored, as lzma.decompress does
         if not decompressor.eof:
             raise FlipJumpReadFjmException(damaged)
         remaining = decompressor.unused_data + remaining[position:]
         if not remaining:
             break
         first_stream = False
+        filters = _LZMA_DECOMPRESSION_FILTERS
     del output[size:]
     return output
 

@@ -47,15 +47,8 @@ all_errors: str
 error_occurred: bool
 
 
-# MEMORY (doom-flipjump, 2026-10-19). The macro tree holds every parsed statement until the expansion
-# reaches it, and a doom level is ~3M top-level lines (mostly `;0x0 * dw` data), so what one line costs
-# is multiplied by millions. Three things it used to pay for that it does not need:
-#   * its own copy of the file's path string in its CodePosition (`str(curr_file)`, ~140 bytes) - one
-#     string per file is shared now, and a label and the statement on its line share one position;
-#   * a fresh Expr for every number, name and `$` it mentions, and for every constant a fold
-#     (`0x0 * dw`) produces - Exprs are immutable (nothing assigns .value after __init__, and eval_new
-#     builds new ones), so equal leaves share one object within a parse (`_leaf`);
-#   * its own MacroName per macro call (see ops.macro_name).
+# shared within a parse: one path string per file, one CodePosition per line, and one Expr per equal
+# number / name / `$` leaf (Exprs are immutable, so equal leaves can be one object)
 _position_file: Optional[Path] = None
 _position_file_str = ''
 _last_position: Optional[CodePosition] = None
@@ -81,7 +74,7 @@ def get_position(lineno: int) -> CodePosition:
 
 
 def _leaf(value: Union[int, str]) -> Expr:
-    """the parse's shared Expr for the number / name `value` (see the MEMORY note above)"""
+    """the parse's shared Expr for the number / name `value`"""
     expr = _leaf_exprs.get(value)
     if expr is None or expr.value.__class__ is not value.__class__:
         expr = Expr(value)
@@ -334,28 +327,19 @@ def _get_main_macro_code_position(first_file: Tuple[str, Path]) -> CodePosition:
     return CodePosition(str(fj_file_path.absolute()), short_file_name, 1)
 
 
-# noinspection PyUnusedLocal,PyUnresolvedReferences,PyPep8Naming
 _ID_OF_NONE = id(None)
 
 
 class _NoneOnlyPositions(Dict[int, Any]):
-    """sly's per-production position record, keeping only the entry FJParser reads.
-
-    MEMORY (doom-flipjump, 2026-10-19): with track_positions on (sly's default, and the symbols' line
-    numbers - which name every macro-expansion label - depend on it), sly.Parser.parse records
-    `_line_positions[id(value)] = lineno` and `_index_positions[id(value)] = (index, end)` for EVERY
-    reduction, in dicts that live as long as the parser: one entry per expression node and statement of
-    every file, never removed. MEASURED on 600K lines of a doom level: the parse's traced peak was 1,011 MB
-    for a 211 MB tree, so for a whole level it was several GB, freed only when the parse ended. The only
-    reader is FJParser.error's `line_position(None)` (the last None-valued production's line, for an
-    error at end of file), so that one key is all that is kept.
-    """
+    """sly's per-production position record, keeping only the entry FJParser reads: sly records a position
+    per reduction for the parser's whole life, and FJParser.error reads only `line_position(None)`."""
 
     def __setitem__(self, key: int, value: Any) -> None:
         if key == _ID_OF_NONE:
             super().__setitem__(key, value)
 
 
+# noinspection PyUnusedLocal,PyUnresolvedReferences,PyPep8Naming
 class FJParser(sly.Parser):
     tokens = FJLexer.tokens
     # 'UMINUS', 'UNOT' and 'LEADING_ID' are fictitious precedence tokens (not real
@@ -405,6 +389,7 @@ class FJParser(sly.Parser):
         self.defines: Dict[str, int] = {}
         self.defines_lineno: Dict[str, int] = {}
         self.used_defines: Set[str] = set()
+        self.parsing_defines = False  # is the file being parsed the defines file (set once per file)
 
     def _parsing_the_defines_file(self) -> bool:
         try:
@@ -818,7 +803,7 @@ class FJParser(sly.Parser):
     def statement(self, p: ParsedRule) -> None:
         name = self.ns_full_name(p.ID)
 
-        if self._parsing_the_defines_file():
+        if self.parsing_defines:
             # a -D line. It does not DECLARE the constant, it overrides whatever declares it.
             evaluated = p.expr.eval_new(self.consts)
             try:
@@ -827,13 +812,8 @@ class FJParser(sly.Parser):
                 syntax_error(p.lineno, f'Can\'t evaluate expression:  {str(evaluated)}.')
                 return
             self.defines_lineno[name] = p.lineno
-            # NOTE there is deliberately no "was it already declared?" branch here. The defines
-            # file is parsed BEFORE every other file, so nothing but a previous line of this
-            # same file can be in self.consts yet -- and letting one define satisfy another
-            # is exactly how a repeated, misspelled -D would slip past the check below.
-            # An override is satisfied by the DECLARATION it suppresses, further down.
-            # The value is visible from here on, so a later define may use an earlier one
-            # and the overridden program still sees the value at every use site.
+            # no "already declared?" check: only the DECLARATION it suppresses satisfies an override.
+            # The value is visible from here on, so a later define may use an earlier one.
             self.consts[name] = Expr(self.defines[name])
             return
 
@@ -1147,21 +1127,21 @@ def _parse_files_into_parser(
         first_uncached_index = prefix_length
 
     # the progress is measured in bytes of source, the files to parse in order (a cached prefix counts as done)
-    sizes = [os.path.getsize(path) if on_progress is not None else 0 for _, path in input_files]
+    sizes = [os.path.getsize(path) for _, path in input_files] if on_progress is not None else []
     total_size = max(1, sum(sizes))
     for file_index, (curr_file_short_name, curr_file) in enumerate(input_files):
         if file_index < first_uncached_index:
             continue
         validate_current_file(files_seen)
+        parser.parsing_defines = parser._parsing_the_defines_file()
         on_position = None
         if on_progress is not None:
-            done_before = sum(sizes[:file_index])
+            report, done_before, file_size = on_progress, sum(sizes[:file_index]), sizes[file_index]
 
-            def on_position(position: int, done_before: int = done_before, file_size: int = sizes[file_index]) -> None:
+            def on_position(position: int) -> None:
                 # the token offset counts characters of the read text; the sizes count bytes of the files
-                assert on_progress is not None
                 file_part = position * file_size / max(1, len(curr_text))
-                on_progress(min(1.0, (done_before + file_part) / total_size))
+                report(min(1.0, (done_before + file_part) / total_size))
 
         lex_parse_curr_file(lexer, parser, on_position)
         if cache_key is not None and file_index == prefix_length - 1:
@@ -1201,16 +1181,13 @@ def parse_macro_tree(
     finally:
         _reset_parse_sharing()
 
-    # -D may only OVERRIDE: a define that never met a declaration is a typo, and silently
-    # accepting it is how a misspelled -D looks exactly like a working one.
-    #
-    # syntax_error() formats its position from curr_file, which by now holds the LAST file
-    # parsed -- so without re-pointing it the error names the user's own program at a line
-    # number taken from the defines file: a position that exists and is wrong.
+    # -D may only OVERRIDE: a define that never met a declaration is a typo. syntax_error() names
+    # curr_file (by now the LAST file parsed), so it is pointed back at the defines file.
     unmatched = sorted(set(parser.defines) - parser.used_defines)
     if unmatched:
         assert parser.defines_file is not None  # a define exists only if a defines file was parsed
-        curr_file, curr_file_short_name = parser.defines_file, 'd1'
+        curr_file = parser.defines_file
+        curr_file_short_name = next(short for short, path in input_files if path.resolve() == curr_file)
         for name in unmatched:
             syntax_error(parser.defines_lineno[name], f'override of non-defined constant "{name}".')
 

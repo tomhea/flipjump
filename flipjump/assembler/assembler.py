@@ -5,11 +5,12 @@ parsing the macro-tree, resolving macros into a flat op-list (the preprocessor),
 and resolving labels into addresses while writing the result with the fjm Writer.
 """
 
+import dataclasses
 import gc
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, Deque, List, Dict, MutableSequence, Tuple, Optional, NamedTuple, Union
+from typing import Callable, Deque, List, Dict, MutableSequence, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -26,7 +27,8 @@ from flipjump.assembler.inner_classes.ops import FlipJump, WordFlip, LastPhaseOp
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
-from flipjump.assembler.preprocessor import resolve_macros, TablePool, RESERVED_BELOW
+from flipjump.assembler.preprocessor import resolve_macros
+from flipjump.assembler.table_pool import TablePool, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -64,10 +66,7 @@ def add_segment_to_fjm(
     if first_address == last_address:
         return
 
-    # PERF (doom-flipjump, 2026-08-20): appended in two pieces instead of `fj_words + wflip_words`.
-    # That concatenation built a THIRD list holding every word of the segment -- 78.6M of them on
-    # the doom-flipjump program, 22.9 s of pure copying -- purely to pass them as one argument.
-    # add_data appends, so two calls land contiguously and `data_start` is still the first one's.
+    # two appends, not `fj_words + wflip_words` (a copy of every word): they land contiguously
     data_length = len(fj_words) + len(wflip_words)  # (before add_data: a writer that takes fj_words grows it)
     data_start = fjm_writer.add_data(fj_words, take=take)
     fjm_writer.add_data(wflip_words)
@@ -86,32 +85,19 @@ def add_segment_to_fjm(
 
     if take:
         return
-    # `del x[:]` not `.clear()`: array.array has no clear() (verified -- it is not registered as
-    # a MutableSequence), while `del x[:]` empties BOTH an array and a list.
+    # `del x[:]` empties both an array (which has no clear()) and a list
     del fj_words[:]
     del wflip_words[:]
 
 
-class WFlipSpot(NamedTuple):
-    """Where the next wflip-chain op goes: (the word-list, the index in it, its address).
-
-    PERF (doom-flipjump, 2026-08-20): this was a plain @dataclass, and it is allocated once per
-    wflip-chain link -- 16.1M times on the doom-flipjump program, which is the single most
-    frequently constructed object in `labels_resolve`. A NamedTuple keeps the exact same
-    `.list/.word_index/.address` attribute access with none of the per-instance __dict__, and
-    tuple allocation comes off CPython's freelist (the index field is `word_index`: a NamedTuple
-    field cannot be called `index`, which tuple already defines).
-    """
-
+@dataclasses.dataclass(slots=True)
+class WFlipSpot:
     list: MutableSequence[int]
-    word_index: int
+    index: int
     address: int
 
 
 class BinaryData:
-    # PERF (doom-flipjump, 2026-08-20): __slots__. One instance per assembly, so this is not about
-    # instance size -- it is about attribute ACCESS: every slot read in the hot loop below becomes an
-    # index instead of a dict lookup, and those run tens of millions of times.
     __slots__ = (
         'memory_width',
         'first_address',
@@ -137,15 +123,14 @@ class BinaryData:
         pinned: Optional[Dict[int, int]] = None,
     ):
         """
-        @param save_wflip_labels: whether to record a `:wflips:N` label per generated wflip-chain op.
-        These labels exist ONLY for the debugging-file; see the note on _insert_wflip_label.
+        @param save_wflip_labels: whether to record a `:wflips:N` label per generated wflip-chain op
         """
         self.memory_width = memory_width
 
         # {jump-word address: block base} for BlockPool; None for every other build, so the two use
-        # sites below cost one truthiness test per op when off. A flip smaller than a `pad 16`-aligned
-        # address only edits the variable's VALUE bits (hex.set, xor_by) and must not be rebased.
+        # sites below cost one truthiness test per op when off
         self.pinned = pinned
+        # a flip value below a `pad 16` table address is a VALUE flip (hex.set, xor_by), not a jump target
         self.pinned_floor = 16 * 2 * memory_width
 
         self.first_address = first_segment.start_address
@@ -155,9 +140,7 @@ class BinaryData:
         self.wflips_so_far = 0
         self.save_wflip_labels = save_wflip_labels
 
-        # PERF (doom-flipjump, 2026-08-20): typed word arrays, not lists of python ints -- these
-        # hold every word of the program (78.6M on the doom-flipjump build) and labels-resolve is
-        # the phase that pages. Falls back to a plain list where the typecode does not fit exactly.
+        # typed word arrays (a plain list where no typecode fits the width): they hold every word
         self.fj_words = new_word_buffer(memory_width)
         self.wflip_words = new_word_buffer(memory_width)
 
@@ -166,8 +149,6 @@ class BinaryData:
         self.padding_ops_indices = array('q')
 
         # return_address -> { a chain tail (its addresses, as one int: see insert_wflip_ops) -> start_flip_address }
-        # PERF: defaultdict(dict) not defaultdict(lambda: {}) -- the C constructor, not a python
-        # call, on every previously-unseen return address.
         self.wflips_dict: Dict[int, Dict[int, int]] = defaultdict(dict)
 
     def get_wflip_spot(self) -> WFlipSpot:
@@ -202,17 +183,7 @@ class BinaryData:
         self.wflip_words = new_word_buffer(self.memory_width)
 
     def _insert_wflip_label(self, address: int) -> None:
-        """Record the debugging label for a generated wflip-chain op.
-
-        ⚠ THESE LABELS ARE UNREACHABLE FROM FJ SOURCE. `WFLIP_LABEL_PREFIX` is ':wflips:' and the
-        lexer's identifier rule is `[a-zA-Z_][a-zA-Z_0-9]*` -- a ':' can never appear in a user
-        label, so no Expr can ever name one. Their only consumer is save_debugging_labels(), i.e.
-        the optional debugging-file. MEASURED (doom-flipjump, 2026-08-20): on that program they are
-        16,137,538 of the 24,386,265 entries in the labels dict -- 66% of it -- built out of 16.1M
-        f-string formats and 16.1M dict insertions that nothing then reads. When no debugging file
-        was asked for, skipping them is not an approximation: it is removing dead work. Emission is
-        untouched, asserted by sha256 of the .fjm.
-        """
+        """the `:wflips:N` labels are read only by the debugging file (fj source cannot name them)"""
         if self.save_wflip_labels:
             self.labels[f'{WFLIP_LABEL_PREFIX}{self.wflips_so_far}'] = address
             self.wflips_so_far += 1
@@ -247,11 +218,8 @@ class BinaryData:
             # (tested with many other orders) that produces the best found-statistic for searching a
             # chain's tail in return_dict), and every tail is shared through return_dict: a tail is
             # the SET of addresses still to flip.
-            # MEMORY (doom-flipjump, 2026-10-19): a tail is keyed by one int, not by the tuple of its
-            # addresses. The set is {a + i : bit i of m}, with a its lowest address and bit 0 of m set;
-            # (a, m) determines the set and the set determines (a, m), and m < 2**w, so `a << w | m`
-            # is equal for two tails exactly when their address tuples are. A tuple of up to w address
-            # ints per chain op (and the O(k^2) re-tupling) was the bulk of this dict.
+            # A tail {a + i : bit i of m} (a its lowest address, bit 0 of m set, m < 2**w) is keyed by
+            # one int, `a << w | m`, which is equal for two tails exactly when their address sets are.
             width = self.memory_width
             remaining = flip_value
 
@@ -278,9 +246,9 @@ class BinaryData:
                     ops_list[last_address_index] = wflip_spot.address
                     return_dict[flips_key] = wflip_spot.address
 
-                    wflip_spot.list[wflip_spot.word_index] = word_address + lowest
+                    wflip_spot.list[wflip_spot.index] = word_address + lowest
                     remaining &= remaining - 1
-                    last_return_address_index = wflip_spot.list, wflip_spot.word_index + 1
+                    last_return_address_index = wflip_spot.list, wflip_spot.index + 1
 
             ops_list, last_address_index = last_return_address_index
             ops_list[last_address_index] = return_address
@@ -388,14 +356,7 @@ def _labels_resolve_stream(
     total_ops = max(1, len(kinds))
     op_index = 1
     FJ, FJ_POS, WFLIP, PAD = op_stream.FJ, op_stream.FJ_POS, op_stream.WFLIP, op_stream.PAD
-    TAG_LABEL = op_stream.TAG_LABEL
     FJ_PACKED, PACKED_JUMP_MASK = op_stream.FJ_PACKED, op_stream.PACKED_JUMP_MASK
-    # operands: an int slot, then the value (labels.get's Optional is checked right after)
-    flip: Any
-    jump: Any
-    word_address: Any
-    flip_value: Any
-    return_address: Any
     while op_index < len(kinds):
         chunk_end = min(op_index + _PROGRESS_CHUNK, len(kinds))
         for kind in kinds[op_index:chunk_end]:
@@ -408,22 +369,10 @@ def _labels_resolve_stream(
                 try:
                     flip = next_slot()
                     if flip < 0:
-                        encoded = ~flip
-                        if encoded & 3 == TAG_LABEL:
-                            flip = labels.get(refs[encoded >> 2])
-                            if flip is None:
-                                flip = _deferred_value(stream, encoded, next_slot, labels)
-                        else:
-                            flip = _deferred_value(stream, encoded, next_slot, labels)
+                        flip = _deferred_value(stream, ~flip, next_slot, labels)
                     jump = next_slot()
                     if jump < 0:
-                        encoded = ~jump
-                        if encoded & 3 == TAG_LABEL:
-                            jump = labels.get(refs[encoded >> 2])
-                            if jump is None:
-                                jump = _deferred_value(stream, encoded, next_slot, labels)
-                        else:
-                            jump = _deferred_value(stream, encoded, next_slot, labels)
+                        jump = _deferred_value(stream, ~jump, next_slot, labels)
                     next_slot()  # the position
                     insert_fj_op(flip, jump)
                 except FlipJumpException as e:
@@ -432,31 +381,13 @@ def _labels_resolve_stream(
                 try:
                     word_address = next_slot()
                     if word_address < 0:
-                        encoded = ~word_address
-                        if encoded & 3 == TAG_LABEL:
-                            word_address = labels.get(refs[encoded >> 2])
-                            if word_address is None:
-                                word_address = _deferred_value(stream, encoded, next_slot, labels)
-                        else:
-                            word_address = _deferred_value(stream, encoded, next_slot, labels)
+                        word_address = _deferred_value(stream, ~word_address, next_slot, labels)
                     flip_value = next_slot()
                     if flip_value < 0:
-                        encoded = ~flip_value
-                        if encoded & 3 == TAG_LABEL:
-                            flip_value = labels.get(refs[encoded >> 2])
-                            if flip_value is None:
-                                flip_value = _deferred_value(stream, encoded, next_slot, labels)
-                        else:
-                            flip_value = _deferred_value(stream, encoded, next_slot, labels)
+                        flip_value = _deferred_value(stream, ~flip_value, next_slot, labels)
                     return_address = next_slot()
                     if return_address < 0:
-                        encoded = ~return_address
-                        if encoded & 3 == TAG_LABEL:
-                            return_address = labels.get(refs[encoded >> 2])
-                            if return_address is None:
-                                return_address = _deferred_value(stream, encoded, next_slot, labels)
-                        else:
-                            return_address = _deferred_value(stream, encoded, next_slot, labels)
+                        return_address = _deferred_value(stream, ~return_address, next_slot, labels)
                     next_slot()  # the position
                     insert_wflip_ops(word_address, flip_value, return_address)
                 except FlipJumpException as e:
@@ -492,10 +423,8 @@ def labels_resolve(
     @param labels:[in]: dictionary from label to its resolved value
     @param memory_width: the memory-width
     @param fjm_writer: [out]: the .fjm file writer
-    @param save_wflip_labels: record a `:wflips:N` debugging label per generated wflip-chain op.
-    Only the debugging-file reads them (see BinaryData._insert_wflip_label), so a caller that is not
-    writing one can pass False and skip the work. It cannot change the emitted .fjm.
-    @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction of ops resolved
+    @param save_wflip_labels: record a `:wflips:N` debugging label per generated wflip-chain op
+    @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction of ops resolved (OpStream only)
     """
     if isinstance(ops, OpStream):
         first_object = ops.first_object()
@@ -507,106 +436,38 @@ def labels_resolve(
         binary_data.close_and_add_segment(fjm_writer)
         return
 
-    total_ops = max(1, len(ops))
     first_segment = ops.popleft()
     if not isinstance(first_segment, NewSegment):
         raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_segment}).")
 
     binary_data = BinaryData(memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels, pinned=pinned)
 
-    # PERF (doom-flipjump, 2026-08-20): this loop body runs once per emitted op -- ~42M times on the
-    # doom-flipjump program, where this phase is 46% of a 29-minute assembly. Three changes, all
-    # behaviour-preserving:
-    #   * exact-type dispatch (`op.__class__ is FlipJump`) instead of isinstance(). LastPhaseOp is a
-    #     Union, not a base class, so nothing here is ever subclassed -- but the isinstance chain is
-    #     KEPT as the fallback below, so a subclass would still be handled correctly rather than
-    #     falling into the error branch.
-    #   * the Expr integer fast-path is INLINED. exact_eval()'s own first two lines are
-    #     `value = self.value; if isinstance(value, int): return value`, and after macro-resolve
-    #     essentially every operand is already an int -- so the call, the frame and the isinstance
-    #     were pure overhead ~84M times (two operands per fj op).
-    #   * the bound methods are hoisted into locals.
-    # The try/except blocks stay exactly where they were: python 3.11 has zero-cost exceptions, so
-    # hoisting them out of the loop would buy nothing, and it would change which errors get the
-    # "... in op {op}." suffix.
-    insert_fj_op = binary_data.insert_fj_op
-    insert_wflip_ops = binary_data.insert_wflip_ops
+    for op in ops:
+        if isinstance(op, FlipJump):
+            try:
+                binary_data.insert_fj_op(op.get_flip(labels), op.get_jump(labels))
+            except FlipJumpException as e:
+                raise FlipJumpAssemblerException(f"{e} in op {op}.")
 
-    # PERF (doom-flipjump, 2026-08-20): the deque is CONSUMED, not iterated. `for op in ops` held
-    # all ~42M op objects (and the Expr trees under them) alive until the phase ended, which is
-    # most of the live set in the phase that pages hardest; popleft() lets each one be freed the
-    # moment it has been emitted. This mutates the caller's deque -- which labels_resolve already
-    # did, via the popleft() of the first segment above -- and `assemble()` discards it right after.
-    popleft = ops.popleft
-    while ops:
-        # in chunks, so the progress is reported once per chunk rather than checked once per op
-        for _ in range(min(_PROGRESS_CHUNK, len(ops))):
-            # dispatched on the exact class below; typed Any because mypy cannot narrow on `__class__ is`
-            # and an isinstance or a cast per op is a call per op in the loop that runs once per op
-            op: Any = popleft()
-            op_class = op.__class__
+        elif isinstance(op, WordFlip):
+            try:
+                binary_data.insert_wflip_ops(
+                    op.get_word_address(labels), op.get_flip_value(labels), op.get_return_address(labels)
+                )
+            except FlipJumpException as e:
+                raise FlipJumpAssemblerException(f"{e} in op {op}.")
 
-            if op_class is FlipJump:
-                try:
-                    flip = op.flip.value
-                    jump = op.jump.value
-                    insert_fj_op(
-                        flip if flip.__class__ is int else op.flip.exact_eval(labels),
-                        jump if jump.__class__ is int else op.jump.exact_eval(labels),
-                    )
-                except FlipJumpException as e:
-                    raise FlipJumpAssemblerException(f"{e} in op {op}.")
+        elif isinstance(op, Padding):
+            binary_data.insert_padding(op.ops_count)
 
-            elif op_class is WordFlip:
-                try:
-                    word_address = op.word_address.value
-                    flip_value = op.flip_value.value
-                    return_address = op.return_address.value
-                    insert_wflip_ops(
-                        word_address if word_address.__class__ is int else op.word_address.exact_eval(labels),
-                        flip_value if flip_value.__class__ is int else op.flip_value.exact_eval(labels),
-                        return_address if return_address.__class__ is int else op.return_address.exact_eval(labels),
-                    )
-                except FlipJumpException as e:
-                    raise FlipJumpAssemblerException(f"{e} in op {op}.")
+        elif isinstance(op, NewSegment):
+            binary_data.insert_new_segment(fjm_writer, op.start_address, op.wflip_start_address)
 
-            elif op_class is Padding:
-                binary_data.insert_padding(op.ops_count)
+        elif isinstance(op, ReserveBits):
+            binary_data.insert_reserve_bits(fjm_writer, op.first_address_after_reserved)
 
-            elif op_class is NewSegment:
-                binary_data.insert_new_segment(fjm_writer, op.start_address, op.wflip_start_address)
-
-            elif op_class is ReserveBits:
-                binary_data.insert_reserve_bits(fjm_writer, op.first_address_after_reserved)
-
-            # the exact-type tests above are the fast path; these keep any subclass working.
-            elif isinstance(op, FlipJump):
-                try:
-                    insert_fj_op(op.get_flip(labels), op.get_jump(labels))
-                except FlipJumpException as e:
-                    raise FlipJumpAssemblerException(f"{e} in op {op}.")
-
-            elif isinstance(op, WordFlip):
-                try:
-                    insert_wflip_ops(
-                        op.get_word_address(labels), op.get_flip_value(labels), op.get_return_address(labels)
-                    )
-                except FlipJumpException as e:
-                    raise FlipJumpAssemblerException(f"{e} in op {op}.")
-
-            elif isinstance(op, Padding):
-                binary_data.insert_padding(op.ops_count)
-
-            elif isinstance(op, NewSegment):
-                binary_data.insert_new_segment(fjm_writer, op.start_address, op.wflip_start_address)
-
-            elif isinstance(op, ReserveBits):
-                binary_data.insert_reserve_bits(fjm_writer, op.first_address_after_reserved)
-
-            else:
-                raise FlipJumpAssemblerException(f"Can't resolve/assemble the next opcode - {str(op)}")
-        if on_progress is not None:
-            on_progress(1 - len(ops) / total_ops)
+        else:
+            raise FlipJumpAssemblerException(f"Can't resolve/assemble the next opcode - {str(op)}")
 
     binary_data.close_and_add_segment(fjm_writer)
 
@@ -647,17 +508,9 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
-    :param table_pool: if given, relocate lookup tables to low-popcount addresses (see TablePool).
+    :param table_pool: if given, move the lookup tables to addresses that are cheap to arm (see table_pool.py).
     """
-    # PERF (doom-flipjump, 2026-08-20): the cyclic garbage collector is off for the pipeline.
-    # Assembly is one enormous monotonic allocation: the doom-flipjump program builds ~42M op objects
-    # and ~24M labels and frees almost none of them until it is done. CPython triggers a generation-2
-    # sweep on allocation COUNT, and every sweep has to walk each live container -- so the cost grows
-    # with the size of a graph that is, by construction, still fully reachable. Nothing built here is
-    # cyclic (Expr trees are acyclic tuples of Exprs; ops reference Exprs and never back), so plain
-    # reference counting still reclaims temporaries immediately and the peak does not move.
-    # RESTORED IN `finally`: leaving the interpreter gc off after assemble() returns would be a
-    # global side effect on the caller, and this library is used as an in-process API.
+    # the pipeline allocates a large acyclic graph: the cyclic gc only re-walks it (restored in finally)
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
@@ -667,8 +520,7 @@ def assemble(
             )
 
         with ProgressBar('  macro resolve:   ', print_time=print_time, total=1.0) as progress:
-            # the `...---:start:` macro-start labels are debugging-file-only and unreachable from
-            # fj source, same as `:wflips:N` below -- don't build 1.7M of them for nobody.
+            # the `...---:start:` macro-start labels are read only by the debugging file
             ops, labels = resolve_macros(
                 memory_width,
                 macros,
@@ -690,13 +542,6 @@ def assemble(
         if table_pool is not None:
             # a BlockPool records the alias these labels imply, for its census (a dict, not the labels)
             table_pool.labels_resolved(labels)
-            if table_pool.pinned_words() and table_pool.reads_words_raw and table_pool.pin_exclude is None:
-                raise FlipJumpAssemblerException(
-                    "the program reads cells through hex.pointers, and a word the BlockPool pinned cannot be "
-                    "read that way (it rests at base + value). Which cells a pointer reaches is runtime data: "
-                    "pass pin_exclude=(lambda address, labels: ...) vetoing every cell a pointer can read "
-                    "(it may veto nothing if none is an armed hex), or use TablePool."
-                )
             pinned, table_pool.pin_conflicts = resolve_pinned(
                 table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
             )
@@ -704,8 +549,7 @@ def assemble(
                 pinned = None
 
         with ProgressBar('  labels resolve:  ', print_time=print_time, total=1.0) as progress:
-            # the `:wflips:N` labels are debugging-file-only and unreachable from fj source; don't
-            # build 16M of them for a caller that is not writing a debugging file.
+            # the `:wflips:N` labels are read only by the debugging file
             labels_resolve(
                 ops,
                 labels,

@@ -2,8 +2,7 @@
 the live progress bar of a long stage (assembling, loading a program).
 
 `ProgressBar` is a drop-in for `PrintTimer`: it prints the same `  stage:  1.234s` line when the
-stage ends, so a log, a pipe or a test sees exactly what it always saw (a stage that raises ends with
-`stopped after 1.234s` instead). Only on an interactive
+stage ends, so a log, a pipe or a test sees exactly what it always saw. Only on an interactive
 terminal does the line come alive while the stage runs:
 
       loading memory:  ███████████████▋░░░░░░░░░░░░░░  52%  0:01 · 0:01 left  decompressing
@@ -22,7 +21,7 @@ import os
 import shutil
 import sys
 from time import monotonic, time
-from typing import Any, Dict, List, Optional, TextIO, Tuple
+from typing import Any, Dict, Optional, TextIO, Tuple
 
 _REDRAW_SECONDS = 0.08
 _BAR_WIDTH = 30  # cells, at most; a narrow terminal gets a shorter bar
@@ -42,7 +41,7 @@ _shown_bar: Optional['ProgressBar'] = None
 # the console modes changed to show color: {handle: original mode}. Restored when the bar ends (and at
 # exit, in case it never does), so the program's own output is never interpreted as escapes.
 _changed_console_modes: Dict[int, int] = {}
-_atexit_registered: List[bool] = []
+_atexit_registered = False
 
 
 def _restore_console_modes() -> None:
@@ -61,6 +60,7 @@ def _restore_console_modes() -> None:
 def _enable_windows_vt(stream: TextIO) -> bool:
     """turn on ANSI escape processing in a Windows console (off by default in the classic one); see
     _changed_console_modes. @return: whether escapes will render"""
+    global _atexit_registered
     if os.name != 'nt':
         return True
     try:
@@ -79,7 +79,7 @@ def _enable_windows_vt(stream: TextIO) -> bool:
         if not kernel32.SetConsoleMode(handle, mode.value | enable_virtual_terminal_processing):
             return False
         if not _atexit_registered:
-            _atexit_registered.append(True)
+            _atexit_registered = True
             atexit.register(_restore_console_modes)
         _changed_console_modes.setdefault(handle, mode.value)
         return True
@@ -183,8 +183,6 @@ class ProgressBar:
         if not self.print_time:
             return
         elapsed = f'{time() - self._start_wall:.3f}s'
-        if exc_type is not None:
-            elapsed = f'stopped after {elapsed}'
         if self.active:
             if _shown_bar is self:
                 _shown_bar = None

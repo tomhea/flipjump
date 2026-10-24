@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tupl
 import pytest
 
 import flipjump.assembler.preprocessor as preprocessor
+import flipjump.assembler.table_pool as table_pool
 from flipjump import assemble
 from flipjump.assembler.assembler import resolve_pinned
 from flipjump.assembler.fj_parser import parse_macro_tree
@@ -35,7 +36,8 @@ from flipjump.assembler.inner_classes.ops import (
     Pad,
     WordFlip,
 )
-from flipjump.assembler.preprocessor import (
+from flipjump.assembler.preprocessor import PreprocessorData, relocatable_table_end, resolve_macros
+from flipjump.assembler.table_pool import (
     DECLINE_OTHER,
     DECLINE_STALE,
     DEFER_OUT,
@@ -43,12 +45,9 @@ from flipjump.assembler.preprocessor import (
     BlockCensus,
     BlockPool,
     DeferredTables,
-    PreprocessorData,
     TablePool,
     heat_key,
     merge_aliased_groups,
-    relocatable_table_end,
-    resolve_macros,
 )
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.interpreter import fjm_run
@@ -608,7 +607,7 @@ def test_a_hot_width_grows_only_when_its_ranks_do_not_fit() -> None:
 
 
 def test_a_hot_bucket_grows_only_when_its_ranks_do_not_fit() -> None:
-    # the width-bucket layout, which doom builds with: the same rule, width by width
+    # the width-bucket layout: the same rule, width by width
     kwargs = dict(
         counts={'g': 300},
         widths={'g': 16},
@@ -1833,8 +1832,8 @@ def test_the_op_stream_does_not_depend_on_what_one_pass_decides(tmp_path: Path) 
 
 
 def test_one_pass_with_frozen_counts_keeps_the_layout_when_code_is_appended(tmp_path: Path) -> None:
-    """the doom-flipjump game tier assembles twice, the second time with code appended: given the
-    first assembly's census, the second lays out everything the first had at the same addresses"""
+    """an assembly with code appended, given the first assembly's census, lays out everything the first
+    had at the same addresses"""
     first = BlockPool(W, POOL_BASE, one_pass=True)
     first_labels = expand_labels(XOR_PROGRAM, tmp_path, first, name='first')
     census = first.census()
@@ -2055,3 +2054,24 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
     extra_label, site = two_labels - one_label, with_site - one_label
     print(f'deferred table: {one_label:.1f} B, a 2nd label +{extra_label:.1f} B, a site +{site:.1f} B')
     assert one_label < 64 and extra_label < 24 and site < 16
+
+
+def test_the_pool_is_importable_from_the_preprocessor_too() -> None:
+    # where it was defined before table_pool.py: callers import it from there
+    for name in (
+        'BlockCensus',
+        'BlockPool',
+        'DECLINE_OTHER',
+        'DECLINE_STALE',
+        'DEFER_INLINE',
+        'DEFER_NEXT_ADDRESS',
+        'DEFER_OUT',
+        'DEFER_TOO_WIDE',
+        'DeferredTables',
+        'RAW_READERS',
+        'RESERVED_BELOW',
+        'TablePool',
+        'heat_key',
+        'merge_aliased_groups',
+    ):
+        assert getattr(preprocessor, name) is getattr(table_pool, name), name
