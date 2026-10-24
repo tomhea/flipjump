@@ -13,8 +13,8 @@ ns hex {
         .tables.jump_to_table_entry dst, src, .add.dst
     }
 
-    //  Time Complexity: n(4@+12)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+14)
+    // Space Complexity: n(3@+54)
     //   dst[:n] += src[:n]
     // @requires hex.add.init (or hex.init)
     def add n, dst, src @ end {
@@ -22,8 +22,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: src_n(4@+12)   + 5@+1        // It's on average, see the note in hex.inc.
-    // Space Complexity: src_n(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+28
+    //  Time Complexity: src_n(3@+14)
+    // Space Complexity: src_n(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] += src[:src_n] << (4*hex_shift)
     // @requires hex.add.init (or hex.init)
     def add_shifted dst_n, src_n, dst, src, hex_shift @ do_inc, end {
@@ -34,8 +34,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n_const(4@+12)   + 5@+2
-    // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+29
+    //  Time Complexity: n_const(3@+14)   + 4@+15
+    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+27
     //   dst[:n] += const
     // @requires hex.add.init (or hex.init)
     // const must be a positive constant.
@@ -51,8 +51,8 @@ ns hex {
         def add_hex_shifted_constant n, dst, const, hex_shift {
             .add_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
-        //  Time Complexity: n_const(4@+12)   + 5@+2
-        // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+29
+        //  Time Complexity: n_const(3@+14)   + 4@+15
+        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+27
         //   dst[:dst_n] += const << (4*hex_shift)
         // @requires hex.add.init (or hex.init)
         // const is a constant of size hex[:n_const]
@@ -182,8 +182,8 @@ ns hex {
         .tables.jump_to_table_entry dst, src, .sub.dst
     }
 
-    //  Time Complexity: n(4@+12)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+14)
+    // Space Complexity: n(3@+54)
     //   dst[:n] -= src[:n]
     // @requires hex.sub.init (or hex.init)
     def sub n, dst, src @ end {
@@ -191,8 +191,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: src_n(4@+12)   + 5@+10        // It's on average, see the note in hex.inc.
-    // Space Complexity: src_n(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+40
+    //  Time Complexity: src_n(3@+14)
+    // Space Complexity: src_n(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] -= src[:src_n] << (4*hex_shift)
     // @requires hex.sub.init (or hex.init)
     def sub_shifted dst_n, src_n, dst, src, hex_shift @ do_dec, end {
@@ -203,8 +203,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n_const(4@+12)   + 5@+11
-    // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+41
+    //  Time Complexity: n_const(3@+14)   + 4@+23
+    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+39
     //   dst[:dst_n] -= const
     // @requires hex.sub.init (or hex.init)
     // n_const is the hex-length of const, without all of it's least-significant-hexes zeros.
@@ -218,8 +218,8 @@ ns hex {
         def sub_hex_shifted_constant n, dst, const, hex_shift {
             .sub_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
-        //  Time Complexity: n_const(4@+12)   + 5@+2
-        // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+29
+        //  Time Complexity: n_const(3@+14)   + 4@+23
+        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13) + 3@+39
         //   dst[:dst_n] -= const << (4*hex_shift)
         // @requires hex.sub.init (or hex.init)
         // const is a constant of size hex[:n_const]
