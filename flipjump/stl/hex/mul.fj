@@ -1,6 +1,6 @@
 ns hex {
-    //  Time Complexity: 5@+26
-    // Space Complexity: 4@+52
+    //  Time Complexity: 4@+34
+    // Space Complexity: 4@+50
     //   .mul.add_carry_dst : res   +=   x * .mul.dst + .mul.add_carry_dst
     //
     // .mul.add_carry_dst, res, x, .mul.dst, they are all hex.
@@ -15,8 +15,8 @@ ns hex {
         .xor_zero res, .tables.res
     }
 
-    //  Time Complexity: n(5@+26)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+38) + 7@+55
+    // Space Complexity: n(3@+54)
     //   res[n] += a[n] * b[1]
     //
     // @requires hex.add.init (or hex.init)
@@ -24,8 +24,8 @@ ns hex {
         rep(n > 0, i) .mul.chain n, res, a, b
     }
 
-    //  Time Complexity: n(6@+27)
-    // Space Complexity: n(5@+80)
+    //  Time Complexity: n(4@+39)
+    // Space Complexity: n(4@+82)
     //   x[n] *= 10
     //
     // @requires hex.add.init (or hex.init)
@@ -38,9 +38,9 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n^2(3@+7) + n*b(5@+26)
-    //       for n==b/2: n^2(5.5@+20)
-    // Space Complexity: n(21@+479)
+    //  Time Complexity: n^2(3@+7) + n*b(3@+38)
+    //       for b==n/2: n^2(4.5@+26)
+    // Space Complexity: n(20@+481)
     //
     //   res[:n] = a[:n] * b[:n]
     //
@@ -83,14 +83,15 @@ ns hex {
     }
 
     ns mul {
-        // Complexity: 3@+1
+        //  Time Complexity: 3@+24
+        // Space Complexity: 3@+9
         def clear_carry @ return < .ret {
             .chained_clear_carry 0
           return:
             wflip .ret+w, return
         }
 
-        //  Time Complexity: n(4@+30) + 9@+48
+        //  Time Complexity: n(3@+38) + 7@+55
         // Space Complexity: n(3@+54)
         //   res[n] += a[n] * b[1]
         //
@@ -111,7 +112,7 @@ ns hex {
             ..xor .dst, b
         }
 
-        //  Time Complexity: 3@+27      (3.5@+23 when prev_return is 0)
+        //  Time Complexity: 2@+30      (2.5@+26 when prev_return is 0)
         // Space Complexity: 2@+15      (2.5@+11 when prev_return is 0)
         //   The chained form of clear_carry: .ret = this macro's end (it was prev_return).
         // @Assumes: .ret holds prev_return (0 if it's clear). Like hex.tables.chained_jump, but for .ret:
@@ -124,7 +125,7 @@ ns hex {
           return:
         }
 
-        //  Time Complexity: 3@+26      (when chained; see hex.tables.chained_jump)
+        //  Time Complexity: 2@+34      (when chained; see hex.tables.chained_jump)
         // Space Complexity: 2@+26
         //   The chained form of add_mul: jumps to the add_mul flow of x, and returns to this macro's end,
         //   with the result in hex.tables.res (not yet xored into res).
@@ -139,7 +140,7 @@ ns hex {
           return:
         }
 
-        //  Time Complexity: 4@+30
+        //  Time Complexity: 3@+38
         // Space Complexity: 3@+54
         //   prev_res ^= hex.tables.res;  hex.tables.res = 0
         //   then chained_add_mul res, x (chained to the previous step's end).
@@ -152,7 +153,7 @@ ns hex {
             .chained_add_mul res, x, start
         }
 
-        //  Time Complexity: @+24 (when jumping to dst, until finished)
+        //  Time Complexity: 32 (when jumping to dst, until finished)
         // Space Complexity: 1620+@
         // This is where the add_mul "truth" tables are.
         // @output-param ret: The return address. Jumps to it after finishing the add_mul flow.
@@ -244,7 +245,7 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: n^2(2@+15) + n(13@+62)
+    //  Time Complexity: n^2(1.5@+19) + n(10.5@+73)
     // Space Complexity: n^2(1.5@+27) + n(10.5@+102)
     //   res[:n] = a[:n] * b[:n]    (the low n hexes of the product, like hex.mul)
     //
@@ -257,7 +258,7 @@ ns hex {
         rep(n, j) .mul_low.row n, j, res, a, b+j*dw
     }
     ns mul_low {
-        //  Time Complexity: (m-j)(4@+30) + 10@+47
+        //  Time Complexity: (m-j)(3@+38) + 8@+54
         // Space Complexity: (m-j)(3@+54) + 8@+63
         //   res[j:m] += wa[:m-j] * wbj    (skipped when wbj is 0)
         // res is hex[:m], wa is hex[:m-j], wbj is a hex.
@@ -268,7 +269,7 @@ ns hex {
         }
     }
 
-    //  Time Complexity: n^2(14@+74)     (hex.mul's at 2n, whose loop runs n times when a or b is non-negative; else n^2(28@+148))
+    //  Time Complexity: n^2(12@+28) + n*b(6@+76)     (hex.mul's at 2n; b <= 2n is the non-zero hexes of the operand with fewer on-bits)
     // Space Complexity: n(48@+1066)
     //   dst[:n] = (a[:n] * b[:n]) >> 4f    (signed fixed-point multiply)
     //
@@ -292,7 +293,7 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: (n^2/2 + nf)(4@+30) + n(17@+62)     (+ f^2(2@+15) + f(12@+62) when b is negative)
+    //  Time Complexity: (n^2/2 + nf)(3@+38) + n(14.5@+73) + f(2@+4)     (+ f^2(1.5@+19) + f(9.5@+73) when b is negative)
     // Space Complexity: (n+f)^2(1.5@+27) + n(14.5@+150) + f(11.5@+118)
     //   dst[:n] = (a[:n] * b[:n]) >> 4f    (signed fixed-point multiply - the same result as fixed_mul)
     //
