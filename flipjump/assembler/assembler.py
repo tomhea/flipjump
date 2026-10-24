@@ -776,7 +776,8 @@ def resolve_macros_with_pool(
     memory_width: int, macros: Dict[MacroName, Macro], table_pool: Optional[TablePool], **kwargs: Any
 ) -> Tuple[OpStream, Dict[str, int]]:
     """resolve_macros(memory_width, macros, table_pool=table_pool, **kwargs) - and again while a pool based right
-    above the program replans it (BlockPool.replan: tables it placed past the flat maximum stay inline), which
+    above the program replans it (BlockPool.replan: tables it placed past the flat maximum stay inline; and every
+    table, where the wflip areas after the pool might end past the maximum or the memory: _wflip_ops_bound), which
     keeps the macro tree (consume_main is then off)"""
     replanning = table_pool if isinstance(table_pool, BlockPool) and table_pool.auto_base else None
     if replanning is not None:
