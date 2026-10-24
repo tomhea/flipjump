@@ -268,8 +268,7 @@ def reached_the_pool(address: int, pool_start: int) -> FlipJumpPreprocessorExcep
     """the refusal of a program whose own code or data reaches the pool, at `address`"""
     return FlipJumpPreprocessorException(
         f'table-placement: the program reached {hex(address)}, which is inside the table pool at {hex(pool_start)}. '
-        f'Raise pool_base, or relocate fewer tables (fj --pool-tables bases the pool at half the memory: the program '
-        f'must stay below it).'
+        f'Raise pool_base, or relocate fewer tables.'
     )
 
 
