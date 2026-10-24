@@ -150,7 +150,7 @@ ns hex {
 
 ns hex {
     //  Time Complexity: n(5@+28) + w(0.75@+5) + sw(7@+23) + idx_n@ + 4@+15                  (sw: entry_address's)
-    // Space Complexity: n((w-#w)(0.5@+22) + 2.5@+67) + w(1.125@+29.25) + sw(5@+141) + idx_n(@+12) + 4@+28
+    // Space Complexity: n((w-#w)(@+18) + 3@+61) + w(1.125@+29.25) + sw(5.5@+137) + idx_n(@+12) + 4@+28
     //   dst[:n] = table[idx]    (the idx-th entry of a constant array of hex[:n] entries)
     //
     // table is a constant address; entry k is the n hex data-ops at table + k*n*dw (a hex.vec n value).
@@ -180,7 +180,7 @@ ns hex {
     }
 
     //  Time Complexity: nb(6@+32) + w(0.75@+5) + sw(7@+23) + idx_n@ + 4@+15                 (sw: entry_address's)
-    // Space Complexity: nb((w-#w)(0.5@+22) + 3@+100) + w(1.125@+29.25) + sw(5@+141) + idx_n(@+12) + 4@+28
+    // Space Complexity: nb((w-#w)(@+18) + 4@+89) + w(1.125@+29.25) + sw(5.5@+137) + idx_n(@+12) + 4@+28
     //   dst[:2nb] = table[idx]    (the idx-th entry of a constant array of nb-byte entries)
     //
     // table is a constant address; entry k is the nb byte data-ops at table + k*nb*dw, little-endian

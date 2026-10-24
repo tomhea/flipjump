@@ -75,7 +75,7 @@ ns hex {
 
     ns pointers {
         //  Time Complexity: h(5@+12) + 2@+6
-        // Space Complexity: h(5@+76) + (w-#w)(0.5@+22)
+        // Space Complexity: h(5@+76) + (w-#w)(@+18)
         //   the armed fields += 2w;  then *armed ^= hex[:h]      (h is 1 or 2)
         def advance_and_xor_to_flip_ptr h, hex {
             .advance

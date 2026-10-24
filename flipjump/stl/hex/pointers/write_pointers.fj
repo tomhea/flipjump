@@ -186,7 +186,7 @@ ns hex {
 ns hex {
     ns pointers {
         //  Time Complexity: n((6h+5)@ + 12h+26)
-        // Space Complexity: n((w-#w)(0.5@+22) + (6h+3)@ + 88h+34)
+        // Space Complexity: n((w-#w)(@+18) + (6h+3)@ + 88h+34)
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       *(ptr+i*2w) = src[i*h:(i+1)*h]      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
         //
@@ -201,7 +201,7 @@ ns hex {
         }
 
         //  Time Complexity: (6h+5)@ + 12h+26
-        // Space Complexity: (w-#w)(0.5@+22) + (6h+3)@ + 88h+34
+        // Space Complexity: (w-#w)(@+18) + (6h+3)@ + 88h+34
         //  the armed fields += 2w;  then write_cell h, src.
         def advance_and_write_cell h, src {
             .advance

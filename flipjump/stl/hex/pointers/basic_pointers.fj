@@ -139,7 +139,7 @@ ns hex {
         }
 
         //  Time Complexity: 2@+6           (two advance_bits on average: the carry stops on 1 bit in 2)
-        // Space Complexity: (w-#w)(0.5@+22)
+        // Space Complexity: (w-#w)(@+18)
         //   to_flip = to_jump{+w} = to_ptr_var += 2w      (the armed address moves on to the next op)
         //
         // The next address without re-arming (set_flip_and_jump_pointers xors all w/4 hexes): a binary increment of
@@ -151,7 +151,7 @@ ns hex {
         }
 
         //  Time Complexity: @+3
-        // Space Complexity: @+18    (0.5@+22 in advance, where the bits of one hex share if_flags' first chain)
+        // Space Complexity: @+18
         //   flips bit k of to_flip, to_jump+w and to_ptr_var; jumps to done if it became 1, else continues.
         def advance_bit k, done @ carry < .to_flip, .to_jump, .to_ptr_var {
             .to_flip+k;

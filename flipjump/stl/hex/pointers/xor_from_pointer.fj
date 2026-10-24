@@ -36,7 +36,7 @@ ns hex {
 
     ns pointers {
         //  Time Complexity: n(4@+24+4h)
-        // Space Complexity: n((w-#w)(0.5@+22) + @+76)      (h == 2; 1.5@+55 for h == 1)
+        // Space Complexity: n((w-#w)(@+18) + 2@+65)       (h == 2; 2@+49 for h == 1)
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       dst[i*h:(i+1)*h] ^= *(ptr+i*2w)      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
         //
@@ -58,7 +58,7 @@ ns hex {
         }
 
         //  Time Complexity: 4@+24+4h
-        // Space Complexity: (w-#w)(0.5@+22) + @+76         (h == 2; 1.5@+55 for h == 1)
+        // Space Complexity: (w-#w)(@+18) + 2@+65          (h == 2; 2@+49 for h == 1)
         //   prev_dst[:h] ^= read_byte;  read_byte = 0;  the armed fields += 2w;  then read_cell_chained.
         // @Assumes: the previous dance's landing label is this macro's start (see hex.tables.chained_jump).
         def read_cell_step h, prev_dst @ start < .read_byte {
@@ -70,7 +70,7 @@ ns hex {
         }
 
         //  Time Complexity: 18         (avg.: the two moves of to_flip+w, 5 and 3 measured, the dance's 6 jumps, and the byte's 4)
-        // Space Complexity: 4          (two ops, and what is left of their chains: the previous step's share them)
+        // Space Complexity: 9          (the two moves' popcounts: 5.7 and 2.9 on average, measured)
         //   The read dance of read_cell_from_inners_ptrs, chained: to_flip+w moves from prev_return to `read`, and from
         //   there to this macro's end, where the dance lands. .ret_after_read_byte (= to_flip) and to_flip's read offset
         //   are the caller's, set once for the whole chain.
