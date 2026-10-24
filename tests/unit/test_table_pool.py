@@ -666,7 +666,7 @@ def test_eviction_stops_once_the_biggest_block_is_gone() -> None:
 
 
 def test_eviction_without_heat_keeps_the_plain_sum() -> None:
-    # no list must evict exactly as 1.5.1 does, also where the pool base is not aligned to the
+    # no list must evict exactly as the plain sum does, also where the pool base is not aligned to the
     # biggest block: the plain sum (16 slots) fits, nothing is evicted, `big` takes its aligned
     # slot and `q`, `r` are lost to placement order
     base = POOL_BASE + 16 * OP_BITS
