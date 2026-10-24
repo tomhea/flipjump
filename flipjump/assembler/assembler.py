@@ -38,7 +38,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool, RESERVED_BELOW, reached_the_pool
+from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -120,7 +120,6 @@ class BinaryData:
         'padding_ops_indices',
         'wflips_dict',
         'pinned',
-        'baked',
         'pool_start',
         'wflips_at',
     )
@@ -148,7 +147,6 @@ class BinaryData:
         # {jump-word address: block base} for BlockPool; None for every other build, so the use site
         # below costs one truthiness test per op when off
         self.pinned = pinned
-        self.baked: Set[int] = set()  # the pinned words whose op got its base (see unbaked_pins)
         self.pool_start = pool_start
 
         self.first_address = first_segment.start_address
@@ -188,8 +186,6 @@ class BinaryData:
     def close_and_add_segment(self, fjm_writer: Writer) -> None:
         if self.wflips_at is not None:  # the code here, and its wflip area after the pool
             code_end = self.first_address + len(self.fj_words) * self.memory_width
-            if self.pool_start is not None and self.first_address < self.pool_start < code_end:
-                raise reached_the_pool(code_end, self.pool_start)
             fj_words, wflip_words = self.fj_words, self.wflip_words
             add_segment_to_fjm(self.memory_width, fjm_writer, self.first_address, code_end, fj_words, [], take=True)
             add_segment_to_fjm(self.memory_width, fjm_writer, self.wflips_at, self.next_wflip_address, wflip_words, [])
@@ -232,11 +228,9 @@ class BinaryData:
             # A pinned hex variable RESTS at `base + value` rather than at `value`, so the block's
             # base is baked into its declaration here. Only the variable's own op can match: a
             # wflip-chain op's jump word is at its own address, never at a pinned one.
-            jump_word = self.first_address + (len(self.fj_words) + 1) * self.memory_width
-            base = self.pinned.get(jump_word)
+            base = self.pinned.get(self.first_address + (len(self.fj_words) + 1) * self.memory_width)
             if base:
                 jump ^= base
-                self.baked.add(jump_word)
         # `+=` on an array only accepts another array; extend() takes any iterable of ints.
         self.fj_words.extend((flip, jump))
 
@@ -250,10 +244,6 @@ class BinaryData:
         if not base or value_kind != VALUE_ADDRESS:
             return flip_value
         return flip_value ^ base
-
-    def unbaked_pins(self) -> List[int]:
-        """the pinned words no op was emitted for (a `reserve`d word): they rest at 0, not at their base"""
-        return sorted(set(self.pinned or ()) - self.baked)
 
     def insert_wflip_ops(self, word_address: int, flip_value: int, return_address: int) -> None:
         if 0 == flip_value:
@@ -691,7 +681,6 @@ def labels_resolve(
         _guard_where(offset_guard, binary_data)
         _labels_resolve_stream(ops, binary_data, labels, fjm_writer, on_progress, offset_guard)
         binary_data.close_and_add_segment(fjm_writer)
-        _refuse_unbaked_pins(binary_data)
         return
 
     first_segment = ops.popleft()
@@ -746,7 +735,6 @@ def labels_resolve(
             raise FlipJumpAssemblerException(f"Can't resolve/assemble the next opcode - {str(op)}")
 
     binary_data.close_and_add_segment(fjm_writer)
-    _refuse_unbaked_pins(binary_data)
 
 
 def _guard_where(guard: Optional[OffsetGuard], binary_data: BinaryData) -> None:
@@ -759,17 +747,6 @@ def _guard_where(guard: Optional[OffsetGuard], binary_data: BinaryData) -> None:
 
         guard.where = where
         guard.emitting = None  # every table moved: an operand that reaches over one is refused
-
-
-def _refuse_unbaked_pins(binary_data: BinaryData) -> None:
-    """a pinned word with no op of its own cannot rest at its base: assemble() un-pins it first (see unpin), so this
-    guards the callers that pin without it"""
-    unbaked = binary_data.unbaked_pins()
-    if unbaked:
-        raise FlipJumpAssemblerException(
-            f'table-placement: {len(unbaked)} pinned word(s) are no op (a `reserve`d variable?), first at '
-            f'{hex(unbaked[0])}: such a word rests at 0, not at its block base, so its arms miss. Un-pin it (unpin).'
-        )
 
 
 def resolve_macros_with_pool(

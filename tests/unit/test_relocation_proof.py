@@ -321,6 +321,5 @@ def test_a_pin_that_does_not_rest_at_its_base_fails_the_proof(monkeypatch: pytes
         self.pinned = pinned
 
     monkeypatch.setattr(assembler.BinaryData, 'insert_fj_op', unbased)
-    monkeypatch.setattr(assembler.BinaryData, 'unbaked_pins', lambda self: [])
     mismatches = prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches
     assert any('does not rest at its value xor its base' in mismatch for mismatch in mismatches), mismatches
