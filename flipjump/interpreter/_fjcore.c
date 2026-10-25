@@ -143,11 +143,9 @@ typedef struct {
                             non-NULL flat: low window flat, the rest paged ('hybrid') */
 
     /* freeze()/reset(): a memcpy snapshot of the pristine flat image, so a caller that runs
-       the SAME self-modifying program many times (doom-flipjump's per-frame walker) restores
-       it in one memcpy instead of re-loading tens of millions of words through set_words */
-    void* pristine;       /* a RAW BYTE snapshot of `flat`, so it is sized by cell_bytes too;
-                             typeless for the same reason `flat` is */
-    uint64_t pristine_count;
+       the same self-modifying program many times restores it in one memcpy instead of
+       re-loading every word */
+    void* pristine;       /* a RAW BYTE snapshot of `flat` (flat_count cells of cell_bytes) */
 
     int mem_error;            /* set when garbage_stop fired */
     uint64_t error_bit_address;
@@ -784,7 +782,6 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->storage_decided = 0;
     self->flat_covers_all = 0;
     self->pristine = NULL;
-    self->pristine_count = 0;
     self->mem_error = 0;
     self->error_bit_address = 0;
     self->last_run_op_count = 0;
@@ -1725,11 +1722,6 @@ static PyObject* build_run_result(MemoryObject* self, int cause, uint64_t ops, u
 /* the run loop.
    run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
    -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds) */
-/* freeze(): decide the storage mode NOW (building the flat image from the loaded pages,
-   exactly as the first run would) and capture it as the pristine snapshot for reset().
-   Canonical use (doom-flipjump's per-frame walker): add_segment -> set_words -> freeze() ->
-   then per frame reset() + run(). Pure-flat programs only: a hybrid/paged snapshot would
-   also need the page tables, and the walker's programs are all 'flat'. */
 /* decide_storage(): choose the storage mode now instead of at the first run, so a bulk load that
    follows (set_words_bytes) writes straight into the flat image -- no staging pages, no copy -- and a
    flat window that cannot be allocated fails BEFORE the load rather than after it. */
@@ -1741,6 +1733,10 @@ static PyObject* Memory_decide_storage(MemoryObject* self, PyObject* Py_UNUSED(i
     Py_RETURN_NONE;
 }
 
+/* freeze(): decide the storage mode NOW (building the flat image from the loaded pages,
+   exactly as the first run would) and capture it as the pristine snapshot for reset().
+   Use: add_segment -> load -> freeze(), then per run reset() + run(). Pure-flat programs
+   only: a hybrid/paged snapshot would also need the page tables. */
 static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
     if (mem_decide_storage(self) < 0) {
@@ -1758,7 +1754,6 @@ static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
         }
     }
     memcpy(self->pristine, self->flat, (size_t)self->flat_count * (size_t)self->cell_bytes);
-    self->pristine_count = self->flat_count;
     Py_RETURN_NONE;
 }
 
@@ -1767,7 +1762,7 @@ static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
    previous run's IO device), so a rerun starts from the exact frozen state. */
 static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
-    if (!self->pristine || !self->flat || self->pristine_count != self->flat_count) {
+    if (!self->pristine || !self->flat) {
         PyErr_SetString(PyExc_RuntimeError, "reset() needs a prior freeze()");
         return NULL;
     }
@@ -1786,8 +1781,8 @@ static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     memset(self->page_cache_key_plus1, 0, sizeof(self->page_cache_key_plus1));
     self->mem_error = 0;
     self->error_bit_address = 0;
-    /* a reset run starts fresh streams (a fresh device, in the per-frame walker's use): both bit phases start at a
-       byte boundary again, and no input bit of the old stream is still buffered */
+    /* a reset run starts fresh streams: both bit phases start at a byte boundary again, and no input bit of the
+       old stream is still buffered */
     self->out_phase = 0;
     self->in_phase = 0;
     self->in_n = 0;
