@@ -2,36 +2,36 @@
 
 
 ns hex {
-    //  Time Complexity: 9@+14
-    // Space Complexity: w(0.375@ + 3.25)  + 5@+55
+    //  Time Complexity: 7@+29
+    // Space Complexity: w(0.375@ + 3.25)  + 3@+55
     //   Like:  sp++
     def sp_inc < hex.pointers.sp {
         .ptr_inc hex.pointers.sp
     }
 
-    //  Time Complexity: 9@+23
-    // Space Complexity: w(0.375@ + 3.25)  + 5@+67
+    //  Time Complexity: 7@+37
+    // Space Complexity: w(0.375@ + 3.25)  + 3@+67
     //   Like:  sp--
     def sp_dec < hex.pointers.sp {
         .ptr_dec hex.pointers.sp
     }
 
-    //  Time Complexity: 13@+26
-    // Space Complexity: w(0.375@ + 3.25) + 7.5@+94
+    //  Time Complexity: 10@+43
+    // Space Complexity: w(0.375@ + 3.25) + 4.5@+96
     //   Like:  sp += value
     def sp_add value < hex.pointers.sp {
         .ptr_add hex.pointers.sp, value
     }
 
-    //  Time Complexity: 13@+35
-    // Space Complexity: w(0.375@ + 3.25)  + 7.5@+106
+    //  Time Complexity: 10@+51
+    // Space Complexity: w(0.375@ + 3.25)  + 4.5@+108
     //   Like:  sp -= value
     def sp_sub value < hex.pointers.sp {
         .ptr_sub hex.pointers.sp, value
     }
 
-    //  Time Complexity: w(2@+11) + 24@+ 51
-    // Space Complexity: w(2.38@+50) + 20@+231
+    //  Time Complexity: w(2@+11) + 20@+ 78
+    // Space Complexity: w(2.38@+50) + 16@+247
     //   Like:  stack[++sp] = return_address
     //   Pushes the given return_address to the next cell in the stack. Increments sp.
     // Note: the pushed returned address must be popd out afterwards with pop_ret_address.
@@ -42,8 +42,8 @@ ns hex {
         .ptr_wflip_2nd_word hex.pointers.sp, return_address
     }
 
-    //  Time Complexity: w(  1.5@+ 7) + 9@+23
-    // Space Complexity: w(1.875@+28) + 5@+67
+    //  Time Complexity: w(  1.5@+ 7) + 7@+37
+    // Space Complexity: w(1.875@+28) + 3@+67
     //   Like:  stack[sp--] = 0
     //   Pops the given return_address from the current cell in the stack (assumes it has the value of the return_address). Decrements sp.
     // return_address is a fj-op address, so we assume is dw-aligned.
@@ -52,8 +52,8 @@ ns hex {
         .sp_dec
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 20@+ 39
-    // Space Complexity: w(0.88@+25) + 16@+167
+    //  Time Complexity: w( 0.5@+ 4) + 16@+ 66
+    // Space Complexity: w(0.88@+25) + 12@+183
     //   Like:  stack[++sp] = hex
     //   Pushes the given hex to the next cell in the stack. Increments sp.
     def push_hex hex < hex.pointers.sp {
@@ -61,8 +61,8 @@ ns hex {
         .write_hex hex.pointers.sp, hex
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 26@+ 51
-    // Space Complexity: w(0.88@+25) + 22@+255
+    //  Time Complexity: w( 0.5@+ 4) + 22@+ 78
+    // Space Complexity: w(0.88@+25) + 18@+271
     //   Like:  stack[++sp] = byte[:2]
     //   Pushes the given byte to the next cell in the stack. Increments sp.
     // byte is a hex[:2].
@@ -71,8 +71,8 @@ ns hex {
         .write_byte hex.pointers.sp, byte
     }
 
-    //  Time Complexity: n(w(0.25@+ 2) + 13@+ 25)
-    // Space Complexity: n(w(0.44@+13) + 11@+128)
+    //  Time Complexity: n(w(0.25@+ 2) + 11@+ 39)
+    // Space Complexity: n(w(0.44@+13) + 9@+136)
     //   Like:  stack[sp+1:][:M] = hex[:n];  sp += n.
     //   Pushes the given hex[:n] to the next M cells in the stack. Increments sp by M.
     // M is (n+1)/2, which is because the function pushes the entire parameter as bytes.
@@ -87,8 +87,8 @@ ns hex {
         rep(n%2, i) .push_hex hex+(n-1)*dw
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 16@+ 36
-    // Space Complexity: w(0.88@+25) + 12@+115
+    //  Time Complexity: w( 0.5@+ 4) + 12@+ 62
+    // Space Complexity: w(0.88@+25) + 8@+131
     //   Like:  hex = stack[sp--]
     //   Pops the current stack cell (only the least-significant-hex of it) into the given hex. Decrements sp.
     // hex is only an output parameter.
@@ -97,8 +97,8 @@ ns hex {
         .sp_dec
     }
 
-    //  Time Complexity: w( 0.5@+ 4) + 18@+ 36
-    // Space Complexity: w(0.88@+25) + 14@+139
+    //  Time Complexity: w( 0.5@+ 4) + 14@+ 62
+    // Space Complexity: w(0.88@+25) + 10@+155
     //   Like:  byte[:2] = stack[sp--]
     //   Pops the current stack cell into the given byte. Decrements sp.
     // byte is hex[:2], and it's only an output parameter.
@@ -107,8 +107,8 @@ ns hex {
         .sp_dec
     }
 
-    //  Time Complexity: n(w(0.25@+ 2) + 9@+18)
-    // Space Complexity: n(w(0.44@+13) + 7@+70)
+    //  Time Complexity: n(w(0.25@+ 2) + 7@+31)
+    // Space Complexity: n(w(0.44@+13) + 5@+78)
     //   Like:  sp -= M
     //          hex[:n] = stack[sp+1:][:M]
     //   Pops multiple stack cell into the given hex[:n]. Decrements sp by M.

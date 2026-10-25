@@ -45,15 +45,15 @@ Defines the `hex` data-structure (for hexadecimal variables).
 Offers macros for manipulating hexadecimal variables and vectors (i.e. numbers):
 
 - [memory.fj](hex/memory.fj) - hex/vec, zero, xor_by, set, mov, swap
-- [cond_jumps.fj](hex/cond_jumps.fj) - if, cmp, min/max
+- [cond_jumps.fj](hex/cond_jumps.fj) - if, switch (16-way), cmp, min/max
 - [logics.fj](hex/logics.fj) - xor, or, and, not
-- [input.fj](hex/input.fj) - input bits into hex, input ascii as hex, input decimal (signed & unsigned)
+- [input.fj](hex/input.fj) - input bits into hex, poll the keyboard, input ascii as hex, input decimal (signed & unsigned)
 - [output.fj](hex/output.fj) - output hex as bits/bytes; print as hex-number (in ascii)
 - [shifts.fj](hex/shifts.fj) - shift left/right by 1 bit/hex
 - [math_basic.fj](hex/math_basic.fj) - inc/dec, neg, abs, count_bits, sign_extend
 - [math.fj](hex/math.fj) - add/sub, {add/sub}_shifted, {add/sub}_constant
-- [mul.fj](hex/mul.fj) - add_mul, mul (works for signed & unsigned), mul10
-- [div.fj](hex/div.fj) - div, idiv (signed)
+- [mul.fj](hex/mul.fj) - add_mul, mul (works for signed & unsigned), mul10, mul_low, mul_const, fixed_mul{_low} (signed fixed-point)
+- [div.fj](hex/div.fj) - div, idiv (signed), fixed_div (signed fixed-point)
 - [strings.fj](hex/strings.fj) - the byte-buffer block helpers: input_ptr_line, print_ptr_text/line, fill_bytes, copy_bytes
 - [tables_init.fj](hex/tables_init.fj) - initializes the "results-tables" for the next hex macros: or,and, add,sub, cmp, mul
 - [pointers/](hex/pointers) - hex-vec pointers subdirectory: [flip](hex/pointers/xor_to_pointer.fj), [jump](hex/pointers/basic_pointers.fj), [xor_to](hex/pointers/xor_to_pointer.fj), [xor_from](hex/pointers/xor_from_pointer.fj); [stack](hex/pointers/stack.fj)/[pointers](hex/pointers/basic_pointers.fj) init. [pointer arithmetics](hex/pointers/pointer_arithmetics.fj), [stack arithmetics + push/pop](hex/pointers/stack.fj).
@@ -61,6 +61,9 @@ Offers macros for manipulating hexadecimal variables and vectors (i.e. numbers):
 
 ### [casting.fj](casting.fj)
 Offers casting between bits and hexes.
+
+### [screen.fj](screen.fj)
+The screen device's commands (init_screen, palettes, window title/icon/fps, draw_collines, end_frame, present), as the [I/O devices README](../interpreter/io_devices/README.md) specifies them.
 
 ### [ptrlib.fj](ptrlib.fj)
 Init macros for pointers, stack and call/ret functions based on hex.pointers. Also offers fast call/ret macros.
@@ -73,7 +76,8 @@ A configurable json file that maintains ordered lists of the standard library fi
 Every macro is documented with:
 - Its **time complexity** (and if it's significantly different, the **space complexity** as well).
   - The complexities use the **@** sign, which is the log2 of the total number of fj ops in this program (can be it usually will be between 15-25).
-  - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _address_; And it is widely used.
+  - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _value_ (usually an address, so about @/2); And it is widely used.
+  - A chained step's wflip (`wflip .ret+w, prev_return ^ return`, see `hex.tables.chained_jump`) flips the xor of two nearby pad-16 return addresses, so it costs 2.3 on average (median 2, 90% at most 4), not @/2.
 - An explanation about what the macro does (usually in a python-like syntax).
 - The type of each of the parameters (bit/hex/bit.vec/hex.vec/constant/address and so on).
   - if a parameter is called bit/hex, it is a bit/hex variable (of size 1).
@@ -89,7 +93,7 @@ The official [JetBrains](https://plugins.jetbrains.com/plugin/32134-flipjump/rev
 # The Standard Library Basics
 
 ## Reserved Names
-The standard library reserves all the labels under the "stl", "bit", and "hex" namespaces.
+The standard library reserves all the labels under the "stl", "bit", "hex", and "screen" namespaces.
 
 No other labels are reserved or used by the standard library.
 

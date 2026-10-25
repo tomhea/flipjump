@@ -47,27 +47,43 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex
     }
 
-    //  Time Complexity: n(w(0.5@+4)  + 14@+26)
-    // Space Complexity: n(w(0.88@+25) + 10@+131)
+    //  Time Complexity: n(7@+18) + w(0.5@+4)
+    // Space Complexity: n((w-#w)(@+18) + 5@+76)
     //   like:  hex.xor *ptr[:n], hex[:n]
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
+    // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.advance).
+    // @Assumes: n >= 1 (n < 1 is refused at assemble time), and hex does not overlap ptr.
     def xor_hex_to_ptr n, ptr, hex {
-        rep(n, i) .pointers.xor_hex_to_ptr_and_inc ptr, hex + i*dw
-        .ptr_sub ptr, n
+        rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
+        .pointers.set_flip_pointer ptr
+        .pointers.xor_hex_to_flip_ptr hex
+        rep(n-1, i) .pointers.advance_and_xor_to_flip_ptr 1, hex + (i+1)*dw
     }
 
-    //  Time Complexity: n(w(0.5@+4)  + 19@+38)
-    // Space Complexity: n(w(0.88@+25) + 15@+207)
+    //  Time Complexity: n(12@+30) + w(0.5@+4)
+    // Space Complexity: n((w-#w)(@+18) + 10@+152)
     //   like:  hex.xor *ptr[:n], hex[:2n]
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
+    // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.advance).
+    // @Assumes: n >= 1 (n < 1 is refused at assemble time), and hex does not overlap ptr.
     def xor_byte_to_ptr n, ptr, hex {
-        rep(n, i) .pointers.xor_byte_to_ptr_and_inc ptr, hex + i*2*dw
-        .ptr_sub ptr, n
+        rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
+        .pointers.set_flip_pointer ptr
+        .pointers.xor_byte_to_flip_ptr hex
+        rep(n-1, i) .pointers.advance_and_xor_to_flip_ptr 2, hex + (i+1)*2*dw
     }
 
     ns pointers {
-        //  Time Complexity: w(0.5@+4)  + 14@+26
-        // Space Complexity: w(0.88@+25) + 10@+131
+        //  Time Complexity: h(5@+12) + 2@+6
+        // Space Complexity: h(5@+76) + (w-#w)(@+18)
+        //   the armed fields += 2w;  then *armed ^= hex[:h]      (h is 1 or 2)
+        def advance_and_xor_to_flip_ptr h, hex {
+            .advance
+            rep(h, i) .xor_hex_to_flip_ptr hex+i*dw, 4*i
+        }
+
+        //  Time Complexity: w(0.5@+4)  + 12@+41
+        // Space Complexity: w(0.88@+25) + 8@+131
         //   like:  hex.xor *ptr, hex
         //          ptr += dw
         // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
@@ -76,8 +92,8 @@ ns hex {
             ..ptr_inc ptr
         }
 
-        //  Time Complexity: w(0.5@+4)  + 19@+38
-        // Space Complexity: w(0.88@+25) + 15@+207
+        //  Time Complexity: w(0.5@+4)  + 17@+53
+        // Space Complexity: w(0.88@+25) + 13@+207
         //   like:  hex.xor *ptr, hex[:2]
         //          ptr += dw
         // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.

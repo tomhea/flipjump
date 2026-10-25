@@ -34,6 +34,16 @@ POINTER_PROGRAMS = [
         "programs/hexlib_tests/basics2/nth_pointers.fj",
         "tests/inout/hexlib_tests/basics2/nth_pointers.out",
     ),
+    (
+        "read_write_back",
+        "programs/hexlib_tests/basics2/read_write_back.fj",
+        "tests/inout/hexlib_tests/basics2/read_write_back.out",
+    ),
+    (
+        "seq_pointers",
+        "programs/hexlib_tests/basics2/seq_pointers.fj",
+        "tests/inout/hexlib_tests/basics2/seq_pointers.out",
+    ),
 ]
 # (PTR_CELL_BITS, PTR_WIDE_BITS) pairs. 0 means "no wide table".
 WIDTH_CONFIGS = [(8, 0), (12, 0), (16, 0), (8, 12), (8, 16), (12, 16)]

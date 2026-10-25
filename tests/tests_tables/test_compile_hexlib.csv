@@ -5,6 +5,7 @@ hexlib-triple_exact_xor, programs/hexlib_tests/basics1/triple_exact_xor.fj,tests
 hexlib-basic_math, programs/hexlib_tests/basics1/basic_math.fj,tests/compiled/hexlib_tests/basics1/basic_math.fjm, 64,3,0, True,True
 hexlib-if, programs/hexlib_tests/basics1/if.fj,tests/compiled/hexlib_tests/basics1/if.fjm, 64,3,0, True,True
 hexlib-print_int, programs/hexlib_tests/basics1/print_int.fj,tests/compiled/hexlib_tests/basics1/print_int.fjm, 64,3,0, True,True
+hexlib-switch, programs/hexlib_tests/basics1/switch.fj,tests/compiled/hexlib_tests/basics1/switch.fjm, 64,3,0, True,True
 
 hexlib-add_count_bits, programs/hexlib_tests/basics2/add_count_bits.fj, tests/compiled/hexlib_tests/basics2/add_count_bits.fjm, 64,3,0, True,True
 hexlib-count_bits, programs/hexlib_tests/basics2/count_bits.fj, tests/compiled/hexlib_tests/basics2/count_bits.fjm, 64,3,0, True,True
@@ -18,6 +19,10 @@ hexlib-shl_hex_big, programs/hexlib_tests/basics2/shift_utils.fj | programs/hexl
 hexlib-shr_hex, programs/hexlib_tests/basics2/shift_utils.fj | programs/hexlib_tests/basics2/shr_hex.fj, tests/compiled/hexlib_tests/basics2/shr_hex.fjm, 64,3,0, True,True
 hexlib-shr_hex_n, programs/hexlib_tests/basics2/shift_utils.fj | programs/hexlib_tests/basics2/shr_hex_n.fj, tests/compiled/hexlib_tests/basics2/shr_hex_n.fjm, 64,3,0, True,True
 hexlib-shr_hex_big, programs/hexlib_tests/basics2/shift_utils.fj | programs/hexlib_tests/basics2/shr_hex_big.fj, tests/compiled/hexlib_tests/basics2/shr_hex_big.fjm, 64,3,0, True,True
+hexlib-ptr_index_n, programs/hexlib_tests/basics2/ptr_index_n.fj, tests/compiled/hexlib_tests/basics2/ptr_index_n.fjm, 64,3,0, True,True
+hexlib-read_entry, programs/hexlib_tests/basics2/read_entry.fj, tests/compiled/hexlib_tests/basics2/read_entry.fjm, 64,3,0, True,True
+hexlib-read_write_back, programs/hexlib_tests/basics2/read_write_back.fj, tests/compiled/hexlib_tests/basics2/read_write_back.fjm, 64,3,0, True,True
+hexlib-seq_pointers, programs/hexlib_tests/basics2/seq_pointers.fj, tests/compiled/hexlib_tests/basics2/seq_pointers.fjm, 64,3,0, True,True
 
 hexlib-cmp, programs/hexlib_tests/2params/cmp.fj,tests/compiled/hexlib_tests/2params/cmp.fjm, 64,3,0, True,True
 hexlib-cmp_n, programs/hexlib_tests/2params/cmp_n.fj,tests/compiled/hexlib_tests/2params/cmp_n.fjm, 64,3,0, True,True
@@ -31,12 +36,15 @@ hexlib-or, programs/hexlib_tests/2params/or.fj,tests/compiled/hexlib_tests/2para
 hexlib-or_n, programs/hexlib_tests/2params/or_n.fj,tests/compiled/hexlib_tests/2params/or_n.fjm, 64,3,0, True,True
 hexlib-and, programs/hexlib_tests/2params/and.fj,tests/compiled/hexlib_tests/2params/and.fjm, 64,3,0, True,True
 hexlib-and_n, programs/hexlib_tests/2params/and_n.fj,tests/compiled/hexlib_tests/2params/and_n.fjm, 64,3,0, True,True
+hexlib-chain_n, programs/hexlib_tests/2params/chain_n.fj,tests/compiled/hexlib_tests/2params/chain_n.fjm, 64,3,0, True,True
 
 
 hexlib-add-mul-4, programs/hexlib_tests/mul/add_mul4.fj | programs/hexlib_tests/mul/add_mul_test.fj,tests/compiled/hexlib_tests/mul/add_mul4.fjm, 64,3,0, True,True
 hexlib-add-mul-8, programs/hexlib_tests/mul/add_mul8.fj | programs/hexlib_tests/mul/add_mul_test.fj,tests/compiled/hexlib_tests/mul/add_mul8.fjm, 64,3,0, True,True
 hexlib-add-mul-32, programs/hexlib_tests/mul/add_mul32.fj | programs/hexlib_tests/mul/add_mul_test.fj,tests/compiled/hexlib_tests/mul/add_mul32.fjm, 64,3,0, True,True
 hexlib-add-mul-64, programs/hexlib_tests/mul/add_mul64.fj | programs/hexlib_tests/mul/add_mul_test.fj,tests/compiled/hexlib_tests/mul/add_mul64.fjm, 64,3,0, True,True
+hexlib-add-mul-n, programs/hexlib_tests/mul/add_mul_n.fj,tests/compiled/hexlib_tests/mul/add_mul_n.fjm, 64,3,0, True,True
+hexlib-fixed_point, programs/hexlib_tests/mul/fixed_point.fj,tests/compiled/hexlib_tests/mul/fixed_point.fjm, 64,3,0, True,True
 hexlib-mul-16, programs/hexlib_tests/mul/mul16.fj | programs/hexlib_tests/mul/mul_test.fj,tests/compiled/hexlib_tests/mul/mul16.fjm, 64,3,0, True,True
 hexlib-mul-32, programs/hexlib_tests/mul/mul32.fj | programs/hexlib_tests/mul/mul_test.fj,tests/compiled/hexlib_tests/mul/mul32.fjm, 64,3,0, True,True
 hexlib-mul-64, programs/hexlib_tests/mul/mul64.fj | programs/hexlib_tests/mul/mul_test.fj,tests/compiled/hexlib_tests/mul/mul64.fjm, 64,3,0, True,True
