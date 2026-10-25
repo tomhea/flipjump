@@ -151,8 +151,8 @@ Then add a new line to the relevant compile-csv and run-csv files, according to 
 (files with the next format: ```tests_tables/test_compile_*.csv```)
 
 | test name    | .fj paths                                                   | out .fjm path                | memory width | version | run flags | use stl | treat warnings as errors |
-|--------------|-------------------------------------------------------------|------------------------------|--------------|---------|-------|---------|--------------------------|
-| example_test | path/to/example_1.fj &#124; ... &#124; path/to/example_n.fj | path/to/compiled/example.fjm | 64           | 1       | 0     | True    | True                     |
+|--------------|-------------------------------------------------------------|------------------------------|--------------|---------|-----------|---------|--------------------------|
+| example_test | path/to/example_1.fj &#124; ... &#124; path/to/example_n.fj | path/to/compiled/example.fjm | 64           | 1       | 0         | True    | True                     |
 
 Every line in this file will cause the compilation of the specified .fj files into the .fjm file, with the given compilation parameters.
 
