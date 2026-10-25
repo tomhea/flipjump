@@ -23,132 +23,6 @@
 #include <string.h>
 #include <time.h>
 
-/* ---- large-page backing for the flat image -------------------------------------------------
- *
- * The flat image is walked by a pointer chase whose addresses are effectively random, so the
- * cost per op is dominated by how many distinct PAGES the working set spans: a large program's
- * data stays cache-resident while its 4 KB page mappings do not, and nearly every scattered
- * access pays a page walk. 2 MB pages make the same working set TLB-resident.
- *
- * COST AND SAFETY. Large pages are locked, non-pageable memory: on Windows the caller must hold
- * SeLockMemoryPrivilege (an administrator grants "Lock pages in memory"), and on Linux the
- * MADV_HUGEPAGE path only ASKS. Every failure falls back to the ordinary allocator, so this can
- * only change speed, never behaviour: the returned block is plain writable memory either way,
- * and the interpreter does not know which it got. FLIPJUMP_NO_LARGE_PAGES=1 forces the fallback.
- */
-#if defined(_WIN32)
-#include <windows.h>
-#if defined(_MSC_VER)
-/* OpenProcessToken/LookupPrivilegeValue/AdjustTokenPrivileges live in advapi32. Linked with a
-   pragma rather than by adding `libraries=['advapi32']` to setup.py, because setup.py is shared
-   with the Linux and macOS wheel builds and this dependency is MSVC-only. */
-#pragma comment(lib, "advapi32.lib")
-#endif
-#elif defined(__linux__)
-#include <sys/mman.h>
-#endif
-
-/* returns NULL on failure; *large is set to 1 only when large pages were actually obtained */
-static void* fj_alloc_flat(size_t bytes, int* large)
-{
-    const char* off = getenv("FLIPJUMP_NO_LARGE_PAGES");
-    *large = 0;
-    if (off && off[0] == '1') {
-        return malloc(bytes);
-    }
-#if defined(_WIN32)
-    {
-        SIZE_T lp = GetLargePageMinimum();
-        if (lp) {
-            HANDLE token = NULL;
-            if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-                                 &token)) {
-                TOKEN_PRIVILEGES tp;
-                LUID luid;
-                if (LookupPrivilegeValueA(NULL, "SeLockMemoryPrivilege", &luid)) {
-                    tp.PrivilegeCount = 1;
-                    tp.Privileges[0].Luid = luid;
-                    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-                    AdjustTokenPrivileges(token, FALSE, &tp, sizeof(tp), NULL, NULL);
-                }
-                CloseHandle(token);
-            }
-            {
-                size_t rounded = ((bytes + (size_t)lp - 1) / (size_t)lp) * (size_t)lp;
-                void* p = VirtualAlloc(NULL, rounded,
-                                       MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
-                if (p) {
-                    *large = 1;
-                    return p;
-                }
-            }
-        }
-    }
-#elif defined(__linux__)
-    {
-        /* THP IS THE PRIVILEGE-FREE ROUTE, AND IT ONLY WORKS 2 MB-ALIGNED. Transparent Huge
-           Pages need no capability at all (unlike MAP_HUGETLB, which needs hugepages
-           preconfigured, and unlike Windows large pages, which need SeLockMemoryPrivilege) --
-           but khugepaged can only collapse a region that is 2 MB aligned AND 2 MB sized, and
-           plain mmap only promises 4 KB alignment. An unaligned mapping therefore gets its
-           interior collapsed at best and its edges never, which quietly wastes most of the
-           benefit. So over-allocate by one huge page, trim both ends, and advise the aligned
-           middle. */
-        const size_t two_mb = 2u * 1024u * 1024u;
-        size_t rounded = ((bytes + two_mb - 1) / two_mb) * two_mb;
-        char* raw = (char*)mmap(NULL, rounded + two_mb, PROT_READ | PROT_WRITE,
-                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (raw != MAP_FAILED) {
-            uintptr_t base = (uintptr_t)raw;
-            uintptr_t aligned = (base + (two_mb - 1)) & ~(uintptr_t)(two_mb - 1);
-            size_t head = (size_t)(aligned - base);
-            if (head) {
-                munmap(raw, head);
-            }
-            if (two_mb - head) {
-                munmap((char*)(aligned + rounded), two_mb - head);
-            }
-#if defined(MADV_HUGEPAGE)
-            /* ADVISORY: the kernel may still decline (THP disabled, memory fragmented), so
-               `large` here records "aligned and advised", not "definitely huge". Check
-               /proc/<pid>/smaps AnonHugePages to see what was actually granted. */
-            if (madvise((void*)aligned, rounded, MADV_HUGEPAGE) == 0) {
-                *large = 1;
-                return (void*)aligned;
-            }
-#endif
-            /* no huge-page advice, or refused: the mapping buys nothing over malloc, and only a
-               `large` block is released with munmap (fj_free_flat) -- so release it and fall back */
-            munmap((void*)aligned, rounded);
-        }
-    }
-#endif
-    return malloc(bytes);
-}
-
-static void fj_free_flat(void* p, int large, size_t bytes)
-{
-    if (!p) {
-        return;
-    }
-    if (!large) {
-        free(p);
-        return;
-    }
-#if defined(_WIN32)
-    (void)bytes;
-    VirtualFree(p, 0, MEM_RELEASE);
-#elif defined(__linux__)
-    {
-        size_t two_mb = 2u * 1024u * 1024u;
-        munmap(p, ((bytes + two_mb - 1) / two_mb) * two_mb);
-    }
-#else
-    (void)bytes;
-    free(p);
-#endif
-}
-
 /* force-inline so run_flat_loop's literal width/ww arguments constant-fold per width */
 #if defined(_MSC_VER)
 #  define FJ_ALWAYS_INLINE __forceinline
@@ -268,8 +142,6 @@ typedef struct {
                              a compile-time-folded branch. */
     int cell_bytes;       /* 8 or 4. A w<=32 program's words fit in 4 bytes, which halves the
                              touched cache footprint -- the measured binding cost. */
-    int flat_large;       /* 1: `flat` came from the large-page allocator and must be released
-                             with it, not with free(). See fj_alloc_flat. */
     uint64_t flat_count;
     uint64_t flat_max_words; /* constructor override; 0 = use the env var / default */
     int flat_required;       /* constructor flag: a flat window that cannot be allocated RAISES
@@ -815,7 +687,7 @@ static int mem_decide_storage_once(MemoryObject* m)
         const char* force64 = getenv("FLIPJUMP_CELL64");
         m->cell_bytes = (force64 && force64[0] == '1') ? 8 : 4;
     }
-    m->flat = fj_alloc_flat((size_t)low_max_end * (size_t)m->cell_bytes, &m->flat_large);
+    m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes);
     if (!m->flat && m->flat_required) {
         PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words (%llu bytes) failed",
                      (unsigned long long)low_max_end,
@@ -904,10 +776,8 @@ static void mem_free_allocations(MemoryObject* self)
         free(self->slots);
         self->slots = NULL;
     }
-    fj_free_flat(self->flat, self->flat_large,
-                 (size_t)self->flat_count * (size_t)(self->cell_bytes ? self->cell_bytes : 8));
+    free(self->flat);
     self->flat = NULL;
-    self->flat_large = 0;
     free(self->pristine);
     self->pristine = NULL;
     free(self->segments);
@@ -947,7 +817,6 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->segments_sorted = 1;
     self->segments_disjoint = 0;      /* proven in mem_decide_storage, never assumed */
     self->flat = NULL;
-    self->flat_large = 0;
     self->cell_bytes = 8;
     self->flat_count = 0;
     self->flat_max_words = flat_max_words;
@@ -2101,20 +1970,12 @@ static PyObject* Memory_get_cell_bytes(MemoryObject* self, void* closure)
     return PyLong_FromLong((long)self->cell_bytes);
 }
 
-static PyObject* Memory_get_large_pages(MemoryObject* self, void* closure)
-{
-    (void)closure;
-    return PyBool_FromLong(self->flat_large ? 1 : 0);
-}
-
 static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
 {
     (void)closure;
     if (!self->storage_decided) {
         Py_RETURN_NONE;
     }
-    /* callers compare this string exactly, so the large-page fact is the separate
-       `large_pages` attribute below rather than a suffix here */
     return PyUnicode_FromString(self->flat ? (self->flat_covers_all ? "flat" : "hybrid") : "paged");
 }
 
@@ -2249,12 +2110,6 @@ static PyGetSetDef Memory_getset[] = {
     {"cell_bytes", (getter)Memory_get_cell_bytes, NULL,
      "bytes per flat cell: 4 for a w<=32 program (half the cache footprint), else 8. "
      "FLIPJUMP_CELL64=1 forces 8 for A/B.", NULL},
-    {"large_pages", (getter)Memory_get_large_pages, NULL,
-     "True when the flat image is in large pages: on Windows a MEM_LARGE_PAGES allocation was "
-     "obtained (needs SeLockMemoryPrivilege); on Linux the image was mapped 2 MB-aligned and "
-     "MADV_HUGEPAGE accepted, which the kernel may still back with small pages. Every failure "
-     "falls back to malloc, so False is the fallback. Additive to storage_mode, an exact-compared "
-     "API.", NULL},
     {NULL, NULL, NULL, NULL, NULL},
 };
 

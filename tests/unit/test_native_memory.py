@@ -486,12 +486,6 @@ def test_a_w64_program_gets_8_byte_cells() -> None:
     assert memory.cell_bytes == 8
 
 
-def test_large_pages_is_reported_as_a_bool() -> None:
-    memory = _looping_memory()
-    _run_to_looping(memory)
-    assert memory.large_pages in (True, False)
-
-
 def test_w32_word_holding_the_32bit_garbage_magic_is_real_data() -> None:
     # a 4-byte cell has no spare bit for the gap sentinel, so the fill is a magic value that a
     # legal word can equal; an in-segment word holding it must flip like any other value
