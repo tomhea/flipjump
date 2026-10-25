@@ -866,6 +866,10 @@ def assemble(
                 offset_guard=None if table_pool is None else table_pool.offset_guard,
                 wflips_at=None if table_pool is None else table_pool.wflips_at(),
             )
+        if table_pool is not None and table_pool.flat_limit is not None:  # (for_flat) say if it runs past the window
+            end = max(((start + length) * memory_width for start, length, _, _ in fjm_writer.segments), default=0)
+            if end > table_pool.flat_limit:
+                table_pool.base_reason += f'; the program ends at {hex(end)}, past the flat maximum'
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression
         del ops

@@ -1171,8 +1171,6 @@ class BlockPool(TablePool):
                 self.end = max(self.end, table_end)
                 if self.flat_limit is not None and table_end > self.flat_limit:
                     self.past_window += 1
-        if self.flat_limit is not None and self.end > self.flat_limit:
-            self.base_reason += f'; the pool ends at {hex(self.end)}, past the flat maximum {hex(self.flat_limit)}'
         return addresses
 
     def canonical_alias(self, labels: LabelsDict) -> Dict[str, str]:
