@@ -323,3 +323,14 @@ def test_a_pin_that_does_not_rest_at_its_base_fails_the_proof(monkeypatch: pytes
     monkeypatch.setattr(assembler.BinaryData, 'insert_fj_op', unbased)
     mismatches = prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches
     assert any('does not rest at its value xor its base' in mismatch for mismatch in mismatches), mismatches
+
+
+def test_a_ternary_with_a_number_for_its_condition_is_compared_as_its_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # hex.if_flags' entries (`(flags >> i) & 1 ? return + dbit : 0`) and hex.tables' `x ? label : other_label`: each
+    # is one of its branches, so the proof compares it whole. The control: without that, each is listed unchecked
+    files = [str(PROGRAMS_DIR / 'hexlib_tests' / 'basics1' / 'switch.fj')]
+    proof = prove_relocation(64, _macros(files, 64), _cli_pool(64))
+    assert proof.mismatches == [] and proof.unchecked == []
+    monkeypatch.setattr(relocation_proof, '_selected', lambda operand: operand)
+    unchecked = prove_relocation(64, _macros(files, 64), _cli_pool(64)).unchecked
+    assert len(unchecked) > 2000 and all('?' in entry for entry in unchecked), unchecked[:3]

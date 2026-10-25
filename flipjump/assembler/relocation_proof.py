@@ -295,6 +295,7 @@ def prove_relocation(
             ):
                 jumped.add(target)
         for index, (plain_operand, pooled_operand) in enumerate(zip(_operands(op), _operands(pooled_op))):
+            plain_operand, pooled_operand = _selected(plain_operand), _selected(pooled_operand)
             is_value = isinstance(op, WordFlip) and index == 1
             actual = pooled_operand.exact_eval(pooled_labels)
             if not plain_operand.all_unknown_labels():
@@ -456,6 +457,16 @@ def _check_pins(
                     f'window, which could arm the table at {hex(table)} of the plain program, below it'
                 )
                 break
+
+
+def _selected(operand: Expr) -> Expr:
+    """`c ? a : b` whose condition is a number is a or b, compared as that (hex.if_flags' entries, `(flags >> i) & 1 ?
+    return + dbit : 0`, and the tables' `x ? label : other_label`)"""
+    value = operand.value
+    while isinstance(value, tuple) and value[0] == '?:' and isinstance(value[1][0].value, int):
+        operand = value[1][1] if value[1][0].value else value[1][2]
+        value = operand.value
+    return operand
 
 
 def _is_linear(operand: Expr) -> bool:

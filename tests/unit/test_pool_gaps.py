@@ -482,14 +482,15 @@ def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: P
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
     assert pool.reads_words_raw and pool.allocated and pool.pinned_words() == {}
-    assert pool.unpins == {'the pointer runtime': 76}
+    assert pool.unpins == {'the pointer runtime': 58}
     assert pooled[0] == plain[0] and pooled[1] < plain[1]
-    # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run MORE ops
+    # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run more ops than
+    # cheapest-first (since stl-additions' pointer ops, still fewer than plain: 15137 plain, 14863 blocked, 14163)
     blocked_pool = BlockPool.for_flat(64)
     blocked_pool.pin_exclude = lambda address, labels: True
     assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
     blocked = _ops(tmp_path / 'blocked.fjm')
-    assert blocked_pool.pinned_words() and blocked[0] == plain[0] and blocked[1] > plain[1]
+    assert blocked_pool.pinned_words() and blocked[0] == plain[0] and blocked[1] > pooled[1]
 
 
 # the flat spec: fj --pool-tables's pool (BlockPool.for_flat) sits right above the program and ends below the flat
