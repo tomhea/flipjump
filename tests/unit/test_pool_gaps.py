@@ -611,7 +611,7 @@ def test_a_tight_flat_window_moves_some_tables_and_keeps_the_rest_inline(tmp_pat
         assert pooled == plain and moved + pool.past_window >= every
         # the pool, wflip areas included, ends inside the window - or where the code after its tables left them no
         # room, past it (one pass cannot take a table back), and says so
-        past = 'past the flat maximum' in pool.base_reason
+        past = '; the pool ends at' in pool.base_reason
         assert (pool.end <= words * W or past) and (span <= words or not moved or past)
         if 0 < moved < every:
             partial.append(words)
