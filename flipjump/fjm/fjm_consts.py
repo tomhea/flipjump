@@ -43,9 +43,7 @@ _header_extension_format = '<LLL'
 _header_extension_size = 4 + 4 + 4
 
 # the header's io_mode: the io device a program runs with when `fj --run` is not given --io.
-# (these were once the low/high halves of a u64 `flags` that nothing read and older fj wrote as 0 by
-# default, so old files read unchanged: the standard io and no run flags. nonzero old flags now read
-# as bad flags.)
+# (a u64 'flags' before; old files wrote 0 there, so they read as io mode 0 and no run flags)
 IO_MODE_STANDARD = 0
 IO_MODE_PC = 1
 IO_MODE_NAMES: Dict[int, str] = {IO_MODE_STANDARD: 'standard', IO_MODE_PC: 'pc'}
