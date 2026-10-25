@@ -120,12 +120,7 @@ typedef struct {
     uint64_t page_cache_valid_end[16];
 
     SegmentRange* segments; /* sorted once storage is decided; NOT merged - see segments_disjoint */
-    int segments_disjoint;  /* 1: sorted AND non-overlapping, so flat_seg_contains may binary
-                               search. Computed once in mem_decide_storage. add_segment does not
-                               merge and nothing else checked, so overlap is possible in principle
-                               and a binary search over overlapping ranges can MISS a container -
-                               which would report a valid word as garbage and halt a correct
-                               program. Verified rather than assumed. */
+    int segments_disjoint;  /* 1: sorted AND non-overlapping (set in mem_decide_storage), so a binary search is valid */
     Py_ssize_t segment_count;
     Py_ssize_t segment_capacity;
     int segments_sorted;
@@ -154,7 +149,7 @@ typedef struct {
     double last_run_paused_seconds;       /* IO-paused seconds of the last run (also on exceptions) */
 
     /* run(write_byte=...): the output bits are gathered here into whole bytes, so the device is called
-       once a byte instead of once a bit (a Python call, ~140 ns, per bit was ~13% of a doom-flipjump frame).
+       once a byte instead of once a bit (a Python call per bit dominates an output-heavy program).
        `out_write_byte` is borrowed for the duration of one run (NULL = per-bit). `out_phase` is how many
        bits of the device's current byte were delivered through write_bit (mod 8), across runs: bits are
        gathered only from a byte boundary, so a device sees exactly the stream it saw bit by bit. */
@@ -546,9 +541,8 @@ static int mem_decide_storage_once(MemoryObject* m);
    storage UNdecided, so a later decide_storage()/run() reports the same error instead of running paged */
 static int mem_decide_storage(MemoryObject* m)
 {
-    const int was_decided = m->storage_decided;
     const int result = mem_decide_storage_once(m);
-    if (result < 0 && !was_decided) {
+    if (result < 0) {
         m->storage_decided = 0;
     }
     return result;
@@ -572,16 +566,10 @@ static int mem_decide_storage_once(MemoryObject* m)
     if (!m->garbage_stop) {
         return 0; /* continue-mode: paged (the flat sentinel scheme needs garbage-stop) */
     }
-    /* SORT ONCE, HERE, so `flat_seg_contains` may binary-search. It could not before: the only
-       calls to mem_ensure_segments_sorted are on the access-check paths, `add_segment` clears
-       `segments_sorted`, and nothing sorted before the flat image was built -- which is why that
-       helper is a LINEAR SCAN. That is correct for unsorted ranges but is O(segment_count), so
-       on a program with hundreds of thousands of segments a single sentinel collision inside the
-       hot loop would cost as many comparisons. This runs once, before any op executes. */
+    /* sort once, before any op runs, so flat_seg_contains may binary-search */
     mem_ensure_segments_sorted(m);
     {
-        /* ...and the fast path additionally needs the ranges to be DISJOINT, which nothing
-           guarantees: add_segment appends without merging. One linear pass settles it. */
+        /* ...which also needs the ranges disjoint: add_segment appends without merging */
         Py_ssize_t k;
         m->segments_disjoint = 1;
         for (k = 1; k < m->segment_count; k++) {
@@ -618,7 +606,7 @@ static int mem_decide_storage_once(MemoryObject* m)
                         "address 0 is missing");
         return -1;
     }
-    if (low_max_end > SIZE_MAX / 8u) {
+    if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
         if (m->flat_required) {
             PyErr_Format(PyExc_MemoryError, "the flat-storage window of %llu words is too large to allocate",
                          (unsigned long long)low_max_end);
@@ -935,9 +923,7 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
    pool, decompressed); words [data_word_offset, data_word_offset + count) of it are stored at
    start_word_address onward. relative_jumps: the .fjm v2/v3 encoding, where every odd word of a
    segment (a jump word) is stored minus its own bit address -- added back here.
-   THE LEAN LOAD PATH: set_words takes a python sequence, so the loader had to build one int object
-   per word first -- on a 51M-word program that dict of ints is ~7 GB and most of a minute; this reads
-   the bytes in place. */
+   set_words needs one Python int per word; this reads the bytes in place. */
 static PyObject* Memory_set_words_bytes(MemoryObject* self, PyObject* args)
 {
     unsigned long long start_word, data_word_offset, count;
@@ -1719,9 +1705,6 @@ static PyObject* build_run_result(MemoryObject* self, int cause, uint64_t ops, u
     return Py_BuildValue("iKNNd", cause, (unsigned long long)ops, error_address, last_ops_list, paused_seconds);
 }
 
-/* the run loop.
-   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
-   -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds) */
 /* decide_storage(): choose the storage mode now instead of at the first run, so a bulk load that
    follows (set_words_bytes) writes straight into the flat image -- no staging pages, no copy -- and a
    flat window that cannot be allocated fails BEFORE the load rather than after it. */
@@ -1790,10 +1773,13 @@ static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     Py_RETURN_NONE;
 }
 
-static PyObject* run_with_ring(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
-                               PyObject* eof_exception_type, Py_ssize_t last_ops_length,
-                               unsigned long long start_ip);
+static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
+                         PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip);
 
+/* the run loop.
+   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
+   -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds)
+   paused_seconds excludes the final flush of a partial output byte; last_run_paused_seconds includes it */
 static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
 {
     static char* kwlist[] = {"read_bit", "write_bit", "eof_exception_type", "last_ops_length", "start_ip",
@@ -1817,7 +1803,7 @@ static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
     /* read_byte() must return the next 8 read_bit() values as a byte (lsb first), whatever the program outputs while
        it takes them; the engine then calls it once a byte (see in_bit). Borrowed, as write_byte */
     self->in_read_byte = (read_byte == Py_None) ? NULL : read_byte;
-    run_result = run_with_ring(self, read_bit, write_bit, eof_exception_type, last_ops_length, start_ip);
+    run_result = mem_run(self, read_bit, write_bit, eof_exception_type, last_ops_length, start_ip);
     self->out_write_byte = NULL;
     self->in_read_byte = NULL;
     /* the bits of a partial byte still pending go out bit by bit -- also when the run failed, keeping its error */
@@ -1840,9 +1826,8 @@ static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
     return run_result;
 }
 
-static PyObject* run_with_ring(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
-                               PyObject* eof_exception_type, Py_ssize_t last_ops_length,
-                               unsigned long long start_ip)
+static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
+                         PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip)
 {
     uint64_t* last_ops_ring = NULL;
 
