@@ -30,8 +30,8 @@ from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 from flipjump.utils.functions import get_file_tuples, get_temp_directory_suffix
 from flipjump.interpreter.fjm_run import TerminationStatistics
 
-# a table pool, or a REQUEST for one: a factory such as BlockPool.for_flat (what `fj --pool-tables` makes) or
-# TablePool.for_flat, called with the memory width and the run's flat window (flat_max_words), so a function that
+# a table pool, or a REQUEST for one: a factory such as BlockPool.for_flat (what `fj --pool-tables` makes), called
+# with the memory width and the run's flat window (flat_max_words), so a function that
 # assembles AND runs sizes the pool to the window it runs in. A pool lays out one assembly, and a factory makes a
 # fresh one per call: the same request serves every width and every call.
 TablePoolRequest = Union[TablePool, Callable[[int, Optional[int]], TablePool], None]

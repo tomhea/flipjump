@@ -630,12 +630,6 @@ def test_a_tight_flat_window_moves_fewer_tables_safely(tmp_path: Path) -> None:
     assert (tmp_path / 'flat.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()
 
 
-def test_a_table_pool_for_a_flat_window_takes_its_upper_half() -> None:
-    pool = TablePool.for_flat(W, 1 << 20)
-    assert pool.pool_start() == (1 << 20) * W // 2 and pool.span_bits == (1 << 20) * W // 2
-    assert TablePool.for_flat(64).flat_limit == FLAT_MEMORY_AUTO_MAX_WORDS * 64
-
-
 def test_a_combined_helper_hands_its_flat_window_to_a_pool_request(tmp_path: Path) -> None:
     # assemble_and_run_test_output (and assemble_and_debug, which assemble_and_run calls) call a request with their
     # own memory width and flat_max_words, so assembling and running cannot disagree; a pool is used as it is

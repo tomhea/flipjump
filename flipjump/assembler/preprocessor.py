@@ -316,8 +316,6 @@ class PreprocessorData:
             )
         reserved = pool.reserve(ops_alignment, table_ops, group, group_expr, labels_prefix)
         if reserved is None:
-            if pool.flat_limit is not None:
-                pool.past_window += 1  # no room below the flat maximum: it stays inline
             return False
         address, starts_new_run, gap_ops = reserved
         self._table_moved(table, ops_alignment, table_ops)

@@ -800,21 +800,6 @@ class TablePool:
         self._cursor = end_address
         self.end = max(self.end, end_address)
 
-    @classmethod
-    def for_flat(cls, memory_width: int, flat_max_words: Optional[int] = None, **kwargs: Any) -> TablePool:
-        """A pool that ends below the flat maximum (flat_limit: `flat_max_words`, by default the automatic-flat
-        threshold), so a program that runs flat without the pool runs flat with it. A TablePool places a table as
-        the expansion reaches it, before the program's end is known, so it takes the upper half of the window (its
-        base the largest power of two at most half of it): a table it has no room for stays inline (past_window),
-        and a program that reaches the pool is refused. BlockPool.for_flat (`fj --pool-tables`) bases the pool right
-        above the program instead. `kwargs` go to the constructor (run_ops, ...)."""
-        limit = flat_limit(memory_width, flat_max_words)
-        base = 1 << ((limit // 2).bit_length() - 1)
-        pool = cls(memory_width, base, span_bits=limit - base, **kwargs)
-        pool.flat_limit = limit
-        pool.base_reason = f'{hex(base)}: the upper half of the flat window, which ends at {hex(limit)}'
-        return pool
-
     def wflips_at(self) -> Optional[int]:
         """where the wflip areas go (assembler.BinaryData), if not right after their segments' code: after the
         pool, for a pool based right above the program (BlockPool.for_flat) that placed a table (in a block, a run or
