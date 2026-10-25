@@ -351,12 +351,12 @@ ns hex {
         .tables.jump_to_table_entry dst, src, .or.dst
     }
 
-    //  Time Complexity: n(4@+10)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+12)      (4@+10 for n == 1)
+    // Space Complexity: n(3@+54)      (4@+52 for n == 1)
     //   dst[:n] |= src[:n]
     // @requires hex.or.init (or hex.init)
-    def or n, dst, src {
-        rep(n, i) .or dst+i*dw, src+i*dw
+    def or n, dst, src < .or.dst {
+        .tables.jump_to_table_entries n, dst, src, .or.dst
     }
 
     ns or {
@@ -401,12 +401,12 @@ ns hex {
         .tables.jump_to_table_entry dst, src, .and.dst
     }
 
-    //  Time Complexity: n(4@+10)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+12)      (4@+10 for n == 1)
+    // Space Complexity: n(3@+54)      (4@+52 for n == 1)
     //   dst[:n] &= src[:n]
     // @requires hex.and.init (or hex.init)
-    def and n, dst, src {
-        rep(n, i) .and dst+i*dw, src+i*dw
+    def and n, dst, src < .and.dst {
+        .tables.jump_to_table_entries n, dst, src, .and.dst
     }
 
     ns and {

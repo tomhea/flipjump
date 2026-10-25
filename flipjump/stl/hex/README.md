@@ -6,16 +6,16 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 
 | File / folder           | What it provides                                                                                  |
 |-------------------------|---------------------------------------------------------------------------------------------------|
-| `tables_init.fj`        | `hex.init` and the `tables.*` machinery that every other hex operation depends on.                |
+| `tables_init.fj`        | `hex.init` and the `tables.*` machinery that every other hex operation depends on (incl. the chained table jumps of the n-hex ops). |
 | `memory.fj`             | `hex`, `vec`, `zero`, `mov`, `xor_by`, `set`, `swap`.                                             |
 | `logics.fj`             | `xor`, `or`, `and`, `not`, plus the `exact_xor` family (1/2/3/4 destination groups) and its `address_and_variable_*` forms. |
-| `math.fj`               | `add`, `sub`, `add_constant`, `add_shifted`, `add_hex_shifted_constant`, plus the `clear_carry` / `not_carry` / `set_carry` helpers for both `ns add` and `ns sub`. |
+| `math.fj`               | `add`, `sub`, `add_constant`, `add_shifted`, `add_hex_shifted_constant`, plus the `clear_carry` / `not_carry` / `set_carry` / `chain` helpers for both `ns add` and `ns sub`. |
 | `math_basic.fj`         | `inc`, `dec`, `neg`, `abs`, `inc1`, `dec1`, `step`, `add_count_bits`, `count_bits`, `sign_extend`. |
-| `mul.fj`                | `mul`, `mul10`, `add_mul`, plus the per-multiplication carry / init machinery.                    |
-| `div.fj`                | `div` (unsigned) and `idiv` (signed, with configurable remainder convention).                     |
+| `mul.fj`                | `mul`, `mul10`, `add_mul`, `mul_low`, `mul_const`, `fixed_mul`, `fixed_mul_low`, plus the per-multiplication carry / init machinery. |
+| `div.fj`                | `div` (unsigned), `idiv` (signed, with configurable remainder convention), and `fixed_div`.       |
 | `shifts.fj`             | `shl_hex`, `shr_hex`, plus the inline-table `shl_bit_once` / `shr_bit_once` helpers.              |
-| `cond_jumps.fj`         | `if`, `if0`, `if1`, `if_flags`, `sign`, `cmp` (3-way), `cmp_eq_next`, `min`/`max`, `cmp.init`.    |
-| `input.fj`              | `input_hex`, `input` (1 hex / n hexes), `input_as_hex`, `input_dec_uint`/`input_dec_int`, `input_dec_uint_until`/`input_dec_int_until`. |
+| `cond_jumps.fj`         | `if`, `if0`, `if1`, `if_flags`, `switch` (16-way), `sign`, `cmp` (3-way), `cmp_eq_next`, `min`/`max`, `cmp.init`. |
+| `input.fj`              | `input_hex`, `input` (1 hex / n hexes), `poll_key` (the keyboard device), `input_as_hex`, `input_dec_uint`/`input_dec_int`, `input_dec_uint_until`/`input_dec_int_until`. |
 | `output.fj`             | `output`, `print`, `print_as_digit`, `print_uint`, `print_int`, `print_digit`, `print_dec_uint`, `print_dec_int`. |
 | `strings.fj`            | `input_ptr_line`, `print_ptr_text`, `print_ptr_line` (packed-byte line/text I/O), plus `fill_bytes` / `copy_bytes` block helpers. |
 | `casting.fj` *(root)*   | `bit2hex` / `hex2bit` — bridging the two namespaces.                                              |
@@ -26,9 +26,9 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 | File                              | What it provides                                                                |
 |-----------------------------------|---------------------------------------------------------------------------------|
 | `basic_pointers.fj`               | `ptr_init`, `ptr_jump`, `set_flip_and_jump_pointers` (and its `set_flip_pointer` / `set_jump_pointer` aliases), `stack_init`. |
-| `pointer_arithmetics.fj`          | `ptr_inc`, `ptr_dec`, `ptr_add`, `ptr_sub`.                                     |
-| `read_pointers.fj`                | `read_byte`, `read_hex`, `read_cell`, `read_byte_and_inc`, `read_hex_and_inc`, `read_cell_and_inc`. |
-| `write_pointers.fj`               | `write_byte`, `write_hex`, `write_cell`, `write_byte_and_inc`, `write_hex_and_inc`, `write_cell_and_inc`, `zero_ptr`, `zero_cell_ptr`. |
+| `pointer_arithmetics.fj`          | `ptr_inc`, `ptr_dec`, `ptr_add`, `ptr_sub`, `ptr_index` (a signed full-width / an unsigned n-hex index). |
+| `read_pointers.fj`                | `read_byte`, `read_hex`, `read_cell`, `read_byte_and_inc`, `read_hex_and_inc`, `read_cell_and_inc`, `read_nth_*`, `read_back`, `read_entry` / `read_entry_byte` / `read_entry_packed` (an entry of a constant array). |
+| `write_pointers.fj`               | `write_byte`, `write_hex`, `write_cell`, `write_byte_and_inc`, `write_hex_and_inc`, `write_cell_and_inc`, `zero_ptr`, `zero_cell_ptr`, `write_nth_*`, `write_back`. |
 | `stack.fj`                        | `push`, `pop`, `push_byte`/`hex`/`ret_address`, `pop_*`, `sp_inc/dec/add/sub`.   |
 | `xor_from_pointer.fj`             | `xor_byte_from_ptr`, `xor_hex_from_ptr`, `xor_cell_from_ptr`, plus the `read_*_from_inners_ptrs` dances both decoder tables share. |
 | `xor_to_pointer.fj`               | `ptr_flip`, `ptr_wflip`, `ptr_wflip_2nd_word`, `xor_*_to_ptr`, `xor_*_to_flip_ptr`. |

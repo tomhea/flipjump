@@ -138,6 +138,30 @@ ns hex {
             .set_flip_and_jump_pointers ptr
         }
 
+        //  Time Complexity: 2@+6           (two advance_bits on average: the carry stops on 1 bit in 2)
+        // Space Complexity: (w-#w)(@+18)
+        //   to_flip = to_jump{+w} = to_ptr_var += 2w      (the armed address moves on to the next op)
+        //
+        // The next address without re-arming (set_flip_and_jump_pointers xors all w/4 hexes): a binary increment of
+        //   the three fields from bit #w (2w's) up, that stops at the first bit that becomes 1.
+        // @Assumes: the armed address is dw-aligned (an offset below 2w in to_flip, like the read dance's, is kept).
+        def advance @ done {
+            rep(w-#w, i) .advance_bit #w+i, done
+          done:
+        }
+
+        //  Time Complexity: @+3
+        // Space Complexity: @+18
+        //   flips bit k of to_flip, to_jump+w and to_ptr_var; jumps to done if it became 1, else continues.
+        def advance_bit k, done @ carry < .to_flip, .to_jump, .to_ptr_var {
+            .to_flip+k;
+            .to_jump+w+k;
+            .to_ptr_var+(k/4)*dw+dbit+k%4;
+            ..if_flags .to_ptr_var+(k/4)*dw, (k%4 == 0) ? 0xAAAA : (k%4 == 1) ? 0xCCCC : (k%4 == 2) ? 0xF0F0 : 0xFF00, \
+                carry, done
+          carry:
+        }
+
         // Space Complexity: n+w/4 + 330
         //   Initializes a stack of size n (maximal capacity of n hexes / return-addresses).
         // n is the size of the stack.
