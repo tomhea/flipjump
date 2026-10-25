@@ -443,8 +443,8 @@ def test_cli_pool_tables_runs_a_program_that_reads_through_pointers_the_same(tmp
 
 
 def test_cli_pool_tables_keeps_inline_the_tables_of_a_program_that_fills_the_memory(tmp_path: Path) -> None:
-    # prime_sieve reserves the upper half of memory: no room above it, so every table stays inline - the binary is
-    # the plain one, byte for byte
+    # prime_sieve reserves the upper half of memory after its code: no room for its tables, so it is assembled without
+    # the pool - the binary is the plain one, byte for byte
     plain = _cli_assemble(tmp_path, 'plain', [PROGRAMS_DIR / 'prime_sieve.fj'])
     pooled = _cli_assemble(tmp_path, 'pooled', [PROGRAMS_DIR / 'prime_sieve.fj'], '--pool-tables')
     assert pooled.read_bytes() == plain.read_bytes()

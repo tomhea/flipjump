@@ -18,7 +18,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment
 from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.assembler.relocation_proof import prove_relocation
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool
+from flipjump.assembler.table_pool import BlockPool, OffsetGuard, PoolHasNoRoom, TablePool
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
 from tests.unit.test_table_pool import build_and_run, relocatable
@@ -62,7 +62,7 @@ def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str
     try:
         proof = prove_relocation(memory_width, _macros(files, memory_width, use_stl), pool)
     except FlipJumpPreprocessorException as refused:
-        assert 'inside the table pool' in str(refused)  # prime_sieve's segment at the top of memory
+        assert isinstance(refused, PoolHasNoRoom)  # prime_sieve's reserve fills the memory above its tables
         pytest.skip('the program reaches the pool')
     assert proof.mismatches == []
     assert len(proof.unchecked) <= UNCHECKED_CEILINGS.get(program[0], 0), proof.unchecked
@@ -273,11 +273,13 @@ def test_a_moved_op_that_no_declaration_holds_fails_the_proof(monkeypatch: pytes
 
 def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -> None:
     files = [str(PROGRAMS_DIR / 'hexlib_tests' / '2params' / 'and.fj')]
-    real_resolve = getattr(relocation_proof, 'resolve_macros_with_pool')
+    real_resolve = getattr(relocation_proof, 'resolve_macros')
 
     def corrupting(*args: Any, **kwargs: Any) -> Any:
         stream, labels = real_resolve(*args, **kwargs)
-        pool_start = args[2].pool_start()
+        if kwargs.get('table_pool') is None:
+            return stream, labels  # the plain program
+        pool_start = kwargs['table_pool'].pool_start()
 
         class Corrupted:
             """the pooled stream, with the jump of its first moved op one op further"""
@@ -295,7 +297,7 @@ def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -
         return Corrupted(), labels
 
     assert prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches == []
-    monkeypatch.setattr('flipjump.assembler.relocation_proof.resolve_macros_with_pool', corrupting)
+    monkeypatch.setattr('flipjump.assembler.relocation_proof.resolve_macros', corrupting)
     monkeypatch.setattr('flipjump.assembler.relocation_proof.labels_resolve', lambda *args, **kwargs: None)
     monkeypatch.setattr('flipjump.assembler.relocation_proof.unpin', lambda *args, **kwargs: None)
     mismatches = prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches

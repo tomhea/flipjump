@@ -299,8 +299,6 @@ class PreprocessorData:
         """
         pool = self.table_pool
         if pool is None or not pool.has_room():
-            if pool is not None and pool.flat_limit is not None:
-                pool.past_window += 1  # (for_flat's last resort: BlockPool.replan) it stays inline
             return False
         if self.offset_guard is not None:
             unsafe = self.offset_guard.may_move(self.curr_address)
@@ -415,17 +413,16 @@ class PreprocessorData:
         assert self._deferred is not None
         group = '' if group is None else group  # (cheapest-first: an ungrouped table leaves the stream too)
         site = pool.kept_site(labels_prefix)
-        table_bits = table_ops * 2 * self.memory_width
         if verdict == DEFER_OUT and pool.flat_limit is not None:
-            so_far = max(self._code_end, self.curr_address) + pool.deferred_bits
-            if table in pool.keep_inline or so_far + table_bits > pool.flat_limit:
-                # the code and the tables so far leave it no room below the maximum (or, BlockPool.replan, an
-                # earlier expansion found none)
-                verdict = DEFER_PAST_WINDOW
+            # room for it below the maximum, counted at its most: a power-of-two slot in a block of at most twice
+            # its tables. (The code after it is not known yet: a table that code pushes past the maximum goes there.)
+            room = 2 * (1 << (max(table_ops, ops_alignment) - 1).bit_length()) * 2 * self.memory_width
+            if max(self._code_end, self.curr_address) + pool.deferred_bits + room > pool.flat_limit:
+                verdict = DEFER_PAST_WINDOW  # the code and the tables so far leave it no room below the maximum
                 pool.past_window += 1
                 pool.deferred -= 1
             else:
-                pool.deferred_bits += table_bits
+                pool.deferred_bits += room
         if verdict != DEFER_OUT:
             self._deferred.add(group, group_expr, ops_alignment, table_ops, site, None, verdict)
             return False  # aligned and emitted in place, exactly as a placing pass declines it
@@ -457,8 +454,6 @@ class PreprocessorData:
                 continue  # it stayed inline: its labels are in place already
             if guard is not None:
                 guard.table_placed(address, address + tables.sizes[index] * op_bits, guard.moved_tables[moved])
-                if pool.flat_limit is not None and address + tables.sizes[index] * op_bits > pool.flat_limit:
-                    pool.past_names.append(guard.moved_tables[moved])  # past the window (see BlockPool.replan)
                 moved += 1
             for label, offset in tables.labels_of(index):
                 self.labels[label] = address + offset

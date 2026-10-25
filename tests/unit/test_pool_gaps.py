@@ -16,8 +16,9 @@ from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
 from flipjump.assembler import assembler, table_pool as table_pool_module
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.relocation_proof import prove_relocation
+from flipjump.assembler import preprocessor
 from flipjump.assembler.preprocessor import PreprocessorData
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard, TablePool
+from flipjump.assembler.table_pool import BlockPool, OffsetGuard, PoolHasNoRoom, TablePool
 from flipjump.utils.functions import get_file_tuples
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
@@ -607,8 +608,11 @@ def test_a_tight_flat_window_moves_some_tables_and_keeps_the_rest_inline(tmp_pat
     for words in range(plain_span, plain_span + 200, 16):
         pool, pooled, span = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W, flat_max_words=words)
         moved = pool.allocated + pool.overflowed
-        assert pooled == plain and moved + pool.past_window >= every and pool.end <= words * W
-        assert span <= words or not moved  # the whole program, wflip areas included, inside the window
+        assert pooled == plain and moved + pool.past_window >= every
+        # the pool, wflip areas included, ends inside the window - or where the code after its tables left them no
+        # room, past it (one pass cannot take a table back), and says so
+        past = 'past the flat maximum' in pool.base_reason
+        assert (pool.end <= words * W or past) and (span <= words or not moved or past)
         if 0 < moved < every:
             partial.append(words)
     assert partial
@@ -685,16 +689,16 @@ def test_a_flat_pool_that_places_no_table_is_no_pool(tmp_path: Path) -> None:
     assert (tmp_path / 'pooled.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()
 
 
-def test_without_the_wflip_bound_the_wflip_areas_end_past_the_window(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # the control of the bound: the wflip areas go after the pool, and only their bound keeps them inside the window
-    # (resolve_macros_with_pool keeps every table inline where they might not fit)
-    monkeypatch.setattr(assembler, '_wflip_ops_bound', lambda stream, labels, table_pool: 0)
-    _, plain_span = _plain(tmp_path, _TABLES_AROUND_THE_BULK, W)
-    past = []
-    for words in range(plain_span, plain_span + 200, 16):
-        pool, _, span = _flat(tmp_path, _TABLES_AROUND_THE_BULK, W, flat_max_words=words)
-        if pool.allocated + pool.overflowed and span > words:
-            past.append(words)
-    assert past
+def test_a_program_that_leaves_its_tables_no_room_is_assembled_without_the_pool(tmp_path: Path) -> None:
+    # prime_sieve's code comes first, its tables leave the stream, and then a reserve fills the upper half of the
+    # memory: no room for them anywhere. assemble() assembles the program without the pool - byte for byte the plain
+    # one. The control: the expansion itself refuses it
+    source = [PROGRAMS_DIR / 'prime_sieve.fj']
+    assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
+    pool = BlockPool.for_flat(64)
+    assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
+    assert pool.allocated == 0 and pool.past_window and pool.base_reason.startswith('none (')
+    assert (tmp_path / 'pooled.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()
+    macros = parse_macro_tree(get_file_tuples([str(source[0])], no_stl=False), 64, True)
+    with pytest.raises(PoolHasNoRoom, match='tables left the stream, and none: the memory has no room above'):
+        preprocessor.resolve_macros(64, macros, table_pool=BlockPool.for_flat(64))

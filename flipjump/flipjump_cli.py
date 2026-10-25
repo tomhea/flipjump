@@ -420,7 +420,9 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         "above its end, or, where the pool would not fit below the flat window there, at its end rounded up to its "
         "largest block) and ends below the flat window - --flat-max-words, else the automatic-flat threshold "
         "(2^24 words) - so a program that runs flat without the pool runs flat with it; a table with no room below "
-        "it stays inline. it costs a segment per moved table. with it, `__relocatable__` is a reserved namespace, "
+        "it when it leaves the code stays inline (tables the code after them leaves no room run past it, and a "
+        "program that leaves them none in the memory is assembled without the pool). it costs a segment per moved "
+        "table. with it, `__relocatable__` is a reserved namespace, "
         "and a relocatable that uses `$`, declares a label outside its ops, leaves itself through its own label, "
         "holds more than labels and `a;b` ops, or has no power-of-two `pad` right before its call is an error",
     )

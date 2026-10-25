@@ -264,6 +264,11 @@ class DeferredTables:
             yield self.label_names[at], self.label_offsets[at]
 
 
+class PoolHasNoRoom(FlipJumpPreprocessorException):
+    """(BlockPool.for_flat) the code after the tables that left the stream leaves them no room in the memory:
+    assemble() then assembles the program without the pool"""
+
+
 def reached_the_pool(address: int, pool_start: int) -> FlipJumpPreprocessorException:
     """the refusal of a program whose own code or data reaches the pool, at `address`"""
     return FlipJumpPreprocessorException(
@@ -675,9 +680,6 @@ class TablePool:
         self.past_window = 0
         self.base_reason = ''
         self.deferred_bits = 0  # (one pass) the ops of the tables that left the stream, in bits
-        self.keep_inline: Set[str] = set()  # (BlockPool.replan) the tables (start labels) that stay inline
-        self.past_names: List[str] = []  # (one pass) the moved tables placed past flat_limit, by start label
-        self._flat_args: Tuple[Optional[int], Dict[str, Any]] = (None, {})
         self.end = 0  # the end of the last table placed (the pool's end)
         self._offsets = self._cheapest_offsets()
         self._cursor = 0  # bit address of the next free spot inside the current run
@@ -1110,32 +1112,14 @@ class BlockPool(TablePool):
         offset's bits; or, where the blocks would not end below the maximum there, the program's end rounded up to
         the largest block (compact: a few more bits per address); `base_reason` says which, and why. The wflip
         areas (the assembler's chains, which no program can name) go right after the pool (wflips_at). A table the
-        program and the tables before it leave no room for below the maximum stays inline (past_window); where the
-        tables that left the stream still do not fit, the pool runs past the maximum, and they are counted too.
-        `kwargs` go to the constructor."""
+        program and the tables before it leave no room for below the maximum, counted at its most, stays inline
+        (past_window). One pass cannot take a table back: where the code after it leaves the tables that left the
+        stream no room below the maximum, the pool runs past it (counted too, and said in `base_reason`) - the
+        program runs the same, partly outside the flat window. `kwargs` go to the constructor."""
         pool = cls(memory_width, 1 << memory_width, one_pass=True, **kwargs)
         pool.flat_limit = flat_limit(memory_width, flat_max_words)
         pool.auto_base = True
-        pool._flat_args = (flat_max_words, kwargs)
         return pool
-
-    def replan(self, attempt: int, every: bool = False) -> bool:
-        """for_flat, after an expansion that placed tables past the flat maximum (past_names: one pass cannot take
-        back a table it moved, and the code after it left it no room): lay out afresh, keeping those tables inline
-        (keep_inline) - from the 4th attempt on, or with `every` (the wflip areas after the pool might not fit:
-        assembler.resolve_macros_with_pool), every table. False when there is nothing to replan: assemble() expands
-        the program again while this is True."""
-        if not self.past_names and not every:
-            return False
-        keep = self.keep_inline.union(self.past_names)
-        flat_max_words, kwargs = self._flat_args
-        fresh = type(self).for_flat(self.memory_width, flat_max_words, **kwargs)
-        self.__dict__.clear()
-        self.__dict__.update(fresh.__dict__)
-        self.keep_inline = keep
-        if attempt >= 3 or every:
-            self.capacity = 0  # every table stays inline: the program without the pool
-        return True
 
     def _flat_base(self, end: int, tables: DeferredTables, cheapest: bool) -> bool:
         """for_flat: base the pool above the program, which ends at `end` (see for_flat), within flat_limit. False
@@ -1174,18 +1158,10 @@ class BlockPool(TablePool):
         self.base_reason = f'none: the memory has no room above the program (which ends at {hex(end)})'
         return False
 
-    def _park(self, tables: DeferredTables) -> Sequence[int]:
-        """for_flat with no room above the program: every table that left the stream gets an address past the flat
-        maximum, which no assembly uses - each is counted, and replan keeps it inline in the next expansion"""
-        assert self.flat_limit is not None
-        addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
-        cursor = self.flat_limit
-        for index in range(len(tables)):
-            if index not in tables.inline:
-                align = tables.aligns[index] * self.op_bits
-                addresses[index] = cursor = -(-cursor // align) * align
-                cursor += tables.sizes[index] * self.op_bits
-        return addresses
+    def _no_room(self, tables: DeferredTables) -> NoReturn:
+        """for_flat with no room above the program in the memory at all, for the tables that left the stream"""
+        self.past_window += len(tables) - len(tables.inline)
+        raise PoolHasNoRoom(f'table-placement: {self.past_window} tables left the stream, and {self.base_reason}')
 
     def _past_the_window(self, tables: DeferredTables, addresses: Sequence[int]) -> Sequence[int]:
         """the pool's end (`end`), and for_flat, the tables placed past flat_limit (counted in past_window)"""
@@ -1733,10 +1709,10 @@ class BlockPool(TablePool):
             self._resolve_heat(self._heat)
         elif self.reads_words_raw and self.pin_exclude is None:
             if self.auto_base and not self._flat_base(end, tables, cheapest=True):
-                return self._past_the_window(tables, self._park(tables))
+                self._no_room(tables)
             return self._past_the_window(tables, self._place_cheapest(tables))
         if self.auto_base and not self._flat_base(end, tables, cheapest=False):
-            return self._past_the_window(tables, self._park(tables))
+            self._no_room(tables)
         if self.sizes_from_census and self.overflow_base is None:
             try:
                 self.unblocked = self._choose_unblocked(tables)

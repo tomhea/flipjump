@@ -156,8 +156,10 @@ table), the table stays where it is, or - if the operand comes too late for that
 reason. The tables move right above the program - to the first power of two above its end, or, where the pool would
 not fit below the flat window there, to its end rounded up to the pool's largest block - and the pool ends below that
 window: `--flat-max-words`, else the automatic-flat threshold (2^24 words), so a program that runs flat without the
-pool runs flat with it. A table with no room below the window stays inline. With it, `__relocatable__` is a reserved
-namespace: a macro whose innermost namespace has that name is a table the pool may move.
+pool runs flat with it. A table with no room below the window when it leaves the code stays inline; tables the code
+after them leaves no room run past the window (the program runs the same, partly outside the flat array), and a
+program that leaves them no room in the memory at all is assembled without the pool. With it, `__relocatable__` is a
+reserved namespace: a macro whose innermost namespace has that name is a table the pool may move.
 
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>

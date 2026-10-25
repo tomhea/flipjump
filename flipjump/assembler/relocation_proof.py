@@ -32,7 +32,7 @@ from array import array
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
 
-from flipjump.assembler.assembler import labels_resolve, resolve_macros_with_pool, resolve_pinned, unpin
+from flipjump.assembler.assembler import labels_resolve, resolve_pinned, unpin
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum
@@ -141,8 +141,8 @@ def prove_relocation(
     plain_stream, plain_labels = resolve_macros(
         memory_width, macros, save_debug_labels=False, fold_labels=False, relocatable_extents=extents, pads=plain_pads
     )
-    pooled_stream, pooled_labels = resolve_macros_with_pool(
-        memory_width, macros, table_pool, save_debug_labels=False, fold_labels=False
+    pooled_stream, pooled_labels = resolve_macros(
+        memory_width, macros, table_pool=table_pool, save_debug_labels=False, fold_labels=False
     )
     pool_start = table_pool.pool_start()
     mismatches: List[str] = []
