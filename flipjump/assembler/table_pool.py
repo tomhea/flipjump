@@ -1697,13 +1697,16 @@ class BlockPool(TablePool):
         A table with no group cannot be blocked and stays inline, as in the two-pass mode. One wider
         than any slot max_slot_ops allows stays inline too but is queued, so place_deferred declines it
         in its turn (pin protection counts a hot group's tables in that order) - whatever the counts,
-        exactly as a placing pass declines it at its pad.
+        exactly as a placing pass declines it at its pad. Once the program reads words raw (and no
+        pin_exclude says which), every table is placed cheapest-first (_place_cheapest), in no block: then
+        neither a group nor a slot is needed, and both kinds leave the stream too (an ungrouped one with group '').
         """
         self.recording.reserve(ops_alignment, table_ops, group, group_expr, labels_prefix)
-        if group is None:
+        cheapest = self.reads_words_raw and self.pin_exclude is None and not self._heat
+        if group is None and not cheapest:
             self.ungrouped += 1
             return DEFER_INLINE
-        if self._width_cause(max(table_ops, ops_alignment, 1)) == 'too_wide':
+        if not cheapest and self._width_cause(max(table_ops, ops_alignment, 1)) == 'too_wide':
             return DEFER_TOO_WIDE
         self.deferred += 1
         return DEFER_OUT
@@ -1791,7 +1794,8 @@ class BlockPool(TablePool):
                 if inline_cause != DEFER_PAST_WINDOW:
                     self._decline(group, 'too_wide')
                 continue
-            groups.add(group)
+            if group:
+                groups.add(group)
             reserved = TablePool.reserve(self, ops_alignment, table_ops)
             if reserved is None:
                 overflow.append((index, ops_alignment, table_ops))

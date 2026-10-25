@@ -414,7 +414,8 @@ class PreprocessorData:
         verdict = pool.defer(ops_alignment, table_ops, group, group_expr, labels_prefix)
         if verdict == DEFER_INLINE:
             return False
-        assert group is not None and self._deferred is not None  # defer() keeps an ungrouped table inline
+        assert self._deferred is not None
+        group = '' if group is None else group  # (cheapest-first: an ungrouped table leaves the stream too)
         site = pool.kept_site(labels_prefix)
         table_bits = table_ops * 2 * self.memory_width
         if verdict == DEFER_OUT and pool.flat_limit is not None:

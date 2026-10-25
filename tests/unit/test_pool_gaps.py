@@ -465,9 +465,9 @@ def test_a_wflip_area_past_the_memory_says_so(tmp_path: Path) -> None:
         assemble([source], tmp_path / 'a.fjm', memory_width=16, print_time=False)
 
 
-def _ops(fjm: Path) -> Tuple[bytes, int]:
+def _ops(fjm: Path, stdin: bytes = b'') -> Tuple[bytes, int]:
     """(the output, the ops run) of a program that halts"""
-    io_device = FixedIO(b'')
+    io_device = FixedIO(stdin)
     statistics = fjm_run.run(fjm, io_device=io_device, print_time=False)
     return io_device.get_output(), statistics.op_counter
 
@@ -482,15 +482,45 @@ def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: P
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
     assert pool.reads_words_raw and pool.allocated and pool.pinned_words() == {}
-    assert pool.unpins == {'the pointer runtime': 58}
+    assert pool.unpins == {'the pointer runtime': 137}
     assert pooled[0] == plain[0] and pooled[1] < plain[1]
     # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run more ops than
-    # cheapest-first (since stl-additions' pointer ops, still fewer than plain: 15137 plain, 14863 blocked, 14163)
+    # cheapest-first (since stl-additions' pointer ops, still fewer than plain: 15137 plain, 14863 blocked, 11265)
     blocked_pool = BlockPool.for_flat(64)
     blocked_pool.pin_exclude = lambda address, labels: True
     assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
     blocked = _ops(tmp_path / 'blocked.fjm')
     assert blocked_pool.pinned_words() and blocked[0] == plain[0] and blocked[1] > pooled[1]
+
+
+def test_a_raw_program_moves_its_ungrouped_and_wide_tables_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # placed cheapest-first, a table needs neither a group (a word to pin) nor a slot: once the program reads words
+    # raw, those leave the stream too. count_down_recursive_no_print (after stl-additions): 18701 ops plain, 14591
+    # with the pool. The control: kept inline as before, it ran 18885 - more than plain
+    program = PROGRAMS_DIR / 'catalog' / 'recursion' / 'count_down_recursive_no_print.fj'
+    stdin = (
+        PROGRAMS_DIR.parent / 'tests' / 'inout' / 'catalog' / 'recursion' / 'count_down_recursive_no_print.in'
+    ).read_bytes()
+    assemble([program], tmp_path / 'plain.fjm', memory_width=64, print_time=False)
+    plain = _ops(tmp_path / 'plain.fjm', stdin)
+    pooled = {}
+    for kept_inline in (False, True):
+        if kept_inline:
+            real_defer = BlockPool.defer
+
+            def defer(self: BlockPool, *args: Any) -> str:  # as before: a pin_exclude makes it no cheapest-first table
+                exclude, self.pin_exclude = self.pin_exclude, lambda address, labels: True
+                try:
+                    return real_defer(self, *args)
+                finally:
+                    self.pin_exclude = exclude
+
+            monkeypatch.setattr(BlockPool, 'defer', defer)
+        pool = BlockPool.for_flat(64)
+        assemble([program], tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
+        pooled[kept_inline] = (pool.allocated, _ops(tmp_path / 'pooled.fjm', stdin))
+    assert pooled[False][1][0] == pooled[True][1][0] == plain[0]
+    assert pooled[False][0] > pooled[True][0] and pooled[False][1][1] < plain[1] < pooled[True][1][1]
 
 
 # the flat spec: fj --pool-tables's pool (BlockPool.for_flat) sits right above the program and ends below the flat
