@@ -36,12 +36,17 @@ if TYPE_CHECKING:
 # compression give the same bytes (tests/unit/test_run_flags.py::test_chunked_compression_equals_one_shot).
 _COMPRESS_CHUNK = 1 << 20
 
-# PERF (doom-flipjump, 2026-08-20): the word array's typecode per memory-width.
+# the word array's typecode per memory-width.
 # `array` typecodes are platform-sized, so the itemsize is CHECKED at runtime before use and the
 # code falls back to struct.pack when it does not match exactly (e.g. 'L' is 8 bytes on 64-bit
 # linux). Both paths produce identical bytes; this only decides which one is taken.
 _ARRAY_TYPECODE = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
 _STRUCT_FORMAT = {8: 'B', 16: 'H', 32: 'L', 64: 'Q'}
+
+
+def _array_fits(word_size: int) -> bool:
+    """does this platform size the `word_size`-bit array typecode exactly?"""
+    return array.array(_ARRAY_TYPECODE[word_size]).itemsize * 8 == word_size
 
 
 def new_word_buffer(word_size: int) -> 'array.array[int] | List[int]':
@@ -50,21 +55,19 @@ def new_word_buffer(word_size: int) -> 'array.array[int] | List[int]':
     A typed array where the platform sizes the typecode exactly, else a plain list. Callers must
     use .extend()/.append() rather than `+=` with a tuple, which arrays do not accept.
     """
-    typecode = _ARRAY_TYPECODE[word_size]
-    return array.array(typecode) if array.array(typecode).itemsize * 8 == word_size else []
+    return array.array(_ARRAY_TYPECODE[word_size]) if _array_fits(word_size) else []
 
 
 def _pack_words_little_endian(words: 'array.array[int] | List[int]', word_size: int) -> 'bytes | memoryview':
     """Pack `words` as little-endian unsigned integers of `word_size` bits.
 
     Byte-for-byte identical to struct.pack(f'<{len(words)}{fmt}', *words), which is what this
-    replaces. MEASURED (doom-flipjump, 2026-08-20): that call unpacked an 84.8M-element list as
-    *args, which builds an 84.8M-slot argument tuple purely to serialise it.
+    replaces: struct.pack would unpack the list as *args, a tuple as large as the program.
     """
     typecode = _ARRAY_TYPECODE[word_size]
     if isinstance(words, array.array) and words.typecode == typecode:
         buffer = words
-    elif array.array(typecode).itemsize * 8 == word_size:
+    elif _array_fits(word_size):
         buffer = array.array(typecode, words)
     else:  # this platform sizes the typecode differently - take the portable path
         struct_format = _STRUCT_FORMAT[word_size]
@@ -72,8 +75,7 @@ def _pack_words_little_endian(words: 'array.array[int] | List[int]', word_size: 
     if sys.byteorder != 'little':
         buffer = buffer[:]
         buffer.byteswap()
-    # MEMORY: a view of the words' own bytes, not a copy of them (tobytes() was a second copy of the
-    # whole binary, ~340 MB for a doom level). Every consumer - lzma, file.write - takes a buffer.
+    # a view of the words' own bytes, not a copy. Every consumer - lzma, file.write - takes a buffer.
     return memoryview(buffer).cast('B')
 
 
@@ -137,16 +139,7 @@ class Writer:
         self._segment_index_by_start: Dict[int, int] = {}
         self._sorted_data_starts: List[int] = []
         self._segment_index_by_data_start: Dict[int, int] = {}
-        # PERF (doom-flipjump, 2026-08-20): a typed word array, not a list of python ints. It holds
-        # every word of the program -- 84.8M of them on the doom-flipjump build -- and as a list
-        # that is 8 bytes of pointer plus a 28-byte int object per word that is not in CPython's
-        # small-int cache. As an array it is word_size/8 bytes each, flat. Indexing still yields
-        # ints, so add_data / the v1 relative-jump patch / write_to_file are unchanged in behaviour.
-        # Falls back to a list if this platform sizes the typecode differently (see _ARRAY_TYPECODE).
-        typecode = _ARRAY_TYPECODE[memory_width]
-        self.data: 'array.array[int] | List[int]' = (
-            array.array(typecode) if array.array(typecode).itemsize * 8 == memory_width else []
-        )
+        self.data: 'array.array[int] | List[int]' = new_word_buffer(memory_width)
 
     def _compress_data(self, data: 'bytes | memoryview', progress: Optional['ProgressBar'] = None) -> bytes:
         """lzma-compress the data, in chunks (reporting a [0, 1] fraction to `progress`, if given)"""
@@ -209,11 +202,8 @@ class Writer:
         return False
 
     def _validate_segment_addresses_not_overlapping(self, new_segment_start: int, new_segment_length: int) -> None:
-        # PERF: this used to scan every previous segment, O(N^2) over a program - and the
-        # assembler's table-placement pass emits one segment per relocated table, tens of thousands
-        # of them. The intervals are disjoint by the very invariant being checked, so a sorted list
-        # admits a bisect: only the neighbours can collide. Same verdict, same message, same segment
-        # indices - `_segment_index_by_start` keeps the reported `seg[i]`.
+        # neighbours only: the stored intervals are disjoint, so only the sorted neighbours can collide.
+        # Same verdict; the message names a colliding neighbour (`_segment_index_by_start` keeps its `seg[i]`).
         new_segment_end = new_segment_start + new_segment_length - 1
         neighbours = []
         position = bisect.bisect_left(self._sorted_segment_starts, new_segment_start)
@@ -272,10 +262,6 @@ class Writer:
             self._validate_segment_data_not_overlapping(data_start, data_length)
 
     def _update_to_relative_jumps(self, segment_start: int, data_start: int, data_length: int) -> None:
-        # PERF (doom-flipjump, 2026-08-20): same arithmetic, walked instead of recomputed. This runs
-        # once per JUMP WORD in the program -- 39.3M iterations on the doom-flipjump build -- and
-        # every one of them used to redo `self.data` twice, `(segment_start + i) * self.word_size`
-        # and `data_start + i`. The subtrahend is an arithmetic progression, so it is carried.
         data = self.data
         word_size = self.word_size
         word_mask = (1 << word_size) - 1
@@ -327,8 +313,8 @@ class Writer:
     def add_data(self, data: Iterable[int], *, take: bool = False) -> int:
         """
         append the data to the current data
-        @param data: [in]: a list of words
-        @param take: the caller hands `data` over and will not touch it again. MEMORY: if no data was
+        @param data: [in]: the words
+        @param take: the caller hands `data` over and will not touch it again. If no data was
         added yet and `data` is a word array of this writer's type, it BECOMES the writer's data instead
         of being copied - the first segment is the program's main stream, most of the binary.
         @return: the data start index
