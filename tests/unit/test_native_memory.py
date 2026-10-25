@@ -473,13 +473,6 @@ def test_a_w32_program_gets_4_byte_cells() -> None:
     assert memory.cell_bytes == 4
 
 
-def test_cell64_env_var_forces_8_byte_cells(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv('FLIPJUMP_CELL64', '1')
-    memory = _looping_memory()
-    _run_to_looping(memory)
-    assert memory.cell_bytes == 8
-
-
 def test_a_w64_program_gets_8_byte_cells() -> None:
     memory = _looping_memory_w64()
     _run_to_looping(memory)
