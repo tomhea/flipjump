@@ -2,8 +2,8 @@
 
 
 ns hex {
-    //  Time Complexity: w( 0.5@+4)  + 11@+25
-    // Space Complexity: w( 0.5@+22) + 11@+112
+    //  Time Complexity: w( 0.5@+4)  + 9@+37
+    // Space Complexity: w( 0.5@+22) + 9@+128
     //   like:  *ptr = src
     // src is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_hex ptr, src < hex.pointers.read_byte {
@@ -13,8 +13,8 @@ ns hex {
         .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w( 0.5@+4) + (5+5*PTR_CELL_BITS/4)@+13 + 12(PTR_CELL_BITS/4)   (15@+37 at the default 8)
-    // Space Complexity: w( 0.5@+22) + (5+5*PTR_CELL_BITS/4)@+24 + 76(PTR_CELL_BITS/4)
+    //  Time Complexity: w( 0.5@+4) + (1+6*PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + PTR_CELL_BITS/2 + 21   (at w=64; 13@+49 at the default 8)
+    // Space Complexity: w( 0.5@+22) + (1+6*PTR_CELL_BITS/4)@ + 88(PTR_CELL_BITS/4) + 16
     //   like:  *ptr = 0
     //   Zeroes the whole NARROW cell - all PTR_CELL_BITS bits. The read dance decodes that many
     //   bits into read_byte, so the write-back must cover the same width: flipping back only the
@@ -26,8 +26,8 @@ ns hex {
         rep(.pointers.PTR_CELL_BITS/4, i) .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte+i*dw, 4*i
     }
 
-    //  Time Complexity: w( 0.5@+4)  + 17@+37
-    // Space Complexity: w( 0.5@+22) + 17@+200
+    //  Time Complexity: w( 0.5@+4)  + 15@+49
+    // Space Complexity: w( 0.5@+22) + 15@+216
     //   like:  *ptr = src[:2]
     // src is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     def write_byte ptr, src < hex.pointers.read_byte {
@@ -37,8 +37,8 @@ ns hex {
         .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+37
-    // Space Complexity: w(0.5@+22) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+24 + 88(PTR_WIDE/4)
+    //  Time Complexity: w(0.5@+4) + (1+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
+    // Space Complexity: w(0.5@+22) + (1+7*PTR_WIDE/4)@ + 100(PTR_WIDE/4) + 16
     //   like:  *ptr = src[:PTR_WIDE/4]
     //   Writes a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
     //
@@ -55,8 +55,8 @@ ns hex {
         .pointers.xor_cell_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.5@+4) + (5+5*PTR_WIDE/4)@+37
-    // Space Complexity: w(0.5@+22) + (5+5*PTR_WIDE/4)@+24 + 76(PTR_WIDE/4)
+    //  Time Complexity: w(0.5@+4) + (1+6*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
+    // Space Complexity: w(0.5@+22) + (1+6*PTR_WIDE/4)@ + 88(PTR_WIDE/4) + 16
     //   like:  *ptr = 0     for a whole cell, all PTR_WIDE bits of it.
     //
     // @note: on a WIDE cell only this macro may zero; hex.zero_ptr is the NARROW one and must
@@ -79,8 +79,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: w( 0.5@+4)  + 20@+39
-    // Space Complexity: w(0.88@+25) + 16@+167
+    //  Time Complexity: w( 0.5@+4)  + 16@+66
+    // Space Complexity: w(0.88@+25) + 12@+183
     //   like:  *ptr = src
     //          ptr++
     // src is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -89,17 +89,20 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity:  n(w( 0.5@+4)  + 20@+39)
-    // Space Complexity:  n(w(0.88@+25) + 16@+167)
+    //  Time Complexity:  n(10@+38) + w(0.5@+4)
+    // Space Complexity:  n((w-#w)(@+18) + 8@+110)
     //   like:  *ptr[:n] = src[:n]
     // src is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.write_cells).
+    // @Assumes: n >= 1 (n < 1 is refused at assemble time), and src does not overlap ptr.
     def write_hex n, ptr, src {
-        rep(n, i) .write_hex_and_inc ptr, src + i*dw
-        .ptr_sub ptr, n
+        rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
+        .pointers.set_flip_and_jump_pointers ptr
+        .pointers.write_cells n, 1, src
     }
 
-    //  Time Complexity: w( 0.5@+4)  + 26@+51
-    // Space Complexity: w(0.88@+25) + 22@+255
+    //  Time Complexity: w( 0.5@+4)  + 22@+78
+    // Space Complexity: w(0.88@+25) + 18@+271
     //   like:  *ptr = src[:2]
     //          ptr++
     // src is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
@@ -108,17 +111,20 @@ ns hex {
         .ptr_inc ptr
     }
 
-    //  Time Complexity: n(w( 0.5@+4)  + 26@+51)
-    // Space Complexity: n(w(0.88@+25) + 22@+255)
+    //  Time Complexity: n(17@+50)
+    // Space Complexity: n((w-#w)(@+18) + 15@+210)
     //   like:  *ptr[:n] = src[:2n]
     // src is a hex[:2n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.write_cells).
+    // @Assumes: n >= 1 (n < 1 is refused at assemble time), and src does not overlap ptr.
     def write_byte n, ptr, src {
-        rep(n, i) .write_byte_and_inc ptr, src + i*2*dw
-        .ptr_sub ptr, n
+        rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
+        .pointers.set_flip_and_jump_pointers ptr
+        .pointers.write_cells n, 2, src
     }
 
-    //  Time Complexity: w(0.88@+7) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+51
-    // Space Complexity: w(1.26@+25) + (5+PTR_WIDE/4+5*PTR_WIDE/4)@+24 + 88(PTR_WIDE/4) + 55
+    //  Time Complexity: w(0.5@+4) + (8+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 50   (at w=64)
+    // Space Complexity: w(0.88@+25) + (4+7*PTR_WIDE/4)@ + 100(PTR_WIDE/4) + 71
     //   like:  *ptr = src[:PTR_WIDE/4]
     //          ptr++
     //   The pair-walking form of write_cell; its read twin is read_cell_and_inc.
@@ -133,8 +139,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity:  w(2.75@+9.25) + 11@+25
-    // Space Complexity:  w(2.75@+62)    + 11@+112
+    //  Time Complexity:  w(2.5@+9.75) + 12@+51
+    // Space Complexity:  w(2.5@+62.5) + 12@+154
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   *(ptr + index*2w) = src   — write src into the index-th hex past *ptr.
     // src is a hex; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index,src preserved.
@@ -144,8 +150,8 @@ ns hex {
         .write_hex hex.pointers.nth_ptr, src
     }
 
-    //  Time Complexity:  w(2.75@+9.25) + 17@+37
-    // Space Complexity:  w(2.75@+62)    + 17@+200
+    //  Time Complexity:  w(2.5@+9.75) + 18@+63
+    // Space Complexity:  w(2.5@+62.5) + 18@+242
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   *(ptr + index*2w)[:2] = src[:2]   — write the index-th byte past *ptr.
     // src is a hex[:2]; ptr is a hex[:w/4]; index is a signed hex[:w/4] (may be negative). ptr,index,src preserved.
@@ -153,5 +159,71 @@ ns hex {
     def write_nth_byte ptr, index, src < hex.pointers.nth_ptr {
         .ptr_index hex.pointers.nth_ptr, ptr, index
         .write_byte hex.pointers.nth_ptr, src
+    }
+}
+
+
+// ---------- Write Back
+
+
+ns hex {
+    //  Time Complexity: 15@+49
+    // Space Complexity: 15@+216
+    //   *armed = src[:2]    (hex.write_byte without its arm)
+    // The same armed address, and @Assumes, as hex.read_back.
+    // src is a hex[:2].
+    def write_back src < hex.pointers.read_byte {
+        .pointers.read_byte_from_inners_ptrs
+        .xor 2, hex.pointers.read_byte, src
+        .pointers.xor_byte_to_flip_ptr hex.pointers.read_byte
+    }
+}
+
+
+// ---------- The n-Cell Write
+
+
+ns hex {
+    ns pointers {
+        //  Time Complexity: n((7h+3)@ + 12h+26)
+        // Space Complexity: n((w-#w)(@+18) + (7h+1)@ + 100h+10)
+        //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
+        //   does:       *(ptr+i*2w) = src[i*h:(i+1)*h]      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
+        //
+        // .ret_after_read_byte is set once for the n read dances (each still sets and clears to_flip+w, which
+        //   xor_hex_to_flip_ptr uses too), and the armed fields advance by 2w between the cells instead of being re-armed.
+        // src is a hex[:n*h]; h (1 or 2) is the hexes written to each cell.
+        def write_cells n, h, src < .ret_after_read_byte, .to_flip {
+            wflip .ret_after_read_byte+w, .to_flip
+            .write_cell h, src
+            rep(n-1, i) .advance_and_write_cell h, src+(i+1)*h*dw
+            wflip .ret_after_read_byte+w, .to_flip
+        }
+
+        //  Time Complexity: (7h+3)@ + 12h+26
+        // Space Complexity: (w-#w)(@+18) + (7h+1)@ + 100h+10
+        //  the armed fields += 2w;  then write_cell h, src.
+        def advance_and_write_cell h, src {
+            .advance
+            .write_cell h, src
+        }
+
+        //  Time Complexity: (7h+1)@ + 12h+20
+        // Space Complexity: (7h+1)@ + 100h+10
+        //   *armed[:h] = src[:h]     (like write_hex / write_byte without the arm, and with .ret_after_read_byte set)
+        // @Assumes: .ret_after_read_byte holds to_flip (see write_cells).
+        def write_cell h, src @ read, cleanup < .read_byte, .to_flip, .to_jump {
+            ..zero h, .read_byte
+            wflip .to_flip, dbit+.PTR_CELL_BITS
+            wflip .to_flip+w, read, .to_flip
+            pad 4
+          read:
+            wflip .to_flip+w, read ^ cleanup, .to_jump
+          cleanup:
+            wflip .to_flip, dbit+.PTR_CELL_BITS
+            wflip .to_flip+w, cleanup
+            ..xor h, .read_byte, src
+            rep(h, i) .xor_hex_to_flip_ptr .read_byte+i*dw, 4*i
+        }
     }
 }

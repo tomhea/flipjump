@@ -80,5 +80,80 @@ ns hex {
             wflip .ret+w ,return
             ..xor_zero dst, .res
         }
+
+        //  Time Complexity: n(3@+6)       (plus the table's own time per hex; 4@+4 for n == 1)
+        // Space Complexity: n(3@+54)      (4@+52 for n == 1)
+        //   for i in range(n):
+        //     jump_to_table_entry dst[i], src[i], jumper_to_table
+        //
+        // dst,src are hex[:n], and jumper_to_table is an address.
+        // @requires hex.tables.init_shared (or hex.init)
+        def jump_to_table_entries n, dst, src, jumper_to_table {
+            rep(n == 1, i) .jump_to_table_entry dst, src, jumper_to_table
+            rep(n >= 2, i) .chain n, dst, src, jumper_to_table
+        }
+
+        //  Time Complexity: n(3@+6)       (plus the table's own time per hex)
+        // Space Complexity: n(3@+54)
+        //   for i in range(n):
+        //     jump_to_table_entry dst[i], src[i], jumper_to_table
+        //
+        // A chain of n table jumps: .ret is set once, moved from each return label to the next with one
+        //   wflip (see chained_jump), and cleared once.
+        // @Assumes: n >= 2.
+        // dst,src are hex[:n], and jumper_to_table is an address.
+        // @requires hex.tables.init_shared (or hex.init)
+        def chain n, dst, src, jumper_to_table @ return < .ret, .res {
+            .chained_jump_to_table_entry dst, src, jumper_to_table, 0
+            rep(n-1, i) .chain_step dst+i*dw, dst+(i+1)*dw, src+(i+1)*dw, jumper_to_table
+          return:
+            wflip .ret+w, return
+            ..xor_zero dst+(n-1)*dw, .res
+        }
+
+        //  Time Complexity: 2      (avg. 2.3: #(prev_return ^ return), see the stl README; @/2-2 when prev_return is 0)
+        // Space Complexity: 2      (@/2-2 when prev_return is 0)
+        //   .ret = this macro's end (it was prev_return), and jump to jumper_to_table.
+        //   The table returns to this macro's end, which is 16-padded: in a chain of identical steps the ends
+        //   are a fixed (power of 2) stride apart, so moving .ret from one end to the next flips 1-2 bits.
+        //
+        // @Assumes: .ret holds prev_return (0 if it's clear). From a chain's first chained_jump until the
+        //   chain clears .ret, it holds the chain's last return label - so no other .ret user (any hex table
+        //   operation) may run inside the chain.
+        // jumper_to_table is an address (see jump_to_table_entry); prev_return is an address, or 0.
+        // @requires hex.tables.init_shared (or hex.init)
+        def chained_jump jumper_to_table, prev_return @ return < .ret {
+            wflip .ret+w, prev_return ^ return, jumper_to_table
+            pad 16
+          return:
+        }
+
+        //  Time Complexity: 2@+2
+        // Space Complexity: 2@+26
+        //   The chained form of jump_to_table_entry: jumps to the table at entry (src<<4 | dst),
+        //   and returns to this macro's end, with the result in .res (not yet xored into dst).
+        // @Assumes: .ret holds prev_return (see chained_jump).
+        //
+        // both dst,src are hexes, and jumper_to_table is an address.
+        // @requires hex.tables.init_shared (or hex.init)
+        def chained_jump_to_table_entry dst, src, jumper_to_table, prev_return {
+            ..xor jumper_to_table  , dst
+            ..xor jumper_to_table+4, src
+            .chained_jump jumper_to_table, prev_return
+        }
+
+        //  Time Complexity: 3@+6
+        // Space Complexity: 3@+54
+        //   prev_dst ^= .res;  .res = 0
+        //   then chained_jump_to_table_entry dst, src, jumper_to_table (chained to the previous step's end).
+        // @Assumes: the previous step's end is this macro's start (see chained_jump).
+        //
+        // prev_dst,dst,src are hexes, and jumper_to_table is an address.
+        // @requires hex.tables.init_shared (or hex.init)
+        def chain_step prev_dst, dst, src, jumper_to_table @ start < .res {
+          start:
+            ..xor_zero prev_dst, .res
+            .chained_jump_to_table_entry dst, src, jumper_to_table, start
+        }
     }
 }

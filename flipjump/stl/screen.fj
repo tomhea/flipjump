@@ -1,0 +1,120 @@
+// ---------- The Screen Device
+
+
+// The screen device's commands (flipjump/interpreter/io_devices/README.md is the spec): every command is an
+//   opcode byte, then its fields packed lsb-first at exactly their width in bits, then zero bits up to the next
+//   byte. These macros output the commands with constant operands. A run-time field (a column record of
+//   draw_collines, say) is the program's own output, between the macros.
+ns screen {
+    // Complexity: n
+    //   outputs the n low bits of value, lsb first (a packed field of a command).
+    // n, value are constants.
+    def output_bits n, value {
+        rep(n, i) stl.output_bit (value>>i)&1
+    }
+
+    // Complexity: 48
+    //   init_screen: [0x01] [width:16] [height:16] [format:8]
+    // The screen shows black at once; every palette slot holds the format's default, and slot 0 is selected.
+    // width, height (1..65534 / 1..65531) and format (bits per colour: 1-16 indexed, 24 RGB) are constants.
+    def init_screen width, height, format {
+        stl.output_char 0x01
+        .output_bits 16, width
+        .output_bits 16, height
+        stl.output_char format
+    }
+
+    // Complexity: 24(last-first+1)  (+ the padding to the byte)
+    //   define_palette: [0x02] [slot:8] [first:B] [last:B]  then (last-first+1) x [R:8] [G:8] [B:8]
+    // rgb is a constant: entry first+i is its bytes 3i, 3i+1, 3i+2 (R, G, B; R the least-significant).
+    // format is init_screen's (B = format bits per colour; indexed formats only); slot, first, last are constants.
+    def define_palette format, slot, first, last, rgb {
+        stl.output_char 0x02
+        stl.output_char slot
+        .output_bits format, first
+        .output_bits format, last
+        rep(3*(last-first+1), i) stl.output_char (rgb>>(8*i))&0xff
+        .output_bits (8-(2*format)%8)%8, 0
+    }
+
+    // Complexity: 16
+    //   select_palette: [0x06] [slot:8]     (the palette present shows the picture through)
+    // slot is a constant.
+    def select_palette slot {
+        stl.output_char 0x06
+        stl.output_char slot
+    }
+
+    // Complexity: 24
+    //   builtin_palette: [0x07] [slot:8] [id:8]     (id: 0 black/white, 1 grey ramp, 2 EGA-16, 3 xterm-256, 4 RGB cube)
+    // slot, id are constants.
+    def builtin_palette slot, id {
+        stl.output_char 0x07
+        stl.output_char slot
+        stl.output_char id
+    }
+
+    // Complexity: 16
+    //   set_max_fps: [0x03] [fps:8]     (0 = no cap)
+    // fps is a constant.
+    def set_max_fps fps {
+        stl.output_char 0x03
+        stl.output_char fps
+    }
+
+    // Complexity: 8(string_length+2)
+    //   set_window_title: [0x04] <utf-8 bytes> [0x00]
+    // text is a constant string (least-significant byte first, as stl.output outputs it).
+    def set_window_title text {
+        stl.output_char 0x04
+        stl.output text
+        stl.output_char 0x00
+    }
+
+    // Complexity: 24
+    //   set_window_icon: [0x05] [width:8] [height:8]  - the header only.
+    // The width*height colours (B bits each, through the palette selected now) must follow it, then zero bits to
+    //   the byte; they're the program's own output.
+    // width, height (1..255) are constants.
+    def set_window_icon_header width, height {
+        stl.output_char 0x05
+        stl.output_char width
+        stl.output_char height
+    }
+
+    // Complexity: 8
+    //   draw_raw: [0x10]     (the header only: the width*height colours, B bits each, row-major, then zero bits to the
+    //   byte, are the program's own output)
+    def draw_raw {
+        stl.output_char 0x10
+    }
+
+    // Complexity: 8
+    //   draw_collines: [0x11]     (the column records follow, then END_CMD - see end_frame)
+    def draw_collines {
+        stl.output_char 0x11
+    }
+
+    // Complexity: C + (zero bits to the byte) + 8
+    //   end_frame: END_CMD (the column field's top value: C one-bits), zero bits to the byte, then present (0x1F).
+    // C = the column field's width: the smallest of 4, 8, 12, 16 with width < 2^C - 1.
+    // width is init_screen's; used_bits is how many bits of the current output byte the column records already
+    //   wrote (0-7: 0 when they end on a byte boundary). Both are constants.
+    def end_frame width, used_bits {
+        .end_command (width < 15) ? 4 : (width < 255) ? 8 : (width < 4095) ? 12 : 16, used_bits
+        .present
+    }
+
+    // Complexity: c + (zero bits to the byte)
+    //   END_CMD (c one-bits), then zero bits to the byte. c, used_bits are constants (see end_frame).
+    def end_command c, used_bits {
+        .output_bits c, (1<<c)-1
+        .output_bits (8-(used_bits+c)%8)%8, 0
+    }
+
+    // Complexity: 8
+    //   present: [0x1F]     (shows the picture through the selected palette; counts as a frame)
+    def present {
+        stl.output_char 0x1F
+    }
+}

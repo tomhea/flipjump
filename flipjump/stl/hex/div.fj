@@ -1,6 +1,6 @@
 ns hex {
-    //  Time Complexity: n^2(2@+8) + n*nb(34@+92)   so if nb==n:  n^2(36@+100)
-    // Space Complexity: n(4@+81)  + nb(16@+243)    so if nb==n:  n(20@+324)
+    //  Time Complexity: n^2(2@+8) + n*nb(30@+100)   so if nb==n:  n^2(32@+108)
+    // Space Complexity: n(4@+81)  + nb(15@+245)    so if nb==n:  n(19@+326)
     //   if b==0: goto div0
     //   q = a/b  (unsigned division)
     //   r = a%b  (unsigned modulo)
@@ -69,8 +69,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n^2(2@+8) + n*nb(34@+92)   so if nb==n:  n^2(36@+100)
-    // Space Complexity: n(8.5@+132)  + nb(21.5@+309)    so if nb==n:  n(30@+441)
+    //  Time Complexity: n^2(2@+8) + n*nb(30@+100)   so if nb==n:  n^2(32@+108)
+    // Space Complexity: n(11.5@+158)  + nb(26.5@+419)    so if nb==n:  n(38@+577)
     //   if b==0: goto div0
     //   q = a/b  (signed division)
     //   r = a%b  (signed modulo - signed according to rem_opt:)
@@ -146,6 +146,37 @@ ns hex {
         bit.bit
       one_negative:
         bit.bit
+      end:
+    }
+}
+
+
+
+// ---------- Fixed-Point Division
+
+
+ns hex {
+    //  Time Complexity: n^2(68@+232)    (hex.idiv's at (2n, n): every compare full and every subtract taken, as its line counts)
+    // Space Complexity: n(54.5@+799)
+    //   if b==0: goto div0
+    //   dst[:n] = (a[:n] << 4f) / b[:n]    (signed fixed-point divide, truncated toward zero)
+    //
+    // a,b,dst are signed Q-format hex[:n] with f fraction-hexes (dst may alias a/b). div0 is an address.
+    // The dividend is shifted at full 2n-hex width (hex-aligned - no runtime shift).
+    //   The quotient is truncated to n hexes (wraps modulo 2^4n).
+    // @Assumes: 0 < f <= n.
+    // @requires hex.sub.init & hex.cmp.init (or hex.init)
+    def fixed_div n, f, dst, a, b, div0 @ wide_a, quotient, remainder, end {
+        .zero f, wide_a
+        .mov n, wide_a+f*dw, a
+        .sign_extend 2*n, n+f, wide_a
+        .idiv 2*n, n, quotient, remainder, wide_a, b, div0, 1
+        .mov n, dst, quotient
+        ;end
+
+      wide_a: .vec 2*n
+      quotient: .vec 2*n
+      remainder: .vec n
       end:
     }
 }
