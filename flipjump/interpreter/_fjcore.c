@@ -789,6 +789,8 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->error_bit_address = 0;
     self->last_run_op_count = 0;
     self->last_run_paused_seconds = 0.0;
+    self->out_acc = 0, self->out_n = 0, self->out_phase = 0;
+    self->in_acc = 0, self->in_n = 0, self->in_phase = 0;
     return 0;
 }
 
