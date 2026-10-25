@@ -208,12 +208,12 @@ def test_only_a_device_with_its_own_read_byte_is_read_by_byte() -> None:
     from flipjump.interpreter.io_devices.ScreenIO import InMemoryScreen
     from flipjump.interpreter.io_devices.KeyboardIO import KeyboardIO, ScriptedKeyEventSource
 
-    assert fjm_run._overrides_read_byte(FixedIO(b''))
-    assert fjm_run._overrides_read_byte(StandardIO(False))
+    assert fjm_run._overrides(FixedIO(b''), 'read_byte')
+    assert fjm_run._overrides(StandardIO(False), 'read_byte')
     pc = PcIO(InMemoryScreen(), KeyboardIO(ScriptedKeyEventSource([])))
-    assert not fjm_run._overrides_read_byte(pc)
-    assert fjm_run._overrides_write_byte(pc)
-    assert not fjm_run._overrides_read_byte(BitOnlyIO(b''))
+    assert not fjm_run._overrides(pc, 'read_byte')
+    assert fjm_run._overrides(pc, 'write_byte')
+    assert not fjm_run._overrides(BitOnlyIO(b''), 'read_byte')
 
 
 @native_engine_required

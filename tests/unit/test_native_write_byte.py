@@ -201,10 +201,10 @@ def test_only_a_device_with_its_own_write_byte_gets_bytes() -> None:
         def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
             return b''
 
-    assert not fjm_run._overrides_write_byte(BitIO())
-    assert fjm_run._overrides_write_byte(FixedIO(b''))
-    assert fjm_run._overrides_write_byte(RecordingIO(b''))
-    assert fjm_run._overrides_write_byte(InMemoryScreen())
+    assert not fjm_run._overrides(BitIO(), 'write_byte')
+    assert fjm_run._overrides(FixedIO(b''), 'write_byte')
+    assert fjm_run._overrides(RecordingIO(b''), 'write_byte')
+    assert fjm_run._overrides(InMemoryScreen(), 'write_byte')
 
 
 @native_engine_required
