@@ -1,4 +1,4 @@
-// C39 (the final review): C38 with the segment declared EARLIER: its label is known when the distance is emitted, so
+// C39: C38 with the segment declared EARLIER: its label is known when the distance is emitted, so
 // the operand is checked at once - before the code of the segment it is emitted in has ended.
 stl.startup
     ;go

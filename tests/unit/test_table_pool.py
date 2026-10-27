@@ -1517,10 +1517,9 @@ def _one_pass_placed(
 
 
 def test_one_pass_does_not_refuse_a_pool_its_estimate_calls_short() -> None:
-    """THE CR-3 B1 REPRODUCER. H is hot, so its block is laid out first and A's 16-slot block sits
-    behind a 240-op alignment hole that no estimate of A's room counts; C's block does not fit. The
-    first layout is 184 ops short and leaving A out frees 112 by the estimate - which used to refuse
-    the pool - but 352 in fact: the next layout fits"""
+    """H is hot, so its block is laid out first and A's 16-slot block sits behind a 240-op alignment hole
+    that no estimate of A's room counts; C's block does not fit. The first layout is 184 ops short and
+    leaving A out frees 112 by the estimate - too little - but 352 in fact: the next layout fits"""
     spec = [('H', 16, 16)] + [('A', 16, 16)] * 9 + [('C', 16, 16)] * 17
     pool, addresses, _ = _one_pass_placed(spec, span_bits=600 * OP_BITS, heat={'H': []})
     assert pool.unblocked == ['A', 'C'] and set(pool.groups) == {'H'}  # A left out; C fits nowhere anyway
@@ -1528,8 +1527,8 @@ def test_one_pass_does_not_refuse_a_pool_its_estimate_calls_short() -> None:
     assert max(address for address, _ in pool.overflow_tables) + 16 * OP_BITS == POOL_BASE + 432 * OP_BITS
 
 
-# the B1 reproducer as a program: the hot (h + 32) word's block is laid out first, a's behind its hole
-B1_PROGRAM = """
+# the test above as a program: the hot (h + 32) word's block is laid out first, a's behind its hole
+HOT_HOLE_PROGRAM = """
 stl.startup_and_init_all
     hex.xor x, h
     rep(9, i) hex.xor x, a
@@ -1548,11 +1547,11 @@ def test_a_program_one_pass_refused_on_its_estimate_builds_and_runs(tmp_path: Pa
     - and leaving a's group out builds it: it now does, and the program prints what the inline one
     prints"""
     counting = BlockPool(W, POOL_BASE)
-    expand_labels(B1_PROGRAM, tmp_path, counting, name='counting')
+    expand_labels(HOT_HOLE_PROGRAM, tmp_path, counting, name='counting')
     assert counting.counts == {'(h + 32)': 1, '(a + 32)': 9, '(c + 32)': 17}
-    reference, _, _ = build_and_run(B1_PROGRAM, tmp_path, None, name='inline')
+    reference, _, _ = build_and_run(HOT_HOLE_PROGRAM, tmp_path, None, name='inline')
     one = BlockPool(W, POOL_BASE, one_pass=True, span_bits=512 * OP_BITS, heat={heat_key('(h + 32)'): []})
-    output, _, _ = build_and_run(B1_PROGRAM, tmp_path, one, name='one')
+    output, _, _ = build_and_run(HOT_HOLE_PROGRAM, tmp_path, one, name='one')
     assert output == reference == b'4'
     assert one.unblocked == ['(a + 32)', '(c + 32)'] and set(one.groups) == {'(h + 32)'}
 
@@ -1616,8 +1615,8 @@ class _Unread(List[str]):
 
 
 def test_choosing_the_groups_left_out_builds_nothing_per_table() -> None:
-    """the CR-3 F3 measurement: the chooser walks the queue's own arrays (it built a tuple per table,
-    ~158 bytes each, even when nothing was short) - and when every block fits it reads no table"""
+    """the chooser walks the queue's own arrays (no tuple per table, ~158 bytes each, even when nothing is
+    short) - and when every block fits it reads no table"""
     counts = {f'g{i}': 1000 for i in range(20)}  # 20,000 tables, 1000 in each 1024-slot block
 
     def sized(span_bits: int) -> BlockPool:

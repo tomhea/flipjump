@@ -1,4 +1,4 @@
-// C36 (gap hunt 3, R3-5): c21 with the offset OUTSIDE the opaque part: `(L | 0) + 15*dw`. Its sum is only `L`, yet
+// C36: c21 with the offset OUTSIDE the opaque part: `(L | 0) + 15*dw`. Its sum is only `L`, yet
 // it moves with L: it is checked as L plus what it adds, and the table it reaches over stays inline.
 ns my {
   ns __relocatable__ {

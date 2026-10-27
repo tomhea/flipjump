@@ -1,9 +1,8 @@
 """
 a differential fuzzer of the table pool: random programs of the stl's table macros - the declared relocatables
 and the undeclared table users - assembled without a pool and with several pools, every build run in a
-subprocess (a broken pool may never halt), and the runs compared. The relocation proof is asked too.
-
-(from the table pool's gap hunt; see test_pool_fuzz.py)
+subprocess (a broken pool may never halt), and the runs compared. The relocation proof is asked too
+(test_pool_fuzz.py runs it).
 """
 
 import random
