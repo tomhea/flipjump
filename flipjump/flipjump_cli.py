@@ -141,7 +141,7 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
 def get_version(version: Optional[int], is_outfile_specified: bool, error_func: ErrorFunc) -> FJMVersion:
     """
     @param version: the fjm version. if None the default version will be taken.
-    @param is_outfile_specified: if True, the default is the compressed-version.
+    @param is_outfile_specified: if True, the default is the compressed-segments version (4).
      else, the default is the normal version.
     @param error_func: the parser's error function (used to report an invalid version).
     @return: the chosen version, or default if not specified.
@@ -153,7 +153,7 @@ def get_version(version: Optional[int], is_outfile_specified: bool, error_func: 
         return FJMVersion(version)
 
     if is_outfile_specified:
-        return FJMVersion.CompressedVersion
+        return FJMVersion.CompressedSegmentsVersion
     return FJMVersion.NormalVersion
 
 
@@ -369,8 +369,8 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         metavar='VERSION',
         type=int,
         default=None,  # default enforced in get_version()
-        help=f"fjm version (default of {FJMVersion.CompressedVersion}-compressed "
-        f"if --outfile specified; version {FJMVersion.NormalVersion} otherwise). "
+        help=f"fjm version (default of {FJMVersion.CompressedSegmentsVersion.value} - the data and the segment "
+        f"table compressed - if --outfile specified; version {FJMVersion.NormalVersion.value} otherwise). "
         f"supported versions: {supported_versions}.",
     )
 
@@ -391,7 +391,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         choices=list(range(10)),
         help=f"The preset used for the LZMA2 algorithm compression ("
         f"{lzma.PRESET_DEFAULT} by default; "
-        f"used when version={FJMVersion.CompressedVersion}).",
+        f"used by versions {FJMVersion.CompressedVersion.value} and {FJMVersion.CompressedSegmentsVersion.value}).",
     )
 
     asm_arguments.add_argument(
