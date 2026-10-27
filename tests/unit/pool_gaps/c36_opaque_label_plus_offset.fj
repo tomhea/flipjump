@@ -1,0 +1,23 @@
+// C36 (gap hunt 3, R3-5): c21 with the offset OUTSIDE the opaque part: `(L | 0) + 15*dw`. Its sum is only `L`, yet
+// it moves with L: it is checked as L plus what it adds, and the table it reaches over stays inline.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+L:
+    ;(L | 0) + 15*dw
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+  e:
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

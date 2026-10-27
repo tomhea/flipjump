@@ -1,0 +1,11 @@
+// C37 (the final review): a rep's count computed from a distance across a moved table's place (`(end - start) / dw`):
+// the expansion evaluates it, so without the pool it counts hex.xor's table, and with it it would not.
+stl.startup
+start:
+    hex.xor y, x
+end:
+    rep((end - start) / dw, i) stl.output 'A'
+    stl.output '\n'
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

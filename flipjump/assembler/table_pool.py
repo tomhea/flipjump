@@ -1,43 +1,56 @@
 """
-the table pool: an opt-in placement of the lookup tables, used only when assemble() is given one (`table_pool=`).
+the table pool: an opt-in placement of the declared lookup tables (`assemble(table_pool=...)`, `fj --pool-tables`).
 
-A lookup table is the code after a `pad` that is only ever entered by a jump (`hex.exact_xor`'s switch and the
-like). Arming one writes its address into a word, one executed op per set bit, so a table at an address that is
-cheap to arm makes every dispatch through it cost fewer ops. The pool moves such tables there:
+A table is one expansion of a macro whose innermost namespace is `__relocatable__` (hex.exact_xor's switch and the
+like), called right after the `pad` that aligns it (see preprocessor.relocatable_call). Arming one writes its
+address into a word, one executed op per set bit, so a table at an address that is cheap to arm makes every
+dispatch through it cost fewer ops. The pool moves the tables there:
     TablePool - each to the lowest-popcount free address above pool_base;
     BlockPool - the tables dispatched through one word share a block, and the word rests at the block's base, so
-                arming flips only the table's index in it.
-Only code entered by a jump, never by falling through, is moved, so a program reaching the table through its own
-labels runs the same. It costs a bigger address span (the pool sits above the program) and .fjm segments: one per
-placed table (BlockPool) or per run of tables (TablePool).
+                arming flips only the table's index in it (`fj --pool-tables`: a one-pass BlockPool).
+Only declared, `$`-free tables move, entered by a jump. The pool never changes what the program does: where moving a
+table would change an operand - one that names a label, or `$` - the table stays inline, and where a pin cannot hold
+the word is left unpinned (the pool's `unsafe_declines` and `unpins` count both, by reason); an operand that would
+point elsewhere and that came too late to keep its table inline is refused (OffsetGuard). An operand that names no
+label is a number, and is not checked; neither is a label's address used as a number (`(L >> 6) & 15`), which
+differs with the layout as it does with any other change to the program. It costs a bigger address span (the pool
+sits above the program) and .fjm segments: one per placed table (BlockPool) or per run of tables (TablePool). A
+declared table that breaks a rule the pool relies on is a compilation error; so is a program segment, reserve or
+wflip area that reaches the pool.
 """
 
 from __future__ import annotations
 
+import bisect
 import collections
 import dataclasses
 import re
 import sys
 from array import array
-from typing import Any, Callable, Collection, Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Collection, Dict, Iterator, List, Mapping, NoReturn, Optional, Sequence, Set, Tuple
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException, FlipJumpPreprocessorException
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.inner_classes.ops import MacroName, NewSegment
+from flipjump.assembler.inner_classes.op_stream import linear_parts
+from flipjump.assembler.inner_classes.ops import NewSegment
+from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS, env_flat_max_words
 
 LabelsDict = Dict[str, int]
 
-# bit addresses below this are the runtime's, not the program's: `stl.IO` sits at bit address 64
-# and the interpreter intercepts flips there, yet `bit.output` dispatches through it like an
-# ordinary hex source. Such a word is neither relocated (PreprocessorData.begin_relocation) nor pinned
-# (assembler.resolve_pinned) - a block base baked into it would corrupt the program's startup.
+# bit addresses below this are the runtime's, not the program's: `stl.IO` is op 1, bits [2w, 4w) (the output
+# flips at 2w and 2w+1, and the input bit at 3w+#w, are in it), and 1024 covers every w <= 256. The interpreter
+# intercepts flips there, yet `bit.output` dispatches through it like an ordinary hex source. Such a word is neither
+# relocated (PreprocessorData.begin_relocation) nor pinned (assembler.resolve_pinned) - a block base baked into it
+# would corrupt the program's startup.
 RESERVED_BELOW = 1024
 
-# the macros that read a cell RAW: they flip a bit of the pointed word and jump through it,
-# which lands on the pointer decoder only while the word holds exactly `value*dw`. A word that
-# BlockPool pinned holds `base + value*dw`, so a program that expands one of these must say which
-# cells a pointer can reach (TablePool.pin_exclude) before any word is pinned; see BlockPool.
-RAW_READERS = frozenset({'hex.pointers.read_cell_from_inners_ptrs'})
+# the pointer runtime's words: a macro that names one reads or writes a cell through a pointer - it flips
+# bits of the pointed word and jumps through it, or writes an address into it at runtime - which works on the
+# word's bare value. A word that BlockPool pinned holds `base + value`, so a program that expands such a
+# macro must say which cells a pointer can reach (TablePool.pin_exclude) before any word is pinned.
+POINTER_RUNTIME_LABELS = frozenset(
+    {'bit.pointers.to_jump', 'bit.pointers.to_flip', 'hex.pointers.to_jump', 'hex.pointers.to_flip'}
+)
 
 # a call site's coordinates in a macro-expansion path or a group expression: `f3:l120:` (a program
 # file) or `s1:l40:` (an stl file) - CodePosition.short_str() and its separator
@@ -60,11 +73,10 @@ def heat_key(path: str) -> str:
 #   'no_block'       - the group is counted, but the pool had no room for its block (or evicted it).
 #                      Counts that are too BIG cause it as well: they inflate the blocks.
 #   'too_wide'       - the table is wider than any slot `max_slot_ops` allows
-#   'next_address'   - (one pass) an entry computes an address from `$`, so the table stays inline
 # Neither list tells whether the counts were stale - counts with room to spare decline nothing and
 # still size the blocks differently. That test is `pool.census() == the census it was given`.
 DECLINE_STALE = ('new_group', 'width_overflow', 'overflow')
-DECLINE_OTHER = ('no_block', 'too_wide', 'next_address')
+DECLINE_OTHER = ('no_block', 'too_wide')
 
 
 @dataclasses.dataclass
@@ -146,8 +158,17 @@ def merge_aliased_groups(
 # BlockPool.defer's verdicts on a table the expansion reached (one pass)
 DEFER_OUT = 'out'  # it leaves the op stream, and is placed once the expansion is done
 DEFER_TOO_WIDE = 'too_wide'  # it stays inline - no slot can hold it - and is declined in its turn
-DEFER_NEXT_ADDRESS = 'next_address'  # it stays inline - an entry uses `$` - and is declined in its turn
 DEFER_INLINE = 'inline'  # it stays inline and is never offered again: it has no group
+DEFER_PAST_WINDOW = 'past_window'  # it stays inline: the program and the tables so far leave it no room below the
+# flat maximum (for_flat), and is never placed - its group is not pinned
+
+
+def flat_limit(memory_width: int, flat_max_words: Optional[int] = None) -> int:
+    """the bit address a for_flat pool ends at or below, so the program runs in the native engine's flat window:
+    `flat_max_words` words (`--flat-max-words`), else FLIPJUMP_FLAT_MAX_WORDS as the engine reads it, else the
+    automatic-flat threshold (run_defaults.FLAT_MEMORY_AUTO_MAX_WORDS) - and never past the memory"""
+    words = flat_max_words or env_flat_max_words() or FLAT_MEMORY_AUTO_MAX_WORDS
+    return min(1 << memory_width, words * memory_width)
 
 
 class DeferredTables:
@@ -155,8 +176,8 @@ class DeferredTables:
 
     A table that LEFT the op stream has its ops in the preprocessor's pool stream already, behind a
     NewSegment whose address is filled in once it is placed (`segments`); its labels wait here as
-    bit offsets from its start. A table that stayed inline (too wide for any slot, or an entry uses
-    `$`) is queued only so the pool can decline it in its turn (`inline`: index -> cause).
+    bit offsets from its start. A table that stayed inline (too wide for any slot) is queued only so
+    the pool can decline it in its turn (`inline`: index -> cause).
 
     ~43 bytes a table: parallel arrays, not an object per table (a big program queues hundreds of
     thousands of tables). A kept site path is the interned heat key, or for a subclass that overrides
@@ -185,7 +206,7 @@ class DeferredTables:
         self.segments: List[Optional[NewSegment]] = []  # None for a table that stayed inline
         self.sites: List[str] = []  # kept only when `keeps_sites` (see BlockPool.keeps_site_paths)
         self.keeps_sites = keeps_sites
-        self.inline: Dict[int, str] = {}  # index -> DEFER_TOO_WIDE / DEFER_NEXT_ADDRESS
+        self.inline: Dict[int, str] = {}  # index -> DEFER_TOO_WIDE
         self.label_names: List[str] = []  # the deferred labels, table after table
         self.label_offsets = array('I')  # ...each one's bit offset inside its table
         self.label_ends = array('I')  # table i's labels are label_names[label_ends[i-1]:label_ends[i]]
@@ -243,6 +264,351 @@ class DeferredTables:
             yield self.label_names[at], self.label_offsets[at]
 
 
+class PoolHasNoRoom(FlipJumpPreprocessorException):
+    """(BlockPool.for_flat) the code after the tables that left the stream leaves them no room in the memory:
+    assemble() then assembles the program without the pool"""
+
+
+def reached_the_pool(address: int, pool_start: int) -> FlipJumpPreprocessorException:
+    """the refusal of a program whose own code or data reaches the pool, at `address`"""
+    return FlipJumpPreprocessorException(
+        f'table-placement: the program reached {hex(address)}, which is inside the table pool at {hex(pool_start)}. '
+        f'Raise pool_base, or relocate fewer tables.'
+    )
+
+
+class OffsetGuard:
+    """Keeps an operand from pointing elsewhere once the tables moved (a table pool is on).
+
+    A moved table leaves the inline stream, so the code after it moves up into its place - the table's
+    ANCHOR, the inline address where it began. A label moves with its code, so an operand that names a label
+    means the same in both programs, as long as it stays where it was. The anchors cut the inline stream into
+    PIECES; a label at an anchor's address lies before it if it was declared before the table's `pad` (in the
+    program without the pool it names the table's start), else after it. Every +/- sum of labels and constants in
+    an operand (linear_parts: all of a `label + constant`, the `L + 15*dw` of `(L + 15*dw) | 0`, the `b - a` of
+    `(b - a) >> 6`) must keep its meaning:
+      - one moved table's label plus a constant must land inside that table (the table moves whole), and a moved
+        table's labels may meet only in a distance inside one table;
+      - an inline label plus a constant must stay in the label's piece, and labels whose distance is taken must lie
+        in one piece;
+      - and an address computed from labels may not land in the pool.
+    `$` is an inline label at the next op (the preprocessor names it, see PreprocessorData.dollar_label), and an op
+    that falls through (`a;`) reaches the next op. A sum of one label with another coefficient (`2 * L`, the
+    `L` of `(L >> 6) & 15`) is that label's address as a number: it differs with the layout, as any label's address
+    does, and is not checked. An operand that names no label is a number, and is not checked either.
+
+    The preprocessor checks an operand whose labels it knows as it emits it, and labels_resolve the rest. An
+    operand the preprocessor sees reaching past the code emitted so far is PENDING: the table whose place it would
+    reach over is declined instead - it stays inline (may_move). Every other violation is refused, with `where()`,
+    set by whichever of them is running, saying where the op is.
+    """
+
+    __slots__ = (
+        'inline_end',
+        'labels',
+        'anchors',
+        '_anchor_tables',
+        'moved_tables',
+        'stranded',
+        'watched',
+        'falls_to',
+        '_pending',
+        '_starts',
+        '_ends',
+        '_names',
+        'where',
+        'emitting',
+        'pads',
+        'reach',
+    )
+
+    def __init__(self, inline_end: int, labels: LabelsDict):
+        """
+        @param inline_end: the inline stream lies below it, the moved tables above (the pool's start)
+        @param labels: the preprocessor's labels (a moved table's are there once it is placed)
+        """
+        self.inline_end = inline_end
+        self.labels = labels
+        self.anchors: List[int] = []  # the inline addresses the moved tables left, ascending
+        self._anchor_tables: List[str] = []  # ...and each one's table (its start label)
+        self.moved_tables: List[str] = []  # the moved tables' start labels, in the order they moved
+        # a label declared at an anchor before its table's pad -> (the anchor, the tables that moved out of it before)
+        self.stranded: Dict[str, Tuple[int, int]] = {}
+        self.watched: Set[str] = set()  # the labels checked with no offset too: the stranded ones, and `$`
+        self.falls_to = -1  # (the preprocessor's) where the last op that falls through to the next op falls to
+        # (label address, target, label) of the operands reaching past the code
+        self._pending: List[Tuple[int, int, str]] = []
+        self._starts: List[int] = []  # the moved tables' [start, end), by start
+        self._ends: List[int] = []
+        self._names: List[str] = []
+        self.where: Callable[[], str] = lambda: ''
+        self.emitting: Optional[Callable[[], int]] = None  # the next inline address the preprocessor emits at
+        # inline address -> the bits a `pad` aligned it to (0: a segment starts there), the preprocessor's
+        self.pads: Dict[int, int] = {}
+        self.reach = 0  # the highest address an operand checked so far lands at (BlockPool.for_flat bases above it)
+
+    def may_move(self, anchor: int) -> Optional[str]:
+        """why the table about to move out of `anchor` must stay inline, or None"""
+        if self.falls_to == anchor:
+            return 'the op before it falls through to it'
+        for address, target, _ in self._pending:
+            if address <= anchor <= target:
+                return 'an operand reaches over its place'
+        return None
+
+    def table_moved(self, anchor: int, table: str) -> None:
+        """the table (its start label) left the inline stream at `anchor`"""
+        self._cut(anchor, table)
+        self.moved_tables.append(table)
+
+    def pad_realigned(self, address: int, ops_alignment: int) -> None:
+        """the `pad` at the inline `address` pads to another op than without the pool (a table moved out before it,
+        by ops that are no multiple of the pad): the distance across it changes, as across a moved table's place. An
+        operand already emitted that reaches across it came too late to keep a table inline, and is refused."""
+        cut = f'the `pad {ops_alignment}` at {hex(address)}, {_PADS_DIFFERENTLY}'
+        if self.falls_to == address:
+            self._refuse('$', f'falls through to {cut}')
+        for label_address, target, label in self._pending:
+            if label_address <= address <= target:
+                self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
+        self._cut(address, cut)
+
+    def segment_started(self, address: int) -> None:
+        """a segment starts at the inline `address`, where it does without the pool: its code is a piece of its own,
+        unmoved until a table moves out of it (see shift_class). An operand already emitted from code a table moved
+        that reaches into it came too late to keep a table inline, and is refused."""
+        cut = f'{_SEGMENT_START} at {hex(address)}, {_SEGMENT_STAYS}'
+        for label_address, target, label in self._pending:
+            if label_address <= address <= target and self.shift_class(self.piece(label, label_address)) >= 0:
+                self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
+        self._cut(address, cut)
+
+    def shift_class(self, piece: int) -> int:
+        """-1 for a piece whose code is where it is without the pool: the program's first, or one a segment starts
+        (each up to the first table that moves out of it), else the piece itself - an address in one piece and an
+        address in another keep their distance only if both are -1"""
+        return -1 if piece == 0 or self._anchor_tables[piece - 1].startswith(_SEGMENT_START) else piece
+
+    def tables_inline(self) -> Dict[int, int]:
+        """{inline address a `pad` aligned or a segment starts at: the bits the pad aligned it to}: a table there
+        could be armed with a number (see assembler.unpin)"""
+        return self.pads
+
+    def _cut(self, anchor: int, table: str) -> None:
+        """cut the inline stream into pieces at `anchor`: a moved table's place, a `pad` that realigned, or a
+        segment's start"""
+        anchors = self.anchors
+        index = bisect.bisect_right(anchors, anchor)
+        before = index - bisect.bisect_left(anchors, anchor)
+        labels = self.labels
+        for name in reversed(labels):  # the labels declared at the anchor so far: before the table's pad
+            address = labels[name]
+            if address == anchor:
+                if name in self.stranded:
+                    break  # declared before an earlier table that moved out of the same address
+                self.stranded[name] = (anchor, before)
+                self.watched.add(name)
+            elif address < self.inline_end:
+                break  # (a two-pass pool's tables are declared in between: skip them)
+        anchors.insert(index, anchor)
+        self._anchor_tables.insert(index, table)
+        self._pending = [entry for entry in self._pending if entry[1] >= anchor]
+
+    def table_placed(self, start: int, end: int, table: str) -> None:
+        """a moved table is at [start, end)"""
+        index = bisect.bisect_right(self._starts, start)
+        self._starts.insert(index, start)
+        self._ends.insert(index, end)
+        self._names.insert(index, table)
+
+    def table_at(self, address: int) -> int:
+        """the index of the moved table at `address`, or -1"""
+        index = bisect.bisect_right(self._starts, address) - 1
+        return index if index >= 0 and address < self._ends[index] else -1
+
+    def alignment(self, address: int) -> int:
+        """the bits the table at `address` is aligned to: a moved table's size, an inline one's `pad` (0 with no pad
+        there: an address's own alignment is no table's)"""
+        table = self.table_at(address)
+        if table >= 0:
+            return (self._ends[table] - self._starts[table] - 1).bit_length()
+        return self.pads.get(address, 0)
+
+    def piece(self, label: str, address: int) -> int:
+        """the piece of the inline label `label`, at `address`: the anchors below it"""
+        stranded = self.stranded.get(label)
+        if stranded is not None:
+            return bisect.bisect_left(self.anchors, stranded[0]) + stranded[1]
+        return bisect.bisect_right(self.anchors, address)
+
+    def check(self, label: str, address: int, offset: int, operand: Optional[str] = None) -> None:
+        """the operand `label + offset` (or a sum that is one: `operand`), where `label` is at `address`"""
+        target = address + offset
+        if target > self.reach:
+            self.reach = target
+        if address >= self.inline_end:
+            table = self.table_at(address)
+            if table < 0:
+                raise reached_the_pool(address, self.inline_end)
+            if not self._starts[table] <= target < self._ends[table]:
+                self._refuse(
+                    operand or _operand(label, offset),
+                    f'leaves the moved table {self._names[table]} at {hex(self._starts[table])}: an offset from a '
+                    f'moved table\'s label must stay inside it',
+                )
+            return
+        if target >= self.inline_end:
+            self._refuse_inside(operand or _operand(label, offset), target)
+        piece = self.piece(label, address)
+        aim = bisect.bisect_right(self.anchors, target)
+        if aim != piece and not self.shift_class(aim) == self.shift_class(piece) == -1:
+            index = piece if aim > piece else piece - 1
+            self._refuse(operand or _operand(label, offset), self._across(index, label, offset))
+        if (offset > 0 or label in self.watched) and self.emitting is not None and target >= self.emitting():
+            self._pending.append((address, target, label))  # a table may move out below it: it stays inline
+
+    def check_expr(self, expr: Expr, value: int, is_address: bool = True) -> None:
+        """the operand `expr`, whose value is `value`, every label of it declared. An address computed from labels
+        (`is_address`: not a wflip's value, which may be `T1 ^ T2`) may not land in the pool either."""
+        parts = linear_parts(expr)
+        names_a_table = False
+        for coefficients, constant in parts:
+            names_a_table = self._check_part(coefficients, constant, str(expr)) or names_a_table
+        if is_address and not _is_one_sum(expr):
+            named = expr.all_unknown_labels()
+            if len(named) == 1:
+                label = next(iter(named))
+                address = self.labels[label]
+                if _moves_with(expr, label, address, value):
+                    # computed on beyond its sum, yet L plus what it adds (`(L | 0) + 15*dw`): checked as that
+                    self.check(label, address, value - address, str(expr))
+        if is_address and parts and not names_a_table:
+            if value >= self.inline_end:
+                self._refuse_inside(str(expr), value)
+            self.reach = max(self.reach, value)
+
+    def check_emitted(self, expr: Expr, is_address: bool = False) -> None:
+        """the operand `expr` the preprocessor keeps for labels_resolve (`is_address`: not a wflip's value): checked
+        now if its labels are declared, so a table it reaches over can still stay inline"""
+        labels = self.labels
+        if all(label in labels for label in expr.all_unknown_labels()):
+            self.check_expr(expr, expr.exact_eval(labels), is_address)
+
+    def _check_part(self, coefficients: Dict[str, int], constant: int, operand: str) -> bool:
+        """one +/- sum of `operand` (linear_parts); True if it names a moved table's label"""
+        labels = self.labels
+        if len(coefficients) == 1:
+            label, coefficient = next(iter(coefficients.items()))
+            if coefficient == 1:
+                self.check(label, labels[label], constant, operand)
+                return labels[label] >= self.inline_end
+        total = sum(coefficients.values())
+        moved = [label for label in coefficients if labels[label] >= self.inline_end]
+        value = constant + sum(coefficient * labels[label] for label, coefficient in coefficients.items())
+        if moved:
+            tables = {self.table_at(labels[label]) for label in coefficients}
+            if len(tables) != 1 or -1 in tables or total not in (0, 1):
+                self._refuse(
+                    operand,
+                    f'computes from {moved[0]}, a label of a moved table, with labels outside it: what it computes '
+                    f'changes with the move',
+                )
+            if total == 1:
+                self.check(moved[0], labels[moved[0]], value - labels[moved[0]], operand)
+            return True
+        if len(coefficients) == 1:
+            return False  # `2 * L`, the `L` of `L >> 6`: an address as a number
+        pieces = sorted(self.piece(label, labels[label]) for label in coefficients)
+        if len({self.shift_class(piece) for piece in pieces}) > 1:
+            cut = self._anchor_tables[pieces[0]]
+            self._refuse(
+                operand,
+                (
+                    f'takes the distance across {cut}'
+                    if cut.startswith('the ')
+                    else f'takes the distance across the place of the table {cut}, which moved out '
+                    f'of {hex(self.anchors[pieces[0]])}, so it would no longer be the same'
+                ),
+            )
+        if total == 1:
+            label = next(iter(coefficients))
+            self.check(label, labels[label], value - labels[label], operand)
+        return False
+
+    def label_below(self, address: int) -> str:
+        """the label nearest at or below `address`: its name is the macro path there (slow - a refusal asks)"""
+        return max(((value, name) for name, value in self.labels.items() if value <= address), default=(0, ''))[1]
+
+    def _across(self, anchor_index: int, label: str, offset: int) -> str:
+        anchor = self.anchors[anchor_index]
+        cut = self._anchor_tables[anchor_index]
+        if cut.startswith('the '):  # a pad that realigned, or a segment's start
+            return f'names {label}, declared before {cut}' if offset == 0 else f'reaches across {cut}'
+        if offset == 0:
+            return (
+                f'names {label}, declared at {hex(anchor)} before the `pad` of the table '
+                f'{self._anchor_tables[anchor_index]}: it named the table\'s start, which moved, while the label stays '
+                f'with the code after it'
+            )
+        return (
+            f'reaches across the place of the table {self._anchor_tables[anchor_index]}, which moved out of '
+            f'{hex(anchor)}, so it would no longer point where it did'
+        )
+
+    def _refuse_inside(self, operand: str, target: int) -> None:
+        """an operand that is not one of a moved table's labels plus a constant lands in the pool, at `target`"""
+        table = self.table_at(target)
+        if table >= 0:
+            where = f'inside the moved table {self._names[table]} at {hex(self._starts[table])}'
+        else:
+            where = 'in the table pool'
+        self._refuse(operand, f'lands at {hex(target)}, {where}, and is not one of its labels plus a constant')
+
+    def _refuse(self, operand: str, what: str) -> NoReturn:
+        if self.emitting is not None and self.emitting() > self.inline_end:
+            raise reached_the_pool(self.emitting(), self.inline_end)  # the program's own code did: that is the cause
+        raise FlipJumpAssemblerException(
+            f'table-placement: the operand `{operand}`{self.where()} {what}. Address a moved table by its own labels, '
+            f'or assemble without a table pool.'
+        )
+
+
+# why an operand across a `pad` that realigned is refused (OffsetGuard.pad_realigned)
+_PADS_DIFFERENTLY = 'which pads to another op once a table before it moved out: it would no longer point where it did'
+# ...and across a segment's start (OffsetGuard.segment_started)
+_SEGMENT_START = 'the start of the segment'
+_SEGMENT_STAYS = (
+    'which stays where it is while code a table moved out of moves: it would no longer be the same distance'
+)
+
+
+def _is_one_sum(expr: Expr) -> bool:
+    """is all of `expr` one sum - of labels and numbers, by +, - and * by a number (see linear_parts)?"""
+    value = expr.value
+    if not isinstance(value, tuple):
+        return True
+    op, args = value
+    if len(args) != 2 or op not in ('+', '-', '*') or not all(_is_one_sum(arg) for arg in args):
+        return False
+    return op != '*' or not args[0].all_unknown_labels() or not args[1].all_unknown_labels()
+
+
+def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
+    """does `expr` (naming only `label`, at `address`; its value `value`) move with its label - one far, aligned
+    move of it moves the value as far? Then it is the label plus what it adds; else the label's address is used as a
+    number (`(L >> 6) & 15`, a pointer's bit), which is not checked."""
+    far = 1 << (max(address, value).bit_length() + 1)
+    try:
+        return expr.exact_eval({label: address + far}) == value + far
+    except FlipJumpExprException:
+        return False
+
+
+def _operand(label: str, offset: int) -> str:
+    """`label + offset` as the source would say it"""
+    return f'{label} + {offset}' if offset > 0 else f'{label} - {-offset}' if offset else label
+
+
 class TablePool:
     """Place lookup tables at LOW-POPCOUNT addresses, because that address is a per-call cost.
 
@@ -271,19 +637,18 @@ class TablePool:
         run_ops: int = 256,
         capacity: Optional[int] = None,
         span_bits: Optional[int] = None,
-        wants: Optional[Callable[[MacroName, str], bool]] = None,
     ):
         """
         @param memory_width: the memory-width
         @param pool_base: first address of the pool. MUST be above everything the main stream can
         reach, or a relocated table will overwrite code -- nothing here checks that.
         @param run_ops: ops per contiguous run. One .fjm segment per run, so a short run buys a
-        lower mean popcount and costs more segments.
+        lower mean popcount and costs more segments. The default, 256, is the first table-placement build's (a big
+        program's), not tuned on other programs; BlockPool's one-pass placement of a raw program uses 16.
         @param capacity: stop relocating after this many tables (None = unlimited)
         @param span_bits: how far above pool_base the pool may reach (None = to the top of memory).
         Worth setting: offsets are handed out cheapest-popcount-first, so an unbounded pool scatters
         to the top of the address space and the .fjm's span approaches 2^w while its data stays small.
-        @param wants: given (macro name, call-site macro path), whether that table is relocated
         """
         self.memory_width = memory_width
         self.op_bits = 2 * memory_width
@@ -293,15 +658,29 @@ class TablePool:
         self.pool_base = pool_base
         self.capacity = capacity
         self.span_bits = span_bits
-        self._wants = wants
         # `pin_exclude(address, labels) -> bool` lets the caller veto pinning a word it owns (see
         # assembler.resolve_pinned); a plain pool pins nothing, so both only matter for BlockPool
         self.pin_exclude: Optional[Callable[[int, LabelsDict], bool]] = None
         self.pin_conflicts = 0
-        self.reads_words_raw = False  # set by the preprocessor when a RAW_READERS macro expands
+        self.reads_words_raw = False  # set by the preprocessor when a macro naming POINTER_RUNTIME_LABELS expands
+        self.raw_reader = ''  # ...the first such macro
+        self.laid_out = False  # a pool lays out one assembly (the preprocessor sets it)
+        self.offset_guard: Optional[OffsetGuard] = None  # ...and its OffsetGuard, which labels_resolve continues
+        # THE FALLBACKS - each keeps the program's behaviour at a cost in speed, and each is counted by its reason:
+        self.unsafe_declines: Dict[str, int] = {}  # tables kept inline: moving them would change an operand
+        self.unpins: Dict[str, int] = {}  # (BlockPool) words left unpinned: a pin could not hold (assembler.unpin)
+        self._passed: List[int] = []  # run offsets the cheapest-first search passed over, still free
         self.allocated = 0
         self.declined = 0
         self.reserved_words = 0  # tables through the runtime's words, never relocated
+        # for_flat: the pool ends at or below `flat_limit` (bits); `past_window` tables stayed inline (or, one pass,
+        # were placed past it) for want of room there; `base_reason` says where the pool went, and why
+        self.flat_limit: Optional[int] = None
+        self.auto_base = False  # (BlockPool.for_flat) pool_base is chosen once the program's end is known
+        self.past_window = 0
+        self.base_reason = ''
+        self.deferred_bits = 0  # (one pass) the ops of the tables that left the stream, in bits
+        self.end = 0  # the end of the last table placed (the pool's end)
         self._offsets = self._cheapest_offsets()
         self._cursor = 0  # bit address of the next free spot inside the current run
         self._run_end = 0
@@ -329,14 +708,9 @@ class TablePool:
                 ripple = offset + lowest
                 offset = ripple | (((offset ^ ripple) >> 2) // lowest)
 
-    def wants(self, macro_name: MacroName, labels_prefix: str = '') -> bool:
-        """`labels_prefix` is the full macro-expansion path, i.e. the CALL SITE -- so a caller can
-        relocate the hot sites a profile named rather than every expansion of a macro. Cheap
-        addresses are finite, and spending them on cold tables is how a placement pass ends up
-        costing more than it saves."""
-        if self.capacity is not None and self.allocated >= self.capacity:
-            return False
-        return True if self._wants is None else self._wants(macro_name, labels_prefix)
+    def has_room(self) -> bool:
+        """False once `capacity` tables were relocated"""
+        return self.capacity is None or self.allocated < self.capacity
 
     def reserve(
         self,
@@ -374,16 +748,13 @@ class TablePool:
                 self._cursor = candidate
         if new_run:
             slots_needed = -(-size_bits // self.run_bits)
-            slot = self._find_free_slots(slots_needed)
+            slot = self._find_free_slots(slots_needed, align_bits)
             if slot is None:
                 self.declined += 1
                 return None
             for extra in range(slots_needed):
                 self._consumed.add(slot + extra)
             base = self.pool_base + slot * self.run_bits
-            if base % align_bits:
-                self.declined += 1
-                return None
             self._cursor = base
             self._run_end = base + slots_needed * self.run_bits
             self.run_starts.append(base)
@@ -391,13 +762,30 @@ class TablePool:
         self.allocated += 1
         return self._cursor, new_run, gap_ops
 
-    def _find_free_slots(self, slots_needed: int) -> Optional[int]:
-        """the cheapest run offset with `slots_needed` consecutive free slots from it"""
+    def _find_free_slots(self, slots_needed: int, align_bits: int) -> Optional[int]:
+        """the cheapest run offset with `slots_needed` consecutive free slots from it, inside the span, whose
+        address is aligned to `align_bits`. An offset passed over stays a candidate for the next tables."""
+        self._passed = [slot for slot in self._passed if slot not in self._consumed]
+        for index, slot in enumerate(self._passed):
+            if self._fits(slot, slots_needed, align_bits):
+                del self._passed[index]
+                return slot
         for slot in self._offsets:
-            if all((slot + extra) not in self._consumed for extra in range(slots_needed)):
-                if self.pool_base + (slot + slots_needed) * self.run_bits <= (1 << self.memory_width):
-                    return slot
+            if self._fits(slot, slots_needed, align_bits):
+                return slot
+            if slot not in self._consumed:
+                self._passed.append(slot)
         return None
+
+    def _fits(self, slot: int, slots_needed: int, align_bits: int) -> bool:
+        reach = (1 << self.memory_width) - self.pool_base
+        if self.span_bits is not None:
+            reach = min(reach, self.span_bits)
+        return (
+            (slot + slots_needed) * self.run_bits <= reach
+            and (self.pool_base + slot * self.run_bits) % align_bits == 0
+            and all((slot + extra) not in self._consumed for extra in range(slots_needed))
+        )
 
     def commit(self, end_address: int) -> None:
         """the table ended here; the next one starts at or after it.
@@ -412,10 +800,21 @@ class TablePool:
                 f'({hex(end_address)} > {hex(self._run_end)}). reserve() was given the wrong size.'
             )
         self._cursor = end_address
+        self.end = max(self.end, end_address)
+
+    def wflips_at(self) -> Optional[int]:
+        """where the wflip areas go (assembler.BinaryData), if not right after their segments' code: after the
+        pool, for a pool based right above the program (BlockPool.for_flat) that placed a table (in a block, a run or
+        the overflow region)"""
+        return self.end if self.auto_base and self.end else None
 
     def pinned_words(self) -> Dict[Expr, int]:
         """{source-word Expr: block base} to bake into the program; a plain pool pins nothing"""
         return {}
+
+    def pool_start(self) -> int:
+        """the lowest address the pool places a table at: nothing else may reach it"""
+        return self.pool_base
 
     def labels_resolved(self, labels: LabelsDict) -> None:
         """assemble() calls this once every label of the program is known, before the labels are
@@ -436,15 +835,14 @@ class BlockPool(TablePool):
     `hex.shifts.*` and `hex.tables.*` keep working by construction - they wanted the word to become
     V, and (B + digit) ^ (V ^ B) is V + digit.
 
-    THE ONE THING A PINNED WORD CANNOT DO is be read raw. `hex.pointers`' read dance flips a bit
-    of the POINTED word and jumps through it, which reaches the decoder table only from
-    `value*dw`, not from `base + value*dw`; anything else that jumps through a cell expecting its
-    bare value has the same problem. Which cells a pointer will reach is runtime data, so the
-    caller declares it: `pin_exclude(address, labels) -> bool`, given the bit address of a cell's
-    JUMP word (`cell + w`), vetoes the pin of every cell a pointer (or any raw reader) can reach.
-    A program that expands a RAW_READERS macro and gives no `pin_exclude` is refused by assemble()
-    rather than miscompiled; `pin_exclude` may veto nothing when the caller knows no pointer
-    reaches an armed cell.
+    THE ONE THING A PINNED WORD CANNOT DO is be read or written raw. The pointer runtime flips bits
+    of the POINTED word and jumps through it, or writes an address into it at runtime, which works
+    only on the word's bare value, not on `base + value`. Which cells a pointer will reach is
+    runtime data, so the caller declares it: `pin_exclude(address, labels) -> bool`, given the bit
+    address of a cell's JUMP word (`cell + w`), vetoes the pin of every cell a pointer can reach.
+    A program that expands a macro naming POINTER_RUNTIME_LABELS and gives no `pin_exclude` gets
+    no pins at all. A word is also left unpinned where its rest value cannot carry the base (a
+    `reserve`d word), and where a flip of it is neither an arm nor a value (see assembler.unpin).
 
     TWO PASSES. A block's size must be known before its base is chosen, and the tables of a group
     are scattered through the program, so counting comes first:
@@ -485,9 +883,8 @@ class BlockPool(TablePool):
     The op stream then never depends on placement: a table that gets no block goes to an OVERFLOW
     region right after the blocks and inside the pool's span (`overflow_base` moves it), never
     inline, in the order the expansion reached them - so code appended later never moves an earlier
-    one. Two kinds of table stay inline, decided at their pad and declined in their turn: one too
-    wide for any slot (as in the two-pass build), and one whose entries compute an address from `$`,
-    which is unknown while they expand ('next_address'; no stl table does this).
+    one. A table too wide for any slot stays inline, decided at its pad and declined in its turn (as
+    in the two-pass build).
 
     Given the same counts, one pass decides every table exactly as the placing pass of the two-pass
     build, and the binaries are identical - EXCEPT where (a) the pool lacks room for a block: the
@@ -497,10 +894,9 @@ class BlockPool(TablePool):
     in the overflow region (their power-of-two or spread padding: _choose_unblocked) - which can be
     more tables than the two-pass build leaves inline or, where spread pads the blocks, fewer - and
     lays out exactly that plan (so `evict_by_value` drops nothing more), while a pool given counts,
-    or an overflow_base, drops what the two-pass build drops, to the overflow region; (b) an
-    entry uses `$`: the two-pass build places that table; (c) with merge_aliases, a group's word
-    names a deferred table's label: that alias is unknown when the blocks are sized
-    (`alias_unresolved`); or (d) the counts given were stale: every table they decline stays
+    or an overflow_base, drops what the two-pass build drops, to the overflow region; (b) with
+    merge_aliases, a group's word names a deferred table's label: that alias is unknown when the
+    blocks are sized (`alias_unresolved`); or (c) the counts given were stale: every table they decline stays
     inline in the two-pass build and overflows here. The debugging file lists a deferred table's
     labels after the others; the label addresses, and the debugger's address -> label choice, are
     the same.
@@ -521,11 +917,12 @@ class BlockPool(TablePool):
 
     A subclass sees every table in `defer`, at its pad, with its site path. `reserve` is called at
     placement, in encounter order, for the tables that left the stream or stayed inline as too wide
-    (not for ungrouped or `$` ones): with the full site path when the subclass overrides `reserve`,
+    (not for ungrouped ones): with the full site path when the subclass overrides `reserve`,
     with just its heat key when only pin protection reads it, else with '' (see kept_site).
 
-    PIN PROTECTION (`heat`, opt-in). Two things re-roll a hot word's cost when the program changes:
-    its group can lose its block (and so its pin), and indices follow ENCOUNTER order, so the
+    PIN PROTECTION (`heat`, opt-in, for re-placing a PROFILED program: a build loop that keeps its hot words at the
+    same cost across rebuilds; never set by `fj --pool-tables`). Two things re-roll a hot word's cost when the
+    program changes: its group can lose its block (and so its pin), and indices follow ENCOUNTER order, so the
     cheapest ones go to whichever code the program happens to reach first, not to the hottest
     tables. A profile's heat list fixes both for the groups it names: hot groups are placed FIRST,
     in heat order, from pool_base (so no new group moves them, and their bases stay low - a writer
@@ -550,7 +947,6 @@ class BlockPool(TablePool):
         pin_broken: bool = False,
         width_hist: Optional[Dict[str, Dict[int, int]]] = None,
         width_buckets: bool = False,
-        wants: Optional[Callable[[MacroName, str], bool]] = None,
         heat: Optional[Mapping[str, Sequence[Tuple[str, int, int]]]] = None,
         one_pass: bool = False,
         merge_aliases: bool = False,
@@ -558,7 +954,7 @@ class BlockPool(TablePool):
         unblocked: Optional[Sequence[str]] = None,
     ):
         """
-        (see TablePool for memory_width, pool_base, span_bits and wants, and the class docstring)
+        (see TablePool for memory_width, pool_base and span_bits, and the class docstring)
         @param counts: tables per group. None makes a COUNTING pool - or, with one_pass, sizes the
         blocks from the very expansion it places.
         @param one_pass: ONE expansion (see the class docstring): tables wait out of the op stream
@@ -574,6 +970,16 @@ class BlockPool(TablePool):
         or its wflip area.
         @param unblocked: with counts - groups to leave without a block (BlockCensus.unblocked: what
         a one-pass pool sized from its own census left out to make room for its overflow region).
+        The tuning knobs are opt-in; `fj --pool-tables` passes none of them:
+        @param max_slot_ops: the widest table a slot holds (wider ones stay inline). 32 is the stl's: `hex.cmp`'s
+        31-op table is the widest stl table that should get a slot (one 514-op table would set every slot of its
+        group to 1024 ops).
+        @param spread: give a group of at least `spread_min_count` tables `spread` times the slots, and hand out
+        only the cheapest indices. `spread_min_count` (256) acts only with spread > 1, which is off (1) by default.
+        @param pin_broken: pin a group although some of its tables did not get a slot. Correct only because EVERY
+        arm of the group's word is rewritten xor its base, an inline table's too (the base cancels: see
+        pinned_words) - so a word some flip arms in another way breaks it; off by default.
+        @param heat: pin protection (see the class docstring), for re-placing a profiled program only.
         """
         if merge_aliases and not (one_pass and counts is None):
             raise ValueError(
@@ -588,7 +994,7 @@ class BlockPool(TablePool):
             raise ValueError('overflow_base: the program starts at 0, the overflow region must be above it')
         if unblocked and counts is None:
             raise ValueError('unblocked: only a pool given counts leaves groups of them without a block')
-        super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits, wants=wants)
+        super().__init__(memory_width, pool_base, run_ops=16, span_bits=span_bits)
         self.counts = {} if counts is None else dict(counts)
         # a slot must hold the BIGGEST table of its group (`hex.cmp`'s is 31 ops behind a `pad 4`),
         # so the counting pass records each group's widest table, keyed like `counts`
@@ -618,7 +1024,6 @@ class BlockPool(TablePool):
         self.deferred = 0  # tables taken out of the op stream (one_pass)
         self.overflowed = 0  # ...placed in the overflow region, having got no block
         self.overflow_tables: List[Tuple[int, int]] = []  # ...each one's (address, ops_alignment)
-        self.kept_inline = 0  # ...left inline: an entry computes an address from `$`
         self.alias_unresolved = 0  # one pass, merge_aliases: group words unknown when it was sized
         # the groups left without a block on purpose: given, or (one pass, sized from its census) the
         # ones left out to make room for the overflow region and the ones there was no room for
@@ -644,7 +1049,6 @@ class BlockPool(TablePool):
                 max_slot_ops=max_slot_ops,
                 spread=spread,
                 spread_min_count=spread_min_count,
-                wants=wants,
             )
         )
         # the alias the labels of this pool's own assembly imply (labels_resolved), for census()
@@ -653,7 +1057,6 @@ class BlockPool(TablePool):
         self.declined_no_block = 0  # its group got no block at all: pool exhausted, or a group the counts lack
         self.declined_too_wide = 0  # wider than its slot: than max_slot_ops allows, or than the counts said
         self.declined_overflow = 0  # more tables in the group than the counting pass saw
-        self.declined_next_address = 0  # (one pass) an entry uses `$`: it stays inline
         # ...and by group: {group: {cause: tables}}, the causes of DECLINE_STALE and DECLINE_OTHER
         self.declines_by_group: Dict[str, Dict[str, int]] = {}
         # opt-in: when the pool cannot hold every block, drop the least valuable groups (tables per
@@ -699,6 +1102,77 @@ class BlockPool(TablePool):
                 self._resolve_heat(heat)
             self._preallocate(self.unblocked)
 
+    @classmethod
+    def for_flat(cls, memory_width: int, flat_max_words: Optional[int] = None, **kwargs: Any) -> BlockPool:
+        """`fj --pool-tables`'s pool: one pass, ending below the flat maximum (flat_limit: `flat_max_words`, by
+        default the automatic-flat threshold), so a program that runs flat without the pool runs flat with it.
+
+        Its base is chosen once the expansion is done (_flat_base): the first power of two above the program's end
+        - its code, every segment and reserve, and every address an operand reaches - so an arm costs only its
+        offset's bits; or, where the blocks would not end below the maximum there, the program's end rounded up to
+        the largest block (compact: a few more bits per address); `base_reason` says which, and why. The wflip
+        areas (the assembler's chains, which no program can name) go right after the pool (wflips_at). A table the
+        program and the tables before it leave no room for below the maximum, counted at its most, stays inline
+        (past_window). One pass cannot take a table back: where the code after it leaves the tables that left the
+        stream no room below the maximum, the pool runs past it (counted too, and said in `base_reason`) - the
+        program runs the same, partly outside the flat window. `kwargs` go to the constructor."""
+        pool = cls(memory_width, 1 << memory_width, one_pass=True, **kwargs)
+        pool.flat_limit = flat_limit(memory_width, flat_max_words)
+        pool.auto_base = True
+        return pool
+
+    def _flat_base(self, end: int, tables: DeferredTables, cheapest: bool) -> bool:
+        """for_flat: base the pool above the program, which ends at `end` (see for_flat), within flat_limit. False
+        when the memory has no room above the program at all."""
+        assert self.flat_limit is not None
+        limit = self.flat_limit
+        if cheapest:  # TablePool's runs, each table's ops rounded up to its alignment
+            sizes = [
+                -(-max(tables.sizes[index], tables.aligns[index]) * self.op_bits // self.run_bits) * self.run_bits
+                for index in range(len(tables))
+                if index not in tables.inline
+            ]
+            largest = max(sizes, default=self.run_bits)
+        else:
+            sizes = [self._block_bits(group) for group in self.counts]
+            largest = max(sizes, default=self.op_bits)
+        need = sum(sizes)
+        power = 1 << max(0, (end - 1).bit_length())
+        compact = -(-end // largest) * largest
+        if -(-power // largest) * largest + need <= limit:
+            self.pool_base, why = power, 'the first power of two above the program'
+        else:
+            self.pool_base = compact
+            why = (
+                f'the program\'s end rounded up to its largest block ({hex(largest)}): at {hex(power)} the pool would '
+                f'end past the flat maximum {hex(limit)}'
+            )
+        self.span_bits = max(limit - self.pool_base, 0)
+        if cheapest:  # TablePool scatters its tables over its span, cheapest offsets first: room for 256 times their
+            # runs (about 8 more offsets of each popcount than a span that only fits them), not the window - at most
+            # half of what the window leaves, the rest for the wflip areas after the pool
+            self.span_bits = min(self.span_bits // 2, 1 << (256 * max(need, 1) - 1).bit_length())
+        self.base_reason = f'{hex(self.pool_base)}: {why} (which ends at {hex(end)})'
+        if compact + need <= 1 << self.memory_width:
+            return True
+        self.base_reason = f'none: the memory has no room above the program (which ends at {hex(end)})'
+        return False
+
+    def _no_room(self, tables: DeferredTables) -> NoReturn:
+        """for_flat with no room above the program in the memory at all, for the tables that left the stream"""
+        self.past_window += len(tables) - len(tables.inline)
+        raise PoolHasNoRoom(f'table-placement: {self.past_window} tables left the stream, and {self.base_reason}')
+
+    def _past_the_window(self, tables: DeferredTables, addresses: Sequence[int]) -> Sequence[int]:
+        """the pool's end (`end`), and for_flat, the tables placed past flat_limit (counted in past_window)"""
+        for index, address in enumerate(addresses):
+            if address:
+                table_end = address + tables.sizes[index] * self.op_bits
+                self.end = max(self.end, table_end)
+                if self.flat_limit is not None and table_end > self.flat_limit:
+                    self.past_window += 1
+        return addresses
+
     def canonical_alias(self, labels: LabelsDict) -> Dict[str, str]:
         """{group -> canonical group} for groups whose expressions resolve to the SAME address.
 
@@ -733,17 +1207,10 @@ class BlockPool(TablePool):
     def labels_resolved(self, labels: LabelsDict) -> None:
         """record the alias this assembly's labels imply among the groups it met (census reads it).
         Only a dict of aliases is kept, never the labels. A one-pass pool that merged its own census
-        keeps the alias it was SIZED with instead (see census). Refuses a program that reads a pinned word
-        raw (RAW_READERS) when no pin_exclude says which cells it reads."""
+        keeps the alias it was SIZED with instead (see census). Refuses a program that expands the pointer
+        runtime (POINTER_RUNTIME_LABELS) when no pin_exclude says which cells a pointer can reach."""
         if not (self.sizes_from_census and self.merge_aliases and self._placed):
             self.seen_alias = self.recording.canonical_alias(labels)
-        if self.pinned_words() and self.reads_words_raw and self.pin_exclude is None:
-            raise FlipJumpAssemblerException(
-                "the program reads cells through hex.pointers, and a word the BlockPool pinned cannot be "
-                "read that way (it rests at base + value). Which cells a pointer reaches is runtime data: "
-                "pass pin_exclude=(lambda address, labels: ...) vetoing every cell a pointer can read "
-                "(it may veto nothing if none is an armed hex), or use TablePool."
-            )
 
     def census(self, merge_aliases: bool = False) -> BlockCensus:
         """The counts, widths, width histogram and alias of every table this pool was offered: what a
@@ -1071,9 +1538,6 @@ class BlockPool(TablePool):
         elif cause == 'overflow':
             self.declined_overflow += 1
             self.broken_groups.add(group)
-        elif cause == 'next_address':
-            self.declined_next_address += 1
-            self.broken_groups.add(group)
         else:
             raise ValueError(f'unknown decline cause {cause!r}')
 
@@ -1183,28 +1647,25 @@ class BlockPool(TablePool):
         group: Optional[str],
         group_expr: Optional[Expr],
         labels_prefix: str = '',
-        *,
-        can_defer: bool = True,
     ) -> str:
         """one_pass: what becomes of a table the expansion reached, at its pad (DEFER_OUT,
-        DEFER_TOO_WIDE, DEFER_NEXT_ADDRESS or DEFER_INLINE). It is recorded first (census), exactly
+        DEFER_TOO_WIDE or DEFER_INLINE). It is recorded first (census), exactly
         as a counting pass counts it. This is the hook a subclass overrides to see every table at
         its pad, in order, with its site path.
 
-        A table with no group cannot be blocked and stays inline, as in the two-pass mode. Two more
-        stay inline but are queued, so place_deferred declines them in their turn (pin protection
-        counts a hot group's tables in that order): one wider than any slot max_slot_ops allows -
-        declined whatever the counts, exactly as a placing pass declines it at its pad - and one
-        the caller cannot defer (`can_defer`: an entry computes an address from `$`).
+        A table with no group cannot be blocked and stays inline, as in the two-pass mode. One wider
+        than any slot max_slot_ops allows stays inline too but is queued, so place_deferred declines it
+        in its turn (pin protection counts a hot group's tables in that order) - whatever the counts,
+        exactly as a placing pass declines it at its pad. Once the program reads words raw (and no
+        pin_exclude says which), every table is placed cheapest-first (_place_cheapest), in no block: then
+        neither a group nor a slot is needed, and both kinds leave the stream too (an ungrouped one with group '').
         """
         self.recording.reserve(ops_alignment, table_ops, group, group_expr, labels_prefix)
-        if group is None:
+        cheapest = self.reads_words_raw and self.pin_exclude is None and not self._heat
+        if group is None and not cheapest:
             self.ungrouped += 1
             return DEFER_INLINE
-        if not can_defer:
-            self.kept_inline += 1
-            return DEFER_NEXT_ADDRESS
-        if self._width_cause(max(table_ops, ops_alignment, 1)) == 'too_wide':
+        if not cheapest and self._width_cause(max(table_ops, ops_alignment, 1)) == 'too_wide':
             return DEFER_TOO_WIDE
         self.deferred += 1
         return DEFER_OUT
@@ -1217,9 +1678,10 @@ class BlockPool(TablePool):
             return sys.intern(heat_key(labels_prefix))  # _hot_site compares nothing else
         return ''
 
-    def place_deferred(self, tables: DeferredTables, labels: LabelsDict) -> Sequence[int]:
+    def place_deferred(self, tables: DeferredTables, labels: LabelsDict, end: int = 0) -> Sequence[int]:
         """one_pass: the address of every queued table (0 for one that stayed inline: no table can
-        sit at 0, the program's start), in the order the expansion reached them.
+        sit at 0, the program's start), in the order the expansion reached them. `end`: where the program without
+        the tables ends (for_flat bases the pool above it).
 
         Sizes the blocks - from this expansion's own census when the pool was given no counts (merged
         by the alias `labels` imply among its groups, if merge_aliases; a group word that names a
@@ -1243,14 +1705,26 @@ class BlockPool(TablePool):
             self._layout_cache.clear()
         if self._heat:
             self._resolve_heat(self._heat)
+        elif self.reads_words_raw and self.pin_exclude is None:
+            if self.auto_base and not self._flat_base(end, tables, cheapest=True):
+                self._no_room(tables)
+            return self._past_the_window(tables, self._place_cheapest(tables))
+        if self.auto_base and not self._flat_base(end, tables, cheapest=False):
+            self._no_room(tables)
         if self.sizes_from_census and self.overflow_base is None:
-            self.unblocked = self._choose_unblocked(tables)
+            try:
+                self.unblocked = self._choose_unblocked(tables)
+            except FlipJumpPreprocessorException:
+                if not self.auto_base:
+                    raise
+                self.span_bits = None  # the tables that left the stream do not fit below the maximum: past it
+                self.unblocked = self._choose_unblocked(tables)
         self._preallocate(self.unblocked)
         addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
         overflow: List[Tuple[int, int, int]] = []  # (index, ops_alignment, table_ops), encounter order
         for index, group, group_expr, ops_alignment, table_ops, site, inline_cause in tables:
-            if inline_cause == DEFER_NEXT_ADDRESS:
-                self._decline_next_address(group, site)
+            if inline_cause == DEFER_PAST_WINDOW:  # inline, and its group's word with it: not pinned
+                self.broken_groups.add(self.alias.get(group, group))
                 continue
             reserved = self.reserve(ops_alignment, table_ops, group, group_expr, site)
             if inline_cause is not None:  # too wide: reserve() declines it, exactly as at its pad
@@ -1264,15 +1738,37 @@ class BlockPool(TablePool):
                 addresses[index] = reserved[0]
         for index, address in self._place_overflow(overflow):
             addresses[index] = address
-        return addresses
+        return self._past_the_window(tables, addresses)
 
-    def _decline_next_address(self, group: str, site: str) -> None:
-        """a table whose entries use `$` stayed inline: decline it in its turn, as reserve() declines
-        a table at its pad - a hot group counts it among its sites first (see _hot_site)"""
-        group = self.alias.get(group, group)
-        if group in self.hot_sites:
-            self._hot_site(group, site)
-        self._decline(group, 'next_address')
+    def _place_cheapest(self, tables: DeferredTables) -> Sequence[int]:
+        """place_deferred for a program that reads words raw (the pointer runtime, and no pin_exclude): no pin can
+        hold (assembler.unpin), and an unpinned word armed with a block's address pays more than with a TablePool's,
+        so each table takes the cheapest free address, as TablePool.reserve hands them out. The word of each group
+        is counted unpinned for the pointer runtime; a table too wide for any slot stays inline, as it would."""
+        addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline
+        groups = set()
+        overflow: List[Tuple[int, int, int]] = []  # (index, ops_alignment, table_ops): no run had room
+        for index, group, _, ops_alignment, table_ops, _, inline_cause in tables:
+            if inline_cause is not None:
+                if inline_cause != DEFER_PAST_WINDOW:
+                    self._decline(group, 'too_wide')
+                continue
+            if group:
+                groups.add(group)
+            reserved = TablePool.reserve(self, ops_alignment, table_ops)
+            if reserved is None:
+                overflow.append((index, ops_alignment, table_ops))
+                continue
+            TablePool.commit(self, reserved[0] + table_ops * self.op_bits)
+            addresses[index] = reserved[0]
+        cursor = self._pool_limit()  # the runs' span is full: right after it
+        for index, ops_alignment, table_ops in overflow:
+            addresses[index] = -(-cursor // (ops_alignment * self.op_bits)) * (ops_alignment * self.op_bits)
+            cursor = addresses[index] + table_ops * self.op_bits
+            self.overflowed += 1
+        if groups:
+            self.unpins['the pointer runtime'] = len(groups)
+        return addresses
 
     def _choose_unblocked(self, tables: DeferredTables) -> List[str]:
         """The groups to leave without a block so that the blocks AND the overflow region - every
@@ -1410,6 +1906,13 @@ class BlockPool(TablePool):
             )
         self.overflowed += len(placed)
         return placed
+
+    def pool_start(self) -> int:
+        """the lowest address the pool places a table at: its blocks, or the overflow region below them (for_flat
+        with no table placed: none - the top of memory)"""
+        if self.auto_base and not self.end:
+            return 1 << self.memory_width
+        return self.pool_base if self.overflow_base is None else min(self.pool_base, self.overflow_base)
 
     def pinned_words(self) -> Dict[Expr, int]:
         """{source-word Expr: block base} - the caller resolves the Expr once labels are known.

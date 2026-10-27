@@ -1,0 +1,15 @@
+// C2: an inline (non-relocatable) table in the first 16 ops is armed through a PINNED word.
+// bit.if's bit.exact_xor arms x+w with base_jump_label at op 8 = bit address 16w < pinned_floor (32w),
+// so insert_wflip_ops does not xor the block base into that arm.
+stl.startup
+    bit.if x, z, o
+z:  stl.output '0'
+    ;next
+o:  stl.output '1'
+    ;next
+next:
+    hex.xor y, x
+    hex.print_as_digit y, 0
+    stl.loop
+x:  hex.hex 1
+y:  hex.hex 0

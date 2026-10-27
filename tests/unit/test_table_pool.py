@@ -1,8 +1,8 @@
 """
 unit-tests for the assembler's table placement: TablePool (relocate lookup tables to
 low-popcount addresses), BlockPool (group the tables dispatched through one jump word into an
-aligned block, so the arming wflip writes an index instead of an address), the table detector
-(relocatable_table_end) and the pin resolver (assembler.resolve_pinned).
+aligned block, so the arming wflip writes an index instead of an address), the declared tables
+(`__relocatable__` macros) and the pin resolver (assembler.resolve_pinned).
 
 the property pinned throughout: a relocated or blocked program produces the SAME output as the
 inline one, in fewer ops - a table is reached only by jump, so its address is free to choose.
@@ -13,6 +13,7 @@ counting pass's report on the same program, and stale counts may cost ops but ne
 
 import json
 import random
+import re
 import tracemalloc
 from itertools import islice
 from pathlib import Path
@@ -26,17 +27,8 @@ from flipjump import assemble
 from flipjump.assembler.assembler import resolve_pinned
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.inner_classes.ops import (
-    CodePosition,
-    FlipJump,
-    Label,
-    MacroName,
-    NewSegment,
-    Op,
-    Pad,
-    WordFlip,
-)
-from flipjump.assembler.preprocessor import PreprocessorData, relocatable_table_end, resolve_macros
+from flipjump.assembler.inner_classes.ops import CodePosition, MacroName, NewSegment
+from flipjump.assembler.preprocessor import PreprocessorData, is_relocatable, resolve_macros
 from flipjump.assembler.table_pool import (
     DECLINE_OTHER,
     DECLINE_STALE,
@@ -121,7 +113,7 @@ v: hex.hex
 p: hex.vec w/4, d
 """
 
-# bit.exact_xor's table ends in `dst;` - a fall-through into the next op - so it must be refused
+# bit.exact_xor's table ends in `dst;` - a fall-through into the next op - so it is not declared relocatable
 FALL_THROUGH_PROGRAM = """
 stl.startup_and_init_all
     rep(16, i) bit.xor a+i*dw, b+i*dw
@@ -143,7 +135,15 @@ stl.startup_and_init_all
 a: hex.vec 16, 0xFEDCBA9876543210
 b: hex.vec 16, 0xFEDCBA9876543210
 """
-SHIFT_MACROS = frozenset({'hex.shifts.shl_bit_once', 'hex.shifts.shr_bit_once'})
+
+
+def relocatable(name: str, params: str, start: str, entries: str) -> str:
+    """the declaration of the relocatable table `name.__relocatable__.table params`: `start:` then the entries"""
+    return (
+        f'ns {name} {{\n    ns __relocatable__ {{\n        def table {params} {{\n          {start}:\n'
+        + entries
+        + '        }\n    }\n}\n'
+    )
 
 
 # --- helpers ---
@@ -181,28 +181,6 @@ def blocked(source: str, tmp_path: Path, span_bits: Optional[int] = None) -> Tup
     placing = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths, span_bits=span_bits)
     output, ops, _ = build_and_run(source, tmp_path, placing, name='placing')
     return output, ops, placing
-
-
-def _flipjump(jump: str) -> FlipJump:
-    return FlipJump(Expr('d0'), Expr(jump), CODE_POSITION)
-
-
-def _table_ops(entries: int, *, interior_label: bool = False, trailing_label: bool = True) -> List[Op]:
-    """the shape of a dispatch table in a macro body: the arm, pad, switch:, entries, [end:], the
-    disarm"""
-    ops: List[Op] = [
-        WordFlip(Expr('src_word'), Expr('switch'), Expr('src'), CODE_POSITION),
-        Pad(Expr(16), CODE_POSITION),
-        Label('switch', CODE_POSITION),
-    ]
-    for i in range(entries):
-        if interior_label and i == entries // 2:
-            ops.append(Label('mid', CODE_POSITION))
-        ops.append(_flipjump('end'))
-    if trailing_label:
-        ops.append(Label('end', CODE_POSITION))
-    ops.append(WordFlip(Expr('src_word'), Expr('switch'), Expr('end'), CODE_POSITION))
-    return ops
 
 
 # --- TablePool ---
@@ -269,81 +247,98 @@ def test_commit_past_the_reserved_run_raises() -> None:
         pool.commit(POOL_BASE + 32 * OP_BITS)
 
 
-def test_wants_honours_the_capacity_and_the_callback() -> None:
-    name = MacroName('exact_xor', 5)
-    assert TablePool(W, POOL_BASE).wants(name)
+def test_has_room_honours_the_capacity() -> None:
+    assert TablePool(W, POOL_BASE).has_room()
     capped = TablePool(W, POOL_BASE, capacity=1)
-    assert capped.wants(name)
+    assert capped.has_room()
     capped.reserve(16, 16)
-    assert not capped.wants(name)
-    picky = TablePool(W, POOL_BASE, wants=lambda macro_name, labels_prefix: labels_prefix.startswith('hot'))
-    assert picky.wants(name, 'hot---site') and not picky.wants(name, 'cold---site')
+    assert not capped.has_room()
 
 
 def test_a_plain_pool_pins_nothing() -> None:
     assert TablePool(W, POOL_BASE).pinned_words() == {}
 
 
-# --- relocatable_table_end ---
+# --- declared tables: one expansion of a `__relocatable__` macro is one table ---
+
+# `go x` arms x's word and dispatches to its declared table; {PAD} is the pad before the call, {CALL} the
+# call, {TABLE} the table's declaration
+DECLARED_TEMPLATE = """
+def go x @ switch, end {
+    wflip x+w, switch, x
+{PAD}
+{CALL}
+  end:
+    wflip x+w, switch
+}
+{TABLE}
+stl.startup_and_init_all
+    hex.set x, 2
+    go x
+    hex.print_as_digit x, 0
+    stl.loop
+x: hex.hex
+"""
+DECLARED_PARTS = {
+    '{PAD}': '    pad 4',
+    '{CALL}': '    go.__relocatable__.table switch, end',
+    '{TABLE}': relocatable('go', 'switch, end', 'switch', '    ;end\n' * 4),
+}
+# {case: (the part it changes, to what, the error it is refused with when a pool is on)}
+DECLARED_ERRORS = {
+    'uses $': ('{TABLE}', relocatable('go', 'switch, end', 'switch', '    ;end\n    ;end\n    ;$\n    ;end\n'), '`$`'),
+    'falls through': ('{TABLE}', relocatable('go', 'switch, end', 'switch', '    ;end\n' * 3 + '    end;\n'), '`$`'),
+    'no pad': ('{PAD}', '', 'needs a `pad`'),
+    'late start label': (
+        '{TABLE}',
+        'ns go {\n    ns __relocatable__ {\n        def table switch, end {\n            ;end\n          switch:\n'
+        + '    ;end\n' * 3
+        + '        }\n    }\n}\n',
+        'start label',
+    ),
+    'not only ops': (
+        '{TABLE}',
+        relocatable('go', 'switch, end', 'switch', '    ;end\n' * 3 + '    wflip end, 1, end\n'),
+        'only',
+    ),
+    'called by rep': ('{CALL}', '    rep(1, i) go.__relocatable__.table switch, end', 'rep'),
+}
 
 
-def test_table_end_trims_the_trailing_label_and_names_the_source_word() -> None:
-    ops = _table_ops(16)
-    found = relocatable_table_end(ops, 1)
-    assert found is not None
-    end_index, count, source_word = found
-    assert end_index == 18 and count == 16  # arm, pad, switch:, then 16 entries; `end:` stays inline
-    assert isinstance(ops[end_index], FlipJump) and isinstance(ops[end_index + 1], Label)
-    assert str(source_word) == 'src_word'
+def declared(**changes: str) -> str:
+    source = DECLARED_TEMPLATE
+    for part, text in {**DECLARED_PARTS, **changes}.items():
+        source = source.replace(part, text)
+    return source
 
 
-def test_table_end_keeps_an_interior_label_inside_the_table() -> None:
-    ops = _table_ops(8, interior_label=True)
-    found = relocatable_table_end(ops, 1)
-    assert found is not None
-    assert found[1] == 8
-    after_table = ops[found[0] + 1]
-    assert isinstance(after_table, Label) and after_table.name == 'end'
+def test_a_relocatable_is_a_macro_whose_innermost_namespace_is_relocatable() -> None:
+    assert is_relocatable(MacroName('hex.exact_xor.__relocatable__.table', 6))
+    assert is_relocatable(MacroName('__relocatable__.table'))
+    assert not is_relocatable(MacroName('hex.exact_xor', 5))
+    assert not is_relocatable(MacroName('__relocatable__.inner.table'))  # not the innermost namespace
 
 
-def test_table_end_refuses_a_fall_through_entry() -> None:
-    ops = _table_ops(4)
-    ops[4] = FlipJump(Expr('d0'), Expr('$'), CODE_POSITION)  # `d0;` continues to the next address
-    assert relocatable_table_end(ops, 1) is None
+@pytest.mark.parametrize('blocking', [False, True], ids=['TablePool', 'BlockPool one pass'])
+def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path, blocking: bool) -> None:
+    reference, _, plain_fjm = build_and_run(declared(), tmp_path, None, name='inline')
+    assert reference == b'2'
+    pool = BlockPool(W, POOL_BASE, one_pass=True) if blocking else TablePool(W, POOL_BASE)
+    output, _, fjm_path = build_and_run(declared(), tmp_path, pool)
+    assert output == reference and pool_segments(fjm_path)
 
 
-def test_table_end_needs_at_least_one_entry() -> None:
-    ops = _table_ops(0)
-    assert relocatable_table_end(ops, 1) is None
-
-
-def test_table_end_refuses_a_wflip_that_is_not_the_disarm() -> None:
-    # hex.input_hex's shape: flip0: entries, flip1: entries, flip3: `wflip stl.IO+w, flip3, end`
-    ops = _table_ops(4)
-    ops[6:6] = [Label('flip3', CODE_POSITION), WordFlip(Expr('src_word'), Expr('flip3'), Expr('end'), CODE_POSITION)]
-    assert relocatable_table_end(ops, 1) is None
-    # and a run whose only label is the head, ended by a wflip of something else entirely
-    ops = _table_ops(4, trailing_label=False)
-    ops[-1] = WordFlip(Expr('other_word'), Expr('elsewhere'), Expr('end'), CODE_POSITION)
-    assert relocatable_table_end(ops, 1) is None
-
-
-def test_table_end_accepts_a_run_that_simply_ends() -> None:
-    # hex.cmp's second table: entries and interior labels, then the macro body ends
-    ops = _table_ops(3, interior_label=True, trailing_label=False)[:-1]
-    found = relocatable_table_end(ops, 1)
-    assert found is not None and found[1] == 3 and found[2] is None
-
-
-def test_table_end_refuses_a_pad_that_is_fallen_into() -> None:
-    ops = _table_ops(4)
-    ops[0] = FlipJump(Expr('d0'), Expr('$'), CODE_POSITION)  # `d0;` before the pad walks into it
-    assert relocatable_table_end(ops, 1) is None
-    ops[0] = WordFlip(Expr('src_word'), Expr('switch'), Expr('$'), CODE_POSITION)  # a 2-arg wflip does too
-    assert relocatable_table_end(ops, 1) is None
-    ops[0] = Label('before', CODE_POSITION)  # nothing but labels before the pad: reached from outside
-    assert relocatable_table_end(ops, 1) is None
-    assert relocatable_table_end(_table_ops(4)[1:], 0) is None
+@pytest.mark.parametrize('case', sorted(DECLARED_ERRORS))
+def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path: Path, case: str) -> None:
+    part, text, message = DECLARED_ERRORS[case]
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text(declared(**{part: text}))
+    with pytest.raises(FlipJumpPreprocessorException, match=re.escape(message)):
+        assemble(
+            [fj_path], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=TablePool(W, POOL_BASE)
+        )
+    # with the pool off nothing is checked and nothing changes
+    assemble([fj_path], tmp_path / 'plain.fjm', memory_width=W, print_time=False)
 
 
 # --- resolve_pinned ---
@@ -373,7 +368,15 @@ def test_resolve_pinned_keeps_an_alias_with_one_base() -> None:
 def test_resolve_pinned_skips_the_runtime_words_and_unresolvable_ones() -> None:
     pinned, _ = resolve_pinned({Expr(64): 0x1000, Expr('missing'): 0x2000, Expr('z'): 0x3000}, {'z': 1 << 20})
     assert pinned == {1 << 20: 0x3000}
-    assert RESERVED_BELOW > 64  # stl.IO's word, which the runtime intercepts
+
+
+@pytest.mark.parametrize('memory_width', [8, 16, 32, 64])
+def test_the_runtimes_words_are_reserved_at_every_width(memory_width: int) -> None:
+    # G3: stl.IO is op 1, bits [2w, 4w) - the output flips at 2w and 2w+1, the input bit at 3w+#w (fjm_run's
+    # _handle_output and _handle_input) - and RESERVED_BELOW covers it at every width
+    w = memory_width
+    assert 2 * w <= 2 * w + 1 < 4 * w and 2 * w <= 3 * w + w.bit_length() < 4 * w
+    assert 4 * w <= RESERVED_BELOW
 
 
 def test_resolve_pinned_lets_the_caller_veto_a_word() -> None:
@@ -438,10 +441,9 @@ def test_the_runtime_words_are_never_relocated() -> None:
     pool = TablePool(W, POOL_BASE)
     data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
     data.labels['stl.IO'] = 64
-    name = MacroName('exact_xor', 5)
-    assert not data.begin_relocation(name, 16, 16, '', '(stl.IO + 32)', _sum('stl.IO', 32))
+    assert not data.begin_relocation(16, 16, '', '(stl.IO + 32)', _sum('stl.IO', 32))
     assert pool.reserved_words == 1 and pool.allocated == 0
-    assert data.begin_relocation(name, 16, 16, '', '(x + 32)', _sum('x', 32))
+    assert data.begin_relocation(16, 16, '', '(x + 32)', _sum('x', 32))
     assert pool.reserved_words == 1 and pool.allocated == 1
 
 
@@ -808,9 +810,9 @@ def test_relocated_tables_leave_the_output_unchanged(tmp_path: Path, memory_widt
     assert ops < reference_ops
 
 
-def test_a_pool_that_wants_nothing_is_inert(tmp_path: Path) -> None:
+def test_a_pool_with_no_capacity_is_inert(tmp_path: Path) -> None:
     reference, reference_ops, _ = build_and_run(XOR_PROGRAM, tmp_path, None, name='inline')
-    pool = TablePool(W, POOL_BASE, wants=lambda macro_name, labels_prefix: False)
+    pool = TablePool(W, POOL_BASE, capacity=0)
     output, ops, fjm_path = build_and_run(XOR_PROGRAM, tmp_path, pool)
     assert (output, ops) == (reference, reference_ops)
     assert pool.allocated == 0 and not pool_segments(fjm_path)
@@ -840,10 +842,10 @@ def test_a_pinned_word_read_through_a_pointer_needs_the_callers_exclusion(tmp_pa
     counting = BlockPool(W, POOL_BASE)
     build_and_run(POINTER_PROGRAM, tmp_path, counting, name='counting')
     assert counting.reads_words_raw
-    # pinning without a declaration of the cells pointers reach is refused, not miscompiled
-    with pytest.raises(FlipJumpException, match='pin_exclude'):
-        blocked_pool = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
-        build_and_run(POINTER_PROGRAM, tmp_path, blocked_pool, name='refused')
+    # without a declaration of the cells pointers reach, no word is pinned: the same program, slower
+    unpinned_pool = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
+    output, _, _ = build_and_run(POINTER_PROGRAM, tmp_path, unpinned_pool, name='unpinned')
+    assert output == reference and list(unpinned_pool.unpins) == ['the pointer runtime']
     # with the pointed cell excluded from pinning the blocked program is the same program; the
     # veto sees the bit address of the cell's JUMP word, `d + w`
     blocked_pool = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
@@ -854,7 +856,7 @@ def test_a_pinned_word_read_through_a_pointer_needs_the_callers_exclusion(tmp_pa
     assert blocked_pool.pinned_words()  # the other armed words are still pinned
 
 
-def test_a_fall_through_table_is_refused(tmp_path: Path) -> None:
+def test_an_undeclared_table_stays_inline(tmp_path: Path) -> None:
     reference, _, _ = build_and_run(FALL_THROUGH_PROGRAM, tmp_path, None, name='inline')
     pool = TablePool(W, POOL_BASE)
     output, _, _ = build_and_run(FALL_THROUGH_PROGRAM, tmp_path, pool)
@@ -876,18 +878,13 @@ def test_blocked_tables_leave_the_output_unchanged_and_cost_fewer_ops(source: st
 
 
 def test_the_shift_tables_are_tables_a_pool_can_see(tmp_path: Path) -> None:
-    # shl_bit_once / shr_bit_once dispatch like exact_xor, but built their tables with `rep` and a
-    # nested table macro - the same ops, invisible to relocatable_table_end, so a pool that wanted
-    # them registered none and they paid a full address on every arm
+    # shl_bit_once / shr_bit_once dispatch like exact_xor, and declare their tables relocatable
     reference, reference_ops, _ = build_and_run(SHIFT_PROGRAM, tmp_path, None, name='inline')
     assert reference == b'fdb97530eca864207f6e5d4c3b2a1908'
-    wants: Callable[[MacroName, str], bool] = lambda macro_name, labels_prefix: (  # noqa: E731
-        macro_name.name in SHIFT_MACROS
-    )
-    counting = BlockPool(W, POOL_BASE, wants=wants)
+    counting = BlockPool(W, POOL_BASE)
     build_and_run(SHIFT_PROGRAM, tmp_path, counting, name='counting')
     assert sum(counting.counts.values()) == 32  # shl_bit 16 + shr_bit 16, one table per call
-    placing = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths, wants=wants)
+    placing = BlockPool(W, POOL_BASE, counts=counting.counts, widths=counting.widths)
     output, ops, _ = build_and_run(SHIFT_PROGRAM, tmp_path, placing, name='placing')
     assert output == reference
     assert placing.allocated == 32 and placing.pinned_words()
@@ -1110,7 +1107,6 @@ def test_declines_are_told_apart_per_group_by_cause() -> None:
         'overflow': 1,
         'no_block': 1,
         'too_wide': 1,
-        'next_address': 0,
     }
     assert pool.stale_declines == 3  # new_group, width_overflow and overflow
     assert not set(DECLINE_STALE) & set(DECLINE_OTHER)
@@ -1166,58 +1162,30 @@ def test_a_recording_that_misses_a_table_is_caught(
 
 # --- one pass: tables wait out of the op stream, and are placed once the expansion is done ---
 
-# a table whose entry k flips `y+dbit + $ - switch - (k+1)*dw`: y's lowest value bit where the
-# table really sits, since `$` is the address after the entry - and an address far below y if `$`
-# were counted from the table's start, as it is while a one-pass pool defers a table. So a pool that
-# deferred it would miscompile it; one pass keeps it inline. x=5 -> entry 5 flips y 2 -> 3; y^x = 6.
-NEXT_ADDRESS_PROGRAM = (
-    """
-def dollar_table x, y @ switch, end {
-    wflip x+w, switch, x
-    pad 16
-  switch:
-"""
-    + ''.join(f'    y+dbit+$-switch-{k + 1}*dw;end\n' for k in range(16))
-    + """
-  end:
-    wflip x+w, switch
-}
-stl.startup_and_init_all
-    hex.set x, 5
-    hex.set y, 2
-    dollar_table x, y
-    hex.xor y, x
-    hex.print_as_digit y, 0
-    stl.loop
-x: hex.hex
-y: hex.hex
-"""
-)
-
 # table labels (externs of their macros) named by an expression evaluated DURING the expansion -
 # one pass has no address for them yet. {CODE} goes after the tables, {DATA} after the variables.
 EXPANSION_TIME_TEMPLATE = (
     """
-def ext_table x @ end > ext_switch {
+def ext_table x @ end < ext_switch {
     wflip x+w, ext_switch, x
     pad 16
-  ext_switch:
-"""
-    + '    ;end\n' * 16
-    + """
+    ext_table.__relocatable__.table ext_switch, end
   end:
     wflip x+w, ext_switch
 }
-def ext_table2 x @ end > ext2_switch {
+"""
+    + relocatable('ext_table', 'switch, end', 'switch', '    ;end\n' * 16)
+    + """
+def ext_table2 x @ end < ext2_switch {
     wflip x+w, ext2_switch, x
     pad 16
-  ext2_switch:
-"""
-    + '    ;end\n' * 16
-    + """
+    ext_table2.__relocatable__.table ext2_switch, end
   end:
     wflip x+w, ext2_switch
 }
+"""
+    + relocatable('ext_table2', 'switch, end', 'switch', '    ;end\n' * 16)
+    + """
 def nothing a {
     ;$ + (a - a)
 }
@@ -1273,7 +1241,7 @@ ONE_PASS_CASES: Dict[str, Tuple[str, Dict[str, Any]]] = {
     'hex.xor': (XOR_PROGRAM, {}),
     'hex.cmp/shift/mul': (CMP_PROGRAM, {}),
     'aliased words': (ALIAS_PROGRAM, {}),
-    'shifts': (SHIFT_PROGRAM, {'wants': lambda macro_name, labels_prefix: macro_name.name in SHIFT_MACROS}),
+    'shifts': (SHIFT_PROGRAM, {}),
 }
 ONE_PASS_LAYOUTS: Dict[str, Dict[str, Any]] = {
     'uniform': {},
@@ -1299,7 +1267,7 @@ def test_one_pass_builds_the_two_pass_binary_byte_for_byte(
     assert output == two_output == reference
     assert fjm_path.read_bytes() == two_fjm.read_bytes() and ops == two_ops
     assert one.deferred == placing.allocated == one.allocated > 0
-    assert one.overflowed == one.declined == one.kept_inline == 0
+    assert one.overflowed == one.declined == 0
     assert one.census(merge_aliases=merge_aliases) == counting.census(merge_aliases=merge_aliases)
     assert {g: base for g, (base, _) in one.groups.items()} == {g: base for g, (base, _) in placing.groups.items()}
 
@@ -1876,36 +1844,6 @@ def test_the_overflow_region_can_be_placed_and_must_fit(
         )
 
 
-def test_a_table_whose_entries_use_the_next_address_stays_inline_and_is_declined(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    reference, _, _ = build_and_run(NEXT_ADDRESS_PROGRAM, tmp_path, None, name='inline')
-    assert reference == b'6'
-    counting = _SiteRecorder()
-    build_and_run(NEXT_ADDRESS_PROGRAM, tmp_path, counting, name='counting')
-    dollar_group, _ = next((g, site) for g, site in counting.sites if 'dollar_table' in site)
-    other_site = next(site for g, site in counting.sites if g == dollar_group and 'dollar_table' not in site)
-    heat = {heat_key(dollar_group): [(heat_key(other_site), 0, 16)]}  # pin protection on its group
-    placing = BlockPool(W, POOL_BASE, **counting.census().pool_kwargs(), heat=heat)
-    two_output, _, _ = build_and_run(NEXT_ADDRESS_PROGRAM, tmp_path, placing, name='two')
-    one = BlockPool(W, POOL_BASE, one_pass=True, heat=heat)
-    output, _, _ = build_and_run(NEXT_ADDRESS_PROGRAM, tmp_path, one, name='one')
-    assert output == two_output == reference
-    assert one.kept_inline == one.declined_next_address == one.decline_report()['next_address'] == 1
-    assert dollar_group in one.broken_groups  # a member of the group is not in its block
-    assert one.allocated == placing.allocated - 1  # the two-pass build places it; one pass cannot
-    assert one._hot_seen == placing._hot_seen  # counted among its group's sites, in its turn
-    assert one.census() == counting.census()  # and in the census
-
-    # NEGATIVE CONTROL: with the `$` check off, one pass defers the table and miscompiles it - every
-    # entry flips `y+dbit - switch` (its `$` counted from the table's start), a negative address no
-    # memory word can hold
-    monkeypatch.setattr(preprocessor, 'table_names_next_address', lambda ops, pad_index, end_index: False)
-    with pytest.raises(FlipJumpException) as miscompiled:
-        build_and_run(NEXT_ADDRESS_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, one_pass=True), name='mutant')
-    assert isinstance(miscompiled.value.__cause__, OverflowError) and 'negative' in str(miscompiled.value.__cause__)
-
-
 @pytest.mark.parametrize('case', list(EXPANSION_TIME_CASES))
 def test_a_table_label_evaluated_during_the_expansion_is_refused_by_one_pass(tmp_path: Path, case: str) -> None:
     code, data = EXPANSION_TIME_CASES[case]
@@ -1983,26 +1921,26 @@ def test_the_census_of_a_counting_pool_given_an_alias_keeps_it() -> None:
 # a dispatch word inside a deferred table, named two ways: its alias needs the table's address
 ALIAS_DEFERRED_PROGRAM = (
     """
-def ext_table x @ end > ext_switch {
+def ext_table x @ end < ext_switch {
     wflip x+w, ext_switch, x
     pad 16
-  ext_switch:
-"""
-    + '    ;end\n' * 16
-    + """
+    ext_table.__relocatable__.table ext_switch, end
   end:
     wflip x+w, ext_switch
 }
+"""
+    + relocatable('ext_table', 'switch, end', 'switch', '    ;end\n' * 16)
+    + """
 def disp word @ switch, end {
     wflip word, switch, end
     pad 16
-  switch:
-"""
-    + '    ;end\n' * 16
-    + """
+    disp.__relocatable__.table switch, end
   end:
     wflip word, switch
 }
+"""
+    + relocatable('disp', 'switch, end', 'switch', '    ;end\n' * 16)
+    + """
 stl.startup_and_init_all
     hex.set x, 5
     ext_table x
@@ -2064,11 +2002,10 @@ def test_the_pool_is_importable_from_the_preprocessor_too() -> None:
         'DECLINE_OTHER',
         'DECLINE_STALE',
         'DEFER_INLINE',
-        'DEFER_NEXT_ADDRESS',
         'DEFER_OUT',
         'DEFER_TOO_WIDE',
         'DeferredTables',
-        'RAW_READERS',
+        'POINTER_RUNTIME_LABELS',
         'RESERVED_BELOW',
         'TablePool',
         'heat_key',

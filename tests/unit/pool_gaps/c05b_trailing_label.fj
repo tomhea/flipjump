@@ -1,0 +1,21 @@
+// C5b: a relocatable whose body ENDS with a label (a parameter): that label is "the op after the table",
+// which a moved table does not have. The caller jumps to it.
+ns my {
+  ns __relocatable__ {
+    def table start, a, done {
+      start:
+        ;a
+      done:
+    }
+  }
+}
+stl.startup
+    ;D
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, T, D
+  after:
+    wflip x+w, T
+    stl.output 'K'
+    stl.loop
+x:  hex.hex 0

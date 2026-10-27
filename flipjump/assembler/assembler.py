@@ -10,7 +10,7 @@ import gc
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Deque, List, Dict, MutableSequence, Tuple, Optional, Union
+from typing import Callable, Deque, Iterable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -23,12 +23,21 @@ from flipjump.utils.exceptions import (
     FlipJumpExprException,
     FlipJumpWriteFjmException,
 )
-from flipjump.assembler.inner_classes.ops import FlipJump, WordFlip, LastPhaseOp, NewSegment, ReserveBits, Padding
+from flipjump.assembler.inner_classes.ops import (
+    FlipJump,
+    WordFlip,
+    LastPhaseOp,
+    Macro,
+    MacroName,
+    NewSegment,
+    ReserveBits,
+    Padding,
+)
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
-from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.table_pool import TablePool, RESERVED_BELOW
+from flipjump.assembler.preprocessor import OpsQueue, resolve_macros
+from flipjump.assembler.table_pool import OffsetGuard, PoolHasNoRoom, TablePool, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -110,7 +119,8 @@ class BinaryData:
         'padding_ops_indices',
         'wflips_dict',
         'pinned',
-        'pinned_floor',
+        'pool_start',
+        'wflips_at',
     )
 
     def __init__(
@@ -121,20 +131,26 @@ class BinaryData:
         *,
         save_wflip_labels: bool = True,
         pinned: Optional[Dict[int, int]] = None,
+        pool_start: Optional[int] = None,
+        wflips_at: Optional[int] = None,
     ):
         """
         @param save_wflip_labels: whether to record a `:wflips:N` label per generated wflip-chain op
+        @param pinned: {jump-word address: block base} of BlockPool's pinned words
+        @param pool_start: where a table pool starts: a segment below it may not reach it
+        @param wflips_at: if given, every segment's wflip area is laid out from here, one after the other, rather
+        than right after its code (a pool based right above the program: TablePool.wflips_at)
         """
         self.memory_width = memory_width
 
-        # {jump-word address: block base} for BlockPool; None for every other build, so the two use
-        # sites below cost one truthiness test per op when off
+        # {jump-word address: block base} for BlockPool; None for every other build, so the use site
+        # below costs one truthiness test per op when off
         self.pinned = pinned
-        # a flip value below a `pad 16` table address is a VALUE flip (hex.set, xor_by), not a jump target
-        self.pinned_floor = 16 * 2 * memory_width
+        self.pool_start = pool_start
 
         self.first_address = first_segment.start_address
-        self.next_wflip_address = first_segment.wflip_start_address
+        self.wflips_at = wflips_at
+        self.next_wflip_address = first_segment.wflip_start_address if wflips_at is None else wflips_at
 
         self.labels = labels
         self.wflips_so_far = 0
@@ -156,14 +172,32 @@ class BinaryData:
             index = self.padding_ops_indices.pop()
             return WFlipSpot(self.fj_words, index, self.first_address + self.memory_width * index)
 
+        if self.next_wflip_address + 2 * self.memory_width > 1 << self.memory_width:
+            raise FlipJumpAssemblerException(
+                f'Not enough space with the {self.memory_width}-bits memory-width: the wflip area of the segment at '
+                f'{hex(self.first_address)} reaches {hex(self.next_wflip_address + 2 * self.memory_width)}.'
+            )
         wflip_spot = WFlipSpot(self.wflip_words, len(self.wflip_words), self.next_wflip_address)
         self.wflip_words.extend((0, 0))
         self.next_wflip_address += 2 * self.memory_width
         return wflip_spot
 
     def close_and_add_segment(self, fjm_writer: Writer) -> None:
+        if self.wflips_at is not None:  # the code here, and its wflip area after the pool
+            code_end = self.first_address + len(self.fj_words) * self.memory_width
+            fj_words, wflip_words = self.fj_words, self.wflip_words
+            add_segment_to_fjm(self.memory_width, fjm_writer, self.first_address, code_end, fj_words, [], take=True)
+            add_segment_to_fjm(self.memory_width, fjm_writer, self.wflips_at, self.next_wflip_address, wflip_words, [])
+            self.wflips_at = self.next_wflip_address
+            self._new_buffers()
+            return
         if self.next_wflip_address == self.first_address:
             return
+        if self.pool_start is not None and self.first_address < self.pool_start < self.next_wflip_address:
+            raise FlipJumpAssemblerException(
+                f'table-placement: the segment at {hex(self.first_address)} and its wflip area reach '
+                f'{hex(self.next_wflip_address)}, inside the table pool at {hex(self.pool_start)}. Raise pool_base.'
+            )
 
         add_segment_to_fjm(
             self.memory_width,
@@ -199,14 +233,18 @@ class BinaryData:
         # `+=` on an array only accepts another array; extend() takes any iterable of ints.
         self.fj_words.extend((flip, jump))
 
+    def pinned_value(self, word_address: int, flip_value: int, value_kind: int) -> int:
+        """the value a wflip flips into `word_address`, which may be a pinned word: it rests at `base + digit`,
+        so a writer installing an address V (a label, or a label plus a constant) flips `V ^ base` - for a
+        table's own arm just its index in the block, and the same rule for every other dispatcher through the
+        word (stl.comp_if1, hex.shifts.*, hex.tables.*) - while any other value is flipped as it is (unpin left
+        pinned only the words whose other values touch just their window)"""
+        base = self.pinned.get(word_address) if self.pinned else None
+        if not base or value_kind != VALUE_ADDRESS:
+            return flip_value
+        return flip_value ^ base
+
     def insert_wflip_ops(self, word_address: int, flip_value: int, return_address: int) -> None:
-        if self.pinned:
-            # the word rests at `base + digit`, so a writer installing a jump target V flips
-            # `V ^ base` - for the table's own arm just its index in the block, and the same rule
-            # for every other dispatcher through the word (stl.comp_if1, hex.shifts.*, hex.tables.*)
-            base = self.pinned.get(word_address)
-            if base and flip_value >= self.pinned_floor:
-                flip_value ^= base
         if 0 == flip_value:
             self.insert_fj_op(0, return_address)
         else:
@@ -262,7 +300,7 @@ class BinaryData:
         self.close_and_add_segment(fjm_writer)
 
         self.first_address = first_address
-        self.next_wflip_address = wflip_first_address
+        self.next_wflip_address = wflip_first_address if self.wflips_at is None else self.wflips_at
 
         del self.padding_ops_indices[:]  # (an array has no clear())
 
@@ -319,22 +357,207 @@ def resolve_pinned(
 _PROGRESS_CHUNK = 1 << 16
 
 
-def _deferred_value(stream: OpStream, encoded: int, next_slot: Callable[[], int], labels: Dict[str, int]) -> int:
-    """the value of a deferred operand (its slot is ~encoded; see OpStream). Raises what the Expr would."""
+def window_top(base: int, alignments: Iterable[int]) -> int:
+    """the lowest bit of a pinned word (resting at `base`, armed with tables aligned to `alignments` bits) that holds
+    an address: a flip below it is a value, or a move inside the table the word is armed with - the same with the
+    pool as without (the base, and the widest table it is armed with, is aligned past it; a flip of an armed word is
+    assumed to stay inside the table armed). A flip at or above it changes an address, which only an arm may, xored
+    with the base."""
+    top = (base & -base).bit_length() - 1 if base else 1 << 30
+    alignments = list(alignments)
+    return min(top, max(alignments)) if alignments else top
+
+
+def unpin(
+    stream: OpStream,
+    labels: Dict[str, int],
+    memory_width: int,
+    pinned: Dict[int, int],
+    reasons: Dict[str, int],
+    table_alignment: Callable[[int], int] = lambda address: 0,
+    *,
+    raw: bool = False,
+    pads: Optional[Dict[int, int]] = None,
+) -> None:
+    """Un-pin every word of `pinned` ({jump-word address: block base}) whose pin could not hold, counting each in
+    `reasons` by why. An un-pinned word rests at its value and is armed with the whole address - always right, only
+    slower. A pin holds when the word has an op of its own (to rest at base + value) and every flip of it either
+    arms it - a wflip by a label plus a constant, flipped xor the base - or stays below its window_top: not a
+    number or a value computed from labels above it (`wflip x+w, 0x4000`, `T1 ^ T2`), no `a;b` flip above it (arming
+    bit by bit), no wflip across two words; and a flip below it (a number is a value there, as `hex.set`'s are) may
+    not arm the word either: it is not pinned while an op that is no arm of it jumps to its op (through it) and a
+    table below its window - an inline address a `pad` aligned or a segment starts at (`pads`: {address: the bits
+    the pad aligned it to}) - is a value its flips and its rest value can make (tables_armed_below). (A pinned word
+    is assumed never to be jumped through unarmed but by such an op, nor armed with a number to an op no pad or
+    segment aligned.) `table_alignment(address)`: the
+    bits the table armed at `address` is aligned to (a moved table: its size; an inline one: its `pad`, else 0).
+    `raw`: the program reads or writes words through the pointer runtime, and no pin_exclude says which - no pin
+    can hold."""
+
+    def drop(word: int, reason: str) -> None:
+        if pinned.pop(word, None) is not None:
+            reasons[reason] = reasons.get(reason, 0) + 1
+
+    if raw:
+        for word in list(pinned):
+            drop(word, 'the pointer runtime')
+        return
+    w = memory_width
+    arms: Dict[int, List[int]] = {word: [] for word in pinned}  # each word's arms' alignments
+    flipped_bits: Dict[int, int] = {}  # word -> the bits `a;b` ops flip
+    numbers: Dict[int, int] = {}  # word -> the bits numbers flip into it
+    computed: Dict[int, int] = {}  # word -> the bits values computed from labels flip into it
+    with_op: Set[int] = set()
+    rests: Dict[int, int] = {}  # word -> the value its op rests at (its jump)
+    jumped: Set[int] = set()  # the words whose op an op jumps to that is no arm of the word (jumping through it)
+    address = 0
+    slots = iter(stream.vals)
+    next_slot = slots.__next__
+    FJ_POS, WFLIP, PAD, FJ_PACKED = op_stream.FJ_POS, op_stream.WFLIP, op_stream.PAD, op_stream.FJ_PACKED
+    for kind in stream.kinds:
+        if kind == WFLIP:
+            word = next_slot()
+            if word < 0:
+                word = _deferred_value(stream, ~word, next_slot, labels, None)
+            value = next_slot()
+            kind_of_value = VALUE_NUMBER
+            if value < 0:
+                kind_of_value = _deferred_value_kind(stream, ~value)
+                if kind_of_value == VALUE_ADDRESS and word in arms:
+                    arms[word].append(table_alignment(_label_address(stream, ~value, labels)))
+                value = _deferred_value(stream, ~value, next_slot, labels, None)
+            return_address = next_slot()
+            if return_address < 0:
+                return_address = _deferred_value(stream, ~return_address, next_slot, labels, None)
+            next_slot()  # the position
+            if return_address + w in arms and (kind_of_value != VALUE_ADDRESS or word != return_address + w):
+                jumped.add(return_address + w)
+            if word % w:
+                for touched in (word - word % w, word - word % w + w):
+                    if touched in arms:
+                        drop(touched, 'a wflip across two words')
+            elif word in arms and kind_of_value != VALUE_ADDRESS:
+                into = numbers if kind_of_value == VALUE_NUMBER else computed
+                into[word] = into.get(word, 0) | value
+            address += 2 * w
+        elif kind == PAD:
+            address += next_slot() * 2 * w
+        elif kind == op_stream.OBJ:
+            obj = stream.refs[next_slot()]
+            address = obj.start_address if isinstance(obj, NewSegment) else obj.first_address_after_reserved
+        else:
+            if kind == FJ_PACKED:
+                packed = next_slot()
+                flip, jump = packed >> 32, packed & op_stream.PACKED_JUMP_MASK
+            else:
+                flip = next_slot()
+                if flip < 0:
+                    flip = _deferred_value(stream, ~flip, next_slot, labels, None)
+                jump = next_slot()
+                if jump < 0:
+                    jump = _deferred_value(stream, ~jump, next_slot, labels, None)
+                if kind == FJ_POS:
+                    next_slot()  # the position
+            if address + w in arms:
+                with_op.add(address + w)
+                rests[address + w] = jump
+            if jump + w in arms:
+                jumped.add(jump + w)
+            word = flip - flip % w
+            if word in arms:
+                flipped_bits[word] = flipped_bits.get(word, 0) | 1 << (flip - word)
+            address += 2 * w
+    low = sorted((pads or {}).items())
+    for word, base in list(pinned.items()):
+        top = window_top(base, arms[word])
+        above = ~((1 << top) - 1)
+        if word not in with_op:
+            drop(word, 'no op of its own')
+        elif flipped_bits.get(word, 0) & above:
+            drop(word, 'a bit flip above its window')
+        elif numbers.get(word, 0) & above:
+            drop(word, 'armed with a number')
+        elif computed.get(word, 0) & above:
+            drop(word, 'armed with a value computed from labels')
+        elif word in jumped and tables_armed_below(
+            low, top, rests.get(word, 0), flipped_bits.get(word, 0) | numbers.get(word, 0) | computed.get(word, 0)
+        ):
+            drop(word, 'a flip below its window could arm a table there')
+
+
+def tables_armed_below(pads: Sequence[Tuple[int, int]], top: int, rest: int, flips: int) -> bool:
+    """could a word resting at `rest`, flipped by the bits of `flips` (not by an arm), hold an address in a table of
+    `pads` ([(address, the bits a pad aligned it to)], ascending) below 2^top, with a flip's help? Every value it holds
+    has the bits of `rest` that no flip toggles, and no bit outside `rest | flips`."""
+    for address, bits in pads:
+        if address >> top:
+            break
+        above = ~((1 << bits) - 1)  # a table's address, above the bits its entries differ in
+        if address & flips & above and not address & ~(rest | flips) and not rest & ~flips & above & ~address:
+            return True
+    return False
+
+
+def _label_address(stream: OpStream, encoded: int, labels: Dict[str, int]) -> int:
+    """the address of the label of a deferred `label + constant` value (its slot is ~encoded)"""
+    ref = stream.refs[encoded >> 2]
+    if encoded & 3 == op_stream.TAG_EXPR:
+        ref = op_stream.linear_sum(ref)[0]  # type: ignore[index]
+    return labels[ref]
+
+
+# what a wflip's value is (see BinaryData.pinned_value): a number, one address (a label, plus a constant), or
+# a value computed from labels
+VALUE_NUMBER, VALUE_ADDRESS, VALUE_COMPUTED = 0, 1, 2
+
+
+def value_kind(value: Expr) -> int:
+    """the kind of a wflip's value expression (VALUE_*)"""
+    if not value.all_unknown_labels():
+        return VALUE_NUMBER
+    linear = op_stream.linear_sum(value)
+    return VALUE_ADDRESS if linear is not None and linear[0] is not None else VALUE_COMPUTED
+
+
+def _deferred_value_kind(stream: OpStream, encoded: int) -> int:
+    """the kind of a deferred wflip value (its slot is ~encoded)"""
+    tag = encoded & 3
+    if tag != op_stream.TAG_EXPR:
+        return VALUE_ADDRESS
+    return value_kind(stream.refs[encoded >> 2])
+
+
+def _deferred_value(
+    stream: OpStream,
+    encoded: int,
+    next_slot: Callable[[], int],
+    labels: Dict[str, int],
+    guard: Optional[OffsetGuard],
+    is_address: bool = True,
+) -> int:
+    """the value of a deferred operand (its slot is ~encoded; see OpStream). Raises what the Expr would, and
+    what a table pool's OffsetGuard does (`is_address` unless it is a wflip's value: see check_expr)."""
     ref = stream.refs[encoded >> 2]
     tag = encoded & 3
     if tag == op_stream.TAG_LABEL:
         value = labels.get(ref)
         if value is None:
             return Expr(ref).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
+        if guard is not None and ref in guard.stranded:
+            guard.check(ref, value, 0)
         return value
     if tag == op_stream.TAG_LABEL_PLUS:
         const = next_slot()
         value = labels.get(ref)
         if value is None:
             return Expr(ref).exact_eval(labels) + const  # raises, as above
+        if guard is not None:
+            guard.check(ref, value, const)
         return value + const
-    return ref.exact_eval(labels)  # type: ignore[no-any-return]
+    value = ref.exact_eval(labels)
+    if guard is not None:
+        guard.check_expr(ref, value, is_address)
+    return value  # type: ignore[no-any-return]
 
 
 def _labels_resolve_stream(
@@ -343,11 +566,13 @@ def _labels_resolve_stream(
     labels: Dict[str, int],
     fjm_writer: Writer,
     on_progress: Optional[Callable[[float], None]],
+    guard: Optional[OffsetGuard],
 ) -> None:
     """labels_resolve over a compact OpStream (the preprocessor's output): the same BinaryData calls,
     in the same order, with the same values, as the op objects it replaces would make."""
     insert_fj_op = binary_data.insert_fj_op
     insert_wflip_ops = binary_data.insert_wflip_ops
+    pinned = binary_data.pinned
     kinds = stream.kinds
     refs = stream.refs
     slots = iter(stream.vals)
@@ -369,10 +594,10 @@ def _labels_resolve_stream(
                 try:
                     flip = next_slot()
                     if flip < 0:
-                        flip = _deferred_value(stream, ~flip, next_slot, labels)
+                        flip = _deferred_value(stream, ~flip, next_slot, labels, guard)
                     jump = next_slot()
                     if jump < 0:
-                        jump = _deferred_value(stream, ~jump, next_slot, labels)
+                        jump = _deferred_value(stream, ~jump, next_slot, labels, guard)
                     next_slot()  # the position
                     insert_fj_op(flip, jump)
                 except FlipJumpException as e:
@@ -381,14 +606,19 @@ def _labels_resolve_stream(
                 try:
                     word_address = next_slot()
                     if word_address < 0:
-                        word_address = _deferred_value(stream, ~word_address, next_slot, labels)
+                        word_address = _deferred_value(stream, ~word_address, next_slot, labels, guard)
                     flip_value = next_slot()
+                    kind_of_value = VALUE_NUMBER
                     if flip_value < 0:
-                        flip_value = _deferred_value(stream, ~flip_value, next_slot, labels)
+                        if pinned:
+                            kind_of_value = _deferred_value_kind(stream, ~flip_value)
+                        flip_value = _deferred_value(stream, ~flip_value, next_slot, labels, guard, False)
                     return_address = next_slot()
                     if return_address < 0:
-                        return_address = _deferred_value(stream, ~return_address, next_slot, labels)
+                        return_address = _deferred_value(stream, ~return_address, next_slot, labels, guard)
                     next_slot()  # the position
+                    if pinned:
+                        flip_value = binary_data.pinned_value(word_address, flip_value, kind_of_value)
                     insert_wflip_ops(word_address, flip_value, return_address)
                 except FlipJumpException as e:
                     raise FlipJumpAssemblerException(f"{e} in op {stream.op_at(op_index)}.")
@@ -416,6 +646,9 @@ def labels_resolve(
     save_wflip_labels: bool = True,
     pinned: Optional[Dict[int, int]] = None,
     on_progress: Optional[Callable[[float], None]] = None,
+    pool_start: Optional[int] = None,
+    offset_guard: Optional[OffsetGuard] = None,
+    wflips_at: Optional[int] = None,
 ) -> None:
     """
     resolve the labels and expressions to get the list of fj ops, and add all the data and segments into the fjm_writer.
@@ -425,14 +658,27 @@ def labels_resolve(
     @param fjm_writer: [out]: the .fjm file writer
     @param save_wflip_labels: record a `:wflips:N` debugging label per generated wflip-chain op
     @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction of ops resolved (OpStream only)
+    @param pinned: {jump-word address: block base} of the words a BlockPool pinned (see BinaryData.pinned_value)
+    @param pool_start: where a table pool starts, if one placed tables: no other segment may reach it
+    @param offset_guard: the table pool's, from the preprocessor: it checks the operands that waited for a label
+    @param wflips_at: if given, where the wflip areas go (see BinaryData)
     """
     if isinstance(ops, OpStream):
         first_object = ops.first_object()
         if not isinstance(first_object, NewSegment):
             first_op = ops.op_at(0) if ops else None
             raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_op}).")
-        binary_data = BinaryData(memory_width, first_object, labels, save_wflip_labels=save_wflip_labels, pinned=pinned)
-        _labels_resolve_stream(ops, binary_data, labels, fjm_writer, on_progress)
+        binary_data = BinaryData(
+            memory_width,
+            first_object,
+            labels,
+            save_wflip_labels=save_wflip_labels,
+            pinned=pinned,
+            pool_start=pool_start,
+            wflips_at=wflips_at,
+        )
+        _guard_where(offset_guard, binary_data)
+        _labels_resolve_stream(ops, binary_data, labels, fjm_writer, on_progress, offset_guard)
         binary_data.close_and_add_segment(fjm_writer)
         return
 
@@ -440,20 +686,38 @@ def labels_resolve(
     if not isinstance(first_segment, NewSegment):
         raise FlipJumpAssemblerException(f"The first op must be of type NewSegment (and not {first_segment}).")
 
-    binary_data = BinaryData(memory_width, first_segment, labels, save_wflip_labels=save_wflip_labels, pinned=pinned)
+    binary_data = BinaryData(
+        memory_width,
+        first_segment,
+        labels,
+        save_wflip_labels=save_wflip_labels,
+        pinned=pinned,
+        pool_start=pool_start,
+        wflips_at=wflips_at,
+    )
+    _guard_where(offset_guard, binary_data)
 
     for op in ops:
         if isinstance(op, FlipJump):
             try:
-                binary_data.insert_fj_op(op.get_flip(labels), op.get_jump(labels))
+                flip, jump = op.get_flip(labels), op.get_jump(labels)
+                if offset_guard is not None:
+                    offset_guard.check_expr(op.flip, flip)
+                    offset_guard.check_expr(op.jump, jump)
+                binary_data.insert_fj_op(flip, jump)
             except FlipJumpException as e:
                 raise FlipJumpAssemblerException(f"{e} in op {op}.")
 
         elif isinstance(op, WordFlip):
             try:
-                binary_data.insert_wflip_ops(
-                    op.get_word_address(labels), op.get_flip_value(labels), op.get_return_address(labels)
-                )
+                word_address, flip_value = op.get_word_address(labels), op.get_flip_value(labels)
+                if offset_guard is not None:
+                    offset_guard.check_expr(op.word_address, word_address)
+                    offset_guard.check_expr(op.flip_value, flip_value, False)
+                    offset_guard.check_expr(op.return_address, op.get_return_address(labels))
+                if pinned:
+                    flip_value = binary_data.pinned_value(word_address, flip_value, value_kind(op.flip_value))
+                binary_data.insert_wflip_ops(word_address, flip_value, op.get_return_address(labels))
             except FlipJumpException as e:
                 raise FlipJumpAssemblerException(f"{e} in op {op}.")
 
@@ -470,6 +734,18 @@ def labels_resolve(
             raise FlipJumpAssemblerException(f"Can't resolve/assemble the next opcode - {str(op)}")
 
     binary_data.close_and_add_segment(fjm_writer)
+
+
+def _guard_where(guard: Optional[OffsetGuard], binary_data: BinaryData) -> None:
+    """an OffsetGuard refusal in labels_resolve says where the op is: its address, and the label nearest it"""
+    if guard is not None:
+
+        def where() -> str:
+            address = binary_data.first_address + len(binary_data.fj_words) * binary_data.memory_width
+            return f' of the op at {hex(address)} (after the label {guard.label_below(address)})'
+
+        guard.where = where
+        guard.emitting = None  # every table moved: an operand that reaches over one is refused
 
 
 def assert_first_op_assembled(fjm_writer: Writer) -> None:
@@ -521,16 +797,28 @@ def assemble(
 
         with ProgressBar('  macro resolve:   ', print_time=print_time, total=1.0) as progress:
             # the `...---:start:` macro-start labels are read only by the debugging file
-            ops, labels = resolve_macros(
-                memory_width,
-                macros,
-                table_pool=table_pool,
-                show_statistics=show_statistics,
-                max_recursion_depth=max_recursion_depth,
-                save_debug_labels=debugging_file_path is not None,
-                on_progress=progress.update if progress.active else None,
-                consume_main=True,  # the tree is ours, and dropped right below
-            )
+            def resolve(tree: Dict[MacroName, Macro], pool: Optional[TablePool]) -> Tuple[OpsQueue, Dict[str, int]]:
+                return resolve_macros(
+                    memory_width,
+                    tree,
+                    table_pool=pool,
+                    show_statistics=show_statistics,
+                    max_recursion_depth=max_recursion_depth,
+                    save_debug_labels=debugging_file_path is not None,
+                    on_progress=progress.update if progress.active else None,
+                    consume_main=True,  # the tree is ours, and dropped right below
+                )
+
+            try:
+                ops, labels = resolve(macros, table_pool)
+            except PoolHasNoRoom as no_room:
+                # the program leaves its tables no room in the memory: it is assembled without the pool (the tree
+                # was consumed: parsed again)
+                assert table_pool is not None
+                table_pool.base_reason, table_pool.allocated = f'none ({no_room})', 0
+                table_pool = None
+                macros = parse_macro_tree(input_files, memory_width, warning_as_errors, defines_file)
+                ops, labels = resolve(macros, None)
         # MEMORY: the macro tree is not read again - free it before labels-resolve builds the binary.
         # (The op stream keeps what it still needs of it: label names, positions, the odd Expr.)
         del macros
@@ -539,12 +827,28 @@ def assemble(
         # expansion but the WORD is an expression (variables are usually declared after the code),
         # so it is resolved here, now that every label is known.
         pinned = None
+        pool_start = None
         if table_pool is not None:
+            pool_start = table_pool.pool_start()
             # a BlockPool records the alias these labels imply, for its census (a dict, not the labels)
             table_pool.labels_resolved(labels)
             pinned, table_pool.pin_conflicts = resolve_pinned(
                 table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
             )
+            if pinned:  # each pin that cannot hold is dropped (the pool's unpins say why)
+                raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
+                guard = table_pool.offset_guard
+                assert guard is not None  # a pool's preprocessor made it
+                unpin(
+                    ops,
+                    labels,
+                    memory_width,
+                    pinned,
+                    table_pool.unpins,
+                    guard.alignment,
+                    raw=raw,
+                    pads=guard.tables_inline(),
+                )
             if not pinned:
                 pinned = None
 
@@ -558,7 +862,14 @@ def assemble(
                 save_wflip_labels=debugging_file_path is not None,
                 pinned=pinned,
                 on_progress=progress.update if progress.active else None,
+                pool_start=pool_start,
+                offset_guard=None if table_pool is None else table_pool.offset_guard,
+                wflips_at=None if table_pool is None else table_pool.wflips_at(),
             )
+        if table_pool is not None and table_pool.flat_limit is not None:  # (for_flat) say if it runs past the window
+            end = max(((start + length) * memory_width for start, length, _, _ in fjm_writer.segments), default=0)
+            if end > table_pool.flat_limit:
+                table_pool.base_reason += f'; the program ends at {hex(end)}, past the flat maximum'
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression
         del ops

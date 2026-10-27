@@ -1,0 +1,8 @@
+// C18: a -D define drives a declared table's pad (hex.sparse_xor's PAD).
+PADC = 16
+stl.startup
+    hex.sparse_xor PADC, y, x
+    hex.print_as_digit y, 0
+    stl.loop
+x:  hex.hex 6
+y:  hex.hex 0

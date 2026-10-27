@@ -1,0 +1,13 @@
+// C40 (the final review): the other side of C38 - a distance between two labels no table moved, in two segments,
+// with a moved table's place between them: both lie where they do without the pool, so it runs the same.
+stl.startup
+L:
+    hex.print_as_digit 2, size, 0
+    stl.output '\n'
+    hex.xor y, x
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0
+size: hex.vec 2, ((S - L) / dw) & 0xff
+segment 0x4000
+S:  ;S
