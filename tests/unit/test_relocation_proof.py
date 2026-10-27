@@ -21,8 +21,7 @@ from flipjump.assembler.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard, PoolHasNoRoom, TablePool
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
-from tests.unit.test_table_pool import build_and_run, relocatable
-from tests.unit.unit_utils import PROGRAMS_DIR
+from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, relocatable
 
 W = 32
 POOL_BASE = 1 << 26

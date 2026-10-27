@@ -13,6 +13,8 @@ from typing import Any, List, Optional, Tuple, Union
 import pytest
 
 from flipjump import assemble
+from flipjump.assembler.inner_classes.expr import Expr
+from flipjump.assembler.table_pool import TablePool
 from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
@@ -166,6 +168,42 @@ def run_recorded(
         else:
             patch.setattr(fjm_run, '_fjcore', None)
         return fjm_run.run(fjm_path, io_device=io_device, print_time=False, **kwargs)
+
+
+def relocatable(name: str, params: str, start: str, entries: str) -> str:
+    """the declaration of the relocatable table `name.__relocatable__.table params`: `start:` then the entries"""
+    return (
+        f'ns {name} {{\n    ns __relocatable__ {{\n        def table {params} {{\n          {start}:\n'
+        + entries
+        + '        }\n    }\n}\n'
+    )
+
+
+def build_and_run(
+    source: str,
+    tmp_path: Path,
+    pool: Optional[TablePool],
+    name: str = 'p',
+    fixed_input: bytes = b'',
+    memory_width: int = 32,
+) -> Tuple[bytes, int, Path]:
+    """assemble `source` with the stl (and the pool, if given), run it on `fixed_input`, and
+    return (output, op count, fjm path)."""
+    fj_path = tmp_path / f'{name}.fj'
+    fj_path.write_text(source)
+    fjm_path = tmp_path / f'{name}.fjm'
+    assemble([fj_path], fjm_path, memory_width=memory_width, print_time=False, table_pool=pool)
+    io_device = FixedIO(fixed_input)
+    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    return io_device.get_output(allow_incomplete_output=True), statistics.op_counter, fjm_path
+
+
+def sum_expr(*parts: Any) -> Expr:
+    """a left-nested `+` tree of label names / ints (as the parser builds `a + b + c`)"""
+    expr = Expr(parts[0])
+    for part in parts[1:]:
+        expr = Expr(('+', (expr, Expr(part))))
+    return expr
 
 
 def high_segment_program(top: int) -> str:

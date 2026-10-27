@@ -5,6 +5,7 @@ unpinned) - or is refused with the reason; and the pool's smaller promises (a po
 slot is aligned and inside the span, a wflip area that leaves the memory says so).
 """
 
+import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,9 +24,8 @@ from flipjump.utils.functions import get_file_tuples
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
-from tests.unit.pool_fuzzer import run
-from tests.unit.test_table_pool import build_and_run, relocatable
-from tests.unit.unit_utils import PROGRAMS_DIR
+from tests.unit.pool_fuzzer import pools, run
+from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, relocatable
 
 GAPS = Path(__file__).parent / 'pool_gaps'
 W = 32
@@ -34,16 +34,9 @@ POOL_BASE = 1 << 26
 
 
 def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> TablePool:
-    base = 1 << (memory_width - 1)
-    if kind == 'cli':  # fj --pool-tables
-        return BlockPool.for_flat(memory_width)
-    if kind == 'table':
-        return TablePool(memory_width, base, run_ops=16)
-    if kind == 'half':  # fj --pool-tables's pool, based at half the memory
-        return BlockPool(memory_width, base, one_pass=True)
-    counting = BlockPool(memory_width, base)
-    assemble([source], tmp_path / 'count.fjm', memory_width=memory_width, print_time=False, table_pool=counting)
-    return BlockPool(memory_width, base, counts=counting.counts, widths=counting.widths)
+    """the fuzzer's pool `kind`: 'cli' (fj --pool-tables), 'half' (the same, based at half the memory), 'two_pass',
+    'table'"""
+    return pools(memory_width, random.Random(0), source, tmp_path)[kind]()
 
 
 SAME = None
