@@ -6,7 +6,7 @@ subprocess (a broken pool may never halt), and the runs compared. The relocation
 """
 
 import random
-import subprocess
+import subprocess  # nosec B404 - the fuzzer drives the fj CLI
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -43,7 +43,7 @@ print(io.get_output(allow_incomplete_output=True).hex(), cause)
 def run(fjm: Path, timeout: float) -> Tuple[str, str]:
     """(the output in hex, the termination cause) of a run in a subprocess"""
     try:
-        process = subprocess.run(
+        process = subprocess.run(  # nosec B603 - a fixed fj command line
             [sys.executable, '-c', _RUNNER, str(fjm)],
             capture_output=True,
             text=True,
@@ -252,7 +252,7 @@ def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0
     """the findings of one random program: a pooled run that differs from the plain one, a refusal with no reason,
     and the relocation proof's verdict where it disagrees with the runs. [] when every pool agrees; the case is
     skipped (inconclusive) if the plain run times out."""
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - deterministic test data, not security
     source = scratch / f'case_{seed}.fj'
     source.write_text(Generator(rng, memory_width).program())
     plain = scratch / 'plain.fjm'

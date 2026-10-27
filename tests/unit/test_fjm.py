@@ -250,7 +250,7 @@ def _far_repeat_words(memory_width: int) -> List[int]:
     """a random block, then the same block 9 MiB later (its jump words chosen so that their stored, relative
     values repeat too): an encoder whose dictionary is larger than 8 MiB matches it that far back"""
     far = (9 << 20) * 8 // memory_width
-    block = [random.Random(1).getrandbits(memory_width) for _ in range(8192)]
+    block = [random.Random(1).getrandbits(memory_width) for _ in range(8192)]  # nosec B311 - test data
     words = [0] * (far + len(block))
     for index in range(1, len(words), 2):
         words[index] = index * memory_width  # a jump to itself is stored as 0
