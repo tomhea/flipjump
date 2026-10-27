@@ -2,7 +2,8 @@
 //   random one, on bases near 0, random, and near the top of the address range (the add carries across many
 //   hexes, and wraps). Then hex.ptr_index w/4 against hex.ptr_index on random full-width ("negative") indexes.
 // Then dst == index at every n. dst starts as garbage, and a garbage hex follows index[:n].
-// Expected values are python's (seed 20261024, w=64); each check prints '=' when the result is right.
+// Expected values are python's (seed 20261024, w=64): dst = (ptr + index * 2w) modulo 2^w, on random bases and
+//   indexes from random.Random(20261024). Each check prints '=' when the result is right.
 stl.startup
 
 GARBAGE = 0x5a3c96e15a3c96e15a3c96e15a3c96e1

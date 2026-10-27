@@ -1,7 +1,8 @@
 // Tests the fixed-point macros (hex.fixed_mul, hex.fixed_mul_low, hex.fixed_div), hex.mul_low and hex.mul_const.
 // Signed Q-format edge values (0, the smallest step, +-1.0, +-0.5, the most negative / positive, -eps) at every
 //   pairing, random values, and division by zero. Expected values are python's (seed 20261024):
-//   fixed_mul = floor((a * b) / 16^f), fixed_div = (a * 16^f) / b truncated toward zero, both modulo 16^n.
+//   fixed_mul = floor((a * b) / 16^f), fixed_div = (a * 16^f) / b truncated toward zero, both modulo 16^n;
+//   mul_low and mul_const = (a * b) modulo 16^n. (random.Random(20261024) picks only the random inputs.)
 // Each check prints '=' when the result is right. Every result starts as garbage.
 stl.startup
 
