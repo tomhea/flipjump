@@ -239,6 +239,46 @@ stl.loop
     assert _output_bytes(tmp_path, program) == expected
 
 
+FULL_WIDTH_PROGRAM = '''
+stl.startup
+screen.init_screen 2, 2, 9
+screen.builtin_palette 200, 2
+screen.select_palette 200
+screen.define_palette 9, 201, 511, 511, 0x332211
+screen.set_window_icon_header 2, 3
+rep(6, i) screen.output_bits 9, i
+screen.end_command 0, 54
+stl.loop
+'''
+
+
+def test_the_fields_reach_the_screen_at_their_full_width(tmp_path: Path) -> None:
+    """slot 200 (a 7-bit slot mutant: no test went past slot 3), entry 511 at format 9 (an index bit 8 mutant: formats
+    3-8 only), a 2 x 3 icon (a width / height swap: the only icon was 1 x 1), and end_command's zero bits after the
+    icon's colours (c = 0)."""
+    expected = (
+        ss.init_screen(2, 2, 9)
+        + ss.builtin_palette(200, 2)
+        + ss.select_palette(200)
+        + ss.define_palette(201, 511, [(0x11, 0x22, 0x33)], 9)
+        + ss.set_window_icon(2, 3, range(6), 9)
+    )
+    assert _output_bytes(tmp_path, FULL_WIDTH_PROGRAM) == expected
+    screen = InMemoryScreen()
+    _run_program(tmp_path, FULL_WIDTH_PROGRAM, screen)
+    assert screen.palettes[200][:16] == list(EGA16)
+    assert screen.palettes[201][511] == (0x11, 0x22, 0x33)
+    assert screen.window_icon == (2, 3, [screen.palettes[200][i] for i in range(6)])
+
+
+@pytest.mark.parametrize('used_bits', range(8))
+def test_end_command_pads_after_any_used_bits(tmp_path: Path, used_bits: int) -> None:
+    """END_CMD then the zero bits to the byte after 0..7 used bits (a mutant reading only used_bits' low 2 bits
+    passed: the tests used 0 and 4)."""
+    program = f'stl.startup\nscreen.output_bits {used_bits}, 0\nscreen.end_command 4, {used_bits}\nstl.loop\n'
+    assert _output_bytes(tmp_path, program) == ss.pack([(0, used_bits), (0xF, 4)])
+
+
 # ---------------------------------------------------------------- the keyboard
 
 POLLS = 6
