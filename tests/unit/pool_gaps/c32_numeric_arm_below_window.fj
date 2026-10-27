@@ -1,4 +1,4 @@
-// C32 (gap hunt 3, R3-1): a pinned word armed with a NUMBER below its window (0x200: an inline table at op 8,
+// C32: a pinned word armed with a NUMBER below its window (0x200: an inline table at op 8,
 // behind a `pad 8`, w=32). The window is the moved table's size (10 bits), and 0x200 is as much a value as `hex.set`'s
 // digit 8: the word is unpinned, because a table it could reach lies below its window.
 stl.startup

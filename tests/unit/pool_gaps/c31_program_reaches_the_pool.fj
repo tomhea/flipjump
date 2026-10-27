@@ -1,4 +1,4 @@
-// C31 (the gap hunt's case_2100414_w16): a program whose own code passes pool_base at w=16 - a counting
+// C31: a program whose own code passes pool_base at w=16 - a counting
 // BlockPool must say the program reached the pool, not blame an operand.
 stl.startup
 L0:

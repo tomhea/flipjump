@@ -41,7 +41,7 @@ def progress_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv('NO_COLOR', '1')
 
 
-def test_off_a_terminal_it_prints_what_print_timer_printed() -> None:
+def test_off_a_terminal_it_prints_in_print_timers_format() -> None:
     stream = io.StringIO()
     with ProgressBar('  stage:  ', stream=stream, total=10) as bar:
         assert not bar.active
@@ -52,7 +52,7 @@ def test_off_a_terminal_it_prints_what_print_timer_printed() -> None:
     float(text[len('  stage:  ') : -2])  # noqa: E203 - just the seconds
 
 
-def test_off_a_terminal_a_stage_that_raises_prints_what_print_timer_printed() -> None:
+def test_off_a_terminal_a_stage_that_raises_prints_in_print_timers_format() -> None:
     stream = io.StringIO()
     with pytest.raises(ValueError):
         with ProgressBar('  stage:  ', stream=stream, total=10):

@@ -2,7 +2,7 @@
 unit-tests for the native engine's run(read_byte=...): the input side of the byte path -- a device that hands over
 whole bytes (it overrides read_byte: a byte stream such as stdin or a fixed buffer) is asked once a byte, and the
 engine feeds the program the byte's bits; a device that answers bit by bit (it keeps IODevice's read_byte: the
-keyboard) is asked bit by bit, exactly as before.
+keyboard) is asked bit by bit.
 
 the properties pinned here, against the pure-python fast loop (which calls read_bit / write_bit once a bit):
 - the device's OUTPUT bits are exactly the bit-by-bit run's, and the program's INPUT bits are its stream's first ones
@@ -12,7 +12,7 @@ the properties pinned here, against the pure-python fast loop (which calls read_
 - bytes are fetched only from a byte boundary of the input stream (bits taken one by one first re-align it);
 - EOF raised by read_byte ends the run at the same op as the bit-by-bit run;
 - reset() drops the bits still buffered (a fresh stream), and so does a re-init (Memory.__init__);
-- a bit-by-bit device sees the old interleaving exactly.
+- a bit-by-bit device sees exactly the bit-by-bit run's interleaving.
 CONTROL: a device whose read_byte returns its byte msb first is caught.
 """
 
@@ -25,9 +25,7 @@ from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.utils.classes import TerminationCause
-from tests.unit.unit_utils import CAT_PROGRAM, assemble_to_path, native_engine_required
-
-Event = Tuple[str, int]
+from tests.unit.unit_utils import CAT_PROGRAM, RecordingIO, assemble_to_path, native_engine_required, run_recorded
 
 # a bit, output, a bit (both taken one by one through read_byte's buffer of one byte), output, then 3 single bits read
 # across a byte boundary -- 1 + 1 + ... -- and a whole byte read, with output pending (3 bits) at an input read
@@ -54,44 +52,18 @@ ascii:
 ONE_BIT_PROGRAM = 'stl.startup\nbit.input_bit b\nstl.loop\nb:\nbit.vec 1, 0\n'
 
 
-class InRecordingIO(FixedIO):
-    """a FixedIO that logs every device call, with the count of output bits it had received at each input call:
-    ('bit', b), ('byte', B), ('read', b, outs), ('rbyte', B, outs)."""
-
-    def __init__(self, fixed_input: bytes, *, lsb_first: bool = True) -> None:
-        super().__init__(fixed_input)
-        self.events: List[Tuple[Any, ...]] = []
-        self.lsb_first = lsb_first
-        self.outs = 0
-
-    def read_bit(self) -> bool:
-        bit = super().read_bit()
-        self.events.append(('read', int(bit), self.outs))
-        return bit
-
-    def read_byte(self) -> int:
-        value = super().read_byte()
-        self.events.append(('rbyte', value, self.outs))
-        if not self.lsb_first:
-            value = int('{:08b}'.format(value)[::-1], 2)
-        return value
-
-    def write_bit(self, bit: bool) -> None:
-        self.events.append(('bit', int(bit)))
-        self.outs += 1
-        super().write_bit(bit)
-
-    def write_byte(self, byte: int) -> None:
-        self.events.append(('byte', byte))
-        self.outs += 8
-        super().write_byte(byte)
-
-
-class BitOnlyIO(InRecordingIO):
+class BitOnlyIO(RecordingIO):
     """the same device answering bit by bit in both directions (IODevice's defaults: not overrides)"""
 
     read_byte = IODevice.read_byte
     write_byte = IODevice.write_byte
+
+
+class MsbFirstIO(RecordingIO):
+    """hands its input bytes over msb first: a wrong device"""
+
+    def read_byte(self) -> int:
+        return int(f'{super().read_byte():08b}'[::-1], 2)
 
 
 def streams(events: List[Tuple[Any, ...]]) -> Tuple[List[int], List[int]]:
@@ -121,15 +93,6 @@ def input_calls(events: List[Tuple[Any, ...]]) -> List[Tuple[int, int]]:
     return out
 
 
-def run_recorded(fjm_path: Path, io: IODevice, *, native: bool, monkeypatch: pytest.MonkeyPatch, **kw: Any) -> Any:
-    with monkeypatch.context() as m:
-        if native:
-            m.delenv('FLIPJUMP_NO_NATIVE', raising=False)
-        else:
-            m.setattr(fjm_run, '_fjcore', None)
-        return fjm_run.run(fjm_path, io_device=io, print_time=False, **kw)
-
-
 @native_engine_required
 @pytest.mark.parametrize('program_id,fixed_input', [('mixed', b'\x01\xa5\x3c'), ('cat', b'byte by byte!')])
 @pytest.mark.parametrize('ring', [None, 16])
@@ -138,7 +101,7 @@ def test_read_byte_delivers_the_bit_by_bit_streams(
 ) -> None:
     src = MIXED_PROGRAM if program_id == 'mixed' else CAT_PROGRAM.read_text()
     fjm_path = assemble_to_path(src, tmp_path, use_stl=True)
-    reference, native = InRecordingIO(fixed_input), InRecordingIO(fixed_input)
+    reference, native = RecordingIO(fixed_input), RecordingIO(fixed_input)
     ref_stats = run_recorded(fjm_path, reference, native=False, monkeypatch=monkeypatch)
     nat_stats = run_recorded(
         fjm_path, native, native=True, monkeypatch=monkeypatch, last_ops_debugging_list_length=ring
@@ -166,7 +129,7 @@ def test_the_mixed_program_reads_bytes_only_on_a_boundary(tmp_path: Path, monkey
     """the first bit fetches a byte (7 buffered); the program takes 1 + 8 + 8 bits: buffered bits first, then one more
     byte, its 8th bit on that byte's boundary... the device is asked once per 8 input bits"""
     fjm_path = assemble_to_path(MIXED_PROGRAM, tmp_path, use_stl=True)
-    io = InRecordingIO(b'\x01\xa5\x3c')
+    io = RecordingIO(b'\x01\xa5\x3c')
     run_recorded(fjm_path, io, native=True, monkeypatch=monkeypatch)
     calls = [e[0] for e in io.events if e[0] in ('read', 'rbyte')]
     assert calls == ['rbyte'] * 3  # 1 + 1 + 8 + 8 = 18 bits: 3 bytes
@@ -175,14 +138,14 @@ def test_the_mixed_program_reads_bytes_only_on_a_boundary(tmp_path: Path, monkey
 @native_engine_required
 def test_eof_from_read_byte_ends_the_run_where_the_bits_would(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fjm_path = assemble_to_path(CAT_PROGRAM.read_text(), tmp_path, use_stl=True)
-    ref = run_recorded(fjm_path, InRecordingIO(b'ab'), native=False, monkeypatch=monkeypatch)
-    nat = run_recorded(fjm_path, InRecordingIO(b'ab'), native=True, monkeypatch=monkeypatch)
+    ref = run_recorded(fjm_path, RecordingIO(b'ab'), native=False, monkeypatch=monkeypatch)
+    nat = run_recorded(fjm_path, RecordingIO(b'ab'), native=True, monkeypatch=monkeypatch)
     assert nat.termination_cause == ref.termination_cause == TerminationCause.EOF
     assert nat.op_counter == ref.op_counter
 
 
 @native_engine_required
-def test_a_bit_by_bit_device_sees_the_old_interleaving(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_bit_by_bit_device_sees_the_bit_by_bit_interleaving(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fjm_path = assemble_to_path(MIXED_PROGRAM, tmp_path, use_stl=True)
     reference, native = BitOnlyIO(b'\x01\xa5\x3c'), BitOnlyIO(b'\x01\xa5\x3c')
     run_recorded(fjm_path, reference, native=False, monkeypatch=monkeypatch)
@@ -193,9 +156,9 @@ def test_a_bit_by_bit_device_sees_the_old_interleaving(tmp_path: Path, monkeypat
 @native_engine_required
 def test_control_a_wrong_read_byte_is_caught(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fjm_path = assemble_to_path(CAT_PROGRAM.read_text(), tmp_path, use_stl=True)
-    reference = InRecordingIO(b'ab')
+    reference = RecordingIO(b'ab')
     run_recorded(fjm_path, reference, native=False, monkeypatch=monkeypatch)
-    wrong = InRecordingIO(b'ab', lsb_first=False)
+    wrong = MsbFirstIO(b'ab')
     run_recorded(fjm_path, wrong, native=True, monkeypatch=monkeypatch)
     assert wrong.get_output(allow_incomplete_output=True) != reference.get_output(allow_incomplete_output=True)
 
@@ -233,7 +196,7 @@ def test_reset_drops_the_buffered_input_bits(tmp_path: Path) -> None:
     for do_reset in (True, False, True):
         if do_reset:
             core.reset()
-        io = InRecordingIO(b'\x05\x05')
+        io = RecordingIO(b'\x05\x05')
         core.run(io.read_bit, io.write_bit, IOReadOnEOF, write_byte=io.write_byte, read_byte=io.read_byte)
         calls.append([e[0] for e in io.events if e[0] in ('read', 'rbyte')])
     assert calls == [['rbyte'], [], ['rbyte']]
@@ -260,7 +223,7 @@ def test_reinit_drops_the_buffered_input_bits(tmp_path: Path) -> None:
             _raw_header, data = fjm_reader.read_fjm_raw(fjm_path)
             for start, _length, data_start, data_length in header.segments:
                 core.set_words_bytes(start, data, data_start, data_length, header.relative_jumps)
-        io = InRecordingIO(b'\x05\x05')
+        io = RecordingIO(b'\x05\x05')
         core.run(io.read_bit, io.write_bit, IOReadOnEOF, write_byte=io.write_byte, read_byte=io.read_byte)
         calls.append([e[0] for e in io.events if e[0] in ('read', 'rbyte')])
     assert calls == [['rbyte'], ['rbyte']]

@@ -63,9 +63,9 @@ def test_control_the_readmes_example_with_its_copy_moved_to_column_0() -> None:
     )
 
 
-def test_control_the_old_example_without_its_ends_is_refused() -> None:
-    """the example as it was written when a column ended by itself at h: column 0 reaches h, and its next
-    nibble (x = 1) is read as a row field - a row behind the cursor"""
+def test_control_the_example_without_its_ends_is_refused() -> None:
+    """the README's example without its END nibbles: column 0 reaches h, and its next nibble (x = 1) is read as
+    a row field - a row behind the cursor"""
     with pytest.raises(IODeviceException) as failure:
         ss.feed(InMemoryScreen(), bytes.fromhex('01 04 00 03 00 08' '11 30 05 D1 F3' '1F'))
     assert str(failure.value) == (
@@ -360,7 +360,7 @@ def random_size(rng: random.Random) -> Tuple[int, int]:
 
 
 def test_random_pictures_round_trip_through_the_device() -> None:
-    rng = random.Random(0x5C12EE)
+    rng = random.Random(0x5C12EE)  # nosec B311 - deterministic test data, not security
     screens = frames = 0
     stats: 'Counter[str]' = Counter()
     while frames < 600:
@@ -408,7 +408,7 @@ def test_random_pictures_round_trip_through_the_device() -> None:
 def test_control_the_property_test_sees_a_wrong_picture() -> None:
     """the round trip's own negative control: a stream with one colour bit flipped reproduces a different
     picture, and the same stream cut by its last byte is refused with the exact message."""
-    rng = random.Random(7)
+    rng = random.Random(7)  # nosec B311 - deterministic test data, not security
     target = random_picture(rng, 30, 8, None)
     stream = ss.init_screen(6, 5, 8) + ss.draw_raw(target, 8)
     assert screen_after(stream).pixel_indices == target

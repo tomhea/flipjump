@@ -294,8 +294,8 @@ def test_the_icon_hand_packed_3_bit() -> None:
 
 
 def test_set_window_title_is_utf8() -> None:
-    device = screen_after(ss.init_screen(1, 1, 1) + ss.set_window_title('DOOM שלום'.encode()))
-    assert device.window_title == 'DOOM שלום'
+    device = screen_after(ss.init_screen(1, 1, 1) + ss.set_window_title('flipjump שלום'.encode()))
+    assert device.window_title == 'flipjump שלום'
 
 
 def test_an_empty_title() -> None:

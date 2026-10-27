@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+      - '1.*'
 
 # least-privilege GITHUB_TOKEN: these jobs only check out and run tests/linters,
 # so read-only access to the repo contents is all they need.
@@ -74,10 +75,11 @@ jobs:
         with:
           path: ./*-test-results.xml
 
-  # The assembler/interpreter unit-tests (tests/unit). They are pure-python and fast,
-  # so they run as their own job in parallel with the .fj compile/run tests. The
-  # --unit-tests flag marks the run as unrelated to the .fj compile/run tests, which
-  # lets it be parallelized with -n auto.
+  # The assembler/interpreter unit-tests (tests/unit). They run as their own job in
+  # parallel with the .fj compile/run tests. The --unit-tests flag marks the run as
+  # unrelated to the .fj compile/run tests, which lets it be parallelized with -n auto.
+  # pytest imports flipjump from the checkout, so the native engine is built in place
+  # (else every native-engine test is skipped), and the job fails if it is not active.
   unit_tests:
     runs-on: ubuntu-latest
     steps:
@@ -90,6 +92,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .[tests]
+      - name: Build the native engine in place
+        run: |
+          pip install setuptools
+          python setup.py build_ext --inplace
+          python -c "import flipjump, sys; sys.exit(not flipjump.is_native_engine_active())"
       - name: Test pytest
         run: pytest tests/unit --unit-tests --junitxml=./unit-test-results.xml
       - name: Show tests results
@@ -116,7 +123,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[tests,io]
       - name: Test pytest
-        run: pytest tests/unit/test_screen_window.py --unit-tests --junitxml=./screen-test-results.xml
+        run: pytest tests/unit/test_screen_window.py tests/unit/test_pygame_ce.py tests/unit/test_devices_e2e.py --unit-tests --junitxml=./screen-test-results.xml
       - name: Show tests results
         if: always()
         uses: pmeier/pytest-results-action@main

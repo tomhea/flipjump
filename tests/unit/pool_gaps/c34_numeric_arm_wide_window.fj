@@ -1,4 +1,4 @@
-// C34 (gap hunt 3, R3-3): c23 (a numeric arm, 0x4000) plus a LABEL arm of the same word to an inline table at
+// C34: c23 (a numeric arm, 0x4000) plus a LABEL arm of the same word to an inline table at
 // `segment 0x8000`. That address's own alignment (15 bits) is no table's: the window stays the moved table's, so the
 // numeric arm is above it and the word is unpinned.
 stl.startup

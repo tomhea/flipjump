@@ -1,4 +1,4 @@
-// C19: C13 without a label after the call: a correct program the relocation proof rejects (the disarm is "moved apart from the label before it").
+// C19: C13 without a label after the call: a correct program, though the disarm moves apart from the label before it.
 ns my {
   ns __relocatable__ {
     def table start, a, b {

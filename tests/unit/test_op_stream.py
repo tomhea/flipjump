@@ -23,22 +23,14 @@ from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpPreprocessorException
-from tests.unit.unit_utils import MINIMAL_STARTUP, assemble_to_path
+from tests.unit.unit_utils import MINIMAL_STARTUP, assemble_to_path, sum_expr
 
 POSITION = CodePosition('a.fj', 'f1', 7)
 
 
-def _sum(*parts: Any) -> Expr:
-    """a left-nested `+` tree of label names / ints (as the parser builds `a + b + c`)"""
-    expr = Expr(parts[0])
-    for part in parts[1:]:
-        expr = Expr(('+', (expr, Expr(part))))
-    return expr
-
-
 # operands as a macro body holds them, and the params they expand with
 PARAMS: Dict[str, Expr] = {
-    'dst': _sum('va', 64),  # an argument `va + 2*dw`
+    'dst': sum_expr('va', 64),  # an argument `va + 2*dw`
     'src': Expr('vb'),
     'n': Expr(3),
     'big': Expr(1 << 40),
@@ -58,10 +50,10 @@ OPERANDS: List[Expr] = [
     Expr('later'),  # declared after it
     Expr('dst'),
     Expr('src'),
-    _sum('dst', 33, 3),  # `dst + dbit + 3`
-    Expr(('-', (_sum('dst', 33), Expr(1)))),
-    _sum('known', 'n'),
-    _sum(5, 'later'),
+    sum_expr('dst', 33, 3),  # `dst + dbit + 3`
+    Expr(('-', (sum_expr('dst', 33), Expr(1)))),
+    sum_expr('known', 'n'),
+    sum_expr(5, 'later'),
     Expr(('-', (Expr(100), Expr('later')))),  # coefficient -1: kept as an Expr
     Expr(('*', (Expr('n'), Expr('src')))),  # not a sum: kept as an Expr
     Expr(('-', (Expr('later'), Expr('known')))),  # two labels: kept as an Expr
@@ -116,8 +108,8 @@ def test_literal_ops_pack_into_one_slot_when_they_fit() -> None:
 def test_a_declared_label_is_folded_and_an_undeclared_one_is_deferred() -> None:
     labels = {'known': 100}
     stream = OpStream([], labels)
-    stream.add_flip_jump_in(_sum('known', 8), Expr(0), {}, POSITION)
-    stream.add_flip_jump_in(_sum('later', 8), Expr(0), {}, POSITION)
+    stream.add_flip_jump_in(sum_expr('known', 8), Expr(0), {}, POSITION)
+    stream.add_flip_jump_in(sum_expr('later', 8), Expr(0), {}, POSITION)
     assert list(stream.kinds) == [op_stream.FJ_PACKED, op_stream.FJ_POS]
     assert stream.refs == ['later', POSITION]  # the deferred label and the op's position: no Expr kept
 
@@ -126,7 +118,7 @@ def test_labels_resolve_reads_a_stream_like_the_op_objects(tmp_path: Path) -> No
     labels: Dict[str, int] = {}
     stream = OpStream([], labels)
     stream.add_object(NewSegment(0))
-    stream.add_flip_jump_in(_sum('x', 3), Expr('$'), {'$': Expr(128)}, POSITION)
+    stream.add_flip_jump_in(sum_expr('x', 3), Expr('$'), {'$': Expr(128)}, POSITION)
     stream.add_word_flip_in(Expr('x'), Expr(64), Expr('y'), {}, POSITION)
     stream.add_padding(2)
     stream.add_flip_jump(Expr(0), Expr(0), POSITION)

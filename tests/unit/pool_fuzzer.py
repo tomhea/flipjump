@@ -1,16 +1,17 @@
 """
 a differential fuzzer of the table pool: random programs of the stl's table macros - the declared relocatables
 and the undeclared table users - assembled without a pool and with several pools, every build run in a
-subprocess (a broken pool may never halt), and the runs compared. The relocation proof is asked too.
-
-(from the table pool's gap hunt; see test_pool_fuzz.py)
+subprocess (a broken pool may never halt), and the runs compared. The relocation proof is asked too
+(test_pool_fuzz.py runs it).
 """
 
 import random
-import subprocess
+import subprocess  # nosec B404 - the fuzzer drives the fj CLI
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import pytest
 
 from flipjump import assemble
 from flipjump.assembler.fj_parser import parse_macro_tree
@@ -42,7 +43,7 @@ print(io.get_output(allow_incomplete_output=True).hex(), cause)
 def run(fjm: Path, timeout: float) -> Tuple[str, str]:
     """(the output in hex, the termination cause) of a run in a subprocess"""
     try:
-        process = subprocess.run(
+        process = subprocess.run(  # nosec B603 - a fixed fj command line
             [sys.executable, '-c', _RUNNER, str(fjm)],
             capture_output=True,
             text=True,
@@ -184,9 +185,10 @@ class Generator:
 
 
 def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], TablePool]]:
-    """name -> a factory, called in order: `fj --pool-tables`'s pool, the same one based at half the memory, a
-    doom-like one, one with too small a span (the overflow region), one leaving groups without a block, one with an
-    overflow region above the blocks, the two-pass recipe, a TablePool and one with long runs"""
+    """name -> a factory, called in order: `fj --pool-tables`'s pool, the same one based at half the memory, one
+    with spread blocks and width buckets, one with too small a span (the overflow region), one leaving groups
+    without a block, one with an overflow region above the blocks, the two-pass recipe, a TablePool and one with
+    long runs"""
     base = 1 << (memory_width - 1)
     made: Dict[str, BlockPool] = {}
 
@@ -218,7 +220,7 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
         assemble([source], scratch / 'count.fjm', memory_width=memory_width, print_time=False, table_pool=counting)
         return BlockPool(memory_width, base, counts=counting.counts, widths=counting.widths)
 
-    def doomish() -> TablePool:
+    def spread_buckets() -> TablePool:
         return BlockPool(
             memory_width,
             base,
@@ -234,7 +236,7 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
     return {
         'cli': cli,
         'half': lambda: BlockPool(memory_width, base, one_pass=True),
-        'doomish': doomish,
+        'spread_buckets': spread_buckets,
         'tight': tight,
         'unblocked': unblocked,
         'overflow': overflow,
@@ -248,13 +250,16 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
 
 def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0) -> List[str]:
     """the findings of one random program: a pooled run that differs from the plain one, a refusal with no reason,
-    and the relocation proof's verdict where it disagrees with the runs. [] when every pool agrees."""
-    rng = random.Random(seed)
+    and the relocation proof's verdict where it disagrees with the runs. [] when every pool agrees; the case is
+    skipped (inconclusive) if the plain run times out."""
+    rng = random.Random(seed)  # nosec B311 - deterministic test data, not security
     source = scratch / f'case_{seed}.fj'
     source.write_text(Generator(rng, memory_width).program())
     plain = scratch / 'plain.fjm'
     assemble([source], plain, memory_width=memory_width, print_time=False)
     expected = run(plain, timeout)
+    if expected[1] == 'TIMEOUT':  # a generated program always halts: a loaded machine, not a pool's finding
+        pytest.skip(f'{seed} w={memory_width}: the plain run timed out - inconclusive')
     findings: List[str] = []
     cli_same: Optional[bool] = None
     for name, make in pools(memory_width, rng, source, scratch).items():

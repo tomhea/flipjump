@@ -2,7 +2,7 @@
 unit-tests for the relocation proof (flipjump/assembler/relocation_proof.py): with a table pool, every program
 of the test tables is the program without it, moved - and the proof sees a corrupted moved op, a declared table
 moved in pieces or with an op that is not its own, an offset from an outside label into a moved table, an
-operand it cannot compare, and a pin whose arms were not rewritten; it passes correct programs it once rejected.
+operand it cannot compare, and a pin whose arms were not rewritten; and it passes the correct crafted programs.
 """
 
 import csv
@@ -21,8 +21,7 @@ from flipjump.assembler.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard, PoolHasNoRoom, TablePool
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
-from tests.unit.test_table_pool import build_and_run, relocatable
-from tests.unit.unit_utils import PROGRAMS_DIR
+from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, relocatable
 
 W = 32
 POOL_BASE = 1 << 26
@@ -45,6 +44,14 @@ def _test_table_programs() -> List[Tuple[str, List[str], int, bool]]:
 
 
 TEST_TABLE_PROGRAMS = _test_table_programs()
+# the programs whose proof takes 9 - 165 s (the stl's pointer and fixed-point tests): run with --slow
+SLOW_PROOFS = {
+    f'hexlib-{name}' for name in ('fixed_point', 'seq_pointers', 'read_entry', 'ptr_index_n', 'read_write_back')
+}
+PROOF_PARAMS = [
+    pytest.param(program, id=program[0], marks=[pytest.mark.slow] if program[0] in SLOW_PROOFS else [])
+    for program in TEST_TABLE_PROGRAMS
+]
 
 
 def _macros(files: List[str], memory_width: int, use_stl: bool = True) -> Dict[MacroName, Macro]:
@@ -55,7 +62,7 @@ def _cli_pool(memory_width: int) -> BlockPool:
     return BlockPool.for_flat(memory_width)  # the pool of fj --pool-tables
 
 
-@pytest.mark.parametrize('program', TEST_TABLE_PROGRAMS, ids=[program[0] for program in TEST_TABLE_PROGRAMS])
+@pytest.mark.parametrize('program', PROOF_PARAMS)
 def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str, List[str], int, bool]) -> None:
     _, files, memory_width, use_stl = program
     pool = _cli_pool(memory_width)
@@ -136,7 +143,7 @@ def test_an_operand_computed_from_a_moved_label_fails_the_proof(name: str) -> No
 
 
 def test_an_operand_computed_from_unmoved_labels_is_counted_unchecked(tmp_path: Path) -> None:
-    # `(print_a | 0)` moves with print_a: an address, compared (R3-5); `(print_a >> 6) & 15` is print_a's address
+    # `(print_a | 0)` moves with print_a: an address, compared; `(print_a >> 6) & 15` is print_a's address
     # used as a number: unchecked
     base = OUTSIDE_OFFSET_PROGRAM.replace('    ;before + 2*dw\n', '    ;tbl_start + 2*dw\n')
     unchecked = prove_relocation(W, _macros(_write(tmp_path, base), W), TablePool(W, POOL_BASE)).unchecked
@@ -150,7 +157,7 @@ def test_an_operand_computed_from_unmoved_labels_is_counted_unchecked(tmp_path: 
 
 
 def test_an_address_computed_on_from_one_label_is_compared(monkeypatch: pytest.MonkeyPatch) -> None:
-    # R3-5: `(L | 0) + 15*dw` is L plus what it adds - compared whole, so with the guard's check disabled the
+    # `(L | 0) + 15*dw` is L plus what it adds - compared whole, so with the guard's check disabled the
     # moved table it reaches over fails the proof
     assert prove_relocation(W, _macros(_gap('c36_opaque_label_plus_offset'), W), _cli_pool(W)).mismatches == []
     monkeypatch.setattr(table_pool_module, '_moves_with', lambda expr, label, address, value: False)
@@ -158,7 +165,7 @@ def test_an_address_computed_on_from_one_label_is_compared(monkeypatch: pytest.M
     assert any('((L | 0) + 960) should be' in mismatch for mismatch in mismatches), mismatches
 
 
-ROUND_2 = [
+CORRECT_CRAFTED = [
     'c20_dollar_across_table',
     'c21_inline_compound_across_table',
     'c22_label_digit_into_pinned',
@@ -176,8 +183,8 @@ ROUND_2 = [
 
 
 @pytest.mark.parametrize('pool', ['cli', 'table'])
-@pytest.mark.parametrize('name', ROUND_2)
-def test_the_programs_of_the_later_gap_hunts_pass_the_proof(name: str, pool: str) -> None:
+@pytest.mark.parametrize('name', CORRECT_CRAFTED)
+def test_the_correct_crafted_programs_pass_the_proof(name: str, pool: str) -> None:
     table_pool = _cli_pool(W) if pool == 'cli' else TablePool(W, 1 << (W - 1), run_ops=16)
     assert prove_relocation(W, _macros(_gap(name), W), table_pool).mismatches == []
 
@@ -198,7 +205,7 @@ def test_the_programs_of_the_later_gap_hunts_pass_the_proof(name: str, pool: str
 def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch, name: str, mismatch: str) -> None:
     # the control: the assembler keeps every pin (assembler.unpin does nothing); the proof judges the pins from the
     # plain program, not by the assembler's rules. (A one-pass pool places a pointer-runtime program's tables in no
-    # block (R3-6): a two-pass pool, which places them in blocks during the expansion, pins their words.)
+    # block: a two-pass pool, which places them in blocks during the expansion, pins their words.)
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
     pool = _cli_pool(W)
     if mismatch == 'pointer runtime':
@@ -210,14 +217,14 @@ def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_the_proof_compares_a_number_where_an_address_goes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # the control of N1: the table moves under `;$ + 15*dw`
+    # the control: the table moves under `;$ + 15*dw`
     monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
     mismatches = prove_relocation(W, _macros(_gap('c20_dollar_across_table'), W), _cli_pool(W)).mismatches
     assert any('1152 should be' in mismatch for mismatch in mismatches), mismatches
 
 
 def test_the_proof_compares_the_sums_of_a_computed_operand(monkeypatch: pytest.MonkeyPatch) -> None:
-    # the control of N2: the table moves under `(L + 15*dw) | 0`, and `b - a` spans a moved table
+    # the control: the table moves under `(L + 15*dw) | 0`, and `b - a` spans a moved table
     monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
     monkeypatch.setattr(OffsetGuard, '_check_part', lambda self, coefficients, constant, operand: False)
     for name, operand in [

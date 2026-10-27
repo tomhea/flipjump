@@ -1,7 +1,8 @@
 // Tests hex.read_entry n (n = 1, 2, 3, 4), hex.read_entry_byte and hex.read_entry_packed nb (nb = 1, 2, 3, 4, 8):
 //   entry sizes 1, 2, 4, 8 take the shift (by 7, 8, 9, 10 bits at w=64), 3 the constant multiply. Indexes 0, the
 //   last, a random one and 1, each held in a 1, 2, 3 and 4-hex idx followed by a garbage hex; dst starts as garbage.
-//   Then dst == idx. The arrays are 64 random entries (python, seed 20261024).
+//   Then dst == idx. The arrays are 64 random entries (python's random.Random(20261024)), and the expected
+//   value of a check is the entry its index names.
 // Each check prints '=' when the result is right.
 stl.startup_and_init_all
 

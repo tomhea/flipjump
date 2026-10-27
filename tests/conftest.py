@@ -220,10 +220,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: Config) -> None:
+    """
+    register the `slow` marker.
+    @param config: the pytest config
+    """
     config.addinivalue_line('markers', 'slow: a long unit-test, run only with --slow (the slow tests flag)')
 
 
 def pytest_runtest_setup(item: Item) -> None:
+    """
+    skip a test marked `slow`, unless --slow is given (the flag that also selects the slow .fj tests).
+    @param item: the test about to run
+    """
     if 'slow' in item.keywords and not item.config.getoption('slow'):
         pytest.skip('a slow test: run it with --slow')
 
