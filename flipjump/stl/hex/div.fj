@@ -119,6 +119,7 @@ ns hex {
         .neg n, q
 
       fix_rem:
+        rep(rem_opt != 1, i) .if0 nb, r, end
         stl.comp_if1 rem_opt == 0, update_rem_opt_0
         stl.comp_if1 rem_opt == 2, update_rem_opt_2
         ;end
