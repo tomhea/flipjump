@@ -268,10 +268,11 @@ def _write_preset(tmp_path: Path, words: List[int], preset: int) -> Path:
     return fjm_path
 
 
-def test_every_lzma_preset_reads_back(tmp_path: Path) -> None:
-    # presets 7-9 encode with a 16-64 MiB dictionary, so the reader's decoder must be at least that large
+def test_the_lzma_presets_read_back(tmp_path: Path) -> None:
+    # presets 7-9 encode with a 16-64 MiB dictionary, so the reader's decoder must be at least that large:
+    # the smallest preset, the last one within liblzma's default 8 MiB, and the first and the largest past it
     words = _far_repeat_words(64)
-    for preset in range(10):
+    for preset in (0, 6, 7, 9):
         fjm_path = _write_preset(tmp_path, words, preset)
         memory = Reader(fjm_path).get_memory()
         assert [memory[index] for index in (0, 1, len(words) - 2, len(words) - 1)] == [
