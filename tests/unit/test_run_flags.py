@@ -64,8 +64,7 @@ def _write_simple(
 
 
 def test_the_flags_are_two_u32s_after_the_base_header(tmp_path: Path) -> None:
-    # `u64 flags` became `u32 run_flags; u32 io_mode` - same 12 header-extension bytes, so files
-    # written before (all with flags 0) read unchanged
+    # `u32 run_flags; u32 io_mode` and a reserved u32: the 12 header-extension bytes
     path = _write_simple(tmp_path / 'x.fjm', run_flags=RUN_FLAG_FLAT_MEMORY, io_mode=IO_MODE_PC)
     raw = path.read_bytes()
     assert struct.unpack_from('<LLL', raw, _header_base_size) == (RUN_FLAG_FLAT_MEMORY, IO_MODE_PC, 0)
@@ -133,7 +132,7 @@ def test_cli_rejects_bad_flag_values(argument: str, value: str, capsys: pytest.C
     assert 'bad' in capsys.readouterr().err
 
 
-def test_the_old_flags_option_is_gone() -> None:
+def test_there_is_no_flags_option() -> None:
     with pytest.raises(SystemExit):
         flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--flags', '1', 'a.fj'])
 

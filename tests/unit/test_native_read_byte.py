@@ -2,7 +2,7 @@
 unit-tests for the native engine's run(read_byte=...): the input side of the byte path -- a device that hands over
 whole bytes (it overrides read_byte: a byte stream such as stdin or a fixed buffer) is asked once a byte, and the
 engine feeds the program the byte's bits; a device that answers bit by bit (it keeps IODevice's read_byte: the
-keyboard) is asked bit by bit, exactly as before.
+keyboard) is asked bit by bit.
 
 the properties pinned here, against the pure-python fast loop (which calls read_bit / write_bit once a bit):
 - the device's OUTPUT bits are exactly the bit-by-bit run's, and the program's INPUT bits are its stream's first ones

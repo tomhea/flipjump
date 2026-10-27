@@ -63,9 +63,9 @@ def test_control_the_readmes_example_with_its_copy_moved_to_column_0() -> None:
     )
 
 
-def test_control_the_old_example_without_its_ends_is_refused() -> None:
-    """the example as it was written when a column ended by itself at h: column 0 reaches h, and its next
-    nibble (x = 1) is read as a row field - a row behind the cursor"""
+def test_control_the_example_without_its_ends_is_refused() -> None:
+    """the README's example without its END nibbles: column 0 reaches h, and its next nibble (x = 1) is read as
+    a row field - a row behind the cursor"""
     with pytest.raises(IODeviceException) as failure:
         ss.feed(InMemoryScreen(), bytes.fromhex('01 04 00 03 00 08' '11 30 05 D1 F3' '1F'))
     assert str(failure.value) == (
