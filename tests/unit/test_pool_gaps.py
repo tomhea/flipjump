@@ -303,8 +303,15 @@ def _disable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
         monkeypatch.setattr(owner, attribute, stand_in)
 
 
-@pytest.mark.parametrize('pool', ['cli', 'two_pass', 'table'])
-@pytest.mark.parametrize('name', sorted(DISABLED))
+# C32's and C33's miscompiles never halt: their pin-keeping pools run into the 30 s timeout (with --slow)
+HIDDEN_REACH_PARAMS = [
+    pytest.param(name, pool, marks=[pytest.mark.slow] if name < 'c34' and pool != 'table' else [])
+    for name in sorted(DISABLED)
+    for pool in ('cli', 'two_pass', 'table')
+]
+
+
+@pytest.mark.parametrize('name, pool', HIDDEN_REACH_PARAMS)
 def test_without_its_check_a_program_with_a_hidden_reach_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, pool: str
 ) -> None:

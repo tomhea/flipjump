@@ -44,6 +44,14 @@ def _test_table_programs() -> List[Tuple[str, List[str], int, bool]]:
 
 
 TEST_TABLE_PROGRAMS = _test_table_programs()
+# the programs whose proof takes 9 - 165 s (the stl's pointer and fixed-point tests): run with --slow
+SLOW_PROOFS = {
+    f'hexlib-{name}' for name in ('fixed_point', 'seq_pointers', 'read_entry', 'ptr_index_n', 'read_write_back')
+}
+PROOF_PARAMS = [
+    pytest.param(program, id=program[0], marks=[pytest.mark.slow] if program[0] in SLOW_PROOFS else [])
+    for program in TEST_TABLE_PROGRAMS
+]
 
 
 def _macros(files: List[str], memory_width: int, use_stl: bool = True) -> Dict[MacroName, Macro]:
@@ -54,7 +62,7 @@ def _cli_pool(memory_width: int) -> BlockPool:
     return BlockPool.for_flat(memory_width)  # the pool of fj --pool-tables
 
 
-@pytest.mark.parametrize('program', TEST_TABLE_PROGRAMS, ids=[program[0] for program in TEST_TABLE_PROGRAMS])
+@pytest.mark.parametrize('program', PROOF_PARAMS)
 def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str, List[str], int, bool]) -> None:
     _, files, memory_width, use_stl = program
     pool = _cli_pool(memory_width)
