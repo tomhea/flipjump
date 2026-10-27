@@ -94,6 +94,7 @@ jobs:
           pip install .[tests]
       - name: Build the native engine in place
         run: |
+          pip install setuptools
           python setup.py build_ext --inplace
           python -c "import flipjump, sys; sys.exit(not flipjump.is_native_engine_active())"
       - name: Test pytest
