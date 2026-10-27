@@ -24,6 +24,8 @@ from flipjump.fjm.fjm_consts import (
     _header_extension_size,
     _segment_format,
     _segment_size,
+    _segments_size_format,
+    _segments_size_size,
     SUPPORTED_VERSIONS_NAMES,
     SUPPORTED_MEMORY_WIDTHS,
     _LZMA_FORMAT,
@@ -116,13 +118,22 @@ class Reader:
         # one read for the whole table (a read per segment is slow on some file systems)
         # (at most the rest of the file is read, so a damaged segment_num can't ask for more memory than that)
         table_size = self.segment_num * _segment_size
+        stored_size = table_size
+        if FJMVersion.CompressedSegmentsVersion == self.version:
+            (stored_size,) = unpack(_segments_size_format, fjm_file.read(_segments_size_size))
         try:
             remaining = max(0, os.fstat(fjm_file.fileno()).st_size - fjm_file.tell())
         except (OSError, ValueError):  # not a regular file (a pipe, an in-memory buffer): read what is asked
-            remaining = table_size
-        table = fjm_file.read(min(table_size, remaining))
-        if len(table) != table_size:
-            raise struct.error(f'the segment table needs {table_size} bytes, the file has {len(table)} left')
+            remaining = stored_size
+        table = fjm_file.read(min(stored_size, remaining))
+        if len(table) != stored_size:
+            raise struct.error(f'the segment table needs {stored_size} bytes, the file has {len(table)} left')
+        if FJMVersion.CompressedSegmentsVersion == self.version:
+            table = bytes(_decompress_in_chunks(table, None, table_size, 'segment table'))
+            if len(table) != table_size:
+                raise FlipJumpReadFjmException(
+                    f'Error: the segment table is {len(table)} bytes; {self.segment_num} segments take {table_size}.'
+                )
         return list(struct.iter_unpack(_segment_format, table))
 
     def _validate_header(self) -> None:
@@ -156,7 +167,7 @@ class Reader:
         word_bytes_size = self.memory_width // 8
 
         file_data = fjm_file.read()
-        if FJMVersion.CompressedVersion == self.version:
+        if self.version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
             file_data = self._decompress_data(file_data)
 
         data = [
@@ -175,7 +186,11 @@ class Reader:
             # data is laid out as (flip-word, jump-word) op-pairs, so its length must be even
             #  (the relative-jump reconstruction below relies on this).
             self.memory_segments.append(MemorySegment(segment_start, segment_length))
-            if self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion):
+            if self.version in (
+                FJMVersion.RelativeJumpVersion,
+                FJMVersion.CompressedVersion,
+                FJMVersion.CompressedSegmentsVersion,
+            ):
                 word = (1 << self.memory_width) - 1
                 for i in range(0, data_length, 2):
                     self.memory[segment_start + i] = data[data_start + i]
@@ -316,8 +331,12 @@ class FjmHeader:
 
     @property
     def relative_jumps(self) -> bool:
-        """are the jump words stored relative to their address? (versions 2 and 3)"""
-        return self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion)
+        """are the jump words stored relative to their address? (versions 2 to 4)"""
+        return self.version in (
+            FJMVersion.RelativeJumpVersion,
+            FJMVersion.CompressedVersion,
+            FJMVersion.CompressedSegmentsVersion,
+        )
 
     def assert_runnable(self) -> None:
         """execution starts at address 0, so a segment must hold the first op (words 0 and 1)"""
@@ -337,8 +356,8 @@ def _read_header(fjm_file: BinaryIO, input_file: Path) -> FjmHeader:
 
 def read_fjm_header(input_file: Path) -> FjmHeader:
     """
-    read the .fjm's header and segment table only - the memory itself is not read or decompressed,
-    so this is cheap even for a huge program.
+    read the .fjm's header and segment table only - the memory itself is not read or decompressed
+    (in version 4 only the segment table's own stream is), so this is cheap even for a huge program.
     @param input_file: the path to the .fjm file
     """
     with open(input_file, 'rb') as fjm_file:
@@ -358,7 +377,7 @@ def read_fjm_raw(
     """
     read the .fjm's header, segments and its raw data: the (decompressed) data pool as bytes of
     little-endian w-bit words, exactly as the segments index it (jump words still relative in
-    versions 2-3, see FjmHeader.relative_jumps). This is the lean load: no python object per word.
+    versions 2-4, see FjmHeader.relative_jumps). This is the lean load: no python object per word.
     @param input_file: the path to the .fjm file
     @param on_progress: if given, called with the decompression's progress, a fraction in [0, 1]
     @return: the header, and the data (a bytearray when it was decompressed)
@@ -367,7 +386,7 @@ def read_fjm_raw(
         header = _read_header(fjm_file, input_file)
         stored_data = fjm_file.read()
     file_data: Union[bytes, bytearray] = stored_data
-    if FJMVersion.CompressedVersion == header.version:
+    if header.version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
         data_words = max((start + length for _, _, start, length in header.segments), default=0)
         file_data = _decompress_in_chunks(stored_data, on_progress, data_words * header.memory_width // 8)
         del stored_data
@@ -382,7 +401,7 @@ def read_fjm_raw(
 
 
 def _decompress_in_chunks(
-    file_data: bytes, on_progress: Optional[Callable[[float], None]], expected_size: int = 0
+    file_data: bytes, on_progress: Optional[Callable[[float], None]], expected_size: int = 0, stream: str = 'data'
 ) -> bytearray:
     """
     exactly lzma.decompress(file_data, format=_LZMA_FORMAT, filters=...), fed in chunks so its progress
@@ -391,8 +410,9 @@ def _decompress_in_chunks(
     @param expected_size: the decompressed size the segments imply. The buffer is allocated at that size,
     capped at _INITIAL_EXPANSION x the compressed size, and filled in place; beyond it, it grows with the
     decoded data. A legitimate program is allocated once; a damaged claim costs about 2x the real data.
+    @param stream: what the stream holds, for the error message (the data, or version 4's segment table)
     """
-    damaged = 'Error: The compressed data is damaged; Unable to decompress.'
+    damaged = f'Error: The compressed {stream} is damaged; Unable to decompress.'
     # the size comes from the (not yet validated) segment table, so it is trusted only as far as the
     # compressed size makes plausible; past that the buffer grows as decoded bytes arrive - a damaged table
     # costs about 2x the real data (or 16x the compressed size), never its own claim
