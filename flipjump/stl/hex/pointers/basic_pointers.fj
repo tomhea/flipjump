@@ -6,8 +6,10 @@ ns hex {
         // Space Complexity: 0.5w + 2^PTR_CELL_BITS + PTR_CELL_BITS/4 + 3   (= 0.5w+261 at PTR_CELL_BITS=8)
         //   Initializes the global opcodes and pointer-copies required for the pointers macros.
         //   Initializes the read-byte-handling table and the result/return variables to the read-byte table.
+        // A pointed cell must hold a value below 2^PTR_CELL_BITS (2^PTR_WIDE_BITS for a wide read), times dw, and a
+        //   pointer must be dw-aligned: anything else jumps outside the table (a wild jump, not a wrong value).
         //
-        // @output-param read_byte:  hex[:2] variable. You want to zero it before jumping into ptr_jump.
+        // @output-param read_byte:  hex[:PTR_WIDE/4] variable. The read dance zeroes it itself.
         //                           After jumping into ptr_jump, it's xored with the read byte.
         // @output-param ret_after_read_byte:  The return address. Jumps to it after finishing reading a byte.
         //
@@ -72,6 +74,7 @@ ns hex {
         //   The wide decoder table. It is a separate macro only so that ptr_init can emit
         //   it conditionally; it must begin at op exactly 2^PTR_WIDE_BITS, which is what
         //   the pad is for, and it shares hex.pointers.read_byte with the narrow table.
+        // @requires hex.pointers.ptr_init (stl.ptr_init lays it, when PTR_WIDE_BITS > 0)
         def wide_table_init @ read_ptr_wide_table < .read_byte > ret_after_read_wide {
             rep(.PTR_WIDE_BITS % 4 != 0, i) \
                 .PTR_WIDE_BITS__must_be_a_multiple_of_4
@@ -106,6 +109,7 @@ ns hex {
         //   gray walk) and ptr_wflip (its advance) - each restore it before they end, so none of
         //   them observes or breaks the invariant.
         // ptr is a hex[:w/4] that holds an address.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_flip_and_jump_pointers ptr < .to_flip, .to_jump, .to_ptr_var {
             ..address_and_variable_triple_xor w/4, .to_flip, .to_jump+w, .to_ptr_var, .to_ptr_var
             ..address_and_variable_triple_xor w/4, .to_flip, .to_jump+w, .to_ptr_var, ptr
@@ -122,6 +126,7 @@ ns hex {
         //   (older ^ new ^ next). That is not a slow path, it is a wild jump. hex.ptr_jump - and so
         //   stl.return - reaches here.
         // ptr is a hex[:w/4] that holds an address.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_jump_pointer ptr {
             .set_flip_and_jump_pointers ptr
         }
@@ -134,6 +139,7 @@ ns hex {
         // @note: an ALIAS of set_flip_and_jump_pointers, for the reason given at set_jump_pointer.
         //   hex.ptr_flip, hex.ptr_wflip and hex.xor_*_to_ptr reach here.
         // ptr is a hex[:w/4] that holds an address.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_flip_pointer ptr {
             .set_flip_and_jump_pointers ptr
         }
@@ -145,6 +151,7 @@ ns hex {
         // The next address without re-arming (set_flip_and_jump_pointers xors all w/4 hexes): a binary increment of
         //   the three fields from bit #w (2w's) up, that stops at the first bit that becomes 1.
         // @Assumes: the armed address is dw-aligned (an offset below 2w in to_flip, like the read dance's, is kept).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def advance @ done {
             rep(w-#w, i) .advance_bit #w+i, done
           done:
@@ -153,6 +160,7 @@ ns hex {
         //  Time Complexity: @+3
         // Space Complexity: @+18
         //   flips bit k of to_flip, to_jump+w and to_ptr_var; jumps to done if it became 1, else continues.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def advance_bit k, done @ carry < .to_flip, .to_jump, .to_ptr_var {
             .to_flip+k;
             .to_jump+w+k;
@@ -173,7 +181,7 @@ ns hex {
 
             pad w
           stack:
-            hex.hex stack_error_handler
+            ;stack_error_handler
             hex.vec n, 0
 
           stack_error_handler:
@@ -194,6 +202,7 @@ ns hex {
         //   like:  ;*ptr
     //   Jump to the address the pointer points to.
     // ptr is a hex[:w/4] that holds an address.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def ptr_jump ptr < hex.pointers.to_jump {
         .pointers.set_jump_pointer ptr
         ;hex.pointers.to_jump

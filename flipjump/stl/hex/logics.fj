@@ -15,6 +15,7 @@ ns hex {
     //  Time Complexity: n@
     // Space Complexity: n(@+12)
     //   dst[:n] ^= src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     def xor n, dst, src {
         rep (n, i) .xor dst+i*dw, src+i*dw
     }
@@ -62,7 +63,7 @@ ns hex {
     //   dst ^= src
     //   src = 0
     //
-    // both dst,src are hexes
+    // both dst,src are hexes. dst and src must differ (xor_zero x, x leaves x).
     def xor_zero dst, src {
         .double_xor dst, src, src
     }
@@ -71,6 +72,7 @@ ns hex {
     // Space Complexity: n(@+28)
     //   dst[:n] ^= src[:n]
     //   src[:n] = 0
+    // dst and src must not overlap (xor_zero n, x, x leaves x).
     def xor_zero n, dst, src {
         rep (n, i) .xor_zero dst+i*dw, src+i*dw
     }
@@ -389,6 +391,7 @@ ns hex {
     //  Time Complexity: n(3@+12)      (4@+10 for n == 1)
     // Space Complexity: n(3@+54)      (4@+52 for n == 1)
     //   dst[:n] |= src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     // @requires hex.or.init (or hex.init)
     def or n, dst, src < .or.dst {
         .tables.jump_to_table_entries n, dst, src, .or.dst
@@ -439,6 +442,7 @@ ns hex {
     //  Time Complexity: n(3@+12)      (4@+10 for n == 1)
     // Space Complexity: n(3@+54)      (4@+52 for n == 1)
     //   dst[:n] &= src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     // @requires hex.and.init (or hex.init)
     def and n, dst, src < .and.dst {
         .tables.jump_to_table_entries n, dst, src, .and.dst
@@ -492,7 +496,7 @@ ns hex {
     // Space Complexity: n(@+12)  (each table aligned to PAD ops)
     //   dst[:n] ^= src[:n]
     //
-    // dst,src are hex[:n].
+    // dst,src are hex[:n]. Unsafe if dst and src overlap! but safe if they are the exact same address.
     def sparse_xor PAD, n, dst, src {
         rep (n, i) .sparse_xor PAD, dst+i*dw, src+i*dw
     }
@@ -604,7 +608,7 @@ ns hex {
     // Space Complexity: @+28  (the first table aligned to PAD ops)
     //   dst ^= src;  src = 0
     //
-    // dst,src are hexes.
+    // dst,src are hexes. dst and src must differ (sparse_xor_zero PAD, x, x leaves x).
     def sparse_xor_zero PAD, dst, src {
         .sparse_double_xor PAD, dst, src, src
     }
@@ -613,7 +617,7 @@ ns hex {
     // Space Complexity: n(@+28)  (each first table aligned to PAD ops)
     //   dst[:n] ^= src[:n];  src[:n] = 0
     //
-    // dst,src are hex[:n].
+    // dst,src are hex[:n]. dst and src must not overlap (sparse_xor_zero PAD, n, x, x leaves x).
     def sparse_xor_zero PAD, n, dst, src {
         rep (n, i) .sparse_xor_zero PAD, dst+i*dw, src+i*dw
     }
@@ -651,7 +655,7 @@ ns hex {
     // Space Complexity: n(2@+24)  (each table aligned to PAD ops)
     //   dst[:n] = src[:n]
     //
-    // dst,src are hex[:n].
+    // dst,src are hex[:n]. Unsafe if dst and src overlap! but safe if they are the exact same address.
     def sparse_mov PAD, n, dst, src @ end {
         stl.comp_if1 dst==src, end
         .sparse_zero PAD, n, dst

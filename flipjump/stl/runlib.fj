@@ -9,8 +9,9 @@ ns hex {
         //
         // Reading a cell works by adding 2^PTR_CELL_BITS to the slot's jump value so that it lands
         // on its own table entry (see ptr_init), which is a flip of bit dbit+PTR_CELL_BITS -- so
-        // the ceiling is dbit+PTR_CELL_BITS < dw, i.e. 25 at w=32 and 56 at w=64. It must also be a
-        // multiple of 4, because the value is decoded into a hex vector.
+        // the ceiling is dbit+PTR_CELL_BITS < dw. It must also be a multiple of 4, because the value is
+        // decoded into a hex vector, and at least 8 (the byte api reads two hexes): so 8..24 at w=32, 8..56 at
+        // w=64, and only 8 at w=16. In practice the table's size binds first: 2^20 ops of table assembles.
         //
         // Declared HERE, in the first stl file, so that it is a backward reference by the time
         // basic_pointers.fj uses it as a `pad` and a `rep` count. Override it per build with
@@ -34,7 +35,8 @@ ns hex {
         // price. Widening PTR_CELL_BITS instead taxes every dereference in the program.
         //
         // Same rules as PTR_CELL_BITS when non-zero: a multiple of 4, at least 8, and
-        // dbit+PTR_WIDE_BITS < dw. Costs 2^PTR_WIDE_BITS ops of table when on, 0 when off.
+        // dbit+PTR_WIDE_BITS < dw; and it must be wider than PTR_CELL_BITS (so none at w=16).
+        // Costs 2^PTR_WIDE_BITS ops of table when on, 0 when off.
         //     fj ... -D hex.pointers.PTR_WIDE_BITS=16
         PTR_WIDE_BITS = 0
 
@@ -91,6 +93,7 @@ ns stl {
     // Complexity: ~7000  (7010 for w=64, 6890 for w=16)
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
+    // It does not fit w=16: the init alone is ~7000 ops, and a w=16 memory holds 2048.
     def startup_and_init_all {
         .startup_and_init_all 100
     }
@@ -206,6 +209,7 @@ ns stl {
 
     // Complexity: 8 * string_length
     // str is a constant. The macro outputs the bytes of it (from lsB to msB) until it becomes all zeros.
+    // string_length is that many bytes: ((#str)+7)/8.
     def output str {
         rep(((#str)+7)>>3, i) .output_char (str>>(8*i))&0xff
     }

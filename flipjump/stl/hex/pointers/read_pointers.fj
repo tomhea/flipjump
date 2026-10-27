@@ -6,6 +6,9 @@ ns hex {
     // Space Complexity: w( 0.5@+22) + 5@+64
     //   like:  dst = *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // *ptr must be a cell: a value below 2^PTR_CELL_BITS, times dw (else the read jumps outside the table).
+    // dst must not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_hex dst, ptr {
         .zero dst
         .xor_hex_from_ptr dst, ptr
@@ -15,6 +18,8 @@ ns hex {
     // Space Complexity: w( 0.5@+22) + 7@+88
     //   like:  dst[:2] = *ptr
     // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // dst must not overlap ptr (dst is zeroed before ptr is read).
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_byte dst, ptr {
         .zero 2, dst
         .xor_byte_from_ptr dst, ptr
@@ -26,6 +31,8 @@ ns hex {
     //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
     // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     // @note: at the defaults (PTR_CELL_BITS=8, no wide table) this is exactly read_byte.
+    // dst must not overlap ptr (dst is zeroed before ptr is read).
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_cell dst, ptr {
         .zero .pointers.PTR_WIDE/4, dst
         .xor_cell_from_ptr dst, ptr
@@ -43,6 +50,7 @@ ns hex {
     //   like:  dst = *ptr
     //          ptr++
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
     def read_hex_and_inc dst, ptr {
         .read_hex dst, ptr
         .ptr_inc ptr
@@ -54,6 +62,7 @@ ns hex {
     // dst is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.xor_cells_from_inners_ptrs).
     // @Assumes: n >= 1 (n < 1 is refused at assemble time), and dst does not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_hex n, dst, ptr {
         rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
         .zero n, dst
@@ -66,6 +75,7 @@ ns hex {
     //   like:  dst[:2] = *ptr
     //          ptr++
     // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
     def read_byte_and_inc dst, ptr {
         .read_byte dst, ptr
         .ptr_inc ptr
@@ -77,6 +87,7 @@ ns hex {
     // dst is a hex[:2n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.xor_cells_from_inners_ptrs).
     // @Assumes: n >= 1 (n < 1 is refused at assemble time), and dst does not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_byte n, dst, ptr {
         rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
         .zero 2*n, dst
@@ -90,6 +101,7 @@ ns hex {
     //          ptr++
     //   The pair-walking form of read_cell; its write twin is write_cell_and_inc.
     // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
     def read_cell_and_inc dst, ptr {
         .read_cell dst, ptr
         .ptr_inc ptr
@@ -135,7 +147,9 @@ ns hex {
     //   op, ptr+index of an _nth_ op; 0 before any.
     // @Assumes: on every path here, no pointer operation (push / pop and stl.call / stl.return included) ran since.
     // @Assumes: armed is dw-aligned (not the ptr+w of ptr_wflip_2nd_word, and so of stl.call / stl.return).
+    // @Assumes: the armed cell is a narrow one (not after read_cell / write_cell / zero_cell_ptr with a wide table).
     // dst is a hex[:2].
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_back dst < hex.pointers.read_byte {
         .zero 2, dst
         .pointers.read_byte_from_inners_ptrs
@@ -208,6 +222,7 @@ ns hex {
             .entry_address dst, table, size*dw, idx_n, idx, (idx_n+((#(size*dw))+3)/4 < w/4) ? idx_n+((#(size*dw))+3)/4 : w/4
         }
         // the same, with c = size*2w and sw = the hexes idx*c needs.
+        // @requires hex.add.init (or hex.init)
         def entry_address dst, table, c, idx_n, idx, sw @ scaled, end {
             ..zero sw, scaled
             ..xor idx_n, scaled, idx

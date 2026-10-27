@@ -45,16 +45,19 @@ ns hex {
     //  Time Complexity: n(@-1)
     // Space Complexity: n(@+15)
     //   if hex[:n]==0 goto l0, else goto l1.
+    // @Assumes: n >= 1.
     def if n, hex, l0, l1 {
         rep(n-1, i) .if1 hex+i*dw, l1
         .if hex+(n-1)*dw, l0, l1
     }
     //   if hex[:n]==0 goto l0, else continue.
+    // @Assumes: n >= 1.
     def if0 n, hex, l0 @ l1 {
         .if n, hex, l0, l1
       l1:
     }
     //   if hex[:n]!=0 goto l1, else continue.
+    // @Assumes: n >= 1.
     def if1 n, hex, l1 @ l0 {
         .if n, hex, l0, l1
       l0:
@@ -118,6 +121,7 @@ ns hex {
     //  Time Complexity: @-1
     // Space Complexity: @+15
     //   if number[:n] < 0 jump to neg, else jump to zpos (Zero POSitive).
+    // @Assumes: n >= 1.
     def sign n, number, neg, zpos {
         .if_flags number+(n-1)*dw, 0xff00, zpos, neg
     }
@@ -171,6 +175,7 @@ ns hex {
     // @requires hex.cmp.init (or hex.init)
     //
     // n is size-constant; a,b are hexes; lt/eq/gt are addresses.
+    // @Assumes: n >= 1.
     def cmp n, a, b, lt, eq, gt {
         rep(n-1, i) .cmp.cmp_eq_next a+(n-1-i)*dw, b+(n-1-i)*dw, lt, gt
         .cmp a, b, lt, eq, gt
@@ -178,6 +183,7 @@ ns hex {
 
     ns cmp {
         // compares a to b; if equal just continue.
+        // @requires hex.cmp.init (or hex.init)
         def cmp_eq_next a, b, lt, gt @ eq {
             ..cmp a, b, lt, eq, gt
           eq:
@@ -260,6 +266,7 @@ ns hex {
     //   signed range monotonically onto the unsigned range, so it is correct over the whole range
     //   with no subtraction (hence no overflow).
     // @requires hex.cmp.init (or hex.init)
+    // @Assumes: n >= 1.
     def scmp n, a, b, lt, eq, gt @ ba, bb {
         .mov n, ba, a
         .xor_by ba+(n-1)*dw, 8

@@ -5,6 +5,8 @@ ns hex {
     //  Time Complexity:  len(w(0.5@+4) + 35@+106)
     // Space Complexity:  w(2@+37) + 30@+397
     //   Reads bytes from input into a pointed buffer, until a '\n' or a 0-byte (EOF); writes the byte count into len[:w/4].
+    // The '\n' / 0-byte is not stored, and nothing 0-terminates the line. There is no length bound: the
+    //   buffer must hold the whole line.
     // @requires hex.init and stl.ptr_init (or stl.startup_and_init_all).
     def input_ptr_line ptr, len @ loop, store, finish, wptr, bytebuf, nl, end {
         .mov w/4, wptr, ptr

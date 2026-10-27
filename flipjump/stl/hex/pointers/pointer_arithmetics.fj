@@ -23,6 +23,7 @@ ns hex {
     //   ptr[:w/4] += value * 2w    (advance ptr by value)
     // @requires hex.add.init (or hex.init)
     // @note: The complexity is calculated with n_const=2, and for log(w) in 16,32,64,128.
+    // value may be negative: ptr moves modulo 2^w (value*2w is taken modulo 2^w); ptr_sub of -value is cheaper.
     def ptr_add ptr, value {
         hex.add_constant w/4, ptr, value * dw
     }
@@ -32,6 +33,7 @@ ns hex {
     //   ptr[:w/4] -= value * 2w    (retreat ptr by value)
     // @requires hex.sub.init (or hex.init)
     // @note: The complexity is calculated with n_const=2, and for log(w) in 16,32,64,128.
+    // value may be negative: ptr moves modulo 2^w (value*2w is taken modulo 2^w); ptr_add of -value is cheaper.
     def ptr_sub ptr, value {
         hex.sub_constant w/4, ptr, value * dw
     }
@@ -41,6 +43,7 @@ ns hex {
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   dst[:w/4] = ptr + index*2w     (the address of the index-th dw-aligned op past *ptr)
     // dst, ptr are hex[:w/4]; index is a signed hex[:w/4]. Works for negative index too.
+    // dst must not alias ptr.
     // @requires hex.add.init (or hex.init)
     // @Assumes: w in {16, 32, 64, 128}.
     def ptr_index dst, ptr, index {

@@ -4,6 +4,7 @@ ns hex {
     //   like:  *ptr;
     //   Flip the address the pointer points to.
     // ptr is a hex[:w/4] that holds an address.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def ptr_flip ptr @ cleanup < hex.pointers.to_flip {
         wflip hex.pointers.to_flip+w, cleanup
 
@@ -22,6 +23,7 @@ ns hex {
     //   like:  (*ptr)+dbit;
     //   Flip the address dbit-ahead of what the pointer points to.
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def ptr_flip_dbit ptr < .pointers.to_flip {
         wflip .pointers.to_flip, dbit
         .ptr_flip ptr
@@ -33,6 +35,7 @@ ns hex {
     // Space Complexity: w(0.5@+22) + 5@+76
     //   like:  hex.xor *ptr, hex
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_hex_to_ptr ptr, hex {
         .pointers.set_flip_pointer ptr
         .pointers.xor_hex_to_flip_ptr hex
@@ -42,6 +45,7 @@ ns hex {
     // Space Complexity: w(0.5@+22) + 10@+152
     //   like:  hex.xor *ptr, hex[:2]
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_byte_to_ptr ptr, hex {
         .pointers.set_flip_pointer ptr
         .pointers.xor_byte_to_flip_ptr hex
@@ -53,6 +57,7 @@ ns hex {
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.advance).
     // @Assumes: n >= 1 (n < 1 is refused at assemble time), and hex does not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_hex_to_ptr n, ptr, hex {
         rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
         .pointers.set_flip_pointer ptr
@@ -66,6 +71,7 @@ ns hex {
     // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.advance).
     // @Assumes: n >= 1 (n < 1 is refused at assemble time), and hex does not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_byte_to_ptr n, ptr, hex {
         rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
         .pointers.set_flip_pointer ptr
@@ -77,6 +83,7 @@ ns hex {
         //  Time Complexity: h(5@+12) + 2@+6
         // Space Complexity: h(5@+76) + (w-#w)(@+18)
         //   the armed fields += 2w;  then *armed ^= hex[:h]      (h is 1 or 2)
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def advance_and_xor_to_flip_ptr h, hex {
             .advance
             rep(h, i) .xor_hex_to_flip_ptr hex+i*dw, 4*i
@@ -87,6 +94,7 @@ ns hex {
         //   like:  hex.xor *ptr, hex
         //          ptr += dw
         // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
+        // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
         def xor_hex_to_ptr_and_inc ptr, hex {
             ..xor_hex_to_ptr ptr, hex
             ..ptr_inc ptr
@@ -97,6 +105,7 @@ ns hex {
         //   like:  hex.xor *ptr, hex[:2]
         //          ptr += dw
         // ptr is a hex[:w/4] that holds an address, which we assume is an hex-variable, which is dw-aligned.
+        // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
         def xor_byte_to_ptr_and_inc ptr, hex {
             ..xor_byte_to_ptr ptr, hex
             ..ptr_inc ptr
@@ -115,7 +124,7 @@ ns hex {
 
         //  Time Complexity: 10@+24
         // Space Complexity: 10@+152
-        //   xors (the byte hex[2:]) to the byte pointed by the memory-word hex.pointers.to_flip.
+        //   xors (the byte hex[:2]) to the byte pointed by the memory-word hex.pointers.to_flip.
         //   use after:  .pointers.set_flip_pointer ptr
         //   does:       .xor *ptr, hex[:2]    (as it uses the address in to_flip)
         // It assumes that the value in the memory-word to_flip is a dw-aligned address to an hex-variable.
@@ -125,7 +134,7 @@ ns hex {
 
         //  Time Complexity: 5(PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4)
         // Space Complexity: 5(PTR_CELL_BITS/4)@ + 76(PTR_CELL_BITS/4)
-        //   xors a WHOLE CELL (PTR_CELL_BITS/4 hexes) to the cell pointed by hex.pointers.to_flip.
+        //   xors a WHOLE CELL (PTR_WIDE/4 hexes) to the cell pointed by hex.pointers.to_flip.
         //   use after:  .pointers.set_flip_and_jump_pointers ptr
         //
         // This is the write-side twin of the read: read_byte_from_inners_ptrs decodes all
@@ -180,6 +189,7 @@ ns hex {
     // Space Complexity: w(1.5@+25)
     //   like:  wflip *ptr, value
     // ptr is a hex[:w/4] that holds an address, which we assume is w-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def ptr_wflip ptr, value {
         .pointers.set_flip_pointer ptr
         rep(w, i) .pointers.advance_by_one_and_flip__ptr_wflip (#(i^((i+1)%w))), (value>>i)&1
@@ -187,6 +197,7 @@ ns hex {
     ns pointers {
         // Advances *to_flip by 1 (which takes n flips, from bit0 to bit1, bit2,...).
         // If do_flip (value) isn't 0 - then make a flip, like:  to_flip;advance.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def advance_by_one_and_flip__ptr_wflip n, do_flip @ cleanup, advance < hex.pointers.to_flip {
             stl.comp_if0 do_flip, advance
             wflip hex.pointers.to_flip+w, cleanup, hex.pointers.to_flip
@@ -203,6 +214,7 @@ ns hex {
     // Space Complexity: w(1.5@+25)
     //   like:  wflip (*ptr)+w, value
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def ptr_wflip_2nd_word ptr, value {
         ptr+dbit + ((#w-1)/4)*dw + (#w-1)%4;
         hex.ptr_wflip ptr, value

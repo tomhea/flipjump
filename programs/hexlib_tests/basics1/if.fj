@@ -8,7 +8,7 @@ stl.output "if_flags:\n"
 // hexlib.out line:   for h, f in ops: print((f>>h)&1, end='')
 // IF_100_NUMS = hex(sum(h+f*16 << (i*20) for i, (h,f) in enumerate(ops)))
 IF_FLAGS_NUMS = 0x2098593d070776a83803ed025fcf2630b539677e0a51278ec3b572bfa969f37eb32fa5a27d38f4f1ba10d5900345ee5d4b50f0d9b73a3ef84d8cbd2258f5a9cdedd958464321a1be0a3d2ba53a12ff684678ccaeea178472da56b4559e3b6e1fb5afd9afc3d69a167c53a95b2516817ba4f9890ded69f06b8e4eae281a4968d57d836496ceea29b290de0a64f6352588dc27b156aa22acc8147ff6400f5d71cd956b7021d2175e2f44c5f78c7d2afc97dacc10e9f17d11206ab17f05ffaf20a7af40b9c09c305a72f0dd8782762922df18191171efd38c65b187350bbecbd27c62c480459289ce5599ceda69a776420065898f22b7cf640a898
-rep(100, i) print_if_flags (IF_FLAGS_NUMS>>(i*20))&((i<<20)-1)
+rep(100, i) print_if_flags (IF_FLAGS_NUMS>>(i*20))&((1<<20)-1)
 stl.output "\n\n"
 
 

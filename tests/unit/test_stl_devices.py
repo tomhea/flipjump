@@ -17,7 +17,7 @@ from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.interpreter.io_devices.KeyboardIO import KeyboardIO, KeyEvent, ScriptedKeyEventSource
 from flipjump.interpreter.io_devices.ScreenIO import EGA16, InMemoryScreen
-from flipjump.utils.exceptions import IODeviceException
+from flipjump.utils.exceptions import FlipJumpException, IODeviceException
 from tests.unit import screen_stream as ss
 
 
@@ -182,6 +182,101 @@ stl.loop
 '''
         expected = ss.pack([(0, used_bits), ((1 << column_bits) - 1, column_bits)]) + ss.PRESENT
         assert _output_bytes(tmp_path, program) == expected
+
+
+# every out-of-range constant is refused at assemble time, by the rule's name (it used to wrap into a different, valid
+# command: `define_palette 8, 256, ...` redefined slot 0, `set_max_fps 300` set 44).
+OUT_OF_RANGE = [
+    ('screen.init_screen 0, 1, 8', 'init_screen__width_must_be_1_to_65534'),
+    ('screen.init_screen 65535, 1, 8', 'init_screen__width_must_be_1_to_65534'),
+    ('screen.init_screen 1, 0, 8', 'init_screen__height_must_be_1_to_65531'),
+    ('screen.init_screen 1, 65532, 8', 'init_screen__height_must_be_1_to_65531'),
+    ('screen.init_screen 1, 1, 0', 'init_screen__format_must_be_1_to_16_or_24'),
+    ('screen.init_screen 1, 1, 17', 'init_screen__format_must_be_1_to_16_or_24'),
+    ('screen.define_palette 8, 256, 0, 0, 0', 'define_palette__slot_must_be_0_to_255'),
+    ('screen.define_palette 4, 1, 16, 16, 0', 'define_palette__need_0_le_first_le_last_below_2_pow_format'),
+    ('screen.define_palette 4, 1, 2, 1, 0', 'define_palette__need_0_le_first_le_last_below_2_pow_format'),
+    ('screen.select_palette 256', 'select_palette__slot_must_be_0_to_255'),
+    ('screen.builtin_palette 257, 2', 'builtin_palette__slot_must_be_0_to_255'),
+    ('screen.builtin_palette 1, 5', 'builtin_palette__id_must_be_0_to_4'),
+    ('screen.set_max_fps 256', 'set_max_fps__fps_must_be_0_to_255'),
+    ('screen.set_window_icon_header 256, 1', 'set_window_icon_header__sides_must_be_1_to_255'),
+    ('screen.set_window_icon_header 1, 0', 'set_window_icon_header__sides_must_be_1_to_255'),
+]
+
+
+@pytest.mark.parametrize('call, rule', OUT_OF_RANGE)
+def test_an_out_of_range_constant_is_refused(
+    tmp_path: Path, call: str, rule: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(FlipJumpException) as refused:
+        _output_bytes(tmp_path, f'stl.startup\n{call}\nstl.loop\n')
+    assert rule in str(refused.value) + capsys.readouterr().out
+
+
+def test_the_range_edges_assemble(tmp_path: Path) -> None:
+    """the negative control: every guard's in-range edge assembles, and outputs its command."""
+    program = '''
+stl.startup
+screen.init_screen 65534, 65531, 24
+screen.init_screen 1, 1, 16
+screen.define_palette 4, 255, 15, 15, 0
+screen.select_palette 255
+screen.builtin_palette 255, 4
+screen.set_max_fps 255
+screen.set_window_icon_header 255, 255
+stl.loop
+'''
+    expected = (
+        ss.init_screen(65534, 65531, 24)
+        + ss.init_screen(1, 1, 16)
+        + ss.define_palette(255, 15, [(0, 0, 0)], 4)
+        + ss.select_palette(255)
+        + ss.builtin_palette(255, 4)
+        + ss.set_max_fps(255)
+        + bytes([0x05, 255, 255])
+    )
+    assert _output_bytes(tmp_path, program) == expected
+
+
+FULL_WIDTH_PROGRAM = '''
+stl.startup
+screen.init_screen 2, 2, 9
+screen.builtin_palette 200, 2
+screen.select_palette 200
+screen.define_palette 9, 201, 511, 511, 0x332211
+screen.set_window_icon_header 2, 3
+rep(6, i) screen.output_bits 9, i
+screen.end_command 0, 54
+stl.loop
+'''
+
+
+def test_the_fields_reach_the_screen_at_their_full_width(tmp_path: Path) -> None:
+    """slot 200 (a 7-bit slot mutant: no test went past slot 3), entry 511 at format 9 (an index bit 8 mutant: formats
+    3-8 only), a 2 x 3 icon (a width / height swap: the only icon was 1 x 1), and end_command's zero bits after the
+    icon's colours (c = 0)."""
+    expected = (
+        ss.init_screen(2, 2, 9)
+        + ss.builtin_palette(200, 2)
+        + ss.select_palette(200)
+        + ss.define_palette(201, 511, [(0x11, 0x22, 0x33)], 9)
+        + ss.set_window_icon(2, 3, range(6), 9)
+    )
+    assert _output_bytes(tmp_path, FULL_WIDTH_PROGRAM) == expected
+    screen = InMemoryScreen()
+    _run_program(tmp_path, FULL_WIDTH_PROGRAM, screen)
+    assert screen.palettes[200][:16] == list(EGA16)
+    assert screen.palettes[201][511] == (0x11, 0x22, 0x33)
+    assert screen.window_icon == (2, 3, [screen.palettes[200][i] for i in range(6)])
+
+
+@pytest.mark.parametrize('used_bits', range(8))
+def test_end_command_pads_after_any_used_bits(tmp_path: Path, used_bits: int) -> None:
+    """END_CMD then the zero bits to the byte after 0..7 used bits (a mutant reading only used_bits' low 2 bits
+    passed: the tests used 0 and 4)."""
+    program = f'stl.startup\nscreen.output_bits {used_bits}, 0\nscreen.end_command 4, {used_bits}\nstl.loop\n'
+    assert _output_bytes(tmp_path, program) == ss.pack([(0, used_bits), (0xF, 4)])
 
 
 # ---------------------------------------------------------------- the keyboard

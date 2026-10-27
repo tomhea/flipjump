@@ -6,6 +6,7 @@ ns hex {
     // Space Complexity: w( 0.5@+22) + 9@+128
     //   like:  *ptr = src
     // src is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def write_hex ptr, src < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
@@ -20,6 +21,7 @@ ns hex {
     //   bits into read_byte, so the write-back must cover the same width: flipping back only the
     //   low byte of a 12/16-bit cell would leave the top of the cell standing.
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def zero_ptr ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
@@ -30,6 +32,7 @@ ns hex {
     // Space Complexity: w( 0.5@+22) + 15@+216
     //   like:  *ptr = src[:2]
     // src is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def write_byte ptr, src < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
@@ -47,6 +50,7 @@ ns hex {
     // left standing in the top of the cell.
     // src is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     // @note: at the defaults (PTR_CELL_BITS=8, no wide table) this is exactly write_byte.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def write_cell ptr, src < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
@@ -65,6 +69,7 @@ ns hex {
     //   dbit+PTR_CELL_BITS lands outside the narrow table entirely. That is not a wrong value,
     //   it is an unbounded jump.
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def zero_cell_ptr ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
@@ -84,6 +89,7 @@ ns hex {
     //   like:  *ptr = src
     //          ptr++
     // src is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
     def write_hex_and_inc ptr, src {
         .write_hex ptr, src
         .ptr_inc ptr
@@ -95,6 +101,7 @@ ns hex {
     // src is a hex[:n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.write_cells).
     // @Assumes: n >= 1 (n < 1 is refused at assemble time), and src does not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def write_hex n, ptr, src {
         rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
         .pointers.set_flip_and_jump_pointers ptr
@@ -106,6 +113,7 @@ ns hex {
     //   like:  *ptr = src[:2]
     //          ptr++
     // src is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
     def write_byte_and_inc ptr, src {
         .write_byte ptr, src
         .ptr_inc ptr
@@ -117,6 +125,7 @@ ns hex {
     // src is a hex[:2n]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // Arms ptr once; the armed fields then advance a cell at a time (see hex.pointers.write_cells).
     // @Assumes: n >= 1 (n < 1 is refused at assemble time), and src does not overlap ptr.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def write_byte n, ptr, src {
         rep(n < 1, i) .pointers.n_cell_ops__n_must_be_at_least_1
         .pointers.set_flip_and_jump_pointers ptr
@@ -129,6 +138,7 @@ ns hex {
     //          ptr++
     //   The pair-walking form of write_cell; its read twin is read_cell_and_inc.
     // src is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init) and stl.ptr_init (or stl.startup_and_init_all).
     def write_cell_and_inc ptr, src {
         .write_cell ptr, src
         .ptr_inc ptr
@@ -172,6 +182,7 @@ ns hex {
     //   *armed = src[:2]    (hex.write_byte without its arm)
     // The same armed address, and @Assumes, as hex.read_back.
     // src is a hex[:2].
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def write_back src < hex.pointers.read_byte {
         .pointers.read_byte_from_inners_ptrs
         .xor 2, hex.pointers.read_byte, src
@@ -193,6 +204,7 @@ ns hex {
         // .ret_after_read_byte is set once for the n read dances (each still sets and clears to_flip+w, which
         //   xor_hex_to_flip_ptr uses too), and the armed fields advance by 2w between the cells instead of being re-armed.
         // src is a hex[:n*h]; h (1 or 2) is the hexes written to each cell.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def write_cells n, h, src < .ret_after_read_byte, .to_flip {
             wflip .ret_after_read_byte+w, .to_flip
             .write_cell h, src
@@ -203,6 +215,7 @@ ns hex {
         //  Time Complexity: (7h+3)@ + 12h+26
         // Space Complexity: (w-#w)(@+18) + (7h+1)@ + 100h+10
         //  the armed fields += 2w;  then write_cell h, src.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def advance_and_write_cell h, src {
             .advance
             .write_cell h, src
@@ -212,6 +225,7 @@ ns hex {
         // Space Complexity: (7h+1)@ + 100h+10
         //   *armed[:h] = src[:h]     (like write_hex / write_byte without the arm, and with .ret_after_read_byte set)
         // @Assumes: .ret_after_read_byte holds to_flip (see write_cells).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def write_cell h, src @ read, cleanup < .read_byte, .to_flip, .to_jump {
             ..zero h, .read_byte
             wflip .to_flip, dbit+.PTR_CELL_BITS

@@ -148,19 +148,21 @@ def test_a_whole_cell_round_trips_at_every_width(tmp_path: Path, cell_bits: int,
     )
 
 
-@pytest.mark.parametrize('bad_bits', [4, 7, 10])
+@pytest.mark.parametrize('bad_bits', [4, 7, 10, 60])
 def test_a_bad_ptr_cell_bits_is_refused_at_assemble_time(tmp_path: Path, bad_bits: int) -> None:
     # none of these faults loudly on its own: 7 reads 0x41 back as 0x01, and 4 is a multiple of 4 with dbit+4 < dw,
     # yet wild-jumps, because the byte API writes two hexes into a register sized PTR_CELL_BITS/4
+    # (60: a multiple of 4 and >= 8, so only the dw bound refuses it: dbit + 60 >= dw at w=64)
     with pytest.raises(AssertionError, match='PTR_CELL_BITS__must'):
         _assemble_at(tmp_path, 'programs/hexlib_tests/basics2/pointer_setters.fj', bad_bits)
 
 
-@pytest.mark.parametrize('cell_bits, bad_wide_bits', [(8, 8), (8, 10), (16, 12)])
+@pytest.mark.parametrize('cell_bits, bad_wide_bits', [(8, 8), (8, 10), (16, 12), (8, 60)])
 def test_a_bad_ptr_wide_bits_is_refused_at_assemble_time(tmp_path: Path, cell_bits: int, bad_wide_bits: int) -> None:
     # a wide table not wider than the narrow one has no reason to exist and (8, 8) would lay two tables at the same
     # op; 10 is not a hex boundary; and a "wide" table narrower than the cells (16, 12) inverts which arming bit
     # lands where
+    # (8, 60): only the dw bound refuses it
     with pytest.raises(AssertionError, match='PTR_WIDE_BITS__must'):
         _assemble_at(tmp_path, 'programs/hexlib_tests/basics2/wide_cells.fj', cell_bits, bad_wide_bits)
 

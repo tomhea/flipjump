@@ -18,6 +18,9 @@ ns screen {
     // The screen shows black at once; every palette slot holds the format's default, and slot 0 is selected.
     // width, height (1..65534 / 1..65531) and format (bits per colour: 1-16 indexed, 24 RGB) are constants.
     def init_screen width, height, format {
+        rep(width < 1 || width > 65534, i) .init_screen__width_must_be_1_to_65534
+        rep(height < 1 || height > 65531, i) .init_screen__height_must_be_1_to_65531
+        rep((format < 1 || format > 16) && format != 24, i) .init_screen__format_must_be_1_to_16_or_24
         stl.output_char 0x01
         .output_bits 16, width
         .output_bits 16, height
@@ -28,7 +31,10 @@ ns screen {
     //   define_palette: [0x02] [slot:8] [first:B] [last:B]  then (last-first+1) x [R:8] [G:8] [B:8]
     // rgb is a constant: entry first+i is its bytes 3i, 3i+1, 3i+2 (R, G, B; R the least-significant).
     // format is init_screen's (B = format bits per colour; indexed formats only); slot, first, last are constants.
+    // rgb holds 3(last-first+1) bytes: missing ones are 0 (black), and bytes beyond them are dropped.
     def define_palette format, slot, first, last, rgb {
+        rep(slot < 0 || slot > 255, i) .define_palette__slot_must_be_0_to_255
+        rep(first < 0 || first > last || last >= 1<<format, i) .define_palette__need_0_le_first_le_last_below_2_pow_format
         stl.output_char 0x02
         stl.output_char slot
         .output_bits format, first
@@ -41,6 +47,7 @@ ns screen {
     //   select_palette: [0x06] [slot:8]     (the palette present shows the picture through)
     // slot is a constant.
     def select_palette slot {
+        rep(slot < 0 || slot > 255, i) .select_palette__slot_must_be_0_to_255
         stl.output_char 0x06
         stl.output_char slot
     }
@@ -49,6 +56,8 @@ ns screen {
     //   builtin_palette: [0x07] [slot:8] [id:8]     (id: 0 black/white, 1 grey ramp, 2 EGA-16, 3 xterm-256, 4 RGB cube)
     // slot, id are constants.
     def builtin_palette slot, id {
+        rep(slot < 0 || slot > 255, i) .builtin_palette__slot_must_be_0_to_255
+        rep(id < 0 || id > 4, i) .builtin_palette__id_must_be_0_to_4
         stl.output_char 0x07
         stl.output_char slot
         stl.output_char id
@@ -58,13 +67,16 @@ ns screen {
     //   set_max_fps: [0x03] [fps:8]     (0 = no cap)
     // fps is a constant.
     def set_max_fps fps {
+        rep(fps < 0 || fps > 255, i) .set_max_fps__fps_must_be_0_to_255
         stl.output_char 0x03
         stl.output_char fps
     }
 
     // Complexity: 8(string_length+2)
     //   set_window_title: [0x04] <utf-8 bytes> [0x00]
-    // text is a constant string (least-significant byte first, as stl.output outputs it).
+    // text is a constant string (least-significant byte first, as stl.output outputs it) of UTF-8 bytes with no 0 byte
+    //   (a non-ASCII character as its \xNN bytes); it is sent up to its top non-zero byte.
+    // string_length is that many bytes: ((#text)+7)/8.
     def set_window_title text {
         stl.output_char 0x04
         stl.output text
@@ -77,6 +89,7 @@ ns screen {
     //   the byte; they're the program's own output.
     // width, height (1..255) are constants.
     def set_window_icon_header width, height {
+        rep(width < 1 || width > 255 || height < 1 || height > 255, i) .set_window_icon_header__sides_must_be_1_to_255
         stl.output_char 0x05
         stl.output_char width
         stl.output_char height
@@ -107,6 +120,7 @@ ns screen {
 
     // Complexity: c + (zero bits to the byte)
     //   END_CMD (c one-bits), then zero bits to the byte. c, used_bits are constants (see end_frame).
+    // c = 0 outputs only the zero bits to the byte (e.g. after draw_raw's or the icon's colours).
     def end_command c, used_bits {
         .output_bits c, (1<<c)-1
         .output_bits (8-(used_bits+c)%8)%8, 0
