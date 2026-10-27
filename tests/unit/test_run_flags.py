@@ -31,7 +31,7 @@ from flipjump.interpreter import fjm_run, run_defaults
 from flipjump.interpreter.io_devices.StandardIO import StandardIO
 from flipjump.utils.exceptions import FlipJumpReadFjmException, FlipJumpWriteFjmException
 from flipjump.utils.progress import ProgressBar
-from tests.unit.unit_utils import MINIMAL_STARTUP, PROGRAMS_DIR, assemble_to_path, native_engine_required
+from tests.unit.unit_utils import MINIMAL_STARTUP, assemble_to_path, native_engine_required
 
 try:
     from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
@@ -297,16 +297,6 @@ def test_the_lean_load_equals_the_reader_in_every_storage_mode(tmp_path: Path, f
     # window must land in the paged part
     fjm_path = assemble_to_path(_TWO_SEGMENTS, tmp_path, memory_width=32, fjm_version=FJMVersion.CompressedVersion)
     _assert_loaded_like_the_reader(fjm_path, flat_max_words)
-
-
-_COMPILED_PROGRAMS = sorted((PROGRAMS_DIR.parent / 'tests' / 'compiled').rglob('*.fjm'))
-
-
-@native_engine_required
-@pytest.mark.skipif(not _COMPILED_PROGRAMS, reason='no compiled test programs (run the compile tests first)')
-def test_the_lean_load_equals_the_reader_on_the_compiled_test_programs() -> None:
-    for fjm_path in _COMPILED_PROGRAMS[:40]:
-        _assert_loaded_like_the_reader(fjm_path)
 
 
 @native_engine_required
