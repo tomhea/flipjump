@@ -1,4 +1,4 @@
-// C33 (gap hunt 3, R3-2): the same arm made bit by bit (`x+w+i;`, bit 9 only): the word is unpinned, as in C32.
+// C33: the same arm made bit by bit (`x+w+i;`, bit 9 only): the word is unpinned, as in C32.
 def bitflip a, b {
     rep(b, j) flip1 a
 }

@@ -166,16 +166,16 @@ def test_window_opens_at_the_program_aspect(monkeypatch: pytest.MonkeyPatch) -> 
 def test_window_title_reaches_the_caption() -> None:
     device = InteractiveScreen()
     init_2x2_screen(device)
-    ss.feed(device, ss.set_window_title(b'DOOM'))
-    assert device.window_title == 'DOOM'
-    assert pygame.display.get_caption()[0] == 'DOOM'
+    ss.feed(device, ss.set_window_title(b'flipjump'))
+    assert device.window_title == 'flipjump'
+    assert pygame.display.get_caption()[0] == 'flipjump'
 
 
 def test_the_title_survives_a_reinit() -> None:
     device = InteractiveScreen()
     init_2x2_screen(device)
-    ss.feed(device, ss.set_window_title(b'DOOM') + ss.init_screen(4, 4, 1))
-    assert pygame.display.get_caption()[0] == 'DOOM'
+    ss.feed(device, ss.set_window_title(b'flipjump') + ss.init_screen(4, 4, 1))
+    assert pygame.display.get_caption()[0] == 'flipjump'
 
 
 def test_the_icon_reaches_the_window_resolved_through_the_palette(monkeypatch: pytest.MonkeyPatch) -> None:

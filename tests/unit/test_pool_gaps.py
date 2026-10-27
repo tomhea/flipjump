@@ -1,10 +1,11 @@
 """
-unit-tests for the table pool's gap hunts: every crafted program (tests/unit/pool_gaps) either runs with a pool
+unit-tests for the table pool on crafted programs: every one of them (tests/unit/pool_gaps) either runs with a pool
 exactly as without one - through the fallbacks it counts where it needs them (a table kept inline, a word left
 unpinned) - or is refused with the reason; and the pool's smaller promises (a pool lays out one assembly, a TablePool
 slot is aligned and inside the span, a wflip area that leaves the memory says so).
 """
 
+import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,9 +24,8 @@ from flipjump.utils.functions import get_file_tuples
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
-from tests.unit.pool_fuzzer import run
-from tests.unit.test_table_pool import build_and_run, relocatable
-from tests.unit.unit_utils import PROGRAMS_DIR
+from tests.unit.pool_fuzzer import pools, run
+from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, relocatable
 
 GAPS = Path(__file__).parent / 'pool_gaps'
 W = 32
@@ -34,16 +34,9 @@ POOL_BASE = 1 << 26
 
 
 def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> TablePool:
-    base = 1 << (memory_width - 1)
-    if kind == 'cli':  # fj --pool-tables
-        return BlockPool.for_flat(memory_width)
-    if kind == 'table':
-        return TablePool(memory_width, base, run_ops=16)
-    if kind == 'half':  # fj --pool-tables's pool, based at half the memory
-        return BlockPool(memory_width, base, one_pass=True)
-    counting = BlockPool(memory_width, base)
-    assemble([source], tmp_path / 'count.fjm', memory_width=memory_width, print_time=False, table_pool=counting)
-    return BlockPool(memory_width, base, counts=counting.counts, widths=counting.widths)
+    """the fuzzer's pool `kind`: 'cli' (fj --pool-tables), 'half' (the same, based at half the memory), 'two_pass',
+    'table'"""
+    return pools(memory_width, random.Random(0), source, tmp_path)[kind]()  # nosec B311 - these pools draw nothing
 
 
 SAME = None
@@ -87,19 +80,19 @@ GUARDED = [
 ]
 # (program, memory width): {pool: SAME, or the words of its refusal}
 CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
-    ('c01_raw_read_bit_ptr', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # B1, N7: un-pinned
-    ('c16_runtime_write_upper_half', 32): {'cli': SAME, 'table': SAME},  # B1, N7: un-pinned
-    ('c02_pinned_floor', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # B2
-    ('c03_pinned_in_reserve', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # B3, N7: un-pinned
-    ('c08_retarget_xor', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # B4, N7: un-pinned
-    ('c08b_retarget_xor_labelled', 32): {'cli': SAME, 'table': SAME},  # B4, N7: un-pinned
+    ('c01_raw_read_bit_ptr', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c16_runtime_write_upper_half', 32): {'cli': SAME, 'table': SAME},  # un-pinned
+    ('c02_pinned_floor', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},
+    ('c03_pinned_in_reserve', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c08_retarget_xor', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c08b_retarget_xor_labelled', 32): {'cli': SAME, 'table': SAME},  # un-pinned
     ('c05_label_offset_out_of_table', 32): {'cli': 'leaves the table through', 'table': 'leaves the table through'},
-    ('c05b_trailing_label', 32): {'cli': 'declares a label after its last op', 'table': 'after its last op'},  # B5
-    ('c09_pad3', 32): {'cli': 'power-of-two pad', 'table': 'power-of-two pad'},  # B6
-    # M1, M2: a pool at half the memory is reached; fj --pool-tables's is based above the program
+    ('c05b_trailing_label', 32): {'cli': 'declares a label after its last op', 'table': 'after its last op'},
+    ('c09_pad3', 32): {'cli': 'power-of-two pad', 'table': 'power-of-two pad'},
+    # a pool at half the memory is reached; fj --pool-tables's is based above the program
     ('c10_wflip_area_crosses_pool', 16): {'cli': SAME, 'table': 'its wflip area reach'},
     ('c11_segment_above_pool', 16): {'cli': SAME, 'half': 'inside the table pool'},
-    ('c14_accidental_namespace', 32): {'cli': 'needs a `pad`'},  # M6: a reserved namespace with the pool
+    ('c14_accidental_namespace', 32): {'cli': 'needs a `pad`'},  # a reserved namespace
     ('c13_label_between_pad_and_call', 32): {'cli': SAME, 'table': SAME},
     ('c15_nested_namespaces', 32): {'cli': SAME, 'table': SAME},
     ('c19_no_label_after_call', 32): {'cli': SAME, 'table': SAME},
@@ -109,25 +102,25 @@ CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
     ('c07b_reach_in_compound', 32): {'cli': GUARD_C07_COMPOUND, 'table': GUARD_C07_COMPOUND},
     ('c07c_reach_in_compound_labelled', 32): {'cli': GUARD_C07_COMPOUND, 'table': GUARD_C07_COMPOUND},
     ('c07d_reach_in_plus_labelled', 32): {'cli': GUARD_C07_PLUS, 'table': GUARD_C07_PLUS},
-    # the gap hunt's second round
-    ('c20_dollar_across_table', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N1: kept inline
-    ('c21_inline_compound_across_table', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N2: kept inline
-    ('c22_label_digit_into_pinned', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N6: a value, stays pinned
-    ('c23_numeric_address_arm', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N4: un-pinned
+    # operands that reach over a moved table's place, and the words a pool can or cannot pin
+    ('c20_dollar_across_table', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # kept inline
+    ('c21_inline_compound_across_table', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # kept inline
+    ('c22_label_digit_into_pinned', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # a value, stays pinned
+    ('c23_numeric_address_arm', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
     ('c24_constant_value', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},
-    ('c25_arg_reach_out', 32): {'cli': GUARD_C25, 'two_pass': GUARD_C25, 'table': GUARD_C25},  # N3
-    ('c26_pointer_write_only', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N6, N7: un-pinned
-    ('c27_bitwise_arm', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N5: un-pinned
-    ('c28_segment_back', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N6
-    ('c29_label_difference_value', 32): {'cli': GUARD_C29, 'two_pass': GUARD_C29, 'table': GUARD_C29},  # N2
-    ('c30_count_bits_stays_pinned', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # N5, R3-1: pinned
-    # the gap hunt's third round
-    ('c32_numeric_arm_below_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # R3-1: un-pinned
-    ('c33_bitwise_arm_below_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # R3-2: un-pinned
-    ('c34_numeric_arm_wide_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # R3-3: un-pinned
-    ('c35_offset_across_realigned_pad', 32): {'cli': GUARD_C35, 'two_pass': GUARD_C35, 'table': GUARD_C35},  # R3-4
-    ('c36_opaque_label_plus_offset', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # R3-5: kept inline
-    # the final review
+    ('c25_arg_reach_out', 32): {'cli': GUARD_C25, 'two_pass': GUARD_C25, 'table': GUARD_C25},
+    ('c26_pointer_write_only', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c27_bitwise_arm', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c28_segment_back', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},
+    ('c29_label_difference_value', 32): {'cli': GUARD_C29, 'two_pass': GUARD_C29, 'table': GUARD_C29},
+    ('c30_count_bits_stays_pinned', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # pinned
+    # arms below or above a moved table's window, and offsets across a realigned pad
+    ('c32_numeric_arm_below_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c33_bitwise_arm_below_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c34_numeric_arm_wide_window', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # un-pinned
+    ('c35_offset_across_realigned_pad', 32): {'cli': GUARD_C35, 'two_pass': GUARD_C35, 'table': GUARD_C35},
+    ('c36_opaque_label_plus_offset', 32): {'cli': SAME, 'two_pass': SAME, 'table': SAME},  # kept inline
+    # distances across a moved table's place: a rep's count, and into another segment
     ('c37_rep_count_across_table', 32): {'cli': GUARD_C37, 'two_pass': GUARD_C37, 'table': GUARD_C37},
     ('c38_distance_into_numeric_segment', 32): {'cli': GUARD_C38, 'two_pass': GUARD_C38, 'table': GUARD_C38},
     ('c39_distance_into_earlier_segment', 32): {'cli': GUARD_C38, 'two_pass': GUARD_C38, 'table': GUARD_C38},
@@ -190,7 +183,8 @@ def test_a_crafted_program_runs_the_same_with_the_pool_or_is_refused(
         return
     table_pool = _pool(pool, memory_width, source, tmp_path)
     assemble([source], pooled, memory_width=memory_width, print_time=False, table_pool=table_pool)
-    assert run(pooled, 30) == run(plain, 30)
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT' and run(pooled, 30) == expected  # two timeouts are not the same run
     assert (table_pool.unsafe_declines, table_pool.unpins) == FALLBACKS.get((name, pool), ({}, {}))
     assert table_pool.allocated or table_pool.unsafe_declines
 
@@ -218,7 +212,9 @@ def _differs(source: Path, tmp_path: Path, pool: str) -> bool:
     assemble([source], plain, memory_width=W, print_time=False)
     pooled = tmp_path / 'pooled.fjm'
     assemble([source], pooled, memory_width=W, print_time=False, table_pool=_pool(pool, W, source, tmp_path))
-    return run(pooled, 30) != run(plain, 30)
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT'  # two timeouts would be no difference, and no sameness either
+    return run(pooled, 30) != expected
 
 
 @pytest.mark.parametrize('pool', ['cli', 'two_pass', 'table'])
@@ -226,7 +222,7 @@ def _differs(source: Path, tmp_path: Path, pool: str) -> bool:
 def test_without_keeping_its_table_inline_a_reach_over_its_place_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, pool: str
 ) -> None:
-    # the control of N1 and N2: the table moves, and nothing later checks the operand
+    # the control: the table moves, and nothing later checks the operand
     monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
     monkeypatch.setattr(OffsetGuard, 'check_expr', lambda self, expr, value, is_address=True: None)
     assert _differs(GAPS / f'{name}.fj', tmp_path, pool)
@@ -236,7 +232,7 @@ def test_without_keeping_its_table_inline_a_reach_over_its_place_miscompiles(
 def test_without_the_distance_check_a_label_difference_across_a_moved_table_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pool: str
 ) -> None:
-    # the control of N2: `b - a` across a moved table's place is a different number
+    # the control: `b - a` across a moved table's place is a different number
     monkeypatch.setattr(OffsetGuard, '_check_part', lambda self, coefficients, constant, operand: False)
     assert _differs(GAPS / 'c29_label_difference_value.fj', tmp_path, pool)
 
@@ -246,14 +242,14 @@ def test_without_the_distance_check_a_label_difference_across_a_moved_table_misc
 def test_without_unpinning_a_pin_that_cannot_hold_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, pool: str
 ) -> None:
-    # the control of N4, N5: the word stays pinned. (c08's `T1 ^ T2` would hold pinned - the bases cancel - but a
+    # the control: the word stays pinned. (c08's `T1 ^ T2` would hold pinned - the bases cancel - but a
     # value computed from labels is un-pinned whatever it computes)
     monkeypatch.setattr(assembler, 'unpin', lambda *args, **kwargs: None)
     assert _differs(GAPS / f'{name}.fj', tmp_path, pool)
 
 
 def test_a_program_that_reaches_the_pool_says_so(tmp_path: Path) -> None:
-    # N8: a counting pool moves nothing, so an operand past pool_base is the program's own reach
+    # a counting pool moves nothing, so an operand past pool_base is the program's own reach
     with pytest.raises(FlipJumpException, match='the program reached 0x80e0, which is inside the table pool at 0x8000'):
         assemble(
             [GAPS / 'c31_program_reaches_the_pool.fj'],
@@ -265,8 +261,8 @@ def test_a_program_that_reaches_the_pool_says_so(tmp_path: Path) -> None:
 
 
 def test_count_bits_keeps_its_pin(tmp_path: Path) -> None:
-    # N5: hex.count_bits flips dst+dbit+4/5 inside the 64-op table it armed dst with: a move the base does not change.
-    # R3-1: its own 16-op table lies at op 16, below that window, where the same flip of an UNARMED dst would point -
+    # hex.count_bits flips dst+dbit+4/5 inside the 64-op table it armed dst with: a move the base does not change.
+    # its own 16-op table lies at op 16, below that window, where the same flip of an UNARMED dst would point -
     # but nothing jumps through dst except its arms, so no flip of it is one: dst stays pinned. With an op that jumps
     # to dst's op (as C32's arm by a number does), it would not
     source = GAPS / 'c30_count_bits_stays_pinned.fj'
@@ -277,25 +273,25 @@ def test_count_bits_keeps_its_pin(tmp_path: Path) -> None:
     assert tables[0x400] == 10  # count_switch, behind a `pad 16`, a value dst's flips can make
 
 
-def _old_alignment(self: OffsetGuard, address: int) -> int:
-    """OffsetGuard.alignment before R3-3: an inline table's alignment was its address's own"""
+def _address_alignment(self: OffsetGuard, address: int) -> int:
+    """OffsetGuard.alignment without its check: an inline table's alignment taken as its address's own"""
     table = self.table_at(address)
     if table >= 0:
         return (self._ends[table] - self._starts[table] - 1).bit_length()
     return (address & -address).bit_length() - 1 if address else 1 << 30
 
 
-# each third-round finding's check, disabled: {program: [(the owner of a check, its name, its stand-in)]}. C34's
-# segment at 0x4000 is a table below the wide window too, so R3-1's check catches it as well: both are disabled.
+# each program's check, disabled: {program: [(the owner of a check, its name, its stand-in)]}. C34's segment at
+# 0x4000 is a table below the wide window too, so C32's check catches it as well: both are disabled.
 Check = Tuple[Any, str, Any]
 NO_LOW_TABLE: Check = (OffsetGuard, 'tables_inline', lambda self: {})
 DISABLED: Dict[str, List[Check]] = {
     'c32_numeric_arm_below_window': [NO_LOW_TABLE],
     'c33_bitwise_arm_below_window': [NO_LOW_TABLE],
-    'c34_numeric_arm_wide_window': [NO_LOW_TABLE, (OffsetGuard, 'alignment', _old_alignment)],
+    'c34_numeric_arm_wide_window': [NO_LOW_TABLE, (OffsetGuard, 'alignment', _address_alignment)],
     'c35_offset_across_realigned_pad': [(OffsetGuard, 'pad_realigned', lambda self, address, ops_alignment: None)],
     'c36_opaque_label_plus_offset': [(table_pool_module, '_moves_with', lambda expr, label, address, value: False)],
-    # the final review's: a rep's count the expansion evaluates, a distance across a segment's end
+    # a rep's count the expansion evaluates, a distance across a segment's end
     'c37_rep_count_across_table': [(PreprocessorData, 'check_evaluated', lambda self, expr, value, is_address=0: None)],
     'c38_distance_into_numeric_segment': [(OffsetGuard, 'segment_started', lambda self, address: None)],
     'c39_distance_into_earlier_segment': [(OffsetGuard, 'segment_started', lambda self, address: None)],
@@ -307,28 +303,35 @@ def _disable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
         monkeypatch.setattr(owner, attribute, stand_in)
 
 
-@pytest.mark.parametrize('pool', ['cli', 'two_pass', 'table'])
-@pytest.mark.parametrize('name', sorted(DISABLED))
-def test_without_its_check_a_third_round_program_miscompiles(
+# C32's and C33's miscompiles never halt: their pin-keeping pools run into the 30 s timeout (with --slow)
+HIDDEN_REACH_PARAMS = [
+    pytest.param(name, pool, marks=[pytest.mark.slow] if name < 'c34' and pool != 'table' else [])
+    for name in sorted(DISABLED)
+    for pool in ('cli', 'two_pass', 'table')
+]
+
+
+@pytest.mark.parametrize('name, pool', HIDDEN_REACH_PARAMS)
+def test_without_its_check_a_program_with_a_hidden_reach_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, pool: str
 ) -> None:
-    # the controls of R3-1 .. R3-5, C37 and C38: each check above prevents a real miscompile, which this run shows.
-    # (TablePool pins nothing, so R3-1 .. R3-3 cannot reach it: it runs the same either way.)
+    # the controls of C32 .. C39: each check above prevents a real miscompile, which this run shows.
+    # (TablePool pins nothing, so the pin checks of C32 .. C34 cannot reach it: it runs the same either way.)
     _disable(monkeypatch, name)
     pins_only = name < 'c35'
     assert _differs(GAPS / f'{name}.fj', tmp_path, pool) is not (pins_only and pool == 'table')
 
 
 def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # R3-3 alone: with no table below the window (R3-1's check off), C34's numeric arm is still above the moved
-    # table's window - unpinned, and the same; widened by T2's address (as before R3-3), it is kept and miscompiles
+    # C34's check alone: with no table below the window (C32's check off), C34's numeric arm is still above the
+    # moved table's window - unpinned, and the same; widened by T2's address, it is kept and miscompiles
     monkeypatch.setattr(OffsetGuard, 'tables_inline', lambda self: {})
     source = GAPS / 'c34_numeric_arm_wide_window.fj'
     pool = _pool('cli', W, source, tmp_path)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
     assert pool.unpins == {'armed with a number': 1}
     assert not _differs(source, tmp_path, 'cli')
-    monkeypatch.setattr(OffsetGuard, 'alignment', _old_alignment)
+    monkeypatch.setattr(OffsetGuard, 'alignment', _address_alignment)
     assert _differs(source, tmp_path, 'cli')
 
 
@@ -418,18 +421,18 @@ def test_a_pool_lays_out_one_assembly(tmp_path: Path) -> None:
     pool: TablePool
     for pool in (TablePool(W, POOL_BASE), BlockPool(W, POOL_BASE), BlockPool(W, POOL_BASE, one_pass=True)):
         assemble([_source(tmp_path)], tmp_path / 'a.fjm', memory_width=W, print_time=False, table_pool=pool)
-        with pytest.raises(FlipJumpException, match='already laid out'):  # M4
+        with pytest.raises(FlipJumpException, match='already laid out'):
             assemble([_source(tmp_path)], tmp_path / 'b.fjm', memory_width=W, print_time=False, table_pool=pool)
 
 
 def test_an_overflow_region_below_the_program_is_refused(tmp_path: Path) -> None:
-    pool = BlockPool(W, POOL_BASE, one_pass=True, overflow_base=16 * OP_BITS)  # M3
+    pool = BlockPool(W, POOL_BASE, one_pass=True, overflow_base=16 * OP_BITS)
     with pytest.raises(FlipJumpException, match='inside the table pool'):
         assemble([_source(tmp_path)], tmp_path / 'a.fjm', memory_width=W, print_time=False, table_pool=pool)
 
 
 def test_a_w64_pooled_program_runs_flat(tmp_path: Path) -> None:
-    # M5, the flat spec: fj --pool-tables bases the pool right above the program, so a flat-memory run (the run flag,
+    # fj --pool-tables bases the pool right above the program, so a flat-memory run (the run flag,
     # compiled in: the window is required) of a w=64 program maps a small window, and prints what the plain one does
     for name, extra in (('plain', []), ('pooled', ['--pool-tables'])):
         args = ['--asm', '-s', '-o', str(tmp_path / f'{name}.fjm'), '-w', '64', '--run-flags', '1', *extra]
@@ -446,7 +449,7 @@ def test_a_w64_pooled_program_runs_flat(tmp_path: Path) -> None:
 
 def test_a_tablepool_slot_is_aligned_and_a_passed_slot_is_used_later() -> None:
     run_bits = 16 * OP_BITS
-    pool = TablePool(W, POOL_BASE + run_bits, run_ops=16)  # M8: offset 0 is not 32-op aligned
+    pool = TablePool(W, POOL_BASE + run_bits, run_ops=16)  # offset 0 is not 32-op aligned
     reserved = pool.reserve(32, 32)
     assert reserved is not None and reserved[0] % (32 * OP_BITS) == 0
     pool.commit(reserved[0] + 32 * OP_BITS)
@@ -454,12 +457,12 @@ def test_a_tablepool_slot_is_aligned_and_a_passed_slot_is_used_later() -> None:
 
 
 def test_a_tablepool_table_past_the_span_is_declined() -> None:
-    pool = TablePool(W, POOL_BASE, run_ops=16, span_bits=16 * OP_BITS)  # M8: one run of span
+    pool = TablePool(W, POOL_BASE, run_ops=16, span_bits=16 * OP_BITS)  # one run of span
     assert pool.reserve(16, 32) is None and pool.declined == 1
 
 
 def test_a_wflip_area_past_the_memory_says_so(tmp_path: Path) -> None:
-    # M9: at w=16 this program's wflip chains need more than the 2^16 bits of memory
+    # at w=16 this program's wflip chains need more than the 2^16 bits of memory
     wflips = ''.join(f'    wflip z+w, {(i * 4999 + 0x0F0F) & 0xFFFE}\n' for i in range(600))
     source = _source(tmp_path, f'stl.startup\n{wflips}    stl.loop\nz: hex.hex\n')
     with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width: the wflip area'):
@@ -474,7 +477,7 @@ def _ops(fjm: Path, stdin: bytes = b'') -> Tuple[bytes, int]:
 
 
 def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: Path) -> None:
-    # R3-6: the pointer runtime unpins every word, so fj --pool-tables places the tables cheapest-first, as a
+    # the pointer runtime unpins every word, so fj --pool-tables places the tables cheapest-first, as a
     # TablePool does: no block, no pinned word - and fewer ops than without the pool
     source = [PROGRAMS_DIR / 'hexlib_tests' / 'basics2' / 'pointer_setters.fj']
     assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)

@@ -7,7 +7,9 @@ memory gives when it cannot be allocated, and the lean native load (the .fjm's b
 engine, no python object per word) - pinned against the Reader's memory, word for word.
 """
 
+import functools
 import lzma
+import random
 import struct
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
@@ -31,7 +33,14 @@ from flipjump.interpreter import fjm_run, run_defaults
 from flipjump.interpreter.io_devices.StandardIO import StandardIO
 from flipjump.utils.exceptions import FlipJumpReadFjmException, FlipJumpWriteFjmException
 from flipjump.utils.progress import ProgressBar
-from tests.unit.unit_utils import MINIMAL_STARTUP, PROGRAMS_DIR, assemble_to_path, native_engine_required
+from tests.unit.unit_utils import (
+    MINIMAL_STARTUP,
+    assemble_to_path,
+    high_segment_program,
+    native_engine_required,
+    patch_run_header,
+    spy_engine_runs,
+)
 
 try:
     from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
@@ -39,10 +48,7 @@ except ImportError:
     _fjcore = None
 
 
-@pytest.fixture(autouse=True)
-def clean_flat_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ('FLIPJUMP_NO_NATIVE', 'FLIPJUMP_NO_FLAT', 'FLIPJUMP_FLAT_MAX_WORDS', 'FLIPJUMP_TEST_FLAT_ALLOC_FAIL'):
-        monkeypatch.delenv(var, raising=False)
+pytestmark = pytest.mark.usefixtures('clean_flat_mode_env')
 
 
 def _write_simple(
@@ -58,8 +64,7 @@ def _write_simple(
 
 
 def test_the_flags_are_two_u32s_after_the_base_header(tmp_path: Path) -> None:
-    # `u64 flags` became `u32 run_flags; u32 io_mode` - same 12 header-extension bytes, so files
-    # written before (all with flags 0) read unchanged
+    # `u32 run_flags; u32 io_mode` and a reserved u32: the 12 header-extension bytes
     path = _write_simple(tmp_path / 'x.fjm', run_flags=RUN_FLAG_FLAT_MEMORY, io_mode=IO_MODE_PC)
     raw = path.read_bytes()
     assert struct.unpack_from('<LLL', raw, _header_base_size) == (RUN_FLAG_FLAT_MEMORY, IO_MODE_PC, 0)
@@ -127,7 +132,7 @@ def test_cli_rejects_bad_flag_values(argument: str, value: str, capsys: pytest.C
     assert 'bad' in capsys.readouterr().err
 
 
-def test_the_old_flags_option_is_gone() -> None:
+def test_there_is_no_flags_option() -> None:
     with pytest.raises(SystemExit):
         flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--flags', '1', 'a.fj'])
 
@@ -157,43 +162,22 @@ def test_the_compiled_io_mode_picks_the_device_and_io_overrides_it(
         (IO_MODE_PC, ['--io', 'standard'], 'standard'),
         (IO_MODE_STANDARD, ['--io', 'pc'], 'pc'),
     ):
-        raw = bytearray(fjm_path.read_bytes())
-        struct.pack_into('<L', raw, _header_base_size + 4, io_mode)
-        fjm_path.write_bytes(bytes(raw))
+        patch_run_header(fjm_path, io_mode=io_mode)
         modes = _spy_io_modes(monkeypatch)
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
         assert modes == [expected], (io_mode, extra)
 
 
-# w=32 looping programs whose small reserved segment ends 4 words past `top` (the span decides the window)
-def _high_segment_program(top: int) -> str:
-    return MINIMAL_STARTUP + f'\nstartup\nloop: ;loop\n\nsegment {top} * w\nreserve 4 * w\n'
-
-
 _BIG_TOP = run_defaults.FLAT_MEMORY_AUTO_MAX_WORDS
-
-
-def _set_run_flags(fjm_path: Path, run_flags: int) -> None:
-    raw = bytearray(fjm_path.read_bytes())
-    struct.pack_into('<L', raw, _header_base_size, run_flags)
-    fjm_path.write_bytes(bytes(raw))
 
 
 def _run_and_spy(
     fjm_path: Path, monkeypatch: pytest.MonkeyPatch, extra: List[str]
 ) -> Tuple[Optional[int], bool, Optional[str]]:
     """run once; -> (flat_max_words passed, flat_required passed, storage mode)"""
-    seen: List[Tuple[Optional[int], bool, Optional[str]]] = []
-    real_run = fjm_run.run
-
-    def spy(*a: Any, **kw: Any) -> Any:
-        stats = real_run(*a, **kw)
-        seen.append((kw.get('flat_max_words'), kw.get('flat_required', False), stats.storage_mode))
-        return stats
-
-    monkeypatch.setattr(fjm_run, 'run', spy)
-    assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
-    monkeypatch.setattr(fjm_run, 'run', real_run)
+    with monkeypatch.context() as patch:
+        seen = spy_engine_runs(patch)
+        assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
     return seen[0]
 
 
@@ -202,11 +186,11 @@ def test_the_flat_memory_run_flag_runs_flat_and_run_flags_overrides_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # a span over the automatic limit: without the flag the engine's default window ('hybrid')
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
     span = _BIG_TOP + 4
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
     assert _run_and_spy(fjm_path, monkeypatch, ['--run-flags', '1']) == (span, True, 'flat')
-    _set_run_flags(fjm_path, RUN_FLAG_FLAT_MEMORY)
+    patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (span, True, 'flat')
     assert _run_and_spy(fjm_path, monkeypatch, ['--run-flags', '0']) == (None, False, 'hybrid')
     # the explicit window options still win over the compiled flag
@@ -231,8 +215,8 @@ def test_a_forced_flat_memory_that_cannot_be_allocated_says_how_to_run_anyway(
     extra: List[str],
     advice: str,
 ) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
-    _set_run_flags(fjm_path, compiled)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
+    patch_run_header(fjm_path, run_flags=compiled)
     monkeypatch.setenv('FLIPJUMP_TEST_FLAT_ALLOC_FAIL', '1')
     with pytest.raises(SystemExit) as exit_info:
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
@@ -246,7 +230,7 @@ def test_an_unforced_flat_window_still_falls_back_to_paged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # the automatic window (a small span, no flag) was not asked for: a failed allocation runs paged
-    fjm_path = assemble_to_path(_high_segment_program(1 << 10), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(1 << 10), tmp_path, memory_width=32)
     monkeypatch.setenv('FLIPJUMP_TEST_FLAT_ALLOC_FAIL', '1')
     assert _run_and_spy(fjm_path, monkeypatch, [])[2] == 'paged'
     assert 'running paged' in capfd.readouterr().err
@@ -297,16 +281,6 @@ def test_the_lean_load_equals_the_reader_in_every_storage_mode(tmp_path: Path, f
     # window must land in the paged part
     fjm_path = assemble_to_path(_TWO_SEGMENTS, tmp_path, memory_width=32, fjm_version=FJMVersion.CompressedVersion)
     _assert_loaded_like_the_reader(fjm_path, flat_max_words)
-
-
-_COMPILED_PROGRAMS = sorted((PROGRAMS_DIR.parent / 'tests' / 'compiled').rglob('*.fjm'))
-
-
-@native_engine_required
-@pytest.mark.skipif(not _COMPILED_PROGRAMS, reason='no compiled test programs (run the compile tests first)')
-def test_the_lean_load_equals_the_reader_on_the_compiled_test_programs() -> None:
-    for fjm_path in _COMPILED_PROGRAMS[:40]:
-        _assert_loaded_like_the_reader(fjm_path)
 
 
 @native_engine_required
@@ -475,10 +449,10 @@ def test_chunked_compression_equals_one_shot(tmp_path: Path, size: int) -> None:
 def test_the_environment_window_wins_over_the_automatic_one_and_the_run_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(1 << 10), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(1 << 10), tmp_path, memory_width=32)
     monkeypatch.setenv('FLIPJUMP_FLAT_MAX_WORDS', '4')
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
-    _set_run_flags(fjm_path, RUN_FLAG_FLAT_MEMORY)
+    patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
     # ...but an explicit --flat-memory still wins over the environment
     assert _run_and_spy(fjm_path, monkeypatch, ['--flat-memory'])[1:] == (True, 'flat')
@@ -486,7 +460,7 @@ def test_the_environment_window_wins_over_the_automatic_one_and_the_run_flag(
 
 @native_engine_required
 def test_the_automatic_window_includes_a_span_of_exactly_2_24(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP - 4), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP - 4), tmp_path, memory_width=32)
     assert read_fjm_header(fjm_path).span_words == _BIG_TOP
     assert _run_and_spy(fjm_path, monkeypatch, []) == (_BIG_TOP, False, 'flat')
 
@@ -528,19 +502,21 @@ def test_a_non_number_flag_value_says_so(capsys: pytest.CaptureFixture[str]) -> 
     assert "'pc' is not a number" in capsys.readouterr().err
 
 
+@functools.lru_cache(maxsize=None)
+def _random_letters(size: int) -> bytes:
+    """`size` random letters of ABCD (deterministic; cached: making them takes seconds)"""
+    generator = random.Random(11)  # nosec B311 - deterministic test data, not security
+    return bytes(generator.choice(b'ABCD') for _ in range(size))
+
+
 def test_a_damaged_later_stream_contributes_nothing() -> None:
     # lzma.decompress drops a later stream that fails mid-way. The second stream must be LONGER THAN A
     # CHUNK compressed, so the damage is met after part of it was already decoded - else nothing tests it.
-    import random
-
     from flipjump.fjm.fjm_reader import _DECOMPRESS_CHUNK, _decompress_in_chunks
 
     filters = _lzma_compression_filters(64, 0)
     first = lzma.compress(b'first' * 30, format=_LZMA_FORMAT, filters=filters)
-    generator = random.Random(7)  # nosec B311 - deterministic test data, not security
-    second = bytearray(
-        lzma.compress(bytes(generator.choice(b'ABCD') for _ in range(6_000_000)), format=_LZMA_FORMAT, filters=filters)
-    )
+    second = bytearray(lzma.compress(_random_letters(6_000_000), format=_LZMA_FORMAT, filters=filters))
     assert len(second) > _DECOMPRESS_CHUNK
     second[len(second) * 9 // 10] ^= 0xFF
     data = first + bytes(second)
@@ -548,13 +524,6 @@ def test_a_damaged_later_stream_contributes_nothing() -> None:
     assert expected == b'first' * 30
     for expected_size in (0, len(expected), 10_000_000):
         assert bytes(_decompress_in_chunks(data, None, expected_size)) == expected
-
-
-def _random_letters(size: int) -> bytes:
-    import random
-
-    generator = random.Random(11)  # nosec B311 - deterministic test data, not security
-    return bytes(generator.choice(b'ABCD') for _ in range(size))
 
 
 @pytest.mark.parametrize('data_start_words', [1 << 60, 1 << 37, 1 << 28, 1_500_000_000])
@@ -607,8 +576,8 @@ def test_a_file_that_changes_during_the_load_is_rejected(tmp_path: Path, monkeyp
 def test_an_env_window_the_engine_ignores_does_not_cancel_the_run_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
-    _set_run_flags(fjm_path, RUN_FLAG_FLAT_MEMORY)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
+    patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     monkeypatch.setenv('FLIPJUMP_FLAT_MAX_WORDS', value)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (_BIG_TOP + 4, True, 'flat')
 

@@ -17,7 +17,7 @@ import re
 import tracemalloc
 from itertools import islice
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import pytest
 
@@ -42,11 +42,10 @@ from flipjump.assembler.table_pool import (
     merge_aliased_groups,
 )
 from flipjump.fjm.fjm_reader import Reader
-from flipjump.interpreter import fjm_run
-from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
+from tests.unit.unit_utils import build_and_run, relocatable, sum_expr
 
 W = 32
 OP_BITS = 2 * W
@@ -137,44 +136,16 @@ b: hex.vec 16, 0xFEDCBA9876543210
 """
 
 
-def relocatable(name: str, params: str, start: str, entries: str) -> str:
-    """the declaration of the relocatable table `name.__relocatable__.table params`: `start:` then the entries"""
-    return (
-        f'ns {name} {{\n    ns __relocatable__ {{\n        def table {params} {{\n          {start}:\n'
-        + entries
-        + '        }\n    }\n}\n'
-    )
-
-
 # --- helpers ---
 
 
-def build_and_run(
-    source: str,
-    tmp_path: Path,
-    pool: Optional[TablePool],
-    name: str = 'p',
-    fixed_input: bytes = b'',
-    memory_width: int = W,
-) -> Tuple[bytes, int, Path]:
-    """assemble `source` with the stl (and the pool, if given), run it on `fixed_input`, and
-    return (output, op count, fjm path)."""
-    fj_path = tmp_path / f'{name}.fj'
-    fj_path.write_text(source)
-    fjm_path = tmp_path / f'{name}.fjm'
-    assemble([fj_path], fjm_path, memory_width=memory_width, print_time=False, table_pool=pool)
-    io_device = FixedIO(fixed_input)
-    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
-    return io_device.get_output(allow_incomplete_output=True), statistics.op_counter, fjm_path
-
-
-def pool_segments(fjm_path: Path, memory_width: int = W) -> List[int]:
+def _pool_segments(fjm_path: Path, memory_width: int = W) -> List[int]:
     """the word addresses of the segments that landed in the pool"""
     reader = Reader(fjm_path)
     return [s.segment_start for s in reader.memory_segments if s.segment_start * memory_width >= POOL_BASE]
 
 
-def blocked(source: str, tmp_path: Path, span_bits: Optional[int] = None) -> Tuple[bytes, int, BlockPool]:
+def _blocked(source: str, tmp_path: Path, span_bits: Optional[int] = None) -> Tuple[bytes, int, BlockPool]:
     """the two-pass blocking build: count, then place with the frozen counts"""
     counting = BlockPool(W, POOL_BASE, span_bits=span_bits)
     build_and_run(source, tmp_path, counting, name='counting')
@@ -305,7 +276,7 @@ DECLARED_ERRORS = {
 }
 
 
-def declared(**changes: str) -> str:
+def _declared(**changes: str) -> str:
     source = DECLARED_TEMPLATE
     for part, text in {**DECLARED_PARTS, **changes}.items():
         source = source.replace(part, text)
@@ -321,18 +292,18 @@ def test_a_relocatable_is_a_macro_whose_innermost_namespace_is_relocatable() -> 
 
 @pytest.mark.parametrize('blocking', [False, True], ids=['TablePool', 'BlockPool one pass'])
 def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path, blocking: bool) -> None:
-    reference, _, plain_fjm = build_and_run(declared(), tmp_path, None, name='inline')
+    reference, _, plain_fjm = build_and_run(_declared(), tmp_path, None, name='inline')
     assert reference == b'2'
     pool = BlockPool(W, POOL_BASE, one_pass=True) if blocking else TablePool(W, POOL_BASE)
-    output, _, fjm_path = build_and_run(declared(), tmp_path, pool)
-    assert output == reference and pool_segments(fjm_path)
+    output, _, fjm_path = build_and_run(_declared(), tmp_path, pool)
+    assert output == reference and _pool_segments(fjm_path)
 
 
 @pytest.mark.parametrize('case', sorted(DECLARED_ERRORS))
 def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path: Path, case: str) -> None:
     part, text, message = DECLARED_ERRORS[case]
     fj_path = tmp_path / 'p.fj'
-    fj_path.write_text(declared(**{part: text}))
+    fj_path.write_text(_declared(**{part: text}))
     with pytest.raises(FlipJumpPreprocessorException, match=re.escape(message)):
         assemble(
             [fj_path], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=TablePool(W, POOL_BASE)
@@ -344,24 +315,20 @@ def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path:
 # --- resolve_pinned ---
 
 
-def _sum(label: str, value: Union[int, str]) -> Expr:
-    return Expr(('+', (Expr(label), Expr(value))))
-
-
 def test_resolve_pinned_resolves_each_word_once_labels_are_known() -> None:
-    pinned, conflicts = resolve_pinned({_sum('x', 32): 0x1000, Expr('y'): 0x2000}, {'x': 4096, 'y': 8192})
+    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, Expr('y'): 0x2000}, {'x': 4096, 'y': 8192})
     assert pinned == {4128: 0x1000, 8192: 0x2000} and conflicts == 0
 
 
 def test_resolve_pinned_drops_both_pins_of_an_aliased_word() -> None:
     # `(x + 32)` and `(x + w)` are different expressions naming one word; either base is wrong
     # for the other block, so the word is left un-pinned (the full address is then written)
-    pinned, conflicts = resolve_pinned({_sum('x', 32): 0x1000, _sum('x', 'w'): 0x2000}, {'x': 4096, 'w': 32})
+    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, sum_expr('x', 'w'): 0x2000}, {'x': 4096, 'w': 32})
     assert pinned == {} and conflicts == 1
 
 
 def test_resolve_pinned_keeps_an_alias_with_one_base() -> None:
-    pinned, conflicts = resolve_pinned({_sum('x', 32): 0x1000, _sum('x', 'w'): 0x1000}, {'x': 4096, 'w': 32})
+    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, sum_expr('x', 'w'): 0x1000}, {'x': 4096, 'w': 32})
     assert pinned == {4128: 0x1000} and conflicts == 0
 
 
@@ -441,9 +408,9 @@ def test_the_runtime_words_are_never_relocated() -> None:
     pool = TablePool(W, POOL_BASE)
     data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
     data.labels['stl.IO'] = 64
-    assert not data.begin_relocation(16, 16, '', '(stl.IO + 32)', _sum('stl.IO', 32))
+    assert not data.begin_relocation(16, 16, '', '(stl.IO + 32)', sum_expr('stl.IO', 32))
     assert pool.reserved_words == 1 and pool.allocated == 0
-    assert data.begin_relocation(16, 16, '', '(x + 32)', _sum('x', 32))
+    assert data.begin_relocation(16, 16, '', '(x + 32)', sum_expr('x', 32))
     assert pool.reserved_words == 1 and pool.allocated == 1
 
 
@@ -484,12 +451,12 @@ def test_eviction_drops_the_least_valuable_group_when_the_pool_is_short() -> Non
 
 def test_canonical_alias_merges_groups_that_name_one_word() -> None:
     counting = BlockPool(W, POOL_BASE)
-    counting.reserve(16, 16, group='(x + 32)', group_expr=_sum('x', 32))
-    counting.reserve(16, 16, group='(x + w)', group_expr=_sum('x', 'w'))
+    counting.reserve(16, 16, group='(x + 32)', group_expr=sum_expr('x', 32))
+    counting.reserve(16, 16, group='(x + w)', group_expr=sum_expr('x', 'w'))
     counting.reserve(16, 16, group='y', group_expr=Expr('y'))
     assert counting.canonical_alias({'x': 4096, 'w': 32, 'y': 8192}) == {'(x + w)': '(x + 32)'}
     merged = BlockPool(W, POOL_BASE, alias={'(x + w)': '(x + 32)'})
-    merged.reserve(16, 16, group='(x + w)', group_expr=_sum('x', 'w'))
+    merged.reserve(16, 16, group='(x + w)', group_expr=sum_expr('x', 'w'))
     assert merged.counts == {'(x + 32)': 1}
 
 
@@ -802,11 +769,11 @@ def test_relocated_tables_leave_the_output_unchanged(tmp_path: Path, memory_widt
     reference, reference_ops, inline_fjm = build_and_run(
         XOR_PROGRAM, tmp_path, None, name='inline', memory_width=memory_width
     )
-    assert reference and not pool_segments(inline_fjm)
+    assert reference and not _pool_segments(inline_fjm)
     pool = TablePool(memory_width, POOL_BASE, run_ops=256)
     output, ops, fjm_path = build_and_run(XOR_PROGRAM, tmp_path, pool, memory_width=memory_width)
     assert output == reference
-    assert pool.allocated > 0 and pool_segments(fjm_path, memory_width)
+    assert pool.allocated > 0 and _pool_segments(fjm_path, memory_width)
     assert ops < reference_ops
 
 
@@ -815,7 +782,7 @@ def test_a_pool_with_no_capacity_is_inert(tmp_path: Path) -> None:
     pool = TablePool(W, POOL_BASE, capacity=0)
     output, ops, fjm_path = build_and_run(XOR_PROGRAM, tmp_path, pool)
     assert (output, ops) == (reference, reference_ops)
-    assert pool.allocated == 0 and not pool_segments(fjm_path)
+    assert pool.allocated == 0 and not _pool_segments(fjm_path)
 
 
 @pytest.mark.parametrize('blocking', [False, True], ids=['TablePool', 'BlockPool'])
@@ -871,7 +838,7 @@ def test_a_program_that_grows_into_the_pool_is_refused(tmp_path: Path) -> None:
 @pytest.mark.parametrize('source', [XOR_PROGRAM, CMP_PROGRAM], ids=['hex.xor', 'hex.cmp/shift/mul'])
 def test_blocked_tables_leave_the_output_unchanged_and_cost_fewer_ops(source: str, tmp_path: Path) -> None:
     reference, reference_ops, _ = build_and_run(source, tmp_path, None, name='inline')
-    output, ops, placing = blocked(source, tmp_path)
+    output, ops, placing = _blocked(source, tmp_path)
     assert output == reference
     assert placing.allocated > 0 and placing.pinned_words()
     assert ops < reference_ops
@@ -894,7 +861,7 @@ def test_the_shift_tables_are_tables_a_pool_can_see(tmp_path: Path) -> None:
 def test_a_blocked_program_with_declined_tables_is_still_correct(tmp_path: Path) -> None:
     # a tiny span forces declines: the broken groups are un-pinned, and their tables stay inline
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
-    output, _, placing = blocked(CMP_PROGRAM, tmp_path, span_bits=1 << 16)
+    output, _, placing = _blocked(CMP_PROGRAM, tmp_path, span_bits=1 << 16)
     assert output == reference
     assert placing.declined > 0 and placing.broken_groups
     pinned = set(placing.pinned_words())
@@ -1072,8 +1039,8 @@ def test_merging_aliases_adds_counts_and_histograms_and_keeps_the_widest() -> No
 
 def test_a_census_merges_the_aliases_its_own_labels_imply() -> None:
     placing = BlockPool(W, POOL_BASE, counts={'(x + 32)': 1}, widths={'(x + 32)': 16})
-    placing.reserve(16, 16, group='(x + 32)', group_expr=_sum('x', 32))
-    placing.reserve(16, 16, group='(x + w)', group_expr=_sum('x', 'w'))  # the same word: 'new_group'
+    placing.reserve(16, 16, group='(x + 32)', group_expr=sum_expr('x', 32))
+    placing.reserve(16, 16, group='(x + w)', group_expr=sum_expr('x', 'w'))  # the same word: 'new_group'
     with pytest.raises(FlipJumpPreprocessorException, match='after assemble'):
         placing.census(merge_aliases=True)  # no labels yet
     assert placing.census() == BlockCensus(
@@ -1550,10 +1517,9 @@ def _one_pass_placed(
 
 
 def test_one_pass_does_not_refuse_a_pool_its_estimate_calls_short() -> None:
-    """THE CR-3 B1 REPRODUCER. H is hot, so its block is laid out first and A's 16-slot block sits
-    behind a 240-op alignment hole that no estimate of A's room counts; C's block does not fit. The
-    first layout is 184 ops short and leaving A out frees 112 by the estimate - which used to refuse
-    the pool - but 352 in fact: the next layout fits"""
+    """H is hot, so its block is laid out first and A's 16-slot block sits behind a 240-op alignment hole
+    that no estimate of A's room counts; C's block does not fit. The first layout is 184 ops short and
+    leaving A out frees 112 by the estimate - too little - but 352 in fact: the next layout fits"""
     spec = [('H', 16, 16)] + [('A', 16, 16)] * 9 + [('C', 16, 16)] * 17
     pool, addresses, _ = _one_pass_placed(spec, span_bits=600 * OP_BITS, heat={'H': []})
     assert pool.unblocked == ['A', 'C'] and set(pool.groups) == {'H'}  # A left out; C fits nowhere anyway
@@ -1561,8 +1527,8 @@ def test_one_pass_does_not_refuse_a_pool_its_estimate_calls_short() -> None:
     assert max(address for address, _ in pool.overflow_tables) + 16 * OP_BITS == POOL_BASE + 432 * OP_BITS
 
 
-# the B1 reproducer as a program: the hot (h + 32) word's block is laid out first, a's behind its hole
-B1_PROGRAM = """
+# the test above as a program: the hot (h + 32) word's block is laid out first, a's behind its hole
+HOT_HOLE_PROGRAM = """
 stl.startup_and_init_all
     hex.xor x, h
     rep(9, i) hex.xor x, a
@@ -1581,11 +1547,11 @@ def test_a_program_one_pass_refused_on_its_estimate_builds_and_runs(tmp_path: Pa
     - and leaving a's group out builds it: it now does, and the program prints what the inline one
     prints"""
     counting = BlockPool(W, POOL_BASE)
-    expand_labels(B1_PROGRAM, tmp_path, counting, name='counting')
+    expand_labels(HOT_HOLE_PROGRAM, tmp_path, counting, name='counting')
     assert counting.counts == {'(h + 32)': 1, '(a + 32)': 9, '(c + 32)': 17}
-    reference, _, _ = build_and_run(B1_PROGRAM, tmp_path, None, name='inline')
+    reference, _, _ = build_and_run(HOT_HOLE_PROGRAM, tmp_path, None, name='inline')
     one = BlockPool(W, POOL_BASE, one_pass=True, span_bits=512 * OP_BITS, heat={heat_key('(h + 32)'): []})
-    output, _, _ = build_and_run(B1_PROGRAM, tmp_path, one, name='one')
+    output, _, _ = build_and_run(HOT_HOLE_PROGRAM, tmp_path, one, name='one')
     assert output == reference == b'4'
     assert one.unblocked == ['(a + 32)', '(c + 32)'] and set(one.groups) == {'(h + 32)'}
 
@@ -1649,8 +1615,8 @@ class _Unread(List[str]):
 
 
 def test_choosing_the_groups_left_out_builds_nothing_per_table() -> None:
-    """the CR-3 F3 measurement: the chooser walks the queue's own arrays (it built a tuple per table,
-    ~158 bytes each, even when nothing was short) - and when every block fits it reads no table"""
+    """the chooser walks the queue's own arrays (no tuple per table, ~158 bytes each, even when nothing is
+    short) - and when every block fits it reads no table"""
     counts = {f'g{i}': 1000 for i in range(20)}  # 20,000 tables, 1000 in each 1024-slot block
 
     def sized(span_bits: int) -> BlockPool:
@@ -1709,7 +1675,7 @@ def test_one_pass_layouts_of_random_pools_keep_their_promises() -> None:
     and so does one with tables appended and a span with room for them; and with nothing left out
     and nothing overflowing, the layout is the two-pass build's"""
     rng = random.Random(3690)  # nosec B311 -- a seeded test fixture, not security
-    outcomes = {'placed': 0, 'left_out': 0, 'refused': 0, 'two_pass': 0}  # nosec B105 -- counters
+    outcomes = {'placed': 0, 'left_out': 0, 'refused': 0, 'two_pass': 0}  # nosec B105 - 'two_pass' is a counter's name
     for _ in range(300):
         groups = [f'g{i}' for i in range(rng.randint(1, 30))]
         spec: List[Tuple[str, int, int]] = []
@@ -1904,14 +1870,14 @@ def test_a_one_pass_subclass_reserve_sees_every_table_with_its_site(tmp_path: Pa
 def test_the_census_of_a_counting_pool_given_an_alias_keeps_it() -> None:
     alias = {'(x + w)': '(x + 32)'}
     counting = BlockPool(W, POOL_BASE, alias=alias)
-    counting.reserve(16, 16, group='(x + 32)', group_expr=_sum('x', 32))
-    counting.reserve(16, 16, group='(x + w)', group_expr=_sum('x', 'w'))
+    counting.reserve(16, 16, group='(x + 32)', group_expr=sum_expr('x', 32))
+    counting.reserve(16, 16, group='(x + w)', group_expr=sum_expr('x', 'w'))
     census = counting.census()
     assert census == BlockCensus({'(x + 32)': 2}, {'(x + 32)': 16}, {'(x + 32)': {16: 2}}, alias)
     placing = BlockPool(W, POOL_BASE, **census.pool_kwargs())
-    assert placing.reserve(16, 16, group='(x + w)', group_expr=_sum('x', 'w')) is not None  # not a 'new_group'
+    assert placing.reserve(16, 16, group='(x + w)', group_expr=sum_expr('x', 'w')) is not None  # not a 'new_group'
     # a third name for the word, merged by the labels: one lookup still reaches the final group
-    counting.reserve(16, 16, group='((x + 0) + 32)', group_expr=Expr(('+', (_sum('x', 0), Expr(32)))))
+    counting.reserve(16, 16, group='((x + 0) + 32)', group_expr=Expr(('+', (sum_expr('x', 0), Expr(32)))))
     counting.labels_resolved({'x': 4096, 'w': 32})
     merged = counting.census(merge_aliases=True)
     assert merged.counts == {'((x + 0) + 32)': 3}

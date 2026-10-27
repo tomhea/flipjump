@@ -21,7 +21,7 @@ from flipjump.utils.exceptions import IODeviceException
 from tests.unit import screen_stream as ss
 
 
-def run_program(tmp_path: Path, text: str, device: IODevice) -> None:
+def _run_program(tmp_path: Path, text: str, device: IODevice) -> None:
     program = tmp_path / 'program.fj'
     program.write_text(text)
     fjm = tmp_path / 'program.fjm'
@@ -29,9 +29,9 @@ def run_program(tmp_path: Path, text: str, device: IODevice) -> None:
     run(fjm, io_device=device, print_time=False, print_termination=False)
 
 
-def output_bytes(tmp_path: Path, text: str) -> bytes:
+def _output_bytes(tmp_path: Path, text: str) -> bytes:
     device = FixedIO(b'')
-    run_program(tmp_path, text, device)
+    _run_program(tmp_path, text, device)
     return device.get_output()
 
 
@@ -56,12 +56,12 @@ stl.loop
 
 
 def test_the_readme_example_is_byte_exact(tmp_path: Path) -> None:
-    assert output_bytes(tmp_path, README_EXAMPLE_PROGRAM) == README_EXAMPLE
+    assert _output_bytes(tmp_path, README_EXAMPLE_PROGRAM) == README_EXAMPLE
 
 
 def test_the_readme_example_draws_on_the_screen(tmp_path: Path) -> None:
     screen = InMemoryScreen()
-    run_program(tmp_path, README_EXAMPLE_PROGRAM, screen)
+    _run_program(tmp_path, README_EXAMPLE_PROGRAM, screen)
     assert (screen.width, screen.height, screen.frame_count) == (4, 3, 1)
     assert [[screen.pixel_indices[4 * y + x] for x in range(4)] for y in range(3)] == [[5, 5, 0, 0]] * 3
 
@@ -75,9 +75,9 @@ def broken_end_frame {
     screen.present
 }
 '''
-    assert output_bytes(tmp_path, broken) != README_EXAMPLE
+    assert _output_bytes(tmp_path, broken) != README_EXAMPLE
     with pytest.raises(IODeviceException):
-        run_program(tmp_path, broken, InMemoryScreen())
+        _run_program(tmp_path, broken, InMemoryScreen())
 
 
 @pytest.mark.parametrize('screen_format', [3, 4, 5, 8])
@@ -91,9 +91,9 @@ screen.define_palette {screen_format}, 1, 2, 4, {hex(rgb)}
 stl.loop
 '''
     expected = ss.init_screen(2, 1, screen_format) + ss.define_palette(1, 2, colours, screen_format)
-    assert output_bytes(tmp_path, program) == expected
+    assert _output_bytes(tmp_path, program) == expected
     screen = InMemoryScreen()
-    run_program(tmp_path, program, screen)
+    _run_program(tmp_path, program, screen)
     assert screen.palettes[1][2:5] == colours
 
 
@@ -131,12 +131,12 @@ def test_the_setup_commands_are_byte_exact(tmp_path: Path) -> None:
         + ss.command(0x11, (0, 4), (2, 4), (0, 4), (0xF, 4), (0xF, 4))
         + ss.PRESENT
     )
-    assert output_bytes(tmp_path, SETUP_PROGRAM) == expected
+    assert _output_bytes(tmp_path, SETUP_PROGRAM) == expected
 
 
 def test_the_setup_commands_reach_the_screen(tmp_path: Path) -> None:
     screen = InMemoryScreen()
-    run_program(tmp_path, SETUP_PROGRAM, screen)
+    _run_program(tmp_path, SETUP_PROGRAM, screen)
     assert screen.window_title == SETUP_TITLE
     assert screen.max_fps == 30
     assert screen.palettes[3] == list(EGA16)
@@ -161,12 +161,12 @@ stl.loop
 def test_draw_raw_is_byte_exact(tmp_path: Path) -> None:
     """the colours (B = 4, row-major) and the zero bits to the byte are the program's own output."""
     expected = ss.init_screen(3, 1, 4) + ss.draw_raw([0x5, 0xC, 0x7], 4) + ss.PRESENT
-    assert output_bytes(tmp_path, DRAW_RAW_PROGRAM) == expected
+    assert _output_bytes(tmp_path, DRAW_RAW_PROGRAM) == expected
 
 
 def test_draw_raw_draws_on_the_screen(tmp_path: Path) -> None:
     screen = InMemoryScreen()
-    run_program(tmp_path, DRAW_RAW_PROGRAM, screen)
+    _run_program(tmp_path, DRAW_RAW_PROGRAM, screen)
     assert (screen.frame_count, screen.pixel_indices) == (1, [0x5, 0xC, 0x7])
 
 
@@ -181,7 +181,7 @@ screen.end_frame {width}, {used_bits}
 stl.loop
 '''
         expected = ss.pack([(0, used_bits), ((1 << column_bits) - 1, column_bits)]) + ss.PRESENT
-        assert output_bytes(tmp_path, program) == expected
+        assert _output_bytes(tmp_path, program) == expected
 
 
 # ---------------------------------------------------------------- the keyboard
@@ -228,7 +228,7 @@ def expected_polls(events: List[KeyEvent]) -> bytes:
 
 def test_poll_key_reads_the_status_and_the_keycode(tmp_path: Path) -> None:
     keyboard = KeyboardIO(ScriptedKeyEventSource(EVENTS))
-    run_program(tmp_path, poll_program('hex.poll_key'), keyboard)
+    _run_program(tmp_path, poll_program('hex.poll_key'), keyboard)
     assert keyboard.get_output() == expected_polls(EVENTS) == b'9 61\n0 00\n8 61\n9 da\n8 20\n0 00\n'
 
 
@@ -243,7 +243,7 @@ def broken_poll_key status, keycode @ end {
 }
 '''
     keyboard = KeyboardIO(ScriptedKeyEventSource(EVENTS))
-    run_program(tmp_path, broken, keyboard)
+    _run_program(tmp_path, broken, keyboard)
     assert keyboard.get_output() != expected_polls(EVENTS)
 
 
@@ -270,7 +270,7 @@ def poll_and_print < status, keycode {
 
 def test_an_idle_poll_key_leaves_the_keycode_alone(tmp_path: Path) -> None:
     keyboard = KeyboardIO(ScriptedKeyEventSource([KeyEvent(1, True, 0x61)]))
-    run_program(tmp_path, SHARED_KEYCODE_PROGRAM.replace('POLL', 'hex.poll_key'), keyboard)
+    _run_program(tmp_path, SHARED_KEYCODE_PROGRAM.replace('POLL', 'hex.poll_key'), keyboard)
     assert keyboard.get_output() == b'0 5a\n9 61\n0 61\n'
 
 
@@ -283,5 +283,5 @@ def zeroing_poll_key status, keycode {
 }
 '''
     keyboard = KeyboardIO(ScriptedKeyEventSource([KeyEvent(1, True, 0x61)]))
-    run_program(tmp_path, broken, keyboard)
+    _run_program(tmp_path, broken, keyboard)
     assert keyboard.get_output() != b'0 5a\n9 61\n0 61\n'
