@@ -27,8 +27,16 @@ def test_random_programs_run_the_same_with_every_pool_full(tmp_path: Path, case:
     assert fuzz_case(100000 + case, WIDTHS[case % 3], tmp_path) == []
 
 
-def _findings(tmp_path: Path, cases: int) -> List[str]:
-    return [finding for case in range(cases) for finding in fuzz_case(700 + case, WIDTHS[case % 3], tmp_path, 10)]
+# the controls' case: with either defect, fj --pool-tables' pool runs it differently
+CONTROL_FINDING = '700 w=16 cli: the pooled run differs from the plain one'
+
+
+def _findings(tmp_path: Path) -> List[str]:
+    return fuzz_case(700, 16, tmp_path, 10)
+
+
+def test_the_controls_case_runs_the_same_with_every_pool(tmp_path: Path) -> None:
+    assert _findings(tmp_path) == []
 
 
 def test_the_fuzzer_reports_a_table_moved_one_op_below_its_labels(
@@ -46,9 +54,11 @@ def test_the_fuzzer_reports_a_table_moved_one_op_below_its_labels(
                 break
 
     monkeypatch.setattr(PreprocessorData, '_place_deferred_tables', shifted)
-    assert _findings(tmp_path, 4)
+    findings = _findings(tmp_path)
+    assert CONTROL_FINDING in findings, findings
 
 
 def test_the_fuzzer_reports_a_pin_whose_arms_are_not_rewritten(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(assembler.BinaryData, 'pinned_value', lambda self, word, value, kind: value)
-    assert _findings(tmp_path, 4)
+    findings = _findings(tmp_path)
+    assert CONTROL_FINDING in findings, findings
