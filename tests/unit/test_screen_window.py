@@ -199,7 +199,7 @@ def test_the_icon_reaches_the_window_resolved_through_the_palette(monkeypatch: p
 
 
 def test_an_rgb_icon_is_opaque() -> None:
-    """the icon has no transparency: even black pixels (index 0 in the old protocol) are drawn"""
+    """the icon has no transparency: even black pixels are drawn"""
     window = PygameWindow()
     window.ensure_open(2, 2)
     window.set_icon(2, 1, [(0, 0, 0), (255, 0, 0)])  # through the dummy driver: must not raise
