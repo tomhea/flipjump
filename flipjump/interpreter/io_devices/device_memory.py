@@ -1,7 +1,6 @@
 """
 the device<->memory hook.
-lets an IODevice read and write the interpreter memory by address during a run. (the screen
-device does not use it: its commands carry their data in the output stream.)
+lets an IODevice read and write the interpreter memory by address during a run.
 
 the interpreter attaches a DeviceMemory to the io-device (IODevice.attach_memory) right
 before the run-loop starts - one adapter per engine (the python Reader / the native Memory).
