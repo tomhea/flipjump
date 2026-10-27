@@ -7,7 +7,9 @@ memory gives when it cannot be allocated, and the lean native load (the .fjm's b
 engine, no python object per word) - pinned against the Reader's memory, word for word.
 """
 
+import functools
 import lzma
+import random
 import struct
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
@@ -501,19 +503,21 @@ def test_a_non_number_flag_value_says_so(capsys: pytest.CaptureFixture[str]) -> 
     assert "'pc' is not a number" in capsys.readouterr().err
 
 
+@functools.lru_cache(maxsize=None)
+def _random_letters(size: int) -> bytes:
+    """`size` random letters of ABCD (deterministic; cached: making them takes seconds)"""
+    generator = random.Random(11)  # nosec B311 - deterministic test data, not security
+    return bytes(generator.choice(b'ABCD') for _ in range(size))
+
+
 def test_a_damaged_later_stream_contributes_nothing() -> None:
     # lzma.decompress drops a later stream that fails mid-way. The second stream must be LONGER THAN A
     # CHUNK compressed, so the damage is met after part of it was already decoded - else nothing tests it.
-    import random
-
     from flipjump.fjm.fjm_reader import _DECOMPRESS_CHUNK, _decompress_in_chunks
 
     filters = _lzma_compression_filters(64, 0)
     first = lzma.compress(b'first' * 30, format=_LZMA_FORMAT, filters=filters)
-    generator = random.Random(7)  # nosec B311 - deterministic test data, not security
-    second = bytearray(
-        lzma.compress(bytes(generator.choice(b'ABCD') for _ in range(6_000_000)), format=_LZMA_FORMAT, filters=filters)
-    )
+    second = bytearray(lzma.compress(_random_letters(6_000_000), format=_LZMA_FORMAT, filters=filters))
     assert len(second) > _DECOMPRESS_CHUNK
     second[len(second) * 9 // 10] ^= 0xFF
     data = first + bytes(second)
@@ -521,13 +525,6 @@ def test_a_damaged_later_stream_contributes_nothing() -> None:
     assert expected == b'first' * 30
     for expected_size in (0, len(expected), 10_000_000):
         assert bytes(_decompress_in_chunks(data, None, expected_size)) == expected
-
-
-def _random_letters(size: int) -> bytes:
-    import random
-
-    generator = random.Random(11)  # nosec B311 - deterministic test data, not security
-    return bytes(generator.choice(b'ABCD') for _ in range(size))
 
 
 @pytest.mark.parametrize('data_start_words', [1 << 60, 1 << 37, 1 << 28, 1_500_000_000])
