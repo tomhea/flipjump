@@ -158,7 +158,7 @@ has no transparency.
 
 ### `draw_collines` — the picture as column runs
 
-The fastest way to draw: each column is a list of **runs** from the top down, and the program has already
+A picture as vertical runs: each column is a list of **runs** from the top down, and the program has already
 resolved what is in front, so the device only fills.
 
 **Field widths** (fixed by `init_screen`, always a multiple of 4 bits):
@@ -234,7 +234,7 @@ ScreenIO: draw_collines (0x11) at output byte 1,204, frame 37, column 17, cursor
   far); and inside a draw, the column `x` and the cursor (or the pixel `(x, y)` in `draw_raw` and the icon).
 - **Why**: the field, the value it got, and the values it allows.
 
-| Error | The message's reason (after the "where") |
+| Error | The message's reason, for example (after the "where") |
 |---|---|
 | unknown opcode | `opcode 0x23 is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)` |
 | reserved opcode | `opcode 0x00 is reserved (a stray zero byte?)` |

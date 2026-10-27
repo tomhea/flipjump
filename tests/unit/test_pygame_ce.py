@@ -1,6 +1,6 @@
 """pygame-ce: the import guard and the indexed blit.
 
-Two behaviours introduced when the interactive window moved from upstream pygame to pygame-ce:
+Two behaviours of the interactive window:
 
   * `_import_pygame` REQUIRES pygame-ce. The two install under the same module name, so a wrong
     install is otherwise completely silent -- everything imports and runs.
@@ -37,7 +37,7 @@ def dummy_video() -> Iterator[None]:
 
 
 def test_the_installed_pygame_is_pygame_ce() -> None:
-    """The whole point of the move. IS_CE is defined only by pygame-ce."""
+    """IS_CE is defined only by pygame-ce."""
     assert getattr(pygame, 'IS_CE', 0), (
         'upstream pygame is installed; this build requires pygame-ce '
         '(pip uninstall -y pygame && pip install pygame-ce)'

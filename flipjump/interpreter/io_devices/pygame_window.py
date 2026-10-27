@@ -93,9 +93,8 @@ INPUT_WINDOW_SIZE = (320, 240)
 
 # how tall a program's window OPENS, in screen pixels; the width follows the program's aspect
 # ratio. `pg.SCALED` alone picks the largest integer scale that fits the desktop, which for a
-# small logical surface is a near-fullscreen window. The upscale is nearest-neighbour, so a
-# whole-number factor is crispest (400 or 500 for a 100-row surface); the user can still
-# drag-resize or F11 - SCALED | RESIZABLE stay on.
+# small logical surface is a near-fullscreen window. The upscale is nearest-neighbour; the user
+# can still drag-resize or F11 - SCALED | RESIZABLE stay on.
 WINDOW_HEIGHT = 480
 
 
@@ -111,8 +110,6 @@ def _import_pygame() -> Any:
             'install it with `pip install pygame-ce`, or `pip install flipjump[io]` to pull it '
             'in as a flipjump extra.'
         ) from import_error
-    # upstream pygame installs under the SAME module name, so a wrong install is otherwise
-    # silent. IS_CE is defined only by pygame-ce.
     if not getattr(pygame, 'IS_CE', 0):
         raise IODeviceException(
             'the interactive window requires pygame-ce, but the installed `pygame` module is '
@@ -262,10 +259,8 @@ class PygameWindow:
     def draw_indexed(self, width: int, height: int, indices: bytes, palette: List[Tuple[int, int, int]]) -> None:
         """blit a frame given as raw PALETTE INDICES, and present it.
 
-        SDL expands the palette itself, so the per-pixel work leaves python entirely. MEASURED on
-        a 160x100 frame: 0.04 ms against `draw`'s 1.36 ms for the same picture -- 34x, and the
-        caller no longer needs to build a per-pixel RGB list at all (another 0.47 ms). That is the
-        whole per-frame cost of presenting, so it goes from ~1.83 ms to ~0.04 ms."""
+        SDL expands the palette itself, so no per-pixel work is done in python (about 30x faster
+        than `draw`, which builds an RGB list first)."""
         if self._screen_surface is None:
             return
         pg = self._pygame

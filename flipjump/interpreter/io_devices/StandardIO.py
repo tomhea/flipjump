@@ -40,7 +40,8 @@ class StandardIO(IODevice):
             raise IOReadOnEOF("Read an empty input on standard IO (EOF)")
         return read_bytes[0]
 
-    def _emit_output_byte(self, curr_output: bytes) -> None:
+    def _emit_output_byte(self, byte: int) -> None:
+        curr_output: bytes = byte.to_bytes(1, 'little')
         if self.output_verbose:
             stdout.write(curr_output.decode(encoding=IO_BYTES_ENCODING))
             stdout.flush()
@@ -61,7 +62,7 @@ class StandardIO(IODevice):
         self.bits_to_write_in_output_byte += 1
 
         if 8 == self.bits_to_write_in_output_byte:
-            self._emit_output_byte(self.current_output_byte.to_bytes(1, 'little'))
+            self._emit_output_byte(self.current_output_byte)
             self.current_output_byte = 0
             self.bits_to_write_in_output_byte = 0
 
@@ -74,7 +75,7 @@ class StandardIO(IODevice):
         if self.bits_to_write_in_output_byte:  # never from the engine (it writes bytes from a byte boundary only)
             super().write_byte(byte)
             return
-        self._emit_output_byte(byte.to_bytes(1, 'little'))
+        self._emit_output_byte(byte)
 
     def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
         if not allow_incomplete_output and 0 != self.bits_to_write_in_output_byte:
