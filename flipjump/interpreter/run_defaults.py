@@ -15,8 +15,9 @@ from flipjump.fjm.fjm_consts import IO_MODE_NAMES, RUN_FLAG_FLAT_MEMORY, bad_run
 from flipjump.fjm.fjm_reader import FjmHeader
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 
-# with no window option (and the flat-memory run flag off), a program whose span is at most this many words runs
-# fully flat on its own (at most 8 bytes per word: up to 128MB); a larger span keeps the engine's default window
+# with no window option (and the flat-memory run flag off), a program spanning at most 2^24 words runs fully flat on
+# its own: the array costs at most 64 MB (4-byte cells, w<=32) or 128 MB (w=64), small enough to allocate unasked;
+# a larger span keeps the engine's default window
 FLAT_MEMORY_AUTO_MAX_WORDS = 1 << 24
 
 

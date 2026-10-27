@@ -173,17 +173,11 @@ def _trace_flip(ip: int, flip_address: int, show_trace: bool) -> None:
         print(hex(flip_address)[2:], end='; ', flush=True)
 
 
-def _overrides_write_byte(io_device: IODevice) -> bool:
-    """does the device handle a whole output byte itself (not IODevice's per-bit default)?"""
-    own = getattr(type(io_device), 'write_byte', None)
-    return own is not None and own is not IODevice.write_byte
-
-
-def _overrides_read_byte(io_device: IODevice) -> bool:
-    """does the device hand over a whole input byte itself (not IODevice's per-bit default)? a device that answers
-    bit by bit (the keyboard) does not, and the engine asks it bit by bit"""
-    own = getattr(type(io_device), 'read_byte', None)
-    return own is not None and own is not IODevice.read_byte
+def _overrides(io_device: IODevice, method: str) -> bool:
+    """does the device handle a whole byte itself in `method` ('write_byte' / 'read_byte'), not IODevice's per-bit
+    default? a device that answers bit by bit (the keyboard's read_byte) does not, and the engine asks it bit by bit"""
+    own = getattr(type(io_device), method, None)
+    return own is not None and own is not getattr(IODevice, method)
 
 
 def run(
@@ -211,7 +205,7 @@ def run(
     @param flat_max_words: the native engine's flat-storage window, in words (default 2^23,
     also settable with the FLIPJUMP_FLAT_MAX_WORDS environment variable). memory below the window
     runs flat; segments reaching above it keep the paged path for that part (hybrid). raising it
-    costs startup time + footprint (8 bytes x window), never per-op speed.
+    costs startup time + footprint (4 or 8 bytes a word, w<=32 / w=64), never per-op speed.
     @param flat_required: the flat window must be allocated: if it cannot be, raise
     FlipJumpFlatMemoryException instead of falling back to the slower paged memory (native engine only)
     @return: the run's termination-statistics
@@ -224,41 +218,23 @@ def run(
     if last_ops_debugging_list_length is None and use_featured_loop:
         last_ops_debugging_list_length = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH
 
-    if not use_featured_loop and is_native_engine_active():
-        # the lean load: the .fjm's words go straight from its (decompressed) bytes into the engine -
-        # no python object per word (the Reader's dict of a 51M-word program is ~7 GB and a minute)
-        header = fjm_reader.read_fjm_header(fjm_path)
-        header.assert_runnable()  # a program must hold its first op at address 0 (both engines)
-        statistics = RunStatistics(header.memory_width, last_ops_debugging_list_length)
-        try:
-            with ProgressBar('  loading memory:  ', print_time=print_time, total=1.0) as progress:
-                core = _load_native(fjm_path, header, flat_max_words, flat_required, progress)
-        except KeyboardInterrupt:
-            return TerminationStatistics(statistics, TerminationCause.KeyboardInterrupt)
-        try:
-            return _end_of_run(io_device, _run_native(core, header.memory_width, io_device, statistics))
-        except FlipJumpException as fj_exception:
-            raise fj_exception
-        except KeyboardInterrupt:
-            return TerminationStatistics(statistics, TerminationCause.KeyboardInterrupt)
-        except Exception as unknown_exception:
-            raise FlipJumpRuntimeException(
-                "Unknown exception during running an .fjm file, please report this bug"
-            ) from unknown_exception
-
+    header = fjm_reader.read_fjm_header(fjm_path)
+    header.assert_runnable()  # a program must hold its first op at address 0 (both engines)
+    statistics = RunStatistics(header.memory_width, last_ops_debugging_list_length)
+    # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
+    native = not use_featured_loop and is_native_engine_active()
     try:
-        with ProgressBar('  loading memory:  ', print_time=print_time):
-            mem = fjm_reader.Reader(fjm_path)
+        with ProgressBar('  loading memory:  ', print_time=print_time, total=1.0 if native else None) as progress:
+            if native:
+                mem = _load_native(fjm_path, header, flat_max_words, flat_required, progress)
+            else:
+                mem = fjm_reader.Reader(fjm_path)
     except KeyboardInterrupt:
-        # (the width only labels the empty statistics; the 64 default spares re-reading the file)
-        return TerminationStatistics(
-            RunStatistics(64, last_ops_debugging_list_length), TerminationCause.KeyboardInterrupt
-        )
-    mem.assert_runnable()  # a program must hold its first op at address 0 (both engines)
-
-    statistics = RunStatistics(mem.memory_width, last_ops_debugging_list_length)
+        return TerminationStatistics(statistics, TerminationCause.KeyboardInterrupt)
 
     try:
+        if native:
+            return _end_of_run(io_device, _run_native(mem, header.memory_width, io_device, statistics))
         if use_featured_loop:
             io_device.attach_memory(ReaderDeviceMemory(mem))
             return _end_of_run(io_device, _run_featured(mem, io_device, statistics, breakpoint_handler, show_trace))
@@ -304,8 +280,8 @@ def is_native_engine_active() -> bool:
     return _fjcore is not None and environ.get('FLIPJUMP_NO_NATIVE') != '1'
 
 
-# the share of the loading bar that decompression takes; loading the words into the engine is the rest.
-# MEASURED on the 51.3M-word doom-flipjump program: 1.1 s decompressing, about as long loading.
+# the share of the loading bar that decompression takes; loading the words into the engine is the rest
+# (decompressing takes about as long as loading the words).
 _DECOMPRESS_SHARE = 0.5
 # report the loading progress every this many segments
 _LOAD_PROGRESS_SEGMENTS = 4096
@@ -380,8 +356,8 @@ def _run_native(
             last_ops_length=last_ops.maxlen if last_ops is not None and last_ops.maxlen else 0,
             # only a device that handles whole bytes itself: the default write_byte is 8 write_bits anyway,
             # and gathering would only delay each bit (and a device error) to its byte's end
-            write_byte=io_device.write_byte if _overrides_write_byte(io_device) else None,
-            read_byte=io_device.read_byte if _overrides_read_byte(io_device) else None,
+            write_byte=io_device.write_byte if _overrides(io_device, 'write_byte') else None,
+            read_byte=io_device.read_byte if _overrides(io_device, 'read_byte') else None,
         )
     finally:
         # keep op_counter, the IO-paused time and the storage mode valid on the exception

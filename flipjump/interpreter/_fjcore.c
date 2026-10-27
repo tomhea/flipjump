@@ -23,132 +23,6 @@
 #include <string.h>
 #include <time.h>
 
-/* ---- large-page backing for the flat image -------------------------------------------------
- *
- * The flat image is walked by a pointer chase whose addresses are effectively random, so the
- * cost per op is dominated by how many distinct PAGES the working set spans: a large program's
- * data stays cache-resident while its 4 KB page mappings do not, and nearly every scattered
- * access pays a page walk. 2 MB pages make the same working set TLB-resident.
- *
- * COST AND SAFETY. Large pages are locked, non-pageable memory: on Windows the caller must hold
- * SeLockMemoryPrivilege (an administrator grants "Lock pages in memory"), and on Linux the
- * MADV_HUGEPAGE path only ASKS. Every failure falls back to the ordinary allocator, so this can
- * only change speed, never behaviour: the returned block is plain writable memory either way,
- * and the interpreter does not know which it got. FLIPJUMP_NO_LARGE_PAGES=1 forces the fallback.
- */
-#if defined(_WIN32)
-#include <windows.h>
-#if defined(_MSC_VER)
-/* OpenProcessToken/LookupPrivilegeValue/AdjustTokenPrivileges live in advapi32. Linked with a
-   pragma rather than by adding `libraries=['advapi32']` to setup.py, because setup.py is shared
-   with the Linux and macOS wheel builds and this dependency is MSVC-only. */
-#pragma comment(lib, "advapi32.lib")
-#endif
-#elif defined(__linux__)
-#include <sys/mman.h>
-#endif
-
-/* returns NULL on failure; *large is set to 1 only when large pages were actually obtained */
-static void* fj_alloc_flat(size_t bytes, int* large)
-{
-    const char* off = getenv("FLIPJUMP_NO_LARGE_PAGES");
-    *large = 0;
-    if (off && off[0] == '1') {
-        return malloc(bytes);
-    }
-#if defined(_WIN32)
-    {
-        SIZE_T lp = GetLargePageMinimum();
-        if (lp) {
-            HANDLE token = NULL;
-            if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-                                 &token)) {
-                TOKEN_PRIVILEGES tp;
-                LUID luid;
-                if (LookupPrivilegeValueA(NULL, "SeLockMemoryPrivilege", &luid)) {
-                    tp.PrivilegeCount = 1;
-                    tp.Privileges[0].Luid = luid;
-                    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-                    AdjustTokenPrivileges(token, FALSE, &tp, sizeof(tp), NULL, NULL);
-                }
-                CloseHandle(token);
-            }
-            {
-                size_t rounded = ((bytes + (size_t)lp - 1) / (size_t)lp) * (size_t)lp;
-                void* p = VirtualAlloc(NULL, rounded,
-                                       MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
-                if (p) {
-                    *large = 1;
-                    return p;
-                }
-            }
-        }
-    }
-#elif defined(__linux__)
-    {
-        /* THP IS THE PRIVILEGE-FREE ROUTE, AND IT ONLY WORKS 2 MB-ALIGNED. Transparent Huge
-           Pages need no capability at all (unlike MAP_HUGETLB, which needs hugepages
-           preconfigured, and unlike Windows large pages, which need SeLockMemoryPrivilege) --
-           but khugepaged can only collapse a region that is 2 MB aligned AND 2 MB sized, and
-           plain mmap only promises 4 KB alignment. An unaligned mapping therefore gets its
-           interior collapsed at best and its edges never, which quietly wastes most of the
-           benefit. So over-allocate by one huge page, trim both ends, and advise the aligned
-           middle. */
-        const size_t two_mb = 2u * 1024u * 1024u;
-        size_t rounded = ((bytes + two_mb - 1) / two_mb) * two_mb;
-        char* raw = (char*)mmap(NULL, rounded + two_mb, PROT_READ | PROT_WRITE,
-                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (raw != MAP_FAILED) {
-            uintptr_t base = (uintptr_t)raw;
-            uintptr_t aligned = (base + (two_mb - 1)) & ~(uintptr_t)(two_mb - 1);
-            size_t head = (size_t)(aligned - base);
-            if (head) {
-                munmap(raw, head);
-            }
-            if (two_mb - head) {
-                munmap((char*)(aligned + rounded), two_mb - head);
-            }
-#if defined(MADV_HUGEPAGE)
-            /* ADVISORY: the kernel may still decline (THP disabled, memory fragmented), so
-               `large` here records "aligned and advised", not "definitely huge". Check
-               /proc/<pid>/smaps AnonHugePages to see what was actually granted. */
-            if (madvise((void*)aligned, rounded, MADV_HUGEPAGE) == 0) {
-                *large = 1;
-                return (void*)aligned;
-            }
-#endif
-            /* no huge-page advice, or refused: the mapping buys nothing over malloc, and only a
-               `large` block is released with munmap (fj_free_flat) -- so release it and fall back */
-            munmap((void*)aligned, rounded);
-        }
-    }
-#endif
-    return malloc(bytes);
-}
-
-static void fj_free_flat(void* p, int large, size_t bytes)
-{
-    if (!p) {
-        return;
-    }
-    if (!large) {
-        free(p);
-        return;
-    }
-#if defined(_WIN32)
-    (void)bytes;
-    VirtualFree(p, 0, MEM_RELEASE);
-#elif defined(__linux__)
-    {
-        size_t two_mb = 2u * 1024u * 1024u;
-        munmap(p, ((bytes + two_mb - 1) / two_mb) * two_mb);
-    }
-#else
-    (void)bytes;
-    free(p);
-#endif
-}
-
 /* force-inline so run_flat_loop's literal width/ww arguments constant-fold per width */
 #if defined(_MSC_VER)
 #  define FJ_ALWAYS_INLINE __forceinline
@@ -184,26 +58,21 @@ static double monotonic_seconds(void)
 /* how often to check for signals (Ctrl+C): every 2^18 ops */
 #define SIGNAL_CHECK_MASK 0x3FFFFull
 
-/* flat-storage mode: programs whose segments all end below a word-count limit (and with
-   w<=32, so bit 63 is free to mark out-of-segment words) use one dense array instead of
-   the page table - removing the page lookup from the serial jump-address chain.
+/* flat-storage mode: programs whose segments all end below a word-count limit use one dense
+   array instead of the page table - removing the page lookup from the serial jump-address chain.
    the limit is the Memory(flat_max_words=...) parameter, else the FLIPJUMP_FLAT_MAX_WORDS
    environment variable, else this default. raising it trades startup time + footprint
-   (the array is sentinel-filled: RSS = 8 bytes x span, fill ~0.1s/GB) for flat-path speed;
+   (the array is sentinel-filled: RSS = 4 or 8 bytes (w<=32 / w=64) x span, fill ~0.1s/GB) for flat-path speed;
    the per-op cost is unaffected by the limit's value. */
-#define FLAT_MAX_WORDS_DEFAULT (1ull << 23) /* 8M words, 64MB */
-#define GARBAGE_SENTINEL (1ull << 63)
-/* the w=64 flat gap-fill sentinel. w<=32 keeps the in-band bit-63 sentinel (values are
-   masked below it, so it is exact), but w=64 values use all 64 bits - gaps are filled
-   with this fixed magic value instead, and a real word that happens to equal it is
+#define FLAT_MAX_WORDS_DEFAULT (1ull << 23) /* 8M words: 32 MB at w<=32, 64 MB at w=64 */
+/* the w=64 flat gap-fill sentinel. w=64 values use all 64 bits - gaps are filled
+   with this fixed magic value, and a real word that happens to equal it is
    disambiguated through the segment list on the cold path (gap words are never legally
    written, so in-segment + magic == real data). the constant is sqrt(3)'s fractional
    bits (the SHA-512 h1 constant) - any value works since collisions are handled; this
    one is just recognizable in memory dumps. */
 #define FLAT_GARBAGE_MAGIC 0xBB67AE8584CAA73Bull
-/* the 4-byte-cell fill. Like FLAT_GARBAGE_MAGIC it CAN collide with real data -- every 32-bit
-   value is a legal word -- so a match is only a filter and membership decides. Chosen as the
-   high half of the w=64 magic for no reason beyond being an unlikely address or counter. */
+/* the w<=32 gap-fill sentinel, in 4-byte cells: the high half of the w=64 one, and it collides the same way */
 #define FLAT_GARBAGE_MAGIC32 0xBB67AE85u
 
 /* termination causes (mapped to TerminationCause in fjm_run.py) */
@@ -251,25 +120,15 @@ typedef struct {
     uint64_t page_cache_valid_end[16];
 
     SegmentRange* segments; /* sorted once storage is decided; NOT merged - see segments_disjoint */
-    int segments_disjoint;  /* 1: sorted AND non-overlapping, so flat_seg_contains may binary
-                               search. Computed once in mem_decide_storage. add_segment does not
-                               merge and nothing else checked, so overlap is possible in principle
-                               and a binary search over overlapping ranges can MISS a container -
-                               which would report a valid word as garbage and halt a correct
-                               program. Verified rather than assumed. */
+    int segments_disjoint;  /* 1: sorted AND non-overlapping (set in mem_decide_storage), so a binary search is valid */
     Py_ssize_t segment_count;
     Py_ssize_t segment_capacity;
     int segments_sorted;
 
     /* flat-storage mode (built at the first run when eligible; NULL = paged mode) */
-    void* flat;           /* cells are `cell_bytes` wide: uint64_t today, uint32_t at w<=32 once
-                             stage C lands. Typeless so the two cannot be confused by accident;
-                             every access goes through flat_load/flat_store or, in the hot loop,
-                             a compile-time-folded branch. */
-    int cell_bytes;       /* 8 or 4. A w<=32 program's words fit in 4 bytes, which halves the
-                             touched cache footprint -- the measured binding cost. */
-    int flat_large;       /* 1: `flat` came from the large-page allocator and must be released
-                             with it, not with free(). See fj_alloc_flat. */
+    void* flat;           /* cells are `cell_bytes` wide: uint32_t at w<=32, else uint64_t; accessed through
+                             flat_load/flat_store or, in the hot loop, a compile-time-folded branch */
+    int cell_bytes;       /* 4 at w<=32 (half the cache footprint), else 8 */
     uint64_t flat_count;
     uint64_t flat_max_words; /* constructor override; 0 = use the env var / default */
     int flat_required;       /* constructor flag: a flat window that cannot be allocated RAISES
@@ -279,11 +138,9 @@ typedef struct {
                             non-NULL flat: low window flat, the rest paged ('hybrid') */
 
     /* freeze()/reset(): a memcpy snapshot of the pristine flat image, so a caller that runs
-       the SAME self-modifying program many times (doom-flipjump's per-frame walker) restores
-       it in one memcpy instead of re-loading tens of millions of words through set_words */
-    void* pristine;       /* a RAW BYTE snapshot of `flat`, so it is sized by cell_bytes too;
-                             typeless for the same reason `flat` is */
-    uint64_t pristine_count;
+       the same self-modifying program many times restores it in one memcpy instead of
+       re-loading every word */
+    void* pristine;       /* a RAW BYTE snapshot of `flat` (flat_count cells of cell_bytes) */
 
     int mem_error;            /* set when garbage_stop fired */
     uint64_t error_bit_address;
@@ -292,7 +149,7 @@ typedef struct {
     double last_run_paused_seconds;       /* IO-paused seconds of the last run (also on exceptions) */
 
     /* run(write_byte=...): the output bits are gathered here into whole bytes, so the device is called
-       once a byte instead of once a bit (a Python call, ~140 ns, per bit was ~13% of a doom-flipjump frame).
+       once a byte instead of once a bit (a Python call per bit dominates an output-heavy program).
        `out_write_byte` is borrowed for the duration of one run (NULL = per-bit). `out_phase` is how many
        bits of the device's current byte were delivered through write_bit (mod 8), across runs: bits are
        gathered only from a byte boundary, so a device sees exactly the stream it saw bit by bit. */
@@ -472,31 +329,15 @@ static inline int flat_garbage(MemoryObject* m, uint64_t word_address)
     return 0;
 }
 
-/* is this flat value the width's garbage sentinel? (w<=32: in-band bit 63, exact;
-   w=64: the magic fill value - may collide with real data, see flat_garbage_check) */
+/* is this flat value the width's garbage sentinel? (the magic fill value of its cell width -
+   may collide with real data, see flat_garbage_check) */
 static inline int flat_is_garbage(const MemoryObject* m, uint64_t value)
 {
-    if (m->cell_bytes == 4) {
-        return value == (uint64_t)FLAT_GARBAGE_MAGIC32;
-    }
-    return (m->w <= 32) ? ((value & GARBAGE_SENTINEL) != 0) : (value == FLAT_GARBAGE_MAGIC);
+    return (m->w <= 32) ? (value == FLAT_GARBAGE_MAGIC32) : (value == FLAT_GARBAGE_MAGIC);
 }
 
-/* is `word_address` inside any declared segment?
- *
- * BINARY SEARCH WHEN THE RANGES ARE SORTED, linear otherwise. The linear form was not a mistake:
- * nothing sorted the segments before the flat image was built (mem_ensure_segments_sorted is
- * called only from the access-check paths, and add_segment clears the flag), so a binary search
- * would have been WRONG -- it can miss a containing range in an unsorted array, and missing one
- * here reports a valid word as garbage and halts a correct program. mem_decide_storage now sorts
- * once before any op runs, so the fast path is legitimate; the linear fallback stays for any
- * caller that reaches here with the flag clear, because being right matters more than the branch.
- *
- * It matters because a large program declares hundreds of thousands of segments and this sits
- * behind the sentinel test in the hot loop: at w<=32 the in-band bit-63 sentinel is exact and
- * never gets here, but 4-byte cells have no spare bit and must use a colliding magic, which would
- * make every false positive cost a full scan.
- */
+/* is `word_address` inside any declared segment? a binary search once mem_decide_storage proved the
+   ranges sorted and disjoint; linear otherwise */
 static inline int flat_seg_contains(const MemoryObject* m, uint64_t word_address)
 {
     Py_ssize_t lo, hi;
@@ -542,19 +383,12 @@ static FJ_ALWAYS_INLINE void flat_store(MemoryObject* m, uint64_t i, uint64_t v)
     }
 }
 
-/* a flat word whose value matched the sentinel: decide whether it is REAL garbage (an
-   out-of-segment touch - reported via flat_garbage, returns -1) or an in-segment word that
-   legitimately holds the magic value (kept, returns 0).
-   WHICH SCHEMES CAN COLLIDE: the w<=32 in-band bit-63 sentinel cannot -- a 32-bit word can
-   never set bit 63 -- so a match there is always real garbage and no membership check is needed.
-   Both MAGIC schemes CAN collide: every value is a legal word, so membership decides. That is
-   true of w=64 (FLAT_GARBAGE_MAGIC) and, since stage C, of 4-byte cells at any width
-   (FLAT_GARBAGE_MAGIC32). Getting this guard wrong in the collide-able direction halts a correct
-   program on a value that merely looked like the fill. */
+/* a flat word whose value matched the width's sentinel: decide whether it is REAL
+   garbage (an out-of-segment touch - reported via flat_garbage, returns -1) or an
+   in-segment word that legitimately holds the magic value (kept, returns 0). */
 static inline int flat_garbage_check(MemoryObject* m, uint64_t word_address, uint64_t* value)
 {
-    const int magic_can_collide = (m->cell_bytes == 4) || (m->w > 32);
-    if (magic_can_collide && flat_seg_contains(m, word_address)) {
+    if (flat_seg_contains(m, word_address)) {
         return 0; /* the word really holds the magic constant - real data */
     }
     if (!flat_garbage(m, word_address)) {
@@ -691,7 +525,7 @@ static uint64_t mem_flat_words_limit(MemoryObject* m)
 
 /* decide the storage mode (once, at the first run): in garbage-stop mode, the LOW WINDOW
    of memory - segment data below the flat-words limit - gets a dense flat array (gaps
-   carry the in-band bit-63 sentinel at w<=32, the FLAT_GARBAGE_MAGIC fill at w=64).
+   carry the FLAT_GARBAGE_MAGIC32 fill at w<=32, the FLAT_GARBAGE_MAGIC fill at w=64).
    when every segment fits inside the window the mode is 'flat' (exactly the historic
    behavior); segments continuing or living above it stay page-backed and the mode is
    'hybrid' - the run loop reads sub-window words from the array and falls back to the
@@ -707,9 +541,8 @@ static int mem_decide_storage_once(MemoryObject* m);
    storage UNdecided, so a later decide_storage()/run() reports the same error instead of running paged */
 static int mem_decide_storage(MemoryObject* m)
 {
-    const int was_decided = m->storage_decided;
     const int result = mem_decide_storage_once(m);
-    if (result < 0 && !was_decided) {
+    if (result < 0) {
         m->storage_decided = 0;
     }
     return result;
@@ -733,16 +566,10 @@ static int mem_decide_storage_once(MemoryObject* m)
     if (!m->garbage_stop) {
         return 0; /* continue-mode: paged (the flat sentinel scheme needs garbage-stop) */
     }
-    /* SORT ONCE, HERE, so `flat_seg_contains` may binary-search. It could not before: the only
-       calls to mem_ensure_segments_sorted are on the access-check paths, `add_segment` clears
-       `segments_sorted`, and nothing sorted before the flat image was built -- which is why that
-       helper is a LINEAR SCAN. That is correct for unsorted ranges but is O(segment_count), so
-       on a program with hundreds of thousands of segments a single sentinel collision inside the
-       hot loop would cost as many comparisons. This runs once, before any op executes. */
+    /* sort once, before any op runs, so flat_seg_contains may binary-search */
     mem_ensure_segments_sorted(m);
     {
-        /* ...and the fast path additionally needs the ranges to be DISJOINT, which nothing
-           guarantees: add_segment appends without merging. One linear pass settles it. */
+        /* ...which also needs the ranges disjoint: add_segment appends without merging */
         Py_ssize_t k;
         m->segments_disjoint = 1;
         for (k = 1; k < m->segment_count; k++) {
@@ -779,7 +606,7 @@ static int mem_decide_storage_once(MemoryObject* m)
                         "address 0 is missing");
         return -1;
     }
-    if (low_max_end > SIZE_MAX / 8u) {
+    if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
         if (m->flat_required) {
             PyErr_Format(PyExc_MemoryError, "the flat-storage window of %llu words is too large to allocate",
                          (unsigned long long)low_max_end);
@@ -808,14 +635,8 @@ static int mem_decide_storage_once(MemoryObject* m)
             return 0; /* paged fallback */
         }
     }
-    /* 4-byte cells for a program whose words fit in 32 bits: half the cache footprint, which
-       is the measured binding cost. FLIPJUMP_CELL64=1 forces the old width for A/B. */
-    m->cell_bytes = 8;
-    if (m->w <= 32) {
-        const char* force64 = getenv("FLIPJUMP_CELL64");
-        m->cell_bytes = (force64 && force64[0] == '1') ? 8 : 4;
-    }
-    m->flat = fj_alloc_flat((size_t)low_max_end * (size_t)m->cell_bytes, &m->flat_large);
+    m->cell_bytes = (m->w <= 32) ? 4 : 8;
+    m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes);
     if (!m->flat && m->flat_required) {
         PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words (%llu bytes) failed",
                      (unsigned long long)low_max_end,
@@ -831,10 +652,7 @@ static int mem_decide_storage_once(MemoryObject* m)
     m->flat_count = low_max_end;
     m->flat_covers_all = (max_end <= low_max_end);
     {
-        /* GARBAGE_SENTINEL is bit 63 and truncates to zero in a 4-byte cell -- holes would
-           read back as a legal 0 and out-of-segment reads would go silently undetected. */
-        const uint64_t garbage_fill = (m->cell_bytes == 4) ? (uint64_t)FLAT_GARBAGE_MAGIC32
-                                    : ((m->w <= 32) ? GARBAGE_SENTINEL : FLAT_GARBAGE_MAGIC);
+        const uint64_t garbage_fill = (m->w <= 32) ? FLAT_GARBAGE_MAGIC32 : FLAT_GARBAGE_MAGIC;
         for (i = 0; i < low_max_end; i++) {
             flat_store(m, i, garbage_fill);
         }
@@ -904,10 +722,8 @@ static void mem_free_allocations(MemoryObject* self)
         free(self->slots);
         self->slots = NULL;
     }
-    fj_free_flat(self->flat, self->flat_large,
-                 (size_t)self->flat_count * (size_t)(self->cell_bytes ? self->cell_bytes : 8));
+    free(self->flat);
     self->flat = NULL;
-    self->flat_large = 0;
     free(self->pristine);
     self->pristine = NULL;
     free(self->segments);
@@ -947,7 +763,6 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->segments_sorted = 1;
     self->segments_disjoint = 0;      /* proven in mem_decide_storage, never assumed */
     self->flat = NULL;
-    self->flat_large = 0;
     self->cell_bytes = 8;
     self->flat_count = 0;
     self->flat_max_words = flat_max_words;
@@ -955,11 +770,12 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->storage_decided = 0;
     self->flat_covers_all = 0;
     self->pristine = NULL;
-    self->pristine_count = 0;
     self->mem_error = 0;
     self->error_bit_address = 0;
     self->last_run_op_count = 0;
     self->last_run_paused_seconds = 0.0;
+    self->out_acc = 0, self->out_n = 0, self->out_phase = 0;
+    self->in_acc = 0, self->in_n = 0, self->in_phase = 0;
     return 0;
 }
 
@@ -1107,9 +923,7 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
    pool, decompressed); words [data_word_offset, data_word_offset + count) of it are stored at
    start_word_address onward. relative_jumps: the .fjm v2/v3 encoding, where every odd word of a
    segment (a jump word) is stored minus its own bit address -- added back here.
-   THE LEAN LOAD PATH: set_words takes a python sequence, so the loader had to build one int object
-   per word first -- on a 51M-word program that dict of ints is ~7 GB and most of a minute; this reads
-   the bytes in place. */
+   set_words needs one Python int per word; this reads the bytes in place. */
 static PyObject* Memory_set_words_bytes(MemoryObject* self, PyObject* args)
 {
     unsigned long long start_word, data_word_offset, count;
@@ -1321,15 +1135,14 @@ static int in_bit(MemoryObject* self, PyObject* read_bit, PyObject* write_bit, P
 
 static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
                                                PyObject* eof_exception_type, uint64_t start_ip, uint64_t* ops_out,
-                                               double* paused_seconds_out, const uint64_t width, const uint64_t ww,
-                                               const int cell32)
+                                               double* paused_seconds_out, const uint64_t width, const uint64_t ww)
 {
     const uint64_t bit_mask = width - 1;
     const uint64_t dw = 2 * width;
     const uint64_t in_addr = 3 * width + ww + 1; /* 3w + #w */
     const uint64_t in_lo_exclusive = in_addr - dw;
-    /* exactly one of these is the live view of `self->flat`; `cell32` is a literal at every
-       call site, so the compiler folds the dead one and every branch below away. */
+    /* exactly one of these is the live view of `self->flat` (4-byte cells at w<=32); `width` is a literal
+       at every call site, so the compiler folds the dead one and every branch below away. */
     uint32_t* const flat32 = (uint32_t*)self->flat;
     uint64_t* const flat64 = (uint64_t*)self->flat;
     const uint64_t flat_count = self->flat_count;
@@ -1359,10 +1172,8 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             if (word_address + 1 >= flat_count) {
                 goto cold_flip_word_out_of_span;
             }
-            f = cell32 ? (uint64_t)flat32[word_address] : flat64[word_address];
-            if (cell32 ? (f == (uint64_t)FLAT_GARBAGE_MAGIC32)
-                       : (width <= 32 ? ((f & GARBAGE_SENTINEL) != 0)
-                                      : (f == FLAT_GARBAGE_MAGIC))) {
+            f = (width <= 32) ? (uint64_t)flat32[word_address] : flat64[word_address];
+            if (width <= 32 ? (f == FLAT_GARBAGE_MAGIC32) : (f == FLAT_GARBAGE_MAGIC)) {
                 goto cold_flip_word_garbage;
             }
         flip_word_ready:
@@ -1383,17 +1194,14 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             if (flip_word_address >= flat_count) {
                 goto cold_flip_out_of_span;
             }
-            flip_value = cell32 ? (uint64_t)flat32[flip_word_address]
-                                : flat64[flip_word_address];
-            if (cell32 ? (flip_value == (uint64_t)FLAT_GARBAGE_MAGIC32)
-                       : (width <= 32 ? ((flip_value & GARBAGE_SENTINEL) != 0)
-                                      : (flip_value == FLAT_GARBAGE_MAGIC))) {
+            flip_value = (width <= 32) ? (uint64_t)flat32[flip_word_address] : flat64[flip_word_address];
+            if (width <= 32 ? (flip_value == FLAT_GARBAGE_MAGIC32) : (flip_value == FLAT_GARBAGE_MAGIC)) {
                 goto cold_flip_garbage;
             }
         flip_value_ready:
             {
                 const uint64_t flipped = flip_value ^ (1ull << (f & bit_mask));
-                if (cell32) {
+                if (width <= 32) {
                     flat32[flip_word_address] = (uint32_t)flipped;
                 } else {
                     flat64[flip_word_address] = flipped;
@@ -1406,10 +1214,8 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             if (word_address + 1 >= flat_count) {
                 goto cold_jump_word_slow;
             }
-            j = cell32 ? (uint64_t)flat32[word_address + 1] : flat64[word_address + 1];
-            if (cell32 ? (j == (uint64_t)FLAT_GARBAGE_MAGIC32)
-                       : (width <= 32 ? ((j & GARBAGE_SENTINEL) != 0)
-                                      : (j == FLAT_GARBAGE_MAGIC))) {
+            j = (width <= 32) ? (uint64_t)flat32[word_address + 1] : flat64[word_address + 1];
+            if (width <= 32 ? (j == FLAT_GARBAGE_MAGIC32) : (j == FLAT_GARBAGE_MAGIC)) {
                 goto cold_jump_word_garbage;
             }
         jump_word_ready:
@@ -1537,34 +1343,22 @@ done:
 static int run_flat_loop(MemoryObject* self, PyObject* read_bit, PyObject* write_bit, PyObject* eof_exception_type,
                          uint64_t start_ip, uint64_t* ops_out, double* paused_seconds_out)
 {
-    const int c32 = (self->cell_bytes == 4);
     switch (self->w) {
         case 64:
-            /* w=64 words cannot fit a 4-byte cell; mem_decide_storage never selects it, and the
-               dispatch does not offer it, so the impossible instantiation is never generated. */
             return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                      paused_seconds_out, 64, 6, 0);
+                                      paused_seconds_out, 64, 6);
         case 32:
-            return c32
-                ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 32, 5, 1)
-                : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 32, 5, 0);
+            return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
+                                      paused_seconds_out, 32, 5);
         case 16:
-            return c32
-                ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 16, 4, 1)
-                : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 16, 4, 0);
+            return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
+                                      paused_seconds_out, 16, 4);
         case 8:
-            return c32
-                ? run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 8, 3, 1)
-                : run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                     paused_seconds_out, 8, 3, 0);
+            return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
+                                      paused_seconds_out, 8, 3);
         default:
             return run_flat_loop_impl(self, read_bit, write_bit, eof_exception_type, start_ip, ops_out,
-                                      paused_seconds_out, (uint64_t)self->w, (uint64_t)self->ww, 0);
+                                      paused_seconds_out, (uint64_t)self->w, (uint64_t)self->ww);
     }
 }
 
@@ -1911,14 +1705,6 @@ static PyObject* build_run_result(MemoryObject* self, int cause, uint64_t ops, u
     return Py_BuildValue("iKNNd", cause, (unsigned long long)ops, error_address, last_ops_list, paused_seconds);
 }
 
-/* the run loop.
-   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
-   -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds) */
-/* freeze(): decide the storage mode NOW (building the flat image from the loaded pages,
-   exactly as the first run would) and capture it as the pristine snapshot for reset().
-   Canonical use (doom-flipjump's per-frame walker): add_segment -> set_words -> freeze() ->
-   then per frame reset() + run(). Pure-flat programs only: a hybrid/paged snapshot would
-   also need the page tables, and the walker's programs are all 'flat'. */
 /* decide_storage(): choose the storage mode now instead of at the first run, so a bulk load that
    follows (set_words_bytes) writes straight into the flat image -- no staging pages, no copy -- and a
    flat window that cannot be allocated fails BEFORE the load rather than after it. */
@@ -1930,6 +1716,10 @@ static PyObject* Memory_decide_storage(MemoryObject* self, PyObject* Py_UNUSED(i
     Py_RETURN_NONE;
 }
 
+/* freeze(): decide the storage mode NOW (building the flat image from the loaded pages,
+   exactly as the first run would) and capture it as the pristine snapshot for reset().
+   Use: add_segment -> load -> freeze(), then per run reset() + run(). Pure-flat programs
+   only: a hybrid/paged snapshot would also need the page tables. */
 static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
     if (mem_decide_storage(self) < 0) {
@@ -1947,7 +1737,6 @@ static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
         }
     }
     memcpy(self->pristine, self->flat, (size_t)self->flat_count * (size_t)self->cell_bytes);
-    self->pristine_count = self->flat_count;
     Py_RETURN_NONE;
 }
 
@@ -1956,7 +1745,7 @@ static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
    previous run's IO device), so a rerun starts from the exact frozen state. */
 static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
-    if (!self->pristine || !self->flat || self->pristine_count != self->flat_count) {
+    if (!self->pristine || !self->flat) {
         PyErr_SetString(PyExc_RuntimeError, "reset() needs a prior freeze()");
         return NULL;
     }
@@ -1975,8 +1764,8 @@ static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     memset(self->page_cache_key_plus1, 0, sizeof(self->page_cache_key_plus1));
     self->mem_error = 0;
     self->error_bit_address = 0;
-    /* a reset run starts fresh streams (a fresh device, in the per-frame walker's use): both bit phases start at a
-       byte boundary again, and no input bit of the old stream is still buffered */
+    /* a reset run starts fresh streams: both bit phases start at a byte boundary again, and no input bit of the
+       old stream is still buffered */
     self->out_phase = 0;
     self->in_phase = 0;
     self->in_n = 0;
@@ -1984,10 +1773,13 @@ static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     Py_RETURN_NONE;
 }
 
-static PyObject* run_with_ring(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
-                               PyObject* eof_exception_type, Py_ssize_t last_ops_length,
-                               unsigned long long start_ip);
+static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
+                         PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip);
 
+/* the run loop.
+   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
+   -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds)
+   paused_seconds excludes the final flush of a partial output byte; last_run_paused_seconds includes it */
 static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
 {
     static char* kwlist[] = {"read_bit", "write_bit", "eof_exception_type", "last_ops_length", "start_ip",
@@ -2011,7 +1803,7 @@ static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
     /* read_byte() must return the next 8 read_bit() values as a byte (lsb first), whatever the program outputs while
        it takes them; the engine then calls it once a byte (see in_bit). Borrowed, as write_byte */
     self->in_read_byte = (read_byte == Py_None) ? NULL : read_byte;
-    run_result = run_with_ring(self, read_bit, write_bit, eof_exception_type, last_ops_length, start_ip);
+    run_result = mem_run(self, read_bit, write_bit, eof_exception_type, last_ops_length, start_ip);
     self->out_write_byte = NULL;
     self->in_read_byte = NULL;
     /* the bits of a partial byte still pending go out bit by bit -- also when the run failed, keeping its error */
@@ -2034,9 +1826,8 @@ static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
     return run_result;
 }
 
-static PyObject* run_with_ring(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
-                               PyObject* eof_exception_type, Py_ssize_t last_ops_length,
-                               unsigned long long start_ip)
+static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
+                         PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip)
 {
     uint64_t* last_ops_ring = NULL;
 
@@ -2096,15 +1887,7 @@ static PyObject* Memory_get_paused_seconds(MemoryObject* self, void* closure)
 static PyObject* Memory_get_cell_bytes(MemoryObject* self, void* closure)
 {
     (void)closure;
-    /* observability, not decoration: an A/B of the cell width is only evidence if the caller can
-       SEE which width it actually got. FLIPJUMP_CELL64 and the w<=32 test both feed this. */
     return PyLong_FromLong((long)self->cell_bytes);
-}
-
-static PyObject* Memory_get_large_pages(MemoryObject* self, void* closure)
-{
-    (void)closure;
-    return PyBool_FromLong(self->flat_large ? 1 : 0);
 }
 
 static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
@@ -2113,8 +1896,6 @@ static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
     if (!self->storage_decided) {
         Py_RETURN_NONE;
     }
-    /* callers compare this string exactly, so the large-page fact is the separate
-       `large_pages` attribute below rather than a suffix here */
     return PyUnicode_FromString(self->flat ? (self->flat_covers_all ? "flat" : "hybrid") : "paged");
 }
 
@@ -2247,14 +2028,7 @@ static PyGetSetDef Memory_getset[] = {
     {"storage_mode", (getter)Memory_get_storage_mode, NULL,
      "'flat'/'hybrid'/'paged' - the storage mode chosen at the first run (None before it)", NULL},
     {"cell_bytes", (getter)Memory_get_cell_bytes, NULL,
-     "bytes per flat cell: 4 for a w<=32 program (half the cache footprint), else 8. "
-     "FLIPJUMP_CELL64=1 forces 8 for A/B.", NULL},
-    {"large_pages", (getter)Memory_get_large_pages, NULL,
-     "True when the flat image is in large pages: on Windows a MEM_LARGE_PAGES allocation was "
-     "obtained (needs SeLockMemoryPrivilege); on Linux the image was mapped 2 MB-aligned and "
-     "MADV_HUGEPAGE accepted, which the kernel may still back with small pages. Every failure "
-     "falls back to malloc, so False is the fallback. Additive to storage_mode, an exact-compared "
-     "API.", NULL},
+     "bytes per flat cell: 4 for a w<=32 program (half the cache footprint), else 8", NULL},
     {NULL, NULL, NULL, NULL, NULL},
 };
 

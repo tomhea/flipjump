@@ -13,6 +13,7 @@ from typing import Optional, Tuple
 
 import pytest
 
+from flipjump.fjm import fjm_reader
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
@@ -187,3 +188,23 @@ def test_eof_op_counting_matches_featured_loop(tmp_path: Path, engine: str, last
     assert fast_stats.termination_cause == TerminationCause.EOF
     assert featured_stats.termination_cause == TerminationCause.EOF
     assert fast_stats.op_counter == featured_stats.op_counter
+
+
+def test_ctrl_c_while_loading_ends_the_run_as_keyboard_interrupt(
+    tmp_path: Path, engine: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    class InterruptedReader(fjm_reader.Reader):
+        def __init__(self, *_args: object) -> None:
+            interrupted()
+
+    monkeypatch.setattr(fjm_run, '_load_native', interrupted)
+    monkeypatch.setattr(fjm_reader, 'Reader', InterruptedReader)
+    fjm_path = assemble_to_path(INFINITE_LOOP_PROGRAM, tmp_path, use_stl=True)
+
+    statistics = fjm_run.run(fjm_path, print_time=False)
+
+    assert statistics.termination_cause == TerminationCause.KeyboardInterrupt
+    assert statistics.op_counter == 0
