@@ -27,6 +27,7 @@ ns hex {
     // Space Complexity: src_n(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] += src[:src_n] << (4*hex_shift)
     // @requires hex.add.init (or hex.init)
+    // @Assumes: src_n + hex_shift <= dst_n.
     def add_shifted dst_n, src_n, dst, src, hex_shift @ do_inc, end {
         rep(src_n > 0, i) .add.chain src_n, dst+hex_shift*dw, src, end, do_inc
         rep(src_n == 0, i) .add.clear_carry end, end
@@ -39,10 +40,12 @@ ns hex {
     // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:n] += const
     // @requires hex.add.init (or hex.init)
-    // const must be a positive constant.
+    // const is taken modulo 16^n (so a negative const subtracts |const|).
     // n_const is the hex-length of const, without all of it's least-significant-hexes zeros.
+    // hex_shift is the number of those zero hexes, and dst_n is n.
     def add_constant n, dst, const @ end {
-        rep(const!=0, _) .add.add_constant_with_leading_zeros n, dst, const, (#(const&(0-const)))-1
+        rep((const & ((1<<(4*n))-1)) != 0, _) \
+            .add.add_constant_with_leading_zeros n, dst, const & ((1<<(4*n))-1), (#(const&(0-const)))-1
       end:
     }
     ns add {
@@ -57,6 +60,7 @@ ns hex {
         //   dst[:dst_n] += const << (4*hex_shift)
         // @requires hex.add.init (or hex.init)
         // const is a constant of size hex[:n_const]
+        // @Assumes: n_const + hex_shift <= n_dst.
         def add_hex_shifted_constant n_dst, n_const, dst, const, hex_shift @ shifted_constant, end {
             hex.add_shifted n_dst, n_const, dst, shifted_constant, hex_shift
             ;end
@@ -197,6 +201,7 @@ ns hex {
     // Space Complexity: src_n(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] -= src[:src_n] << (4*hex_shift)
     // @requires hex.sub.init (or hex.init)
+    // @Assumes: src_n + hex_shift <= dst_n.
     def sub_shifted dst_n, src_n, dst, src, hex_shift @ do_dec, end {
         rep(src_n > 0, i) .sub.chain src_n, dst+hex_shift*dw, src, end, do_dec
         rep(src_n == 0, i) .sub.clear_carry end, end
@@ -209,9 +214,12 @@ ns hex {
     // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] -= const
     // @requires hex.sub.init (or hex.init)
+    // const is taken modulo 16^n (so a negative const adds |const|).
     // n_const is the hex-length of const, without all of it's least-significant-hexes zeros.
+    // hex_shift is the number of those zero hexes, and dst_n is n.
     def sub_constant n, dst, const {
-        .sub.sub_constant_with_leading_zeros n, dst, const, (#(const&(0-const)))-1
+        rep((const & ((1<<(4*n))-1)) != 0, _) \
+            .sub.sub_constant_with_leading_zeros n, dst, const & ((1<<(4*n))-1), (#(const&(0-const)))-1
     }
     ns sub {
         def sub_constant_with_leading_zeros n, dst, const, leading_lsb_const_zeros {
@@ -225,6 +233,7 @@ ns hex {
         //   dst[:dst_n] -= const << (4*hex_shift)
         // @requires hex.sub.init (or hex.init)
         // const is a constant of size hex[:n_const]
+        // @Assumes: n_const + hex_shift <= n_dst.
         def sub_hex_shifted_constant n_dst, n_const, dst, const, hex_shift @ shifted_constant, end {
             hex.sub_shifted n_dst, n_const, dst, shifted_constant, hex_shift
             ;end
