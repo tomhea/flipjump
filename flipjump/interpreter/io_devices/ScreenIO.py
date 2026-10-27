@@ -499,15 +499,8 @@ class InMemoryScreen(IODevice):
             raise self._scr_error('set_window_icon: w = 0: must be 1..255')
         if height == 0:
             raise self._scr_error('set_window_icon: h = 0: must be 1..255')
-        bits = self.bpp
-        values = []
-        x = y = 0
-        try:
-            for y in range(height):
-                for x in range(width):
-                    values.append((yield from self._scr_bits(bits)))
-        except _OutputEnded:
-            raise self._scr_error(self._scr_ended_reason(), pixel=(x, y)) from None
+        values = [0] * (width * height)
+        yield from self._scr_colours(values, width)
         if self.bpp == FORMAT_RGB:
             colours = [rgb_of(value) for value in values]
         else:
@@ -530,15 +523,24 @@ class InMemoryScreen(IODevice):
         self._scr_owned_slots[slot] = True
 
     def _scr_cmd_draw_raw(self) -> Generator[None, int, None]:
-        bits, width, picture = self.bpp, self.width, self.pixel_indices
-        x = y = 0
+        yield from self._scr_colours(self.pixel_indices, self.width)
+
+    def _scr_colours(self, values: List[int], width: int) -> Generator[None, int, None]:
+        """read colours of B bits into `values`, in order (rows of `width`), inline as draw_collines reads.
+        The output ending inside them is an error at the pixel being read."""
+        bits = self.bpp
+        mask = (1 << bits) - 1
+        acc, nacc = self._scr_acc, self._scr_nacc
+        index = 0
         try:
-            for y in range(self.height):
-                row = y * width
-                for x in range(width):
-                    picture[row + x] = yield from self._scr_bits(bits)
+            for index in range(len(values)):
+                while nacc < bits:
+                    acc |= (yield) << nacc
+                    nacc += 8
+                values[index], acc, nacc = acc & mask, acc >> bits, nacc - bits
         except _OutputEnded:
-            raise self._scr_error(self._scr_ended_reason(), pixel=(x, y)) from None
+            raise self._scr_error(self._scr_ended_reason(), pixel=(index % width, index // width)) from None
+        self._scr_acc, self._scr_nacc = acc, nacc
 
     def _scr_cmd_draw_collines(self) -> Generator[None, int, None]:
         width, height, picture = self.width, self.height, self.pixel_indices
