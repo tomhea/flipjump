@@ -31,7 +31,14 @@ from flipjump.interpreter import fjm_run, run_defaults
 from flipjump.interpreter.io_devices.StandardIO import StandardIO
 from flipjump.utils.exceptions import FlipJumpReadFjmException, FlipJumpWriteFjmException
 from flipjump.utils.progress import ProgressBar
-from tests.unit.unit_utils import MINIMAL_STARTUP, assemble_to_path, native_engine_required
+from tests.unit.unit_utils import (
+    MINIMAL_STARTUP,
+    assemble_to_path,
+    high_segment_program,
+    native_engine_required,
+    patch_run_header,
+    spy_engine_runs,
+)
 
 try:
     from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
@@ -39,10 +46,7 @@ except ImportError:
     _fjcore = None
 
 
-@pytest.fixture(autouse=True)
-def clean_flat_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ('FLIPJUMP_NO_NATIVE', 'FLIPJUMP_NO_FLAT', 'FLIPJUMP_FLAT_MAX_WORDS', 'FLIPJUMP_TEST_FLAT_ALLOC_FAIL'):
-        monkeypatch.delenv(var, raising=False)
+pytestmark = pytest.mark.usefixtures('clean_flat_mode_env')
 
 
 def _write_simple(
@@ -157,43 +161,22 @@ def test_the_compiled_io_mode_picks_the_device_and_io_overrides_it(
         (IO_MODE_PC, ['--io', 'standard'], 'standard'),
         (IO_MODE_STANDARD, ['--io', 'pc'], 'pc'),
     ):
-        raw = bytearray(fjm_path.read_bytes())
-        struct.pack_into('<L', raw, _header_base_size + 4, io_mode)
-        fjm_path.write_bytes(bytes(raw))
+        patch_run_header(fjm_path, io_mode=io_mode)
         modes = _spy_io_modes(monkeypatch)
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
         assert modes == [expected], (io_mode, extra)
 
 
-# w=32 looping programs whose small reserved segment ends 4 words past `top` (the span decides the window)
-def _high_segment_program(top: int) -> str:
-    return MINIMAL_STARTUP + f'\nstartup\nloop: ;loop\n\nsegment {top} * w\nreserve 4 * w\n'
-
-
 _BIG_TOP = run_defaults.FLAT_MEMORY_AUTO_MAX_WORDS
-
-
-def _set_run_flags(fjm_path: Path, run_flags: int) -> None:
-    raw = bytearray(fjm_path.read_bytes())
-    struct.pack_into('<L', raw, _header_base_size, run_flags)
-    fjm_path.write_bytes(bytes(raw))
 
 
 def _run_and_spy(
     fjm_path: Path, monkeypatch: pytest.MonkeyPatch, extra: List[str]
 ) -> Tuple[Optional[int], bool, Optional[str]]:
     """run once; -> (flat_max_words passed, flat_required passed, storage mode)"""
-    seen: List[Tuple[Optional[int], bool, Optional[str]]] = []
-    real_run = fjm_run.run
-
-    def spy(*a: Any, **kw: Any) -> Any:
-        stats = real_run(*a, **kw)
-        seen.append((kw.get('flat_max_words'), kw.get('flat_required', False), stats.storage_mode))
-        return stats
-
-    monkeypatch.setattr(fjm_run, 'run', spy)
-    assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
-    monkeypatch.setattr(fjm_run, 'run', real_run)
+    with monkeypatch.context() as patch:
+        seen = spy_engine_runs(patch)
+        assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
     return seen[0]
 
 
@@ -202,11 +185,11 @@ def test_the_flat_memory_run_flag_runs_flat_and_run_flags_overrides_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # a span over the automatic limit: without the flag the engine's default window ('hybrid')
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
     span = _BIG_TOP + 4
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
     assert _run_and_spy(fjm_path, monkeypatch, ['--run-flags', '1']) == (span, True, 'flat')
-    _set_run_flags(fjm_path, RUN_FLAG_FLAT_MEMORY)
+    patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (span, True, 'flat')
     assert _run_and_spy(fjm_path, monkeypatch, ['--run-flags', '0']) == (None, False, 'hybrid')
     # the explicit window options still win over the compiled flag
@@ -231,8 +214,8 @@ def test_a_forced_flat_memory_that_cannot_be_allocated_says_how_to_run_anyway(
     extra: List[str],
     advice: str,
 ) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
-    _set_run_flags(fjm_path, compiled)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
+    patch_run_header(fjm_path, run_flags=compiled)
     monkeypatch.setenv('FLIPJUMP_TEST_FLAT_ALLOC_FAIL', '1')
     with pytest.raises(SystemExit) as exit_info:
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
@@ -246,7 +229,7 @@ def test_an_unforced_flat_window_still_falls_back_to_paged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # the automatic window (a small span, no flag) was not asked for: a failed allocation runs paged
-    fjm_path = assemble_to_path(_high_segment_program(1 << 10), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(1 << 10), tmp_path, memory_width=32)
     monkeypatch.setenv('FLIPJUMP_TEST_FLAT_ALLOC_FAIL', '1')
     assert _run_and_spy(fjm_path, monkeypatch, [])[2] == 'paged'
     assert 'running paged' in capfd.readouterr().err
@@ -465,10 +448,10 @@ def test_chunked_compression_equals_one_shot(tmp_path: Path, size: int) -> None:
 def test_the_environment_window_wins_over_the_automatic_one_and_the_run_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(1 << 10), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(1 << 10), tmp_path, memory_width=32)
     monkeypatch.setenv('FLIPJUMP_FLAT_MAX_WORDS', '4')
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
-    _set_run_flags(fjm_path, RUN_FLAG_FLAT_MEMORY)
+    patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
     # ...but an explicit --flat-memory still wins over the environment
     assert _run_and_spy(fjm_path, monkeypatch, ['--flat-memory'])[1:] == (True, 'flat')
@@ -476,7 +459,7 @@ def test_the_environment_window_wins_over_the_automatic_one_and_the_run_flag(
 
 @native_engine_required
 def test_the_automatic_window_includes_a_span_of_exactly_2_24(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP - 4), tmp_path, memory_width=32)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP - 4), tmp_path, memory_width=32)
     assert read_fjm_header(fjm_path).span_words == _BIG_TOP
     assert _run_and_spy(fjm_path, monkeypatch, []) == (_BIG_TOP, False, 'flat')
 
@@ -597,8 +580,8 @@ def test_a_file_that_changes_during_the_load_is_rejected(tmp_path: Path, monkeyp
 def test_an_env_window_the_engine_ignores_does_not_cancel_the_run_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    fjm_path = assemble_to_path(_high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
-    _set_run_flags(fjm_path, RUN_FLAG_FLAT_MEMORY)
+    fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
+    patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     monkeypatch.setenv('FLIPJUMP_FLAT_MAX_WORDS', value)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (_BIG_TOP + 4, True, 'flat')
 

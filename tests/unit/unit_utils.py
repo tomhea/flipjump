@@ -6,13 +6,14 @@ sources (no stl) to a .fjm path, getting a Reader for the result, or running it 
 FixedIO - so the individual test files stay short and focused.
 """
 
+import struct
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import pytest
 
 from flipjump import assemble
-from flipjump.fjm.fjm_consts import FJMVersion
+from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.fjm_run import TerminationStatistics
@@ -120,3 +121,32 @@ def run_source(
     io_device = FixedIO(fixed_input)
     statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
     return statistics, io_device
+
+
+def high_segment_program(top: int) -> str:
+    """a no-stl looping program whose small reserved segment ends 4 words past `top` (its span, at w=32)."""
+    return MINIMAL_STARTUP + f'\nstartup\nloop: ;loop\n\nsegment {top} * w\nreserve 4 * w\n'
+
+
+def patch_run_header(fjm_path: Path, *, run_flags: int = 0, io_mode: int = 0) -> None:
+    """rewrite the run flags and the io mode in the .fjm's header."""
+    raw = bytearray(fjm_path.read_bytes())
+    struct.pack_into('<LL', raw, _header_base_size, run_flags, io_mode)
+    fjm_path.write_bytes(bytes(raw))
+
+
+def spy_engine_runs(monkeypatch: pytest.MonkeyPatch) -> List[Tuple[Optional[int], bool, Optional[str]]]:
+    """
+    record every fjm_run.run call from now on.
+    @return: the list it appends (flat_max_words passed, flat_required passed, the storage mode it ran in) to.
+    """
+    seen: List[Tuple[Optional[int], bool, Optional[str]]] = []
+    real_run = fjm_run.run
+
+    def spy(*args: Any, **kwargs: Any) -> TerminationStatistics:
+        statistics = real_run(*args, **kwargs)
+        seen.append((kwargs.get('flat_max_words'), kwargs.get('flat_required', False), statistics.storage_mode))
+        return statistics
+
+    monkeypatch.setattr(fjm_run, 'run', spy)
+    return seen
