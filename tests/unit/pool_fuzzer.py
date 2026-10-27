@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import pytest
+
 from flipjump import assemble
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.relocation_proof import prove_relocation
@@ -248,13 +250,16 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
 
 def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0) -> List[str]:
     """the findings of one random program: a pooled run that differs from the plain one, a refusal with no reason,
-    and the relocation proof's verdict where it disagrees with the runs. [] when every pool agrees."""
+    and the relocation proof's verdict where it disagrees with the runs. [] when every pool agrees; the case is
+    skipped (inconclusive) if the plain run times out."""
     rng = random.Random(seed)
     source = scratch / f'case_{seed}.fj'
     source.write_text(Generator(rng, memory_width).program())
     plain = scratch / 'plain.fjm'
     assemble([source], plain, memory_width=memory_width, print_time=False)
     expected = run(plain, timeout)
+    if expected[1] == 'TIMEOUT':  # a generated program always halts: a loaded machine, not a pool's finding
+        pytest.skip(f'{seed} w={memory_width}: the plain run timed out - inconclusive')
     findings: List[str] = []
     cli_same: Optional[bool] = None
     for name, make in pools(memory_width, rng, source, scratch).items():

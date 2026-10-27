@@ -183,7 +183,8 @@ def test_a_crafted_program_runs_the_same_with_the_pool_or_is_refused(
         return
     table_pool = _pool(pool, memory_width, source, tmp_path)
     assemble([source], pooled, memory_width=memory_width, print_time=False, table_pool=table_pool)
-    assert run(pooled, 30) == run(plain, 30)
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT' and run(pooled, 30) == expected  # two timeouts are not the same run
     assert (table_pool.unsafe_declines, table_pool.unpins) == FALLBACKS.get((name, pool), ({}, {}))
     assert table_pool.allocated or table_pool.unsafe_declines
 
@@ -211,7 +212,9 @@ def _differs(source: Path, tmp_path: Path, pool: str) -> bool:
     assemble([source], plain, memory_width=W, print_time=False)
     pooled = tmp_path / 'pooled.fjm'
     assemble([source], pooled, memory_width=W, print_time=False, table_pool=_pool(pool, W, source, tmp_path))
-    return run(pooled, 30) != run(plain, 30)
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT'  # two timeouts would be no difference, and no sameness either
+    return run(pooled, 30) != expected
 
 
 @pytest.mark.parametrize('pool', ['cli', 'two_pass', 'table'])
