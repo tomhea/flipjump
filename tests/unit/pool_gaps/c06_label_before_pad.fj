@@ -1,0 +1,28 @@
+// C6: a label right before the `pad` equals the table's start in the plain program (the pad
+// moves nothing: the address is already aligned). Jumping to it runs the table in the plain
+// program, and the code after the call in the pooled one.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;main
+    pad 16
+L:
+    pad 16
+    my.__relocatable__.table T, outA
+    wflip x+w, T
+    ;outB
+main:
+    ;L
+outA:
+    stl.output 'A'
+    stl.loop
+outB:
+    stl.output 'B'
+    stl.loop
+x:  hex.hex 0

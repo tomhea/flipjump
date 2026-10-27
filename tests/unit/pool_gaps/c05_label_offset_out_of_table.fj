@@ -1,0 +1,22 @@
+// C5: a relocatable that falls out of its own end through label arithmetic (`start+dw`, the label
+// form of `dst;`). No `$`, so it is accepted; the op after a moved table is not the next address.
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start+dw
+    }
+  }
+}
+def go x @ T, end {
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T
+  end:
+    wflip x+w, T
+}
+stl.startup
+    go x
+    stl.output 'K'
+    stl.loop
+x:  hex.hex 0

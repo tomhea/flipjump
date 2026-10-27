@@ -12,13 +12,14 @@ from typing import Any, List, Optional, Tuple
 import pytest
 
 from flipjump import assemble_run_according_to_cmd_line_args
+from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.exceptions import FlipJumpParsingException
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_reader import Reader, read_fjm_header
 from flipjump.interpreter import fjm_run
 from flipjump.flipjump_cli import get_version, parse_arguments
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
-from tests.unit.unit_utils import HELLO_NO_STL, MINIMAL_STARTUP, assemble_to_path
+from tests.unit.unit_utils import HELLO_NO_STL, MINIMAL_STARTUP, PROGRAMS_DIR, assemble_to_path
 
 
 def _write_hello(tmp_path: Path) -> Path:
@@ -396,3 +397,54 @@ def test_cli_big_span_needs_the_flag(tmp_path: Path, monkeypatch: pytest.MonkeyP
     # span 2^24 + 4 > 2^24: no automatic window (the engine default -> 'hybrid'); --flat-memory -> 'flat'
     seen = _run_modes(tmp_path, monkeypatch, _BIG_TOP, [], ['--flat-memory'])
     assert seen == [(None, 'hybrid'), (_BIG_TOP + 4, 'flat')]
+
+
+# hexlib programs whose tables are declared relocatable (hex.exact_xor's and its kin's, the bit shifts')
+_HEXLIB = PROGRAMS_DIR / 'hexlib_tests'
+_POOLED_PROGRAMS = {
+    'and': [_HEXLIB / '2params' / 'and.fj'],
+    'basic_math': [_HEXLIB / 'basics1' / 'basic_math.fj'],
+    'shl_bit': [_HEXLIB / 'basics2' / 'shift_utils.fj', _HEXLIB / 'basics2' / 'shl_bit.fj'],
+    'shr_bit': [_HEXLIB / 'basics2' / 'shift_utils.fj', _HEXLIB / 'basics2' / 'shr_bit.fj'],
+}
+
+
+def _cli_assemble(tmp_path: Path, name: str, files: List[Path], *options: str) -> Path:
+    out_path = tmp_path / f'{name}.fjm'
+    assemble_run_according_to_cmd_line_args(
+        cmd_line_args=['--asm', '-s', '-o', str(out_path), *options, *(str(path) for path in files)]
+    )
+    return out_path
+
+
+def _output_and_ops(fjm_path: Path) -> Tuple[bytes, int]:
+    io_device = FixedIO(b'')
+    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    return io_device.get_output(allow_incomplete_output=True), statistics.op_counter
+
+
+@pytest.mark.parametrize('program', sorted(_POOLED_PROGRAMS))
+def test_cli_pool_tables_runs_the_same_program_in_fewer_ops(tmp_path: Path, program: str) -> None:
+    files = _POOLED_PROGRAMS[program]
+    plain = _cli_assemble(tmp_path, 'plain', files)
+    pooled = _cli_assemble(tmp_path, 'pooled', files, '--pool-tables')
+    assert pooled.read_bytes() != plain.read_bytes()  # the pool moved tables
+    (plain_output, plain_ops), (pooled_output, pooled_ops) = _output_and_ops(plain), _output_and_ops(pooled)
+    assert plain_output and pooled_output == plain_output
+    assert pooled_ops < plain_ops
+
+
+def test_cli_pool_tables_runs_a_program_that_reads_through_pointers_the_same(tmp_path: Path) -> None:
+    # a pointer may read any word raw, so the pool pins none (assembler.unpin): the tables still move
+    files = [PROGRAMS_DIR / 'concept_checks' / 'hex_ptr.fj']
+    plain, pooled = _cli_assemble(tmp_path, 'plain', files), _cli_assemble(tmp_path, 'pooled', files, '--pool-tables')
+    assert pooled.read_bytes() != plain.read_bytes()
+    assert _output_and_ops(pooled)[0] == _output_and_ops(plain)[0] != b''
+
+
+def test_cli_pool_tables_keeps_inline_the_tables_of_a_program_that_fills_the_memory(tmp_path: Path) -> None:
+    # prime_sieve reserves the upper half of memory after its code: no room for its tables, so it is assembled without
+    # the pool - the binary is the plain one, byte for byte
+    plain = _cli_assemble(tmp_path, 'plain', [PROGRAMS_DIR / 'prime_sieve.fj'])
+    pooled = _cli_assemble(tmp_path, 'pooled', [PROGRAMS_DIR / 'prime_sieve.fj'], '--pool-tables')
+    assert pooled.read_bytes() == plain.read_bytes()

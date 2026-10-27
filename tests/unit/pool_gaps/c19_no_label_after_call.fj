@@ -1,0 +1,25 @@
+// C19: C13 without a label after the call: a correct program the relocation proof rejects (the disarm is "moved apart from the label before it").
+ns my {
+  ns __relocatable__ {
+    def table start, a, b {
+      start:
+        ;a
+        ;b
+    }
+  }
+}
+stl.startup
+    ;M + dw
+    wflip x+w, T, x
+    pad 16
+  M:
+    my.__relocatable__.table T, outA, outB
+    wflip x+w, T
+    stl.loop
+outA:
+    stl.output 'A'
+    stl.loop
+outB:
+    stl.output 'B'
+    stl.loop
+x:  hex.hex 0

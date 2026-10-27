@@ -1,0 +1,22 @@
+// C7c: C7b with a label after the call (as every stl relocatable caller has: `end:`), so the only thing
+// that differs is the outside reach-in `(T + dw) | 0`.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;(T + dw) | 0
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+  after:
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

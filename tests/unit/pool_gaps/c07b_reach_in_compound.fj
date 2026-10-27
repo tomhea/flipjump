@@ -1,0 +1,21 @@
+// C7b: the same reach-in, written `(T + dw) | 0`: the relocation proof skips any operand that is not a +/- of labels and numbers.
+// in the pooled one the slot after the moved table.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;(T + dw) | 0
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

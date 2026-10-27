@@ -219,6 +219,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(f'--{NAME_ENDSWITH_FLAG}', nargs='+', help='only run tests that ends with one of these strings')
 
 
+def pytest_configure(config: Config) -> None:
+    config.addinivalue_line('markers', 'slow: a long unit-test, run only with --slow (the slow tests flag)')
+
+
+def pytest_runtest_setup(item: Item) -> None:
+    if 'slow' in item.keywords and not item.config.getoption('slow'):
+        pytest.skip('a slow test: run it with --slow')
+
+
 def get_test_compile_run(get_option: Callable[[str], bool]) -> Tuple[bool, bool]:
     """
     assess whether to run the compile-tests, and whether to run the run-tests.
