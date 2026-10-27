@@ -28,7 +28,7 @@ def _output(tmp_path: Path, program: str, memory_width: int = 64) -> bytes:
 
 def _guarded(value: int, n: int) -> int:
     """res[:n] between its two guard hexes, as the hex.vec n+2 the programs print"""
-    return GUARD_LOW | (value % 16**n) << 4 | GUARD_HIGH << (4 * (n + 1))
+    return GUARD_LOW | (value % (1 << (4 * n))) << 4 | GUARD_HIGH << (4 * (n + 1))
 
 
 def _loop_program(n: int, a_step: int, b_step: int) -> str:
@@ -77,7 +77,7 @@ def test_mul_every_pair(tmp_path: Path, n: int, a_step: int, b_step: int) -> Non
 
 
 def _pairs(n: int) -> List[Tuple[int, int]]:
-    rand = random.Random(n)
+    rand = random.Random(n)  # nosec B311 - reproducible test operands, not security
     top, full = 1 << (4 * n - 1), 16**n - 1
     pairs = [(rand.randrange(16**n), rand.randrange(16**n)) for _ in range(12)]
     pairs += [(0, full), (full, 0), (full, full), (1, full), (top, 3), (3, top), (top | 1, 7), (7, top | 1)]

@@ -53,7 +53,7 @@ def test_ascii2hex_every_byte(tmp_path: Path) -> None:
 
 
 def _bytes(value: int, n_bits: int) -> bytes:
-    return (value % 2**n_bits).to_bytes(n_bits // 8, 'little')
+    return (value % (1 << n_bits)).to_bytes(n_bits // 8, 'little')
 
 
 def test_to_ascii_with_a_dirty_ascii(tmp_path: Path) -> None:

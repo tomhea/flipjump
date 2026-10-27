@@ -45,7 +45,7 @@ def _case_code(index: int, macro: str, n: int, value: int, const: int) -> str:
 
 
 def _expected(macro: str, n: int, value: int, const: int) -> bytes:
-    result = (value + const if macro == 'add_constant' else value - const) % 16**n
+    result = (value + const if macro == 'add_constant' else value - const) % (1 << (4 * n))
     return (GUARD_LOW | result << 4 | GUARD_HIGH << (4 * (n + 1))).to_bytes((n + 2) // 2, 'little')
 
 
