@@ -44,6 +44,23 @@ def test_cli_assemble_only(tmp_path: Path) -> None:
     assert Reader(out_path).memory_width == 32
 
 
+@pytest.mark.parametrize(
+    'flags, version',
+    [
+        ([], FJMVersion.CompressedSegmentsVersion),
+        (['-v', '4'], FJMVersion.CompressedSegmentsVersion),
+        (['-v', '3'], FJMVersion.CompressedVersion),
+    ],
+)
+def test_cli_fjm_version_flag(tmp_path: Path, flags: List[str], version: FJMVersion) -> None:
+    out_path = tmp_path / 'out.fjm'
+    assemble_run_according_to_cmd_line_args(
+        cmd_line_args=['--asm', '-o', str(out_path), '--no_stl', '-s', *flags, str(_write_hello(tmp_path))]
+    )
+    assert read_fjm_header(out_path).version == version
+    assert Reader(out_path).version == version
+
+
 def test_cli_run_only(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(HELLO_NO_STL.read_text(), tmp_path)
     assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', str(fjm_path)])
@@ -242,7 +259,7 @@ def _no_error(message: str) -> None:
 
 
 def test_get_version_default_with_outfile() -> None:
-    assert get_version(None, True, _no_error) == FJMVersion.CompressedVersion
+    assert get_version(None, True, _no_error) == FJMVersion.CompressedSegmentsVersion
 
 
 def test_get_version_default_without_outfile() -> None:

@@ -2,7 +2,7 @@
 the .fjm format constants.
 the constants and definitions for the .fjm (FlipJump Memory) binary file format: the magic
 number, the supported FJMVersion enum, the binary header/segment struct layouts, and the
-LZMA compression settings used by the compressed version.
+LZMA compression settings used by the compressed versions.
 """
 
 import lzma
@@ -20,12 +20,15 @@ struct {
         u32 io_mode;    // the default io device (IO_MODE_*); `fj --io` overrides
         u32 reserved;   // 0
     }
+    { // for version 4
+        u64 segments_size;  // the byte length of the compressed segment table that follows
+    }
     struct segment {
         u64 segment_start;  // in memory words (w-bits)
         u64 segment_length; // in memory words (w-bits)
         u64 data_start;     // in the outer-struct.data words (w-bits)
         u64 data_length;    // in the outer-struct.data words (w-bits)
-    } *segments;        // segments[segment_num]
+    } *segments;        // segments[segment_num] (lzma2-compressed in version 4)
     u8* data;       // the data (might be compressed in some versions)
 } fjm_file;     // FlipJump Memory file
 """
@@ -77,12 +80,16 @@ def bad_io_mode_message(io_mode: int) -> Optional[str]:
 _segment_format = '<QQQQ'
 _segment_size = 8 + 8 + 8 + 8
 
+_segments_size_format = '<Q'
+_segments_size_size = 8
+
 
 class FJMVersion(Enum):
     BaseVersion = 0  # initial version, minimal structure
     NormalVersion = 1  # added run flags, io mode and reserved
     RelativeJumpVersion = 2  # compress-friendly: jumps in data are saved relative to their address
     CompressedVersion = 3  # version 2 but data is lzma2-compressed
+    CompressedSegmentsVersion = 4  # version 3 but the segment table is lzma2-compressed too
 
 
 SUPPORTED_VERSIONS_NAMES = {
@@ -90,6 +97,7 @@ SUPPORTED_VERSIONS_NAMES = {
     FJMVersion.NormalVersion: 'Normal',
     FJMVersion.RelativeJumpVersion: 'RelativeJump',
     FJMVersion.CompressedVersion: 'Compressed',
+    FJMVersion.CompressedSegmentsVersion: 'CompressedSegments',
 }
 
 SUPPORTED_MEMORY_WIDTHS: frozenset[int] = frozenset({8, 16, 32, 64})

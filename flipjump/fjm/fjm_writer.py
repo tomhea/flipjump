@@ -18,6 +18,7 @@ from flipjump.fjm.fjm_consts import (
     _header_base_format,
     _header_extension_format,
     _segment_format,
+    _segments_size_format,
     SUPPORTED_VERSIONS_NAMES,
     SUPPORTED_MEMORY_WIDTHS,
     _LZMA_FORMAT,
@@ -119,9 +120,9 @@ class Writer:
                 raise FlipJumpWriteFjmException(bad_flags)
         if FJMVersion.BaseVersion == version and (run_flags != 0 or io_mode != 0):
             raise FlipJumpWriteFjmException("version 0 does not support the run flags and io mode options")
-        if FJMVersion.CompressedVersion == version:
+        if version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
             if lzma_preset not in range(10):
-                raise FlipJumpWriteFjmException("version 3 requires an LZMA preset (0-9, faster->smaller).")
+                raise FlipJumpWriteFjmException("versions 3 and 4 require an LZMA preset (0-9, faster->smaller).")
             else:
                 self.lzma_preset = lzma_preset
 
@@ -160,7 +161,8 @@ class Writer:
 
     def write_to_file(self, progress: Optional['ProgressBar'] = None) -> None:
         """
-        writes the .fjm headers, segments and (might be compressed) data into the output_file.
+        writes the .fjm headers, segments and data (the data compressed in versions 3 and 4, the segments too in
+        version 4: a program of many segments, as a table pool makes, gets a much smaller file) into the output_file.
         @param progress: if given, the compression reports its progress to it (a [0, 1] fraction)
         @note call this after finished adding data and segments and editing the Writer.
         """
@@ -169,13 +171,16 @@ class Writer:
             if FJMVersion.BaseVersion != self.version:
                 f.write(pack(_header_extension_format, self.run_flags, self.io_mode, self.reserved))
 
-            for segment in self.segments:
-                f.write(pack(_segment_format, *segment))
+            segment_table = b''.join(pack(_segment_format, *segment) for segment in self.segments)
+            if FJMVersion.CompressedSegmentsVersion == self.version:
+                segment_table = self._compress_data(segment_table)
+                f.write(pack(_segments_size_format, len(segment_table)))
+            f.write(segment_table)
 
             if progress is not None:
                 progress.update(0, stage='packing')
             fjm_data = _pack_words_little_endian(self.data, self.word_size)
-            if FJMVersion.CompressedVersion == self.version:
+            if self.version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
                 fjm_data = self._compress_data(fjm_data, progress)
             if progress is not None:
                 progress.update(1.0, stage='writing')
@@ -258,7 +263,11 @@ class Writer:
     ) -> None:
         self._validate_segment_addresses_not_overlapping(segment_start, segment_length)
 
-        if self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion):
+        if self.version in (
+            FJMVersion.RelativeJumpVersion,
+            FJMVersion.CompressedVersion,
+            FJMVersion.CompressedSegmentsVersion,
+        ):
             self._validate_segment_data_not_overlapping(data_start, data_length)
 
     def _update_to_relative_jumps(self, segment_start: int, data_start: int, data_length: int) -> None:
@@ -300,7 +309,11 @@ class Writer:
 
         self._validate_segment_not_overlapping(segment_start, segment_length, data_start, data_length)
 
-        if self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion):
+        if self.version in (
+            FJMVersion.RelativeJumpVersion,
+            FJMVersion.CompressedVersion,
+            FJMVersion.CompressedSegmentsVersion,
+        ):
             self._update_to_relative_jumps(segment_start, data_start, data_length)
 
         bisect.insort(self._sorted_segment_starts, segment_start)

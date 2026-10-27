@@ -50,7 +50,7 @@ def assemble(
     *,
     memory_width: int = 64,
     use_stl: bool = True,
-    fjm_version: FJMVersion = FJMVersion.CompressedVersion,
+    fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     debugging_file_path: Optional[Path] = None,
     show_statistics: bool = False,
@@ -75,7 +75,7 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
-    :param lzma_preset: the preset used to compress a version-3 .fjm (0-9, faster->smaller).
+    :param lzma_preset: the preset used to compress a version-3 or version-4 .fjm (0-9, faster->smaller).
     :param defines_file: a .fj file whose constants OVERRIDE the declarations in fj_file_paths
     (the API form of the CLI's -D). It is parsed before the stl.
 
@@ -333,7 +333,7 @@ def assemble_and_run(
     *,
     memory_width: int = 64,
     use_stl: bool = True,
-    fjm_version: FJMVersion = FJMVersion.CompressedVersion,
+    fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     show_statistics: bool = False,
     print_time: bool = True,
@@ -392,7 +392,7 @@ def assemble_and_debug(
     *,
     memory_width: int = 64,
     use_stl: bool = True,
-    fjm_version: FJMVersion = FJMVersion.CompressedVersion,
+    fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     show_statistics: bool = False,
     print_time: bool = True,
@@ -473,7 +473,7 @@ def assemble_and_run_test_output(
     *,
     memory_width: int = 64,
     use_stl: bool = True,
-    fjm_version: FJMVersion = FJMVersion.CompressedVersion,
+    fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     show_statistics: bool = False,
     print_time: bool = True,

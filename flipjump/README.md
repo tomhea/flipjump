@@ -56,15 +56,18 @@ For example:
 
 ### FJM versions
 
-The .fjm file currently has 4 versions:
+The .fjm file currently has 5 versions:
 
 - Version 0: The basic version
 - Version 1: The normal version (more configurable than the basic version)
 - Version 2: The relative-jumps version (good for further compression)
 - Version 3: The compressed version
+- Version 4: The compressed-segments version (version 3, with the segment table compressed too)
 
 You can specify the version you want with the `-v VERSION` flag.  
-The assembler chooses **by default** version **3** if the `--outfile` is specified, and version **1** if it isn't. 
+The assembler chooses **by default** version **4** if the `--outfile` is specified, and version **1** if it isn't. 
+
+Version 4 is version 3 with the segment table lzma2-compressed too: the table is its own stream, before the data's, and the header holds its compressed size - so reading only the header and the segments decompresses that small stream, never the data. Version 3 stores the table raw, 32 bytes a segment; a program of many segments, such as one assembled with a table pool (each moved table is a segment), gets a much smaller file.
 
 ### Generated Label Names
 

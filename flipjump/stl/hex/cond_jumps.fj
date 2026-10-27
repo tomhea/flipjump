@@ -71,23 +71,7 @@ ns hex {
             @ switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 {
         wflip x+w, switch, x
         pad 16
-      switch:
-        ;r0
-        ;r1
-        ;r2
-        ;r3
-        ;r4
-        ;r5
-        ;r6
-        ;r7
-        ;r8
-        ;r9
-        ;r10
-        ;r11
-        ;r12
-        ;r13
-        ;r14
-        ;r15
+        .switch.__relocatable__.table switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15
       r0:  wflip x+w, switch, t0
       r1:  wflip x+w, switch, t1
       r2:  wflip x+w, switch, t2
@@ -104,6 +88,30 @@ ns hex {
       r13: wflip x+w, switch, t13
       r14: wflip x+w, switch, t14
       r15: wflip x+w, switch, t15
+    }
+    ns switch {
+        ns __relocatable__ {
+            // switch's table, which a table pool may move (see table_pool.py)
+            def table switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 {
+              switch:
+                ;r0
+                ;r1
+                ;r2
+                ;r3
+                ;r4
+                ;r5
+                ;r6
+                ;r7
+                ;r8
+                ;r9
+                ;r10
+                ;r11
+                ;r12
+                ;r13
+                ;r14
+                ;r15
+            }
+        }
     }
 
 
