@@ -13,7 +13,7 @@ from enum import IntEnum
 from pathlib import Path
 from struct import unpack
 from time import sleep
-from typing import BinaryIO, Callable, List, Tuple, Dict, Optional, Union
+from typing import BinaryIO, Callable, Iterable, List, Tuple, Dict, Optional, Union
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -113,8 +113,7 @@ class Reader:
         return self.run_flags | (self.io_mode << 32)
 
     def _init_segments(self, fjm_file: BinaryIO) -> List[Tuple[int, int, int, int]]:
-        # ONE read for the whole table: a read per 32-byte segment is ~2,000 small reads for a 555K-segment
-        # program, which on a slow filesystem (WSL's /mnt/c: ~10 ms each) took 6-31 s, where this takes 0.1.
+        # one read for the whole table (a read per segment is slow on some file systems)
         # (at most the rest of the file is read, so a damaged segment_num can't ask for more memory than that)
         table_size = self.segment_num * _segment_size
         try:
@@ -146,14 +145,7 @@ class Reader:
 
     @staticmethod
     def _decompress_data(compressed_data: bytes) -> bytes:
-        try:
-            return lzma.decompress(compressed_data, format=_LZMA_FORMAT, filters=_LZMA_DECOMPRESSION_FILTERS)
-        except lzma.LZMAError:
-            pass  # presets 7-9 may match farther back than the default dictionary reaches
-        try:
-            return lzma.decompress(compressed_data, format=_LZMA_FORMAT, filters=_LZMA_MAX_DICT_DECOMPRESSION_FILTERS)
-        except lzma.LZMAError as e:
-            raise FlipJumpReadFjmException('Error: The compressed data is damaged; Unable to decompress.') from e
+        return bytes(_decompress_in_chunks(compressed_data, None))
 
     def _read_decompressed_data(self, fjm_file: BinaryIO) -> List[int]:
         """
@@ -291,11 +283,16 @@ class Reader:
         (bits 0..2w-1, i.e. words 0 and 1). A loaded .fjm without it is not a runnable program.
         Raise FlipJumpReadFjmException if no segment covers the first op.
         """
-        if not any(seg.segment_start == 0 and seg.segment_length >= 2 for seg in self.memory_segments):
-            raise FlipJumpReadFjmException(
-                "the program has no first op at address 0: no segment holds bits 0..2w-1 "
-                "(words 0 and 1), but execution starts at address 0."
-            )
+        _assert_first_op((seg.segment_start, seg.segment_length) for seg in self.memory_segments)
+
+
+def _assert_first_op(starts_and_lengths: Iterable[Tuple[int, int]]) -> None:
+    """raise FlipJumpReadFjmException if no (segment_start, segment_length) holds the first op (words 0 and 1)"""
+    if not any(start == 0 and length >= 2 for start, length in starts_and_lengths):
+        raise FlipJumpReadFjmException(
+            "the program has no first op at address 0: no segment holds bits 0..2w-1 "
+            "(words 0 and 1), but execution starts at address 0."
+        )
 
 
 @dataclasses.dataclass
@@ -324,11 +321,7 @@ class FjmHeader:
 
     def assert_runnable(self) -> None:
         """execution starts at address 0, so a segment must hold the first op (words 0 and 1)"""
-        if not any(start == 0 and length >= 2 for start, length, _, _ in self.segments):
-            raise FlipJumpReadFjmException(
-                "the program has no first op at address 0: no segment holds bits 0..2w-1 "
-                "(words 0 and 1), but execution starts at address 0."
-            )
+        _assert_first_op((start, length) for start, length, _, _ in self.segments)
 
 
 def _read_header(fjm_file: BinaryIO, input_file: Path) -> FjmHeader:
@@ -352,8 +345,8 @@ def read_fjm_header(input_file: Path) -> FjmHeader:
         return _read_header(fjm_file, input_file)
 
 
-# the decompression buffer starts at this many times the compressed size (doom-flipjump's 51M-word
-# program expands ~9.4x, so it is allocated once); it grows by doubling, up to the size the segments imply
+# the decompression buffer starts at this many times the compressed size (a typical program expands
+# ~10x, so it is allocated once); it grows by doubling, up to the size the segments imply
 _INITIAL_EXPANSION = 16
 # the decompression is fed in chunks of this many compressed bytes, so its progress can be shown
 _DECOMPRESS_CHUNK = 1 << 20

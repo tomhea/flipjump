@@ -11,7 +11,7 @@ the properties pinned here, against the pure-python fast loop (which calls read_
   input bit that call serves (the pending output goes out first);
 - bytes are fetched only from a byte boundary of the input stream (bits taken one by one first re-align it);
 - EOF raised by read_byte ends the run at the same op as the bit-by-bit run;
-- reset() drops the bits still buffered (a fresh stream);
+- reset() drops the bits still buffered (a fresh stream), and so does a re-init (Memory.__init__);
 - a bit-by-bit device sees the old interleaving exactly.
 CONTROL: a device whose read_byte returns its byte msb first is caught.
 """
@@ -49,6 +49,9 @@ b:
 ascii:
     bit.vec 8, 0
 '''
+
+# reads one input bit, then loops
+ONE_BIT_PROGRAM = 'stl.startup\nbit.input_bit b\nstl.loop\nb:\nbit.vec 1, 0\n'
 
 
 class InRecordingIO(FixedIO):
@@ -205,12 +208,12 @@ def test_only_a_device_with_its_own_read_byte_is_read_by_byte() -> None:
     from flipjump.interpreter.io_devices.ScreenIO import InMemoryScreen
     from flipjump.interpreter.io_devices.KeyboardIO import KeyboardIO, ScriptedKeyEventSource
 
-    assert fjm_run._overrides_read_byte(FixedIO(b''))
-    assert fjm_run._overrides_read_byte(StandardIO(False))
+    assert fjm_run._overrides(FixedIO(b''), 'read_byte')
+    assert fjm_run._overrides(StandardIO(False), 'read_byte')
     pc = PcIO(InMemoryScreen(), KeyboardIO(ScriptedKeyEventSource([])))
-    assert not fjm_run._overrides_read_byte(pc)
-    assert fjm_run._overrides_write_byte(pc)
-    assert not fjm_run._overrides_read_byte(BitOnlyIO(b''))
+    assert not fjm_run._overrides(pc, 'read_byte')
+    assert fjm_run._overrides(pc, 'write_byte')
+    assert not fjm_run._overrides(BitOnlyIO(b''), 'read_byte')
 
 
 @native_engine_required
@@ -221,8 +224,7 @@ def test_reset_drops_the_buffered_input_bits(tmp_path: Path) -> None:
     from flipjump.utils.exceptions import IOReadOnEOF
     from flipjump.utils.progress import ProgressBar
 
-    one_bit = 'stl.startup\nbit.input_bit b\nstl.loop\nb:\nbit.vec 1, 0\n'
-    fjm_path = assemble_to_path(one_bit, tmp_path, use_stl=True)
+    fjm_path = assemble_to_path(ONE_BIT_PROGRAM, tmp_path, use_stl=True)
     header = fjm_reader.read_fjm_header(fjm_path)
     with ProgressBar('', print_time=False, total=1.0) as progress:
         core = fjm_run._load_native(fjm_path, header, None, False, progress)
@@ -235,3 +237,30 @@ def test_reset_drops_the_buffered_input_bits(tmp_path: Path) -> None:
         core.run(io.read_bit, io.write_bit, IOReadOnEOF, write_byte=io.write_byte, read_byte=io.read_byte)
         calls.append([e[0] for e in io.events if e[0] in ('read', 'rbyte')])
     assert calls == [['rbyte'], [], ['rbyte']]
+
+
+@native_engine_required
+def test_reinit_drops_the_buffered_input_bits(tmp_path: Path) -> None:
+    """a run that takes 1 bit of a fetched byte leaves 7 buffered; Memory.__init__ on the live object (then the same
+    program loaded again) starts a fresh stream, so the next run fetches a byte again"""
+    from flipjump.fjm import fjm_reader
+    from flipjump.utils.exceptions import IOReadOnEOF
+    from flipjump.utils.progress import ProgressBar
+
+    fjm_path = assemble_to_path(ONE_BIT_PROGRAM, tmp_path, use_stl=True)
+    header = fjm_reader.read_fjm_header(fjm_path)
+    with ProgressBar('', print_time=False, total=1.0) as progress:
+        core = fjm_run._load_native(fjm_path, header, None, False, progress)
+    calls = []
+    for do_reinit in (False, True):
+        if do_reinit:
+            core.__init__(header.memory_width)
+            for start, length, _data_start, _data_length in header.segments:
+                core.add_segment(start, length)
+            _raw_header, data = fjm_reader.read_fjm_raw(fjm_path)
+            for start, _length, data_start, data_length in header.segments:
+                core.set_words_bytes(start, data, data_start, data_length, header.relative_jumps)
+        io = InRecordingIO(b'\x05\x05')
+        core.run(io.read_bit, io.write_bit, IOReadOnEOF, write_byte=io.write_byte, read_byte=io.read_byte)
+        calls.append([e[0] for e in io.events if e[0] in ('read', 'rbyte')])
+    assert calls == [['rbyte'], ['rbyte']]

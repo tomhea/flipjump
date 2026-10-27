@@ -18,7 +18,7 @@ from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.IODevice import IODevice
-from flipjump.fjm.fjm_reader import FjmHeader, read_fjm_header
+from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.io_devices.cli_devices import make_io_device
 from flipjump.interpreter.run_defaults import flat_memory_failure_message, flat_window, io_mode_name
 from flipjump.utils.classes import TerminationCause
@@ -75,9 +75,9 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param lzma_preset: the preset used to compress a version-3 .fjm (0-9, faster->smaller).
     :param defines_file: a .fj file whose constants OVERRIDE the declarations in fj_file_paths
     (the API form of the CLI's -D). It is parsed before the stl.
-    :param lzma_preset: the preset used to compress a version-3 .fjm (0-9, faster->smaller).
 
     :param table_pool: if given, move the tables declared relocatable (the expansions of `__relocatable__`
     macros) to addresses that are cheap to arm, so every table dispatch runs fewer ops. Behaviour does not
@@ -93,10 +93,7 @@ def assemble(
     """
     file_tuples = get_file_tuples([str(fj_file.absolute()) for fj_file in fj_file_paths], no_stl=not use_stl)
     if defines_file is not None:
-        # BEFORE the stl, exactly as flipjump_cli does: a constant is substituted where it is
-        # USED, at parse time, so an override read after the stl is too late for anything the
-        # stl computes from it. Without this line the parameter is accepted and ignored.
-        file_tuples.insert(0, ('d1', defines_file))
+        file_tuples.insert(0, ('d1', defines_file))  # before the stl: see flipjump_cli.add_defines_file
     fjm_writer = Writer(
         output_fjm_path, memory_width, fjm_version, lzma_preset=lzma_preset, run_flags=run_flags, io_mode=io_mode
     )
@@ -224,76 +221,37 @@ def debug(
     if io_device is None:
         io_device = make_io_device(io_mode_name(header))
     try:
-        return _debug(
-            fjm_path,
-            debugging_file,
-            header,
-            io_device,
-            breakpoints_addresses,
-            breakpoints,
-            breakpoints_contains,
-            show_trace,
-            print_time,
-            print_termination,
-            last_ops_debugging_list_length,
-            profile,
-            flat_max_words,
-            flat_required,
-            flat_memory,
-            run_flags,
+        window = flat_window(header, flat_max_words=flat_max_words, flat_memory=flat_memory, run_flags=run_flags)
+
+        breakpoint_handler = get_breakpoint_handler(
+            debugging_file, breakpoints_addresses, breakpoints, breakpoints_contains
         )
+        try:
+            termination_statistics = fjm_run.run(
+                fjm_path,
+                io_device=io_device,
+                show_trace=show_trace,
+                print_time=print_time,
+                breakpoint_handler=breakpoint_handler if breakpoint_handler.breakpoints else None,
+                last_ops_debugging_list_length=last_ops_debugging_list_length,
+                profile=profile,
+                flat_max_words=window.words,
+                flat_required=flat_required or window.required,
+            )
+        except FlipJumpFlatMemoryException as flat_error:
+            # the engine says what it could not allocate; this says why it was asked for and how to run anyway
+            message = flat_memory_failure_message(flat_error, window)
+            raise FlipJumpFlatMemoryException(message, flat_error.window_words) from flat_error
+        if print_termination:
+            # devices that echo output live (e.g. verbose StandardIO) already showed it during the
+            # run - don't re-dump the buffered output in the termination summary.
+            output_to_print = None if io_device.outputs_live else io_device.get_output(allow_incomplete_output=True)
+            termination_statistics.print(labels_handler=breakpoint_handler, output_to_print=output_to_print)
+
+        return termination_statistics
     finally:
         if created_device:
             io_device.close()  # a device the caller never saw (e.g. the pc window) is released here
-
-
-def _debug(  # noqa: C901
-    fjm_path: Path,
-    debugging_file: Optional[Path],
-    header: FjmHeader,
-    io_device: IODevice,
-    breakpoints_addresses: Optional[Set[int]],
-    breakpoints: Optional[Set[str]],
-    breakpoints_contains: Optional[Set[str]],
-    show_trace: bool,
-    print_time: bool,
-    print_termination: bool,
-    last_ops_debugging_list_length: Optional[int],
-    profile: bool,
-    flat_max_words: Optional[int],
-    flat_required: bool,
-    flat_memory: bool,
-    run_flags: Optional[int],
-) -> TerminationStatistics:
-    """debug()'s body, once the device is decided (debug() closes a device it created itself)"""
-    window = flat_window(header, flat_max_words=flat_max_words, flat_memory=flat_memory, run_flags=run_flags)
-
-    breakpoint_handler = get_breakpoint_handler(
-        debugging_file, breakpoints_addresses, breakpoints, breakpoints_contains
-    )
-    try:
-        termination_statistics = fjm_run.run(
-            fjm_path,
-            io_device=io_device,
-            show_trace=show_trace,
-            print_time=print_time,
-            breakpoint_handler=breakpoint_handler if breakpoint_handler.breakpoints else None,
-            last_ops_debugging_list_length=last_ops_debugging_list_length,
-            profile=profile,
-            flat_max_words=window.words,
-            flat_required=flat_required or window.required,
-        )
-    except FlipJumpFlatMemoryException as flat_error:
-        # the engine says what it could not allocate; this says why it was asked for and how to run anyway
-        message = flat_memory_failure_message(flat_error, window)
-        raise FlipJumpFlatMemoryException(message, flat_error.window_words) from flat_error
-    if print_termination:
-        # devices that echo output live (e.g. verbose StandardIO) already showed it during the
-        # run - don't re-dump the buffered output in the termination summary.
-        output_to_print = None if io_device.outputs_live else io_device.get_output(allow_incomplete_output=True)
-        termination_statistics.print(labels_handler=breakpoint_handler, output_to_print=output_to_print)
-
-    return termination_statistics
 
 
 def run_test_output(
@@ -308,11 +266,11 @@ def run_test_output(
     print_time: bool = True,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
+    profile: bool = False,
     flat_max_words: Optional[int] = None,
+    flat_required: bool = False,
     flat_memory: bool = False,
     run_flags: Optional[int] = None,
-    profile: bool = False,
-    flat_required: bool = False,
 ) -> bool:
     """
     runs a .fjm file (with the FlipJump interpreter) with the given input, and checks that it finished successfuly and
@@ -329,7 +287,7 @@ def run_test_output(
     @param print_time: if true print running times
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
-    @param flat_max_words, flat_memory, run_flags, profile, flat_required: as in run()
+    @param profile, flat_max_words, flat_required, flat_memory, run_flags: as in run()
     @return: True if the run finished successfully, and with the expected output.
     @raises AssertionError: if should_raise_assertion_error, and the run finished unexpectedly or with an
     unexpected output.
@@ -351,11 +309,11 @@ def run_test_output(
         print_time=print_time,
         print_termination=print_termination,
         last_ops_debugging_list_length=last_ops_debugging_list_length,
+        profile=profile,
         flat_max_words=flat_max_words,
+        flat_required=flat_required,
         flat_memory=flat_memory,
         run_flags=run_flags,
-        profile=profile,
-        flat_required=flat_required,
     )
 
     try:

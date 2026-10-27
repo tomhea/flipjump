@@ -129,7 +129,7 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
             profile=args.profile,
             # the window: --flat-max-words, --flat-memory, --run-flags, else the program's own (run_defaults)
             flat_max_words=args.flat_max_words,
-            flat_memory=getattr(args, 'flat_memory', False),
+            flat_memory=args.flat_memory,
             run_flags=args.run_flags,
         )
     except FlipJumpFlatMemoryException as flat_error:
@@ -173,14 +173,7 @@ def assemble(
     """
     file_tuples = get_file_tuples(args.files, no_stl=args.no_stl)
     if defines_file is not None:
-        # BEFORE the stl, not merely before the user files. The parser substitutes a
-        # constant's value where it is USED, at parse time, so an override read after the
-        # stl arrives too late for anything the stl itself computes from that constant
-        # (hex.pointers.ptr_init sizes its decoder table from PTR_CELL_BITS this way).
-        # A side effect worth knowing: this puts a non-stl file first, so the parser's
-        # stl-prefix cache is disabled for the whole run -- which is exactly right, since
-        # a cached prefix was parsed without the override.
-        file_tuples.insert(0, ('d1', defines_file))
+        file_tuples.insert(0, ('d1', defines_file))  # before the stl: see add_defines_file
     verify_fj_files(error_func, file_tuples)
 
     version = get_version(args.version, args.outfile is not None, error_func)
@@ -312,9 +305,9 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         help="the native engine's flat-storage window, in words (by default: the program's span when it "
         "is at most 2^24 words, else 2^23). memory below "
         "the window runs in the fast flat array; segments reaching above it keep the slower paged "
-        "mode for that part (hybrid). raising it costs startup time and memory (8 bytes per word of "
-        "window), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable sets the same limit. "
-        "when assembling with --pool-tables, the table pool ends below it",
+        "mode for that part (hybrid). raising it costs startup time and memory (4 or 8 bytes per word "
+        "of window, w<=32 / w=64), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable "
+        "sets the same limit. when assembling with --pool-tables, the table pool ends below it",
     )
 
     def _io_mode(value: str) -> str:
@@ -380,13 +373,6 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         f"if --outfile specified; version {FJMVersion.NormalVersion} otherwise). "
         f"supported versions: {supported_versions}.",
     )
-
-    def _io_mode_number(value: str) -> int:
-        number = _parse_number(value)
-        bad = bad_io_mode_message(number)
-        if bad is not None:
-            raise argparse.ArgumentTypeError(bad)
-        return number
 
     asm_arguments.add_argument(
         '--io-mode',
@@ -465,6 +451,14 @@ def _parse_number(value: str) -> int:
 def _run_flags_number(value: str) -> int:
     number = _parse_number(value)
     bad = bad_run_flags_message(number)
+    if bad is not None:
+        raise argparse.ArgumentTypeError(bad)
+    return number
+
+
+def _io_mode_number(value: str) -> int:
+    number = _parse_number(value)
+    bad = bad_io_mode_message(number)
     if bad is not None:
         raise argparse.ArgumentTypeError(bad)
     return number
@@ -571,8 +565,10 @@ def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: E
     """
     write the --define overrides into a temporary .fj file, and put it first among the input files.
     it lands BEFORE the stl, so that a constant the stl itself uses is overridden before the stl
-    is parsed. A define's VALUE may therefore use `w` (a parser builtin) and an earlier define,
-    but not an stl constant such as dw -- write 2*w instead.
+    is parsed (a constant is substituted where it is used, at parse time; a non-stl first file also
+    disables the parser's stl-prefix cache, which was parsed without the override). A define's VALUE
+    may therefore use `w` (a parser builtin) and an earlier define, but not an stl constant such as
+    dw -- write 2*w instead.
 
     The file is ordinary .fj, which is what keeps the whole expression language available to a
     define. What makes its constants OVERRIDES rather than declarations is that the parser is told
