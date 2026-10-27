@@ -184,9 +184,10 @@ class Generator:
 
 
 def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], TablePool]]:
-    """name -> a factory, called in order: `fj --pool-tables`'s pool, the same one based at half the memory, a
-    doom-like one, one with too small a span (the overflow region), one leaving groups without a block, one with an
-    overflow region above the blocks, the two-pass recipe, a TablePool and one with long runs"""
+    """name -> a factory, called in order: `fj --pool-tables`'s pool, the same one based at half the memory, one
+    with spread blocks and width buckets, one with too small a span (the overflow region), one leaving groups
+    without a block, one with an overflow region above the blocks, the two-pass recipe, a TablePool and one with
+    long runs"""
     base = 1 << (memory_width - 1)
     made: Dict[str, BlockPool] = {}
 
@@ -218,7 +219,7 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
         assemble([source], scratch / 'count.fjm', memory_width=memory_width, print_time=False, table_pool=counting)
         return BlockPool(memory_width, base, counts=counting.counts, widths=counting.widths)
 
-    def doomish() -> TablePool:
+    def spread_buckets() -> TablePool:
         return BlockPool(
             memory_width,
             base,
@@ -234,7 +235,7 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
     return {
         'cli': cli,
         'half': lambda: BlockPool(memory_width, base, one_pass=True),
-        'doomish': doomish,
+        'spread_buckets': spread_buckets,
         'tight': tight,
         'unblocked': unblocked,
         'overflow': overflow,
