@@ -64,6 +64,7 @@ ns bit {
     // q,a,b,r are bit[:n].
     // @Assumes: q and r overlap neither a nor b (a and b are negated and restored in place).
     def idiv n, a, b, q, r @ negative_a, negative_b, one_negative, neg_b_1, do_div, neg_b_2, neg_ans, end {
+        .if0 n, b, end
         .mov negative_a, a+dw*(n-1)
         .mov negative_b, b+dw*(n-1)
         .zero one_negative
@@ -161,6 +162,7 @@ ns bit {
     // q,a,b,r are bit[:n].
     // @Assumes: q and r overlap neither a nor b (a and b are negated and restored in place).
     def idiv_loop n, a, b, q, r @ negative_a, negative_b, one_negative, neg_b_1, do_div, neg_b_2, neg_ans, end {
+        .if0 n, b, end
         .mov negative_a, a+dw*(n-1)
         .mov negative_b, b+dw*(n-1)
         .zero one_negative
