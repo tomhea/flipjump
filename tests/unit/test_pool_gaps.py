@@ -36,7 +36,7 @@ POOL_BASE = 1 << 26
 def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> TablePool:
     """the fuzzer's pool `kind`: 'cli' (fj --pool-tables), 'half' (the same, based at half the memory), 'two_pass',
     'table'"""
-    return pools(memory_width, random.Random(0), source, tmp_path)[kind]()
+    return pools(memory_width, random.Random(0), source, tmp_path)[kind]()  # nosec B311 - these pools draw nothing
 
 
 SAME = None
