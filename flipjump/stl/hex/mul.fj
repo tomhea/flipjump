@@ -52,15 +52,13 @@ ns hex {
     // @requires hex.add.init & hex.mul.init & hex.cmp.init (or hex.init)
     // res,a,b are hex[:n]; res must not alias a or b.
     // @Assumes: n >= 1.
-    def mul n, res, a, b @ a_less_1bits, b_less_1bits, loop, after_add, dst, src, a_1bits, b_1bits, end {
+    def mul n, res, a, b @ a_less_1bits, b_less_1bits, loop, after_add, dst, src, end {
         .zero n, dst
         .zero n, src
         .zero n, res
 
-        // if a has less 1(on) bits - jump to a_less_1bits. else jump to b_less_1bits
-        .count_bits n, a_1bits, a
-        .count_bits n, b_1bits, b
-        .cmp ((#(n*4))+3)/4, a, b, a_less_1bits, a_less_1bits, b_less_1bits
+        // if a is the smaller (unsigned) - jump to a_less_1bits (a is the loop operand). else jump to b_less_1bits
+        .cmp n, a, b, a_less_1bits, a_less_1bits, b_less_1bits
 
         a_less_1bits:
         .xor n, dst, b
@@ -83,8 +81,6 @@ ns hex {
 
       dst: hex.vec n
       src: hex.vec n
-      a_1bits: hex.vec ((#(n*4))+3)/4
-      b_1bits: hex.vec ((#(n*4))+3)/4
       end:
     }
 
