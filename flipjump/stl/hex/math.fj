@@ -16,6 +16,7 @@ ns hex {
     //  Time Complexity: n(3@+14)
     // Space Complexity: n(3@+54)
     //   dst[:n] += src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     // @requires hex.add.init (or hex.init)
     def add n, dst, src @ end {
         rep(n > 0, i) .add.chain n, dst, src, end, end
@@ -49,9 +50,13 @@ ns hex {
       end:
     }
     ns add {
+        //   dst[:n] += const, where const has leading_lsb_const_zeros zero bits at its bottom (add_constant's step).
+        // @requires hex.add.init (or hex.init)
         def add_constant_with_leading_zeros n, dst, const, leading_lsb_const_zeros {
             .add_hex_shifted_constant n, dst, const >> (leading_lsb_const_zeros & (0-4)), leading_lsb_const_zeros >> 2
         }
+        //   dst[:n] += const << (4*hex_shift)    (n_const is const's hex-length)
+        // @requires hex.add.init (or hex.init)
         def add_hex_shifted_constant n, dst, const, hex_shift {
             .add_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
@@ -190,6 +195,7 @@ ns hex {
     //  Time Complexity: n(3@+14)
     // Space Complexity: n(3@+54)
     //   dst[:n] -= src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     // @requires hex.sub.init (or hex.init)
     def sub n, dst, src @ end {
         rep(n > 0, i) .sub.chain n, dst, src, end, end
@@ -222,9 +228,13 @@ ns hex {
             .sub.sub_constant_with_leading_zeros n, dst, const & ((1<<(4*n))-1), (#(const&(0-const)))-1
     }
     ns sub {
+        //   dst[:n] -= const, where const has leading_lsb_const_zeros zero bits at its bottom (sub_constant's step).
+        // @requires hex.sub.init (or hex.init)
         def sub_constant_with_leading_zeros n, dst, const, leading_lsb_const_zeros {
             .sub_hex_shifted_constant n, dst, const >> (leading_lsb_const_zeros & (0-4)), leading_lsb_const_zeros >> 2
         }
+        //   dst[:n] -= const << (4*hex_shift)    (n_const is const's hex-length)
+        // @requires hex.sub.init (or hex.init)
         def sub_hex_shifted_constant n, dst, const, hex_shift {
             .sub_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }

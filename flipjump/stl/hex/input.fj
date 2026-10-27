@@ -113,6 +113,7 @@ ns hex {
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
     // Reads ASCII '0'..'9' and STOPS at the first non-digit byte, which is stored in stop_byte[:2].
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_uint_until n, dst, stop_byte @ loop, digit_lo, add_digit, digit, done {
         .zero n, dst
         .zero n, digit
@@ -138,6 +139,7 @@ ns hex {
     // Reads an optional leading '-', then ASCII '0'..'9', and STOPS at the first non-digit byte,
     // which gets stored in stop_byte[:2] (note that a leading '+' stops with dst=0).
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_int_until n, dst, stop_byte @ sign_hi, do_minus, loop, digit_lo, add_digit, finish, digit, neg, end {
         .zero n, dst
         .zero n, digit
@@ -175,6 +177,7 @@ ns hex {
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
     // Reads ASCII '0'..'9' until a '\n' or '\0' (EOF) terminator; jumps to error on any other byte.
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_uint n, dst, error @ valid_lo, stopper, ok {
         .input_dec_uint_until n, dst, stopper
         .if_flags stopper+dw, 1<<0, error, valid_lo      // terminator high nibble must be 0
@@ -190,6 +193,7 @@ ns hex {
     //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
     // Reads an optional leading '-', then ASCII '0'..'9' until a '\n'/'\0' terminator; jumps to error on any other byte
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_int n, dst, error @ valid_lo, stopper, ok {
         .input_dec_int_until n, dst, stopper
         .if_flags stopper+dw, 1<<0, error, valid_lo

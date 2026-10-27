@@ -30,6 +30,7 @@ ns bit {
 
     // Complexity min(n, len+1)*(16@+32)
     //   Prints the first n-chars of the string at x[:8n], or until reaches the first '\0' (the earlier).
+    // len is the string's length up to its '\0'.
     def print_str n, x @ end {
         rep(n, i) ._.print_str_one_char x+8*i*dw, end
       end:
@@ -54,7 +55,7 @@ ns bit {
     }
 
     // Complexity: @+9
-    //   prints x[:n] as n ascii-characters ('0's and '1's, lsb first).
+    //   prints x[:n] as n ascii-characters ('0's and '1's, msb first).
     // x is a bit[:n], and n is a size constant.
     def print_as_digit n, x {
         rep(n, i) .print_as_digit x+(n-1-i)*dw
@@ -147,6 +148,7 @@ ns bit {
     //
     // The number 28/93 is the ratio of the number of decimal digits and the number of binary digits.
     // It's bigger than log(2)/log(10) by 0.015%, which is just enough.
+    // @Assumes: n >= 1.
     def print_dec_uint n, x @ start_printing, xor, end_xor, dst, src, print_buffer, print_buffer_flag, \
             div10, zero_flag, ret_reg, end {
         .mov n, src, x

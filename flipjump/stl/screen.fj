@@ -31,6 +31,7 @@ ns screen {
     //   define_palette: [0x02] [slot:8] [first:B] [last:B]  then (last-first+1) x [R:8] [G:8] [B:8]
     // rgb is a constant: entry first+i is its bytes 3i, 3i+1, 3i+2 (R, G, B; R the least-significant).
     // format is init_screen's (B = format bits per colour; indexed formats only); slot, first, last are constants.
+    // rgb holds 3(last-first+1) bytes: missing ones are 0 (black), and bytes beyond them are dropped.
     def define_palette format, slot, first, last, rgb {
         rep(slot < 0 || slot > 255, i) .define_palette__slot_must_be_0_to_255
         rep(first < 0 || first > last || last >= 1<<format, i) .define_palette__need_0_le_first_le_last_below_2_pow_format
@@ -73,7 +74,9 @@ ns screen {
 
     // Complexity: 8(string_length+2)
     //   set_window_title: [0x04] <utf-8 bytes> [0x00]
-    // text is a constant string (least-significant byte first, as stl.output outputs it).
+    // text is a constant string (least-significant byte first, as stl.output outputs it) of UTF-8 bytes with no 0 byte
+    //   (a non-ASCII character as its \xNN bytes); it is sent up to its top non-zero byte.
+    // string_length is that many bytes: ((#text)+7)/8.
     def set_window_title text {
         stl.output_char 0x04
         stl.output text
@@ -117,6 +120,7 @@ ns screen {
 
     // Complexity: c + (zero bits to the byte)
     //   END_CMD (c one-bits), then zero bits to the byte. c, used_bits are constants (see end_frame).
+    // c = 0 outputs only the zero bits to the byte (e.g. after draw_raw's or the icon's colours).
     def end_command c, used_bits {
         .output_bits c, (1<<c)-1
         .output_bits (8-(used_bits+c)%8)%8, 0

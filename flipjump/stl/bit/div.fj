@@ -1,6 +1,7 @@
 ns bit {
     // Complexity: n(5@+11)
     //   dst[:n], src[:n] = src[:n] / 10, src[:n] % 10.
+    // dst and src must differ.
     def div10 n, dst, src @ zero, do_div, end {
         .zero n, dst
         stl.comp_if1 (n > 3), do_div   // n>=4: run the windowed division
@@ -14,7 +15,7 @@ ns bit {
     }
     ns div10 {
         // Complexity: 4@+12
-        //   if (val > 10) {
+        //   if (val >= 10) {
         //     val -= 10;
         //     res  = !res;
         //   }
@@ -61,6 +62,7 @@ ns bit {
     //        Also it supports only one convention for the sign of the reminder.
     //        For a faster & better division see hex.div, hex.idiv (require hex.init).
     // q,a,b,r are bit[:n].
+    // @Assumes: q and r overlap neither a nor b (a and b are negated and restored in place).
     def idiv n, a, b, q, r @ negative_a, negative_b, one_negative, neg_b_1, do_div, neg_b_2, neg_ans, end {
         .mov negative_a, a+dw*(n-1)
         .mov negative_b, b+dw*(n-1)
@@ -157,6 +159,7 @@ ns bit {
     //        Also it supports only one convention for the sign of the reminder.
     //        For a faster & better division see hex.div, hex.idiv (require hex.init).
     // q,a,b,r are bit[:n].
+    // @Assumes: q and r overlap neither a nor b (a and b are negated and restored in place).
     def idiv_loop n, a, b, q, r @ negative_a, negative_b, one_negative, neg_b_1, do_div, neg_b_2, neg_ans, end {
         .mov negative_a, a+dw*(n-1)
         .mov negative_b, b+dw*(n-1)
@@ -204,6 +207,7 @@ ns bit {
     // @NOTE: There is a better version: This one is slow, big, and doesn't error on b==0.
     //        For a faster & better division see hex.div, hex.idiv (require hex.init).
     // q,a,b,r are bit[:n].
+    // @Assumes: n >= 1.
     def div_loop n, a, b, q, r @ loop, do_sub, loop_end, after_loop, A, Q, R, i, end {
         .if0 n, b, end
         .zero n, R

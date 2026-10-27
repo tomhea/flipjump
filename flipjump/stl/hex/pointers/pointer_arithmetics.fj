@@ -43,6 +43,7 @@ ns hex {
     // @note: The complexity is calculated for w=64. For w=32/16, add 0.25@/0.5@ in both complexities.
     //   dst[:w/4] = ptr + index*2w     (the address of the index-th dw-aligned op past *ptr)
     // dst, ptr are hex[:w/4]; index is a signed hex[:w/4]. Works for negative index too.
+    // dst must not alias ptr.
     // @requires hex.add.init (or hex.init)
     // @Assumes: w in {16, 32, 64, 128}.
     def ptr_index dst, ptr, index {

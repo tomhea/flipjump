@@ -5,6 +5,7 @@ ns hex {
     //  Time Complexity: n(@+1)
     // Space Complexity: n(@+28)
     //   dst[:n] <<= 1
+    // @Assumes: n >= 1.
     def shl_bit n, dst {
         .shifts.shl_bit_once dst+(n-1)*dw, 0
         rep(n-1, i) .shifts.shl_bit_once dst+(n-2-i)*dw, dst+(n-1-i)*dw
@@ -14,6 +15,7 @@ ns hex {
     //  Time Complexity: n(@+1)
     // Space Complexity: n(@+28)
     //   dst[:n] >>= 1
+    // @Assumes: n >= 1.
     def shr_bit n, dst {
         .shifts.shr_bit_once dst, 0
         rep(n-1, i) .shifts.shr_bit_once dst+(i+1)*dw, dst+i*dw
@@ -23,6 +25,7 @@ ns hex {
     //  Time Complexity: n(@+4)
     // Space Complexity: n(@+28)
     //   dst[:n] <<= 4
+    // @Assumes: n >= 1.
     def shl_hex n, dst {
         .shl_hex n, 1, dst
     }
@@ -42,6 +45,7 @@ ns hex {
     //  Time Complexity: n(@+4)
     // Space Complexity: n(@+28)
     //   dst[:n] >>= 4
+    // @Assumes: n >= 1.
     def shr_hex n, dst {
         .shr_hex n, 1, dst
     }

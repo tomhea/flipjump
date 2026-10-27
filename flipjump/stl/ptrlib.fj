@@ -30,7 +30,8 @@ ns stl {
     //   When returned, it removes the return-address from the stack.
     //
     // note: the pop_ret_address is for the future return (counts as space, but not time, complexity).
-    // @requires the stack_init.
+    // @requires hex.add.init & hex.sub.init (or hex.init), stl.ptr_init and the stack_init
+    //   (or stl.startup_and_init_all).
     // @Assumes: stack has room (caller-side responsibility).
     def call address @ return_label {
         hex.push_ret_address return_label
@@ -47,7 +48,8 @@ ns stl {
     //   When returned, it removes the return-address from the stack, and pops "params_stack_length" cells from the stack.
     //
     // note: the pop_ret_address is for the future return (counts as space, but not time, complexity).
-    // @requires the stack_init.
+    // @requires hex.add.init & hex.sub.init (or hex.init), stl.ptr_init and the stack_init
+    //   (or stl.startup_and_init_all).
     // @Assumes: stack has room (caller-side responsibility).
     def call address, params_stack_length @ return_label {
         hex.push_ret_address return_label
@@ -65,7 +67,7 @@ ns stl {
     //   Returns to the calling function (gets the return-address from the top of the stack).
     //
     // note: jumps to the last-call's pop_ret_address (which this macro counts as time, but not space, complexity).
-    // @requires the stack_init.
+    // @requires stl.ptr_init and the stack_init (or stl.startup_and_init_all).
     // @Assumes: matched by a prior stl.call (stack non-empty).
     def return < hex.pointers.sp {
         hex.ptr_jump hex.pointers.sp
@@ -90,6 +92,8 @@ ns stl {
 ns stl {
     // Complexity: @-1
     //   Jumps to label, and saves the return address in the given "ret_reg" variable.
+    // ret_reg is an op `;0` (it must hold jump 0 between calls: the call xors the return address in, and its
+    //   landing op xors it out). So a function is not re-entrant through the same ret_reg (no recursion).
     def fcall label, ret_reg @ ret {
         wflip ret_reg+w, ret, label
         pad 2
@@ -99,6 +103,7 @@ ns stl {
 
     // Complexity: 1
     //   Return into the address written in the "ret_reg" variable.
+    // It runs the ret_reg op itself, so ret_reg's flip word must be harmless (0, as in `ret_reg: ;0`).
     // @Assumes: ret_reg contains a valid return address from a prior stl.fcall.
     def fret ret_reg {
         ;ret_reg

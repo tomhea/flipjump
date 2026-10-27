@@ -36,10 +36,10 @@ ns hex {
           end:
         }
 
-        // @Assumes: n must be a power of 2, and it must be (1<<n)-padded.
+        // @Assumes: n must be a power of 2, and it must be n-padded.
         // A table. When jumping to entry d - it xors d into dst, and jumps to ret.
         //
-        //  Time Complexity: log(n) / 2     (an overage over all entries, of jumping to an entry in this table)
+        //  Time Complexity: log(n) / 2     (an average over all entries, of jumping to an entry in this table)
         // Space Complexity: n
         //
         // n is a size-constant, dst/ret are hexes.

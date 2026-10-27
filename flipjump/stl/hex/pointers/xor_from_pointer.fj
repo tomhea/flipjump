@@ -3,6 +3,7 @@ ns hex {
     // Space Complexity: w( 0.5@+22) + 4@+52
     //   like:  dst ^= *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_hex_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
@@ -12,7 +13,8 @@ ns hex {
     //  Time Complexity: w( 0.5@+ 4) + 5@+25
     // Space Complexity: w( 0.5@+22) + 5@+64
     //   like:  dst[:2] ^= *ptr
-    // dst is a hex[2:]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_byte_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
@@ -27,6 +29,7 @@ ns hex {
     // This is what a wide cell buys: xor_byte_from_ptr pays the whole dereference for 8 bits,
     // and reading 16 bits as two bytes pays it twice.
     // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_cell_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
@@ -44,6 +47,7 @@ ns hex {
         //   moves from each dance's landing label to the next one's with one wflip (see hex.tables.chained_jump), and
         //   the armed fields advance by 2w between the cells instead of being re-armed.
         // dst is a hex[:n*h]; h (1 or 2) is the hexes taken from each cell.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def xor_cells_from_inners_ptrs n, h, dst @ last < .read_byte, .ret_after_read_byte, .to_flip {
             ..zero h, .read_byte
             wflip .to_flip, dbit+.PTR_CELL_BITS
@@ -61,6 +65,7 @@ ns hex {
         // Space Complexity: (w-#w)(@+18) + h(@+28) + 9
         //   prev_dst[:h] ^= read_byte[:h];  read_byte[:h] = 0 (only h hexes are read);  the armed fields += 2w;  then read_cell_chained.
         // @Assumes: the previous dance's landing label is this macro's start (see hex.tables.chained_jump).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_cell_step h, prev_dst @ start < .read_byte {
           start:
             ..xor_zero h, prev_dst, .read_byte
@@ -74,6 +79,7 @@ ns hex {
         //   there to this macro's end, where the dance lands. .ret_after_read_byte (= to_flip) and to_flip's read offset
         //   are the caller's, set once for the whole chain.
         // @Assumes: to_flip+w holds prev_return (0 if it's clear).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_cell_chained prev_return @ read, cleanup < .to_flip, .to_jump {
             wflip .to_flip+w, prev_return ^ read, .to_flip
             pad 4
@@ -89,6 +95,7 @@ ns hex {
         //   does:       hex.pointers.read_byte[:PTR_CELL_BITS/4] = *ptr
         //
         // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_byte_from_inners_ptrs < .ret_after_read_byte {
             .read_cell_from_inners_ptrs .PTR_CELL_BITS, .ret_after_read_byte
         }
@@ -97,6 +104,7 @@ ns hex {
         // Space Complexity: (1+PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 16
         //   the same dance against the WIDE table, so it returns PTR_WIDE_BITS bits from one
         //   dereference. Only valid when PTR_WIDE_BITS is non-zero.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_wide_from_inners_ptrs < .ret_after_read_wide {
             .read_cell_from_inners_ptrs .PTR_WIDE_BITS, .ret_after_read_wide
         }
@@ -112,6 +120,7 @@ ns hex {
         // wide one, in the same program, and a narrow read pays nothing for the wide table.
         // `ret` is that table's return opcode.
         // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_cell_from_inners_ptrs bits, ret @ read_ptr_and_flip_back, cleanup \
                 < hex.pointers.read_byte, hex.pointers.to_jump, hex.pointers.to_flip {
             // 1.  setup:
