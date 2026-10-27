@@ -174,7 +174,7 @@ def pool_segments(fjm_path: Path, memory_width: int = W) -> List[int]:
     return [s.segment_start for s in reader.memory_segments if s.segment_start * memory_width >= POOL_BASE]
 
 
-def blocked(source: str, tmp_path: Path, span_bits: Optional[int] = None) -> Tuple[bytes, int, BlockPool]:
+def _blocked(source: str, tmp_path: Path, span_bits: Optional[int] = None) -> Tuple[bytes, int, BlockPool]:
     """the two-pass blocking build: count, then place with the frozen counts"""
     counting = BlockPool(W, POOL_BASE, span_bits=span_bits)
     build_and_run(source, tmp_path, counting, name='counting')
@@ -305,7 +305,7 @@ DECLARED_ERRORS = {
 }
 
 
-def declared(**changes: str) -> str:
+def _declared(**changes: str) -> str:
     source = DECLARED_TEMPLATE
     for part, text in {**DECLARED_PARTS, **changes}.items():
         source = source.replace(part, text)
@@ -321,10 +321,10 @@ def test_a_relocatable_is_a_macro_whose_innermost_namespace_is_relocatable() -> 
 
 @pytest.mark.parametrize('blocking', [False, True], ids=['TablePool', 'BlockPool one pass'])
 def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path, blocking: bool) -> None:
-    reference, _, plain_fjm = build_and_run(declared(), tmp_path, None, name='inline')
+    reference, _, plain_fjm = build_and_run(_declared(), tmp_path, None, name='inline')
     assert reference == b'2'
     pool = BlockPool(W, POOL_BASE, one_pass=True) if blocking else TablePool(W, POOL_BASE)
-    output, _, fjm_path = build_and_run(declared(), tmp_path, pool)
+    output, _, fjm_path = build_and_run(_declared(), tmp_path, pool)
     assert output == reference and pool_segments(fjm_path)
 
 
@@ -332,7 +332,7 @@ def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path, bl
 def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path: Path, case: str) -> None:
     part, text, message = DECLARED_ERRORS[case]
     fj_path = tmp_path / 'p.fj'
-    fj_path.write_text(declared(**{part: text}))
+    fj_path.write_text(_declared(**{part: text}))
     with pytest.raises(FlipJumpPreprocessorException, match=re.escape(message)):
         assemble(
             [fj_path], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=TablePool(W, POOL_BASE)
@@ -871,7 +871,7 @@ def test_a_program_that_grows_into_the_pool_is_refused(tmp_path: Path) -> None:
 @pytest.mark.parametrize('source', [XOR_PROGRAM, CMP_PROGRAM], ids=['hex.xor', 'hex.cmp/shift/mul'])
 def test_blocked_tables_leave_the_output_unchanged_and_cost_fewer_ops(source: str, tmp_path: Path) -> None:
     reference, reference_ops, _ = build_and_run(source, tmp_path, None, name='inline')
-    output, ops, placing = blocked(source, tmp_path)
+    output, ops, placing = _blocked(source, tmp_path)
     assert output == reference
     assert placing.allocated > 0 and placing.pinned_words()
     assert ops < reference_ops
@@ -894,7 +894,7 @@ def test_the_shift_tables_are_tables_a_pool_can_see(tmp_path: Path) -> None:
 def test_a_blocked_program_with_declined_tables_is_still_correct(tmp_path: Path) -> None:
     # a tiny span forces declines: the broken groups are un-pinned, and their tables stay inline
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
-    output, _, placing = blocked(CMP_PROGRAM, tmp_path, span_bits=1 << 16)
+    output, _, placing = _blocked(CMP_PROGRAM, tmp_path, span_bits=1 << 16)
     assert output == reference
     assert placing.declined > 0 and placing.broken_groups
     pinned = set(placing.pinned_words())

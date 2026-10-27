@@ -21,7 +21,7 @@ CALLS = [
 ]
 
 
-def assemble_call(tmp_path: Path, call: str, n: int) -> None:
+def _assemble_call(tmp_path: Path, call: str, n: int) -> None:
     program = tmp_path / 'program.fj'
     program.write_text(f'stl.startup_and_init_all\n{call.format(n=n)}\nstl.loop\np: hex.vec w/4\nd: hex.vec 4\n')
     assemble([program], tmp_path / 'program.fjm', memory_width=64, print_time=False)
@@ -30,10 +30,10 @@ def assemble_call(tmp_path: Path, call: str, n: int) -> None:
 @pytest.mark.parametrize('call', CALLS)
 def test_n_0_is_refused_at_assemble_time(tmp_path: Path, call: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(FlipJumpException) as refused:
-        assemble_call(tmp_path, call, 0)
+        _assemble_call(tmp_path, call, 0)
     assert 'n_cell_ops__n_must_be_at_least_1' in str(refused.value) + capsys.readouterr().out
 
 
 @pytest.mark.parametrize('call', CALLS)
 def test_n_1_assembles(tmp_path: Path, call: str) -> None:
-    assemble_call(tmp_path, call, 1)
+    _assemble_call(tmp_path, call, 1)
