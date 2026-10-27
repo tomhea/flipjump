@@ -120,7 +120,7 @@ ns bit {
     def ascii2hex error, hex, ascii \
             @ decimal_ascii_msh, uppercase_hexadecimal_ascii_msh, lowercase_hexadecimal_ascii_msh, return_error, \
             check_uppercase_hex, check_lowercase_hex, dec_first_check, hex_first_check, hex_second_check, \
-            copy_decimal_value, copy_hexadecimal_value, nine4, seven3, two3, end {
+            copy_decimal_value, copy_hexadecimal_value, nine4, six3, one3, end {
         .zero error
         .zero 4, hex
 
@@ -138,12 +138,12 @@ ns bit {
         ;end
 
       hex_first_check:
-        .inc 3, ascii
-        .cmp 3, ascii, two3,   return_error, hex_second_check, hex_second_check
+        .cmp 3, ascii, one3,   return_error, hex_second_check, hex_second_check
       hex_second_check:
-        .cmp 3, ascii, seven3, copy_hexadecimal_value, copy_hexadecimal_value, return_error
+        .cmp 3, ascii, six3,   copy_hexadecimal_value, copy_hexadecimal_value, return_error
       copy_hexadecimal_value:
         .xor 3, hex, ascii
+        .inc 3, hex
         .not hex+3*dw
         ;end
 
@@ -159,10 +159,10 @@ ns bit {
         .vec 5, 0x60>>3
       nine4:
         .vec 4, 9
-      seven3:
-        .vec 3, 7
-      two3:
-        .vec 3, 2
+      six3:
+        .vec 3, 6
+      one3:
+        .vec 3, 1
       end:
     }
 }
