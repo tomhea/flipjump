@@ -1,15 +1,12 @@
-"""pygame-ce: the import guard and the indexed blit.
+"""
+unit-tests for the pygame-ce window backend (pygame_window.py), run headless with SDL's dummy video driver.
 
-Two behaviours of the interactive window:
-
-  * `_import_pygame` REQUIRES pygame-ce. The two install under the same module name, so a wrong
-    install is otherwise completely silent -- everything imports and runs.
-  * `PygameWindow.draw_indexed` hands SDL the palette indices instead of a python-expanded RGB
-    list. It must paint EXACTLY what `draw` paints; the point is that it is faster, not different.
+pinned: _import_pygame requires pygame-ce (both install as the `pygame` module, so a wrong install would otherwise
+import and run silently), and draw_indexed - SDL gets the palette indices, not an expanded RGB list - paints exactly
+what draw paints.
 """
 
-import os
-from typing import Iterator, List, Tuple
+from typing import List, Tuple
 
 import pytest
 
@@ -23,21 +20,15 @@ PALETTE = [(10, 20, 30), (200, 100, 0), (1, 2, 3), (255, 255, 255)]
 
 
 @pytest.fixture(autouse=True)
-def dummy_video() -> Iterator[None]:
-    old = os.environ.get('SDL_VIDEODRIVER')
-    os.environ['SDL_VIDEODRIVER'] = 'dummy'
-    yield
-    if old is None:
-        os.environ.pop('SDL_VIDEODRIVER', None)
-    else:
-        os.environ['SDL_VIDEODRIVER'] = old
+def dummy_video(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv('SDL_VIDEODRIVER', 'dummy')
 
 
-# -- the guard ----------------------------------------------------------------------------------
+# --- the import guard ---
 
 
 def test_the_installed_pygame_is_pygame_ce() -> None:
-    """IS_CE is defined only by pygame-ce."""
+    # IS_CE is defined only by pygame-ce
     assert getattr(pygame, 'IS_CE', 0), (
         'upstream pygame is installed; this build requires pygame-ce '
         '(pip uninstall -y pygame && pip install pygame-ce)'
@@ -45,37 +36,28 @@ def test_the_installed_pygame_is_pygame_ce() -> None:
 
 
 def test_import_is_refused_when_upstream_pygame_is_installed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """R9 -- the control. Simulate upstream by removing IS_CE and require a LOUD refusal, because
-    the failure this guards against is otherwise invisible: both packages import as `pygame`."""
+    # upstream pygame, simulated by removing IS_CE: a refusal that names the fix
     monkeypatch.delattr(pygame, 'IS_CE', raising=False)
-    with pytest.raises(IODeviceException, match='requires pygame-ce'):
-        pygame_window._import_pygame()
-
-
-def test_the_refusal_names_the_fix(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delattr(pygame, 'IS_CE', raising=False)
-    with pytest.raises(IODeviceException, match='pip install pygame-ce'):
+    with pytest.raises(IODeviceException, match='requires pygame-ce.*pip install pygame-ce'):
         pygame_window._import_pygame()
 
 
 def test_the_guard_passes_on_pygame_ce() -> None:
-    """Vacuity control for the two above: with IS_CE present the import must SUCCEED, or they
-    would pass against a guard that refuses everything."""
+    # the control of the test above: a guard that refused everything would pass it
     assert pygame_window._import_pygame() is pygame
 
 
-# -- the indexed blit ---------------------------------------------------------------------------
+# --- the indexed blit ---
 
 
 def _painted(window: pygame_window.PygameWindow) -> List[Tuple[int, int, int]]:
-    """what actually landed on the window surface, as RGB tuples."""
+    """what landed on the window surface, as RGB tuples"""
     surface = window._screen_surface
     assert surface is not None
     return [tuple(surface.get_at((x, y))[:3]) for y in range(H) for x in range(W)]
 
 
 def test_draw_indexed_paints_exactly_what_draw_paints() -> None:
-    """THE test. The indexed path is an optimisation, so it has to be pixel-identical."""
     indices = bytes([(x * 3 + y) % len(PALETTE) for y in range(H) for x in range(W)])
     rgb = [PALETTE[i] for i in indices]
 
@@ -97,4 +79,4 @@ def test_draw_indexed_paints_exactly_what_draw_paints() -> None:
 
 def test_draw_indexed_on_a_closed_window_is_a_no_op() -> None:
     window = pygame_window.PygameWindow()
-    window.draw_indexed(W, H, bytes(W * H), PALETTE)  # never opened -- must not raise
+    window.draw_indexed(W, H, bytes(W * H), PALETTE)  # never opened: must not raise
