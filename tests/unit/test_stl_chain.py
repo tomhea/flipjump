@@ -40,11 +40,13 @@ def test_the_chain_steps_are_128_ops_apart(tmp_path: Path, call: str) -> None:
     assert _strides(ops) == [STRIDE] * (len(ops) - 1)
 
 
-@pytest.mark.parametrize('call', ['hex.add 8, x, y', 'hex.sub 4, x, y', 'hex.add_shifted 8, 6, x, y, 1'])
-def test_the_bracketed_chain_steps_are_128_ops_apart(tmp_path: Path, call: str) -> None:
+@pytest.mark.parametrize(
+    'call, steps', [('hex.add 8, x, y', 8), ('hex.sub 4, x, y', 4), ('hex.add_shifted 8, 6, x, y, 1', 6)]
+)
+def test_the_bracketed_chain_steps_are_128_ops_apart(tmp_path: Path, call: str, steps: int) -> None:
     """add / sub chain their two clear_carry brackets too: those two strides are the brackets' own."""
     ops = _return_label_ops(tmp_path, call, 'chained_jump')
-    assert len(ops) == int(call.split()[1].rstrip(',')) + 2
+    assert len(ops) == steps + 2  # a step per source hex, and the two brackets
     assert _strides(ops)[1:-1] == [STRIDE] * (len(ops) - 3)
 
 
