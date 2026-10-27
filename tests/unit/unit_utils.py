@@ -18,6 +18,7 @@ from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.fjm_run import TerminationStatistics
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
+from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 
 try:
@@ -121,6 +122,50 @@ def run_source(
     io_device = FixedIO(fixed_input)
     statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
     return statistics, io_device
+
+
+class RecordingIO(FixedIO):
+    """
+    a FixedIO that logs every device call, with the count of output bits it had received at each input call:
+    ('bit', b), ('byte', B), ('read', b, outs), ('rbyte', B, outs).
+    """
+
+    def __init__(self, fixed_input: bytes) -> None:
+        super().__init__(fixed_input)
+        self.events: List[Tuple[Any, ...]] = []
+        self.outs = 0
+
+    def read_bit(self) -> bool:
+        bit = super().read_bit()
+        self.events.append(('read', int(bit), self.outs))
+        return bit
+
+    def read_byte(self) -> int:
+        value = super().read_byte()
+        self.events.append(('rbyte', value, self.outs))
+        return value
+
+    def write_bit(self, bit: bool) -> None:
+        self.events.append(('bit', int(bit)))
+        self.outs += 1
+        super().write_bit(bit)
+
+    def write_byte(self, byte: int) -> None:
+        self.events.append(('byte', byte))
+        self.outs += 8
+        super().write_byte(byte)
+
+
+def run_recorded(
+    fjm_path: Path, io_device: IODevice, *, native: bool, monkeypatch: pytest.MonkeyPatch, **kwargs: Any
+) -> TerminationStatistics:
+    """run on the native engine, or on the pure-python fast loop (which calls the device once a bit)."""
+    with monkeypatch.context() as patch:
+        if native:
+            patch.delenv('FLIPJUMP_NO_NATIVE', raising=False)
+        else:
+            patch.setattr(fjm_run, '_fjcore', None)
+        return fjm_run.run(fjm_path, io_device=io_device, print_time=False, **kwargs)
 
 
 def high_segment_program(top: int) -> str:
