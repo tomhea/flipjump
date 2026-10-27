@@ -289,13 +289,20 @@ class InMemoryScreen(IODevice):
         self._scr_bits_count += 1
         if self._scr_bits_count == 8:
             byte, self._scr_current_byte, self._scr_bits_count = self._scr_current_byte, 0, 0
-            self._scr_feed(byte)
+            self.write_byte(byte)
 
     def write_byte(self, byte: int) -> None:
         if self._scr_bits_count:  # never from the engine (it gathers bytes from a byte boundary only)
             super().write_byte(byte)
             return
-        self._scr_feed(byte)
+        if self._scr_failure is not None:
+            raise self._scr_failure
+        self._scr_bytes_in += 1
+        try:
+            self._scr_parser.send(byte)
+        except IODeviceException as failure:
+            self._scr_failure = failure
+            raise
 
     def read_bit(self) -> bool:
         raise IOReadOnEOF('the screen device has no input - use a device that also reads input (e.g. --io pc)')
@@ -317,16 +324,6 @@ class InMemoryScreen(IODevice):
     def _extension_command(self, opcode: int) -> Optional[Union[Callable[[int], bool], Literal[True]]]:
         """a subclass hook, not part of the wire API: see the module docstring. None = an unknown opcode."""
         return None
-
-    def _scr_feed(self, byte: int) -> None:
-        if self._scr_failure is not None:
-            raise self._scr_failure
-        self._scr_bytes_in += 1
-        try:
-            self._scr_parser.send(byte)
-        except IODeviceException as failure:
-            self._scr_failure = failure
-            raise
 
     def _scr_check_output_complete(self) -> None:
         if self._scr_failure is not None:
@@ -502,15 +499,8 @@ class InMemoryScreen(IODevice):
             raise self._scr_error('set_window_icon: w = 0: must be 1..255')
         if height == 0:
             raise self._scr_error('set_window_icon: h = 0: must be 1..255')
-        bits = self.bpp
-        values = []
-        x = y = 0
-        try:
-            for y in range(height):
-                for x in range(width):
-                    values.append((yield from self._scr_bits(bits)))
-        except _OutputEnded:
-            raise self._scr_error(self._scr_ended_reason(), pixel=(x, y)) from None
+        values = [0] * (width * height)
+        yield from self._scr_colours(values, width)
         if self.bpp == FORMAT_RGB:
             colours = [rgb_of(value) for value in values]
         else:
@@ -533,21 +523,32 @@ class InMemoryScreen(IODevice):
         self._scr_owned_slots[slot] = True
 
     def _scr_cmd_draw_raw(self) -> Generator[None, int, None]:
-        bits, width, picture = self.bpp, self.width, self.pixel_indices
-        x = y = 0
+        yield from self._scr_colours(self.pixel_indices, self.width)
+
+    def _scr_colours(self, values: List[int], width: int) -> Generator[None, int, None]:
+        """read colours of B bits into `values`, in order (rows of `width`), inline as draw_collines reads.
+        The output ending inside them is an error at the pixel being read."""
+        bits = self.bpp
+        mask = (1 << bits) - 1
+        acc, nacc = self._scr_acc, self._scr_nacc
+        index = 0
         try:
-            for y in range(self.height):
-                row = y * width
-                for x in range(width):
-                    picture[row + x] = yield from self._scr_bits(bits)
+            for index in range(len(values)):
+                while nacc < bits:
+                    acc |= (yield) << nacc
+                    nacc += 8
+                values[index], acc, nacc = acc & mask, acc >> bits, nacc - bits
         except _OutputEnded:
-            raise self._scr_error(self._scr_ended_reason(), pixel=(x, y)) from None
+            raise self._scr_error(self._scr_ended_reason(), pixel=(index % width, index // width)) from None
+        self._scr_acc, self._scr_nacc = acc, nacc
 
     def _scr_cmd_draw_collines(self) -> Generator[None, int, None]:
         width, height, picture = self.width, self.height, self.pixel_indices
         row_bits, column_bits, colour_bits = self._scr_row_bits, self._scr_column_bits, self.bpp
-        end_command, reserved_column = (1 << column_bits) - 1, (1 << column_bits) - 2
-        end, keep, copy, reserved_row = ((1 << row_bits) - k for k in (1, 2, 3, 4))
+        row_mask, column_mask, colour_mask = (1 << row_bits) - 1, (1 << column_bits) - 1, (1 << colour_bits) - 1
+        end_command, reserved_column = column_mask, column_mask - 1
+        end, keep, copy, reserved_row = row_mask, row_mask - 1, row_mask - 2, row_mask - 3
+        acc = nacc = 0  # the bit buffer, local and read inline (not a _scr_bits generator per field): the hot path
         x: Optional[int] = None
         cursor = 0
 
@@ -557,8 +558,12 @@ class InMemoryScreen(IODevice):
         try:
             while True:
                 x = None
-                column = yield from self._scr_bits(column_bits)
+                while nacc < column_bits:
+                    acc |= (yield) << nacc
+                    nacc += 8
+                column, acc, nacc = acc & column_mask, acc >> column_bits, nacc - column_bits
                 if column == end_command:
+                    self._scr_acc, self._scr_nacc = acc, nacc
                     return
                 if column == reserved_column:
                     raise self._scr_error(
@@ -569,7 +574,10 @@ class InMemoryScreen(IODevice):
                     raise self._scr_error(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
                 x, cursor = column, 0
                 while True:  # only END closes a column, also once the cursor reached h
-                    token = yield from self._scr_bits(row_bits)
+                    while nacc < row_bits:
+                        acc |= (yield) << nacc
+                        nacc += 8
+                    token, acc, nacc = acc & row_mask, acc >> row_bits, nacc - row_bits
                     if token == end:
                         break
                     field = 'y2'
@@ -577,7 +585,10 @@ class InMemoryScreen(IODevice):
                         if token == copy and x == 0:
                             raise refuse('COPY copies column x - 1, and column 0 has none')
                         field = 'y'
-                        row = yield from self._scr_bits(row_bits)
+                        while nacc < row_bits:
+                            acc |= (yield) << nacc
+                            nacc += 8
+                        row, acc, nacc = acc & row_mask, acc >> row_bits, nacc - row_bits
                     else:
                         row = token
                     if row == reserved_row:
@@ -592,7 +603,10 @@ class InMemoryScreen(IODevice):
                     if token == copy:
                         picture[start:stop:width] = picture[start - 1 : stop - 1 : width]  # noqa: E203
                     elif token != keep:
-                        colour = yield from self._scr_bits(colour_bits)
+                        while nacc < colour_bits:
+                            acc |= (yield) << nacc
+                            nacc += 8
+                        colour, acc, nacc = acc & colour_mask, acc >> colour_bits, nacc - colour_bits
                         picture[start:stop:width] = [colour] * (row - cursor)
                     cursor = row
         except _OutputEnded:
