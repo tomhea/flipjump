@@ -173,7 +173,7 @@ ns hex {
 
             pad w
           stack:
-            hex.hex stack_error_handler
+            ;stack_error_handler
             hex.vec n, 0
 
           stack_error_handler:

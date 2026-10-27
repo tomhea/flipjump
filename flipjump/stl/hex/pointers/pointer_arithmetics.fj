@@ -23,6 +23,7 @@ ns hex {
     //   ptr[:w/4] += value * 2w    (advance ptr by value)
     // @requires hex.add.init (or hex.init)
     // @note: The complexity is calculated with n_const=2, and for log(w) in 16,32,64,128.
+    // value may be negative: ptr moves modulo 2^w (value*2w is taken modulo 2^w); ptr_sub of -value is cheaper.
     def ptr_add ptr, value {
         hex.add_constant w/4, ptr, value * dw
     }
@@ -32,6 +33,7 @@ ns hex {
     //   ptr[:w/4] -= value * 2w    (retreat ptr by value)
     // @requires hex.sub.init (or hex.init)
     // @note: The complexity is calculated with n_const=2, and for log(w) in 16,32,64,128.
+    // value may be negative: ptr moves modulo 2^w (value*2w is taken modulo 2^w); ptr_add of -value is cheaper.
     def ptr_sub ptr, value {
         hex.sub_constant w/4, ptr, value * dw
     }
