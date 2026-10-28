@@ -24,7 +24,6 @@ from flipjump.fjm.fjm_consts import (
     bad_run_flags_message,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
-from flipjump.interpreter.run_defaults import io_mode_name
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter.io_devices.cli_devices import IO_MODES, make_io_device, split_io_mode
 from flipjump.utils.constants import (
@@ -107,7 +106,7 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
         raise  # error_func exits; re-raise in case a custom error_func returns
 
     # --io overrides the io mode compiled into the program (--io-mode when it was assembled)
-    io_mode = args.io if args.io is not None else io_mode_name(header)
+    io_mode = args.io if args.io is not None else IO_MODE_NAMES[header.io_mode]
     try:
         io_device = make_io_device(io_mode)
     except IODeviceException as io_device_error:
@@ -377,7 +376,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument(
         '--io-mode',
         metavar='NUMBER',
-        type=_io_mode_number,
+        type=_checked_number(bad_io_mode_message),
         default=0,
         help="compile the default io device into the .fjm: "
         + ", ".join(f"{number} = {name}" for number, name in IO_MODE_NAMES.items())
@@ -448,20 +447,17 @@ def _parse_number(value: str) -> int:
         raise argparse.ArgumentTypeError(f'{value!r} is not a number') from None
 
 
-def _run_flags_number(value: str) -> int:
-    number = _parse_number(value)
-    bad = bad_run_flags_message(number)
-    if bad is not None:
-        raise argparse.ArgumentTypeError(bad)
-    return number
+def _checked_number(bad_message: Callable[[int], Optional[str]]) -> Callable[[str], int]:
+    """an argparse type: a number (_parse_number) that bad_message (fjm_consts.bad_*_message) accepts"""
 
+    def checked_number(value: str) -> int:
+        number = _parse_number(value)
+        bad = bad_message(number)
+        if bad is not None:
+            raise argparse.ArgumentTypeError(bad)
+        return number
 
-def _io_mode_number(value: str) -> int:
-    number = _parse_number(value)
-    bad = bad_io_mode_message(number)
-    if bad is not None:
-        raise argparse.ArgumentTypeError(bad)
-    return number
+    return checked_number
 
 
 def add_universal_arguments(parser: argparse.ArgumentParser) -> None:
@@ -472,7 +468,7 @@ def add_universal_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         '--run-flags',
         metavar='NUMBER',
-        type=_run_flags_number,
+        type=_checked_number(bad_run_flags_message),
         default=None,
         help="the run flags: 32 bits, all off by default. bit 0 (the value 1) = flat memory, as if "
         "--flat-memory were given. when assembling, they are compiled into the .fjm (0 by default); "
