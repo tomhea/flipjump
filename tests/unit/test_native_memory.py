@@ -466,29 +466,26 @@ def test_cpu_calibrate_rejects_degenerate_args() -> None:
 # --- 4-byte cells at w<=32 ---
 
 
-def test_a_w32_program_gets_4_byte_cells() -> None:
-    memory = _looping_memory()
-    _run_to_looping(memory)
+@pytest.mark.parametrize('width, cell_bytes', [(32, 4), (64, 8)])
+def test_the_flat_cells_are_4_bytes_at_w32_and_8_at_w64(width: int, cell_bytes: int) -> None:
+    words = 1 << 20  # the flat array dominates allocated_bytes
+    memory = _fjcore.Memory(width)
+    memory.add_segment(0, words)
+    memory.decide_storage()
     assert memory.storage_mode == 'flat'
-    assert memory.cell_bytes == 4
-
-
-def test_a_w64_program_gets_8_byte_cells() -> None:
-    memory = _looping_memory_w64()
-    _run_to_looping(memory)
-    assert memory.cell_bytes == 8
+    assert words * cell_bytes <= memory.allocated_bytes < words * cell_bytes + (1 << 20)
 
 
 def test_w32_word_holding_the_32bit_garbage_magic_is_real_data() -> None:
     # a 4-byte cell has no spare bit for the gap sentinel, so the fill is a magic value that a
     # legal word can equal; an in-segment word holding it must flip like any other value
-    magic = _fjcore.FLAT_GARBAGE_MAGIC32
+    magic = 0xBB67AE85  # the 4-byte cells' gap fill
     memory = _fjcore.Memory(32)
     memory.add_segment(0, 16)
     memory.set_words(0, [8 * 32, 0])  # flip bit 0 of word 8 (which holds the magic), loop
     memory.set_word(8, magic)
     cause, op_count, _, _, _ = memory.run(_unexpected_io, _unexpected_io, IOReadOnEOF)
-    assert memory.storage_mode == 'flat' and memory.cell_bytes == 4
+    assert memory.storage_mode == 'flat'
     assert cause == _fjcore.TERM_LOOPING
     assert op_count == 1
     assert memory.get_word(8) == magic ^ 1
@@ -500,7 +497,7 @@ def test_w32_flat_gap_touch_is_a_memory_error() -> None:
     memory.add_segment(16, 8)
     memory.set_words(0, [9 * 32, 64])  # flip a bit of gap word 9
     cause, _, error_address, _, _ = memory.run(_unexpected_io, _unexpected_io, IOReadOnEOF)
-    assert memory.storage_mode == 'flat' and memory.cell_bytes == 4
+    assert memory.storage_mode == 'flat'
     assert cause == _fjcore.TERM_MEMORY_ERROR
     assert error_address == 9 * 32
 
@@ -508,7 +505,7 @@ def test_w32_flat_gap_touch_is_a_memory_error() -> None:
 def test_overlapping_segments_keep_the_magic_word_check_correct() -> None:
     # the segment search bisects only once the ranges are proven disjoint; overlapping ones
     # take the linear path, with the same answer
-    magic = _fjcore.FLAT_GARBAGE_MAGIC32
+    magic = 0xBB67AE85  # the 4-byte cells' gap fill
     memory = _fjcore.Memory(32)
     memory.add_segment(0, 16)
     memory.add_segment(8, 16)
@@ -525,7 +522,6 @@ def test_freeze_and_reset_restore_4_byte_cells() -> None:
     memory.set_words(0, [8 * 32, 0])
     memory.set_word(8, 0x12345678)
     _run_to_looping(memory)
-    assert memory.cell_bytes == 4
     memory.freeze()
     assert memory.get_word(8) == 0x12345678 ^ 1
     _run_to_looping(memory)
