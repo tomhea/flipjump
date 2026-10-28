@@ -106,7 +106,10 @@ class PygameWindow:
         if self._icon is not None:
             self._apply_icon(self._icon)
         if not fullscreen:  # the width follows the program's aspect: scaled, never stretched
-            self._resize_window(max(1, round(WINDOW_HEIGHT * width / height)), WINDOW_HEIGHT)
+            try:  # the OS window, not the surface (SCALED keeps upscaling); a driver that refuses keeps its size
+                self._os_window().size = (max(1, round(WINDOW_HEIGHT * width / height)), WINDOW_HEIGHT)
+            except pg.error:
+                pass
 
     def _os_window(self) -> Any:
         """the OS window of the display surface: `from_display_module` is pygame-ce's only handle to it (its
@@ -114,13 +117,6 @@ class PygameWindow:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', DeprecationWarning)
             return self._pygame.window.Window.from_display_module()
-
-    def _resize_window(self, width: int, height: int) -> None:
-        """size the OS window (SCALED keeps upscaling the surface); a video driver that refuses keeps its size."""
-        try:
-            self._os_window().size = (width, height)
-        except self._pygame.error:
-            pass
 
     def set_title(self, title: str) -> None:
         """set the caption, now and whenever `ensure_open` (re)creates the window"""
