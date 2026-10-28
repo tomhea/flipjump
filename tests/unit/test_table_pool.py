@@ -293,6 +293,17 @@ def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path) ->
     assert output == reference and _pool_segments(fjm_path)
 
 
+def test_a_moved_table_holds_the_ops_its_declaration_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """a declared table holds only labels and `a;b` ops, so its expansion is the ops _relocatable_table_ops counts
+    (end_relocation asserts it; it was a refusal no program could reach). The control: a miscount is caught."""
+    labels = expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
+    assert any(address >= POOL_BASE for address in labels.values())
+    counted = preprocessor._relocatable_table_ops
+    monkeypatch.setattr(preprocessor, '_relocatable_table_ops', lambda *args: counted(*args) + 1)
+    with pytest.raises(AssertionError):
+        expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
+
+
 @pytest.mark.parametrize('case', sorted(DECLARED_ERRORS))
 def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path: Path, case: str) -> None:
     part, text, message = DECLARED_ERRORS[case]
@@ -763,7 +774,6 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
     NewSegment, the label strings, the site path string): see DeferredTables"""
     count = 20000
     groups = [f'((f13:l2210:sim.pass(3)---hp + {128 * (i % 50)}) + 32)' for i in range(count)]
-    exprs = {group: Expr(group) for group in groups}
     segments = [NewSegment(0) for _ in range(count)]
     names = [f'f13:l2210:sim.pass(3)---s2:l40:rep{i}:hex.exact_xor(5)---switch' for i in range(count)]
     sites = [name.rpartition('---')[0] for name in names]
@@ -773,7 +783,7 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
         before = tracemalloc.get_traced_memory()[0]
         tables = DeferredTables()
         for i in range(count):
-            tables.add(groups[i], exprs[groups[i]], 16, 16, sites[i] if keep_sites else None, segments[i])
+            tables.add(groups[i], 16, 16, sites[i] if keep_sites else None, segments[i])
             for label in range(labels_per_table):
                 tables.add_label(names[i], label * 448)
         cost = (tracemalloc.get_traced_memory()[0] - before) / count

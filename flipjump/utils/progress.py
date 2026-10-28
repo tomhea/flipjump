@@ -1,10 +1,6 @@
 """
-the progress bar of a long stage (assembling, loading a program).
-
-`ProgressBar` is a drop-in for `PrintTimer`: it prints the same `  stage:  1.234s` line when the stage ends. Only on
-an interactive terminal it also shows the stage's progress while it runs, on that one line:
-
-      loading memory:  ##############----------------  48%  0:03 left
+the progress bar of a long stage: a drop-in for `PrintTimer` (the same `  stage:  1.234s` line at its end) that, on
+a terminal, also draws `  loading memory:  ##############----------------  48%  0:03 left` while it runs.
 """
 
 import sys
@@ -14,7 +10,6 @@ from typing import Any, Optional
 _REDRAW_SECONDS = 0.1
 _BAR_WIDTH = 30
 
-# the bar on screen, if any (see clear_progress_line)
 _shown_bar: Optional['ProgressBar'] = None
 
 
@@ -25,12 +20,7 @@ def clear_progress_line() -> None:
 
 
 class ProgressBar:
-    """
-    the progress line of one stage. usage:
-    with ProgressBar('  loading memory:  ', print_time=True) as bar:
-        ... bar.update(fraction_done) ...
-    `active` says whether the bar is drawn (print_time, on a terminal): a caller may skip reporting when it is not.
-    """
+    """`with ProgressBar('  stage:  ') as bar: ... bar.update(fraction) ...`; `active`: the bar is drawn (a terminal)"""
 
     def __init__(self, init_message: str, *, print_time: bool = True):
         self.init_message = init_message
