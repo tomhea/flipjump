@@ -49,13 +49,13 @@ def xor_four v < a, b, c, d, consts {
 
 @pytest.mark.parametrize('pad', [16, 64])
 def test_the_sparse_forms(tmp_path: Path, pad: int) -> None:
-    """sparse_mov (n) over a dirty dst (a mutant without its zero xored), sparse_xor_zero n (a mutant skipping the
-    last hex), sparse_double_xor over every source value (a wrong first-table entry passed every program test)."""
+    """sparse_mov (n) over a dirty dst (a mutant without its zero xored), sparse_zero n, and sparse_xor over every
+    source value (a wrong table entry passed every program test)."""
     program = f'''
 stl.startup
     hex.sparse_mov {pad}, m1, s1
     hex.sparse_mov {pad}, 4, m4, s4
-    hex.sparse_xor_zero {pad}, 4, z4, y4
+    hex.sparse_zero {pad}, 4, z4
     hex.print 1, m1
     hex.print 2, m4
     hex.print 2, z4
@@ -68,19 +68,19 @@ stl.startup
   s4: hex.vec 4, 0x1234
   z4: hex.vec 4, 0x0f0f
   y4: hex.vec 4, 0xabcd
-  t: hex.vec 2, 0x50
+  t: hex.vec 2, 0x05
   consts: rep(16, j) hex.hex j
 
 def double v < t, consts {{
-    hex.sparse_double_xor {pad}, t, t+dw, consts+v*dw
+    hex.sparse_xor {pad}, t, consts+v*dw
     hex.print 1, t
 }}
 '''
-    expected = bytes([0xF7]) + (0x1234).to_bytes(2, 'little') + (0x0F0F ^ 0xABCD).to_bytes(2, 'little') + bytes(2)
-    lo, hi = 0x0, 0x5
+    expected = bytes([0xF7]) + (0x1234).to_bytes(2, 'little') + bytes(2) + (0xABCD).to_bytes(2, 'little')
+    t = 0x5
     for v in range(16):
-        lo, hi = lo ^ v, hi ^ v
-        expected += bytes([lo | hi << 4])
+        t ^= v
+        expected += bytes([t])
     assert _output(tmp_path, program) == expected
 
 
