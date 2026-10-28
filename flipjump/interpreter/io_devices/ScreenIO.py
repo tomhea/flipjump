@@ -190,11 +190,7 @@ class InMemoryScreen(IODevice):
         if self._scr_failure is not None:
             raise self._scr_failure
         self._scr_bytes_in += 1
-        try:
-            self._scr_parser.send(byte)
-        except IODeviceException as failure:
-            self._scr_failure = failure
-            raise
+        self._scr_parser.send(byte)
 
     def read_bit(self) -> bool:
         raise IOReadOnEOF('the screen device has no input - use a device that also reads input (e.g. --io pc)')
@@ -206,11 +202,7 @@ class InMemoryScreen(IODevice):
         if self._scr_in_extension:
             return
         if self._scr_command is not None:
-            try:
-                self._scr_parser.throw(_OutputEnded())
-            except IODeviceException as failure:
-                self._scr_failure = failure
-                raise
+            self._scr_parser.throw(_OutputEnded())
         elif self._scr_bits_count:
             raise IODeviceException(
                 f'ScreenIO: an opcode at output byte {self._scr_bytes_in:,}, frame {self.frame_count:,}: '
@@ -243,70 +235,63 @@ class InMemoryScreen(IODevice):
         self._scr_nacc -= count
         return value
 
-    def _scr_error(
-        self, reason: str, *, column: Optional[int] = None, cursor: int = 0, pixel: Optional[Tuple[int, int]] = None
-    ) -> IODeviceException:
+    def _scr_error(self, reason: Optional[str] = None, at: str = '') -> IODeviceException:
+        """the current command's error, `at` a place inside it; no reason: the output ended inside the command"""
         assert self._scr_command is not None
         name, opcode, offset = self._scr_command
-        where = f'ScreenIO: {name} (0x{opcode:02X}) at output byte {offset:,}, frame {self.frame_count:,}'
-        if column is not None:
-            where += f', column {column:,}, cursor {cursor:,}'
-        if pixel is not None:
-            where += f', pixel ({pixel[0]:,}, {pixel[1]:,})'
-        return IODeviceException(f'{where}: {reason}')
-
-    def _scr_ended_reason(self) -> str:
-        assert self._scr_command is not None
-        name, opcode, offset = self._scr_command
-        bits = (self._scr_bytes_in - offset) * 8 + self._scr_bits_count
-        return f"the program's output ended inside {name} (0x{opcode:02X}): {bits:,} of its bits read"
+        if reason is None:
+            bits = (self._scr_bytes_in - offset) * 8 + self._scr_bits_count
+            reason = f"the program's output ended inside {name} (0x{opcode:02X}): {bits:,} of its bits read"
+        where = f'{name} (0x{opcode:02X}) at output byte {offset:,}, frame {self.frame_count:,}{at}'
+        return IODeviceException(f'ScreenIO: {where}: {reason}')
 
     def _scr_parse(self) -> Parser:
         """the command parser: a generator sent one output byte at a time."""
         handlers = {opcode: getattr(self, f'_scr_cmd_{name}') for opcode, name in COMMAND_NAMES.items()}
-        while True:
-            assert self._scr_nacc == 0  # every command starts on a byte boundary
-            opcode = yield from self._scr_bits(8)
-            offset = self._scr_bytes_in - 1
-            name = COMMAND_NAMES.get(opcode)
-            if name is None:
-                extension = None if opcode == 0x00 else self._extension_command(opcode)
-                if extension is None:
-                    self._scr_command = ('reserved' if opcode == 0x00 else 'unknown', opcode, offset)
-                    raise self._scr_error(
-                        'opcode 0x00 is reserved (a stray zero byte?)'
-                        if opcode == 0x00
-                        else f'opcode 0x{opcode:02X} is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)'
-                    )
-                if extension is not True:
+        try:
+            while True:
+                assert self._scr_nacc == 0  # every command starts on a byte boundary
+                opcode = yield from self._scr_bits(8)
+                offset = self._scr_bytes_in - 1
+                name = COMMAND_NAMES.get(opcode, 'unknown' if opcode else 'reserved')
+                extension = self._extension_command(opcode) if name == 'unknown' else None
+                if extension is not None:  # the subclass's command: its payload bytes are its own
                     self._scr_in_extension = True
-                    while not extension((yield)):
+                    while extension is not True and not extension((yield)):
                         pass
                     self._scr_in_extension = False
-                continue
+                    continue
+                self._scr_command = (name, opcode, offset)
+                if opcode not in COMMAND_NAMES:
+                    raise self._scr_error(
+                        f'opcode 0x{opcode:02X} is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)'
+                        if opcode
+                        else 'opcode 0x00 is reserved (a stray zero byte?)'
+                    )
+                if opcode != 0x01 and self.width == 0:
+                    raise self._scr_error(
+                        f'{name} (0x{opcode:02X}) before init_screen: the first command must be init_screen (0x01)'
+                    )
+                if name in PALETTE_COMMANDS and self.bpp == FORMAT_RGB:
+                    raise self._scr_error(
+                        f'{name} (0x{opcode:02X}) in format 24 (direct RGB): palettes exist only in formats 1-16'
+                    )
+                try:
+                    yield from handlers[opcode]()
+                except _OutputEnded:
+                    raise self._scr_error() from None
 
-            self._scr_command = (name, opcode, offset)
-            if opcode != 0x01 and self.width == 0:
-                raise self._scr_error(
-                    f'{name} (0x{opcode:02X}) before init_screen: the first command must be init_screen (0x01)'
-                )
-            if name in PALETTE_COMMANDS and self.bpp == FORMAT_RGB:
-                raise self._scr_error(
-                    f'{name} (0x{opcode:02X}) in format 24 (direct RGB): palettes exist only in formats 1-16'
-                )
-            try:
-                yield from handlers[opcode]()
-            except _OutputEnded:
-                raise self._scr_error(self._scr_ended_reason()) from None
-
-            padding_bits, padding = self._scr_nacc, self._scr_acc
-            self._scr_acc = self._scr_nacc = 0
-            if padding:
-                raise self._scr_error(
-                    f'the padding bits after the command are 0b{padding:0{padding_bits}b}, '
-                    'not zero (the stream is probably misaligned)'
-                )
-            self._scr_command = None
+                padding_bits, padding = self._scr_nacc, self._scr_acc
+                self._scr_acc = self._scr_nacc = 0
+                if padding:
+                    raise self._scr_error(
+                        f'the padding bits after the command are 0b{padding:0{padding_bits}b}, '
+                        'not zero (the stream is probably misaligned)'
+                    )
+                self._scr_command = None
+        except IODeviceException as failure:  # the parser is over: every later call raises it again
+            self._scr_failure = failure
+            raise
 
     # ---------------------------------------------------------------- screen functions
 
@@ -405,7 +390,7 @@ class InMemoryScreen(IODevice):
                     nacc += 8
                 values[index], acc, nacc = acc & mask, acc >> bits, nacc - bits
         except _OutputEnded:
-            raise self._scr_error(self._scr_ended_reason(), pixel=(index % width, index // width)) from None
+            raise self._scr_error(at=f', pixel ({index % width:,}, {index // width:,})') from None
         self._scr_acc, self._scr_nacc = acc, nacc
 
     def _scr_cmd_draw_collines(self) -> Generator[None, int, None]:
@@ -418,8 +403,8 @@ class InMemoryScreen(IODevice):
         x: Optional[int] = None
         cursor = 0
 
-        def refuse(reason: str) -> IODeviceException:  # where: the column and its cursor, once x is read
-            return self._scr_error(reason, column=x, cursor=cursor)
+        def refuse(reason: Optional[str] = None) -> IODeviceException:  # at the column and its cursor, once x is read
+            return self._scr_error(reason, '' if x is None else f', column {x:,}, cursor {cursor:,}')
 
         try:
             while True:
@@ -475,7 +460,7 @@ class InMemoryScreen(IODevice):
                         picture[start:stop:width] = [colour] * (row - cursor)
                     cursor = row
         except _OutputEnded:
-            raise refuse(self._scr_ended_reason()) from None
+            raise refuse() from None
 
     def _scr_cmd_present(self) -> Generator[None, int, None]:
         self._present()
