@@ -85,7 +85,7 @@ def replay_screen(log: Dict[str, Any], device: Any, after_call: Optional[Callabl
             device.window_title,
             device.window_icon,
             [frame_hash for _, frame_hash in device.frame_hashes],
-            _sha(array('L', device.pixel_indices).tobytes()),
+            _sha(array('I', device.pixel_indices).tobytes()),  # 'I': 4 bytes on every platform ('L' is 8 on Linux)
             _palettes_sha(device.palettes),
             _palettes_sha([device.palette]),
             _sha(device.last_frame_rgb),
