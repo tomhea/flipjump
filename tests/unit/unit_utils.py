@@ -8,13 +8,13 @@ FixedIO - so the individual test files stay short and focused.
 
 import struct
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Callable, Iterator, List, Optional, Sequence, Tuple, Union
 
 import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard
+from flipjump.assembler.table_pool import BlockPool, DeferredTables, OffsetGuard
 from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
@@ -197,6 +197,26 @@ def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
 def every_table_moves(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the table pool's OffsetGuard keeps no table inline"""
     monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
+
+
+def labels_off_their_ops(
+    monkeypatch: pytest.MonkeyPatch, delta: int, which: Callable[[BlockPool, DeferredTables, Sequence[int]], int]
+) -> None:
+    """the control: a pool whose ops and labels disagree - the labels of one moved table (`which` picks its index from
+    the pool's placement: BlockPool.place_deferred) lie `delta` bits off its ops (DeferredTables.labels_of)"""
+    place, labels_of = BlockPool.place_deferred, DeferredTables.labels_of
+
+    def placing(self: BlockPool, tables: DeferredTables, labels: Any, end: int) -> Sequence[int]:
+        addresses = place(self, tables, labels, end)
+        tables.shifted = which(self, tables, addresses)  # type: ignore[attr-defined]
+        return addresses
+
+    def shifted(self: DeferredTables, index: int) -> Iterator[Tuple[str, int]]:
+        for label, offset in labels_of(self, index):
+            yield label, offset + (delta if index == getattr(self, 'shifted', -1) else 0)
+
+    monkeypatch.setattr(BlockPool, 'place_deferred', placing)
+    monkeypatch.setattr(DeferredTables, 'labels_of', shifted)
 
 
 def build_and_run(

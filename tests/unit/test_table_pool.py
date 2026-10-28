@@ -10,7 +10,7 @@ is reached only by jump, so its address is free to choose.
 import re
 import tracemalloc
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import pytest
 
@@ -27,7 +27,7 @@ from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
-from tests.unit.unit_utils import build_and_run, relocatable, sum_expr
+from tests.unit.unit_utils import build_and_run, labels_off_their_ops, relocatable, sum_expr
 
 W = 32
 OP_BITS = 2 * W
@@ -294,12 +294,17 @@ def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path) ->
 
 
 def test_a_moved_table_holds_the_ops_its_declaration_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """a declared table holds only labels and `a;b` ops, so its expansion is the ops _relocatable_table_ops counts
+    """a declared table holds only labels and `a;b` ops, so its expansion is the ops relocatable_call counts
     (end_relocation asserts it; it was a refusal no program could reach). The control: a miscount is caught."""
     labels = expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
     assert any(address >= POOL_BASE for address in labels.values())
-    counted = preprocessor._relocatable_table_ops
-    monkeypatch.setattr(preprocessor, '_relocatable_table_ops', lambda *args: counted(*args) + 1)
+    counted = preprocessor.relocatable_call
+
+    def miscounted(*args: Any) -> Any:
+        table = counted(*args)
+        return None if table is None else (table[0], table[1] + 1, *table[2:])
+
+    monkeypatch.setattr(preprocessor, 'relocatable_call', miscounted)
     with pytest.raises(AssertionError):
         expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
 
@@ -705,21 +710,14 @@ def test_what_gets_no_block_goes_to_the_overflow_region(tmp_path: Path, pin_brok
 
 
 def test_an_overflow_table_moved_off_its_labels_is_caught(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """the control: the first overflow table's ops one slot higher than its labels - not the same program"""
+    """the control: the first overflow table's labels one slot (16 ops) above its ops - not the same program"""
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
-    original = PreprocessorData._place_deferred_tables
 
-    def shifted(self: PreprocessorData, pool: BlockPool) -> None:
-        tables = self._deferred
-        original(self, pool)
-        segment = min(
-            (s for s in tables.segments if s is not None and s.start_address >= pool.pool_base + pool._used),
-            key=lambda s: s.start_address,
-        )
-        segment.start_address -= 16 * OP_BITS  # into the blocks' last slot, which no table of the program fills
-        segment.wflip_start_address -= 16 * OP_BITS
+    def first_overflow(pool: BlockPool, tables: DeferredTables, addresses: Sequence[int]) -> int:
+        unblocked = [i for i, group in enumerate(tables.groups) if pool.alias.get(group, group) not in pool.groups]
+        return min((addresses[i], i) for i in unblocked if addresses[i])[1]
 
-    monkeypatch.setattr(PreprocessorData, '_place_deferred_tables', shifted)
+    labels_off_their_ops(monkeypatch, 16 * OP_BITS, first_overflow)
     try:
         output = build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, span_bits=NO_ROOM_SPAN))[0]
     except FlipJumpException:

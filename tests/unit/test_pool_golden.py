@@ -16,7 +16,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pytest
 
 from flipjump import assemble
-from flipjump.assembler import table_pool
 from flipjump.assembler.table_pool import BlockPool, heat_key
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
@@ -422,9 +421,11 @@ def test_golden_negative_control_heat_order(tmp_path: Path, heat: Heat) -> None:
     assert digests['fjm'] != GOLDEN['shipped']['fjm'] and digests['labels'] != GOLDEN['shipped']['labels']
 
 
-def test_golden_negative_control_raw_order(tmp_path: Path, heat: Heat, monkeypatch: pytest.MonkeyPatch) -> None:
-    """R9: a raw program's tables take the cheapest addresses - in plain ascending order, the layout changes"""
-    monkeypatch.setattr(table_pool, '_cheapest', lambda bits: iter(range(1 << bits)))
+def test_golden_negative_control_raw_span(tmp_path: Path, heat: Heat) -> None:
+    """R9: a raw program's tables take the cheapest addresses of a region 256 times their slots - in a span with no
+    room for that, of their slots alone: the layout changes"""
     make, exclude, golden = EXTRA['flat_raw']
-    digests = _digests(tmp_path, heat, make(heat), exclude)
+    pool = make(heat)
+    pool.span_bits = 1 << 24  # the region of 256 times the slots: 2^27.8 bits; the slots alone: 2^20
+    digests = _digests(tmp_path, heat, pool, exclude)
     assert digests['fjm'] != golden['fjm'] and digests['labels'] != golden['labels']
