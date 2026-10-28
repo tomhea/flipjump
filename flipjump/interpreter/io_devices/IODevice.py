@@ -48,19 +48,6 @@ class IODevice(ABC):
     def write_bit(self, bit: bool) -> None:
         pass
 
-    def read_byte(self) -> int:
-        """
-        read 8 input bits at once, lsb first: exactly 8 read_bit calls in a row. the native engine calls this once a
-        byte (only from a byte boundary of the input stream) when the device's class overrides it, instead of
-        read_bit once a bit -- so a device overrides it only when its next byte does not depend on what the program
-        outputs while it reads that byte (a byte stream: stdin, a fixed buffer). a device that answers bit by bit
-        (a keyboard queueing 12-bit events) keeps the default and is asked bit by bit.
-        """
-        value = 0
-        for i in range(8):
-            value |= int(self.read_bit()) << i
-        return value
-
     def write_byte(self, byte: int) -> None:
         """
         write 8 output bits at once, lsb first: exactly write_bit of each. the native engine calls this once a

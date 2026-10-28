@@ -23,19 +23,16 @@ class FixedIO(IODevice):
         self.current_output_byte = 0
         self.bits_to_write_in_output_byte = 0
 
-    def _next_input_byte(self) -> int:
-        if not self.remaining_input:
-            raise IOReadOnEOF("Read an empty input on fixed IO (EOF)")
-        value = self.remaining_input[0]
-        self.remaining_input = self.remaining_input[1:]
-        return value
-
     def _emit_output_byte(self, byte: int) -> None:
         self._output += byte.to_bytes(1, 'little')
 
     def read_bit(self) -> bool:
         if 0 == self.bits_to_read_in_input_byte:
-            self.current_input_byte = self._next_input_byte()
+            if not self.remaining_input:
+                raise IOReadOnEOF("Read an empty input on fixed IO (EOF)")
+
+            self.current_input_byte = self.remaining_input[0]
+            self.remaining_input = self.remaining_input[1:]
             self.bits_to_read_in_input_byte = 8
 
         bit = (self.current_input_byte & 1) == 1
@@ -51,11 +48,6 @@ class FixedIO(IODevice):
             self._emit_output_byte(self.current_output_byte)
             self.current_output_byte = 0
             self.bits_to_write_in_output_byte = 0
-
-    def read_byte(self) -> int:
-        if self.bits_to_read_in_input_byte:  # never from the engine (it reads bytes from a byte boundary only)
-            return super().read_byte()
-        return self._next_input_byte()
 
     def write_byte(self, byte: int) -> None:
         if self.bits_to_write_in_output_byte:  # never from the engine (it writes bytes from a byte boundary only)

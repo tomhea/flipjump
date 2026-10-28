@@ -38,14 +38,7 @@ b:
 '''
 
 
-class BitInputIO(RecordingIO):
-    """a RecordingIO whose INPUT stays bit by bit (IODevice's read_byte: not an override), so the whole interleaving
-    can be compared with the python loop's - the byte input is test_native_read_byte's"""
-
-    read_byte = IODevice.read_byte
-
-
-class MsbFirstIO(BitInputIO):
+class MsbFirstIO(RecordingIO):
     """unpacks its output bytes msb first: a wrong device"""
 
     def write_byte(self, byte: int) -> None:
@@ -63,8 +56,8 @@ def as_bits(events: List[Tuple[Any, ...]]) -> List[Tuple[Any, ...]]:
     return out
 
 
-def _run(fjm_path: Path, fixed_input: bytes, *, native: bool, monkeypatch: pytest.MonkeyPatch) -> BitInputIO:
-    io = BitInputIO(fixed_input)
+def _run(fjm_path: Path, fixed_input: bytes, *, native: bool, monkeypatch: pytest.MonkeyPatch) -> RecordingIO:
+    io = RecordingIO(fixed_input)
     run_recorded(fjm_path, io, native=native, monkeypatch=monkeypatch)
     return io
 
@@ -126,13 +119,13 @@ def test_the_paged_loop_delivers_the_bit_by_bit_stream(tmp_path: Path, monkeypat
     """a last-ops ring routes the native run through the generic (paged) loop, which gathers the same way"""
     fjm_path = assemble_to_path(UNALIGNED_PROGRAM, tmp_path, use_stl=True)
     reference = _run(fjm_path, b'\x01\x00', native=False, monkeypatch=monkeypatch)
-    io = BitInputIO(b'\x01\x00')
+    io = RecordingIO(b'\x01\x00')
     run_recorded(fjm_path, io, native=True, monkeypatch=monkeypatch, last_ops_debugging_list_length=16)
     assert as_bits(io.events) == reference.events
     assert any(e[0] == 'byte' for e in io.events)
 
 
-class RaisingIO(BitInputIO):
+class RaisingIO(RecordingIO):
     """fails as its second output byte completes -- in write_byte, or in the write_bit that ends it"""
 
     def write_bit(self, bit: bool) -> None:
@@ -174,10 +167,13 @@ def test_only_a_device_with_its_own_write_byte_gets_bytes() -> None:
         def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
             return b''
 
-    assert not fjm_run._overrides(BitIO(), 'write_byte')
-    assert fjm_run._overrides(FixedIO(b''), 'write_byte')
-    assert fjm_run._overrides(RecordingIO(b''), 'write_byte')
-    assert fjm_run._overrides(InMemoryScreen(), 'write_byte')
+    def gathers(device: IODevice) -> bool:  # what fjm_run._run_native passes as write_byte
+        return type(device).write_byte is not IODevice.write_byte
+
+    assert not gathers(BitIO())
+    assert gathers(FixedIO(b''))
+    assert gathers(RecordingIO(b''))
+    assert gathers(InMemoryScreen())
 
 
 @native_engine_required
@@ -196,7 +192,7 @@ def test_reset_starts_the_device_stream_on_a_byte_boundary(tmp_path: Path) -> No
     kinds = []
     for _ in range(2):
         core.reset()
-        io = BitInputIO(b'')
+        io = RecordingIO(b'')
         core.run(io.read_bit, io.write_bit, IOReadOnEOF, write_byte=io.write_byte)
         kinds.append([e[0] for e in io.events])
     assert kinds[0] == ['byte'] + ['bit'] * 3

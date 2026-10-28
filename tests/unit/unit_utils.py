@@ -129,7 +129,7 @@ def run_source(
 class RecordingIO(FixedIO):
     """
     a FixedIO that logs every device call, with the count of output bits it had received at each input call:
-    ('bit', b), ('byte', B), ('read', b, outs), ('rbyte', B, outs).
+    ('bit', b), ('byte', B), ('read', b, outs).
     """
 
     def __init__(self, fixed_input: bytes) -> None:
@@ -141,11 +141,6 @@ class RecordingIO(FixedIO):
         bit = super().read_bit()
         self.events.append(('read', int(bit), self.outs))
         return bit
-
-    def read_byte(self) -> int:
-        value = super().read_byte()
-        self.events.append(('rbyte', value, self.outs))
-        return value
 
     def write_bit(self, bit: bool) -> None:
         self.events.append(('bit', int(bit)))
