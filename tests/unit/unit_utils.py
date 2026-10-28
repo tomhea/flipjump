@@ -150,7 +150,8 @@ class RecordingIO(FixedIO):
     def write_byte(self, byte: int) -> None:
         self.events.append(('byte', byte))
         self.outs += 8
-        super().write_byte(byte)
+        for i in range(8):
+            FixedIO.write_bit(self, bool((byte >> i) & 1))
 
 
 def run_recorded(
