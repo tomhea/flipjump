@@ -37,7 +37,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum
 from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.table_pool import TablePool
+from flipjump.assembler.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.utils.exceptions import FlipJumpExprException
@@ -127,7 +127,7 @@ class _Image:
 
 
 def prove_relocation(
-    memory_width: int, macros: Dict[MacroName, Macro], table_pool: TablePool, *, max_reported: int = 20
+    memory_width: int, macros: Dict[MacroName, Macro], table_pool: BlockPool, *, max_reported: int = 20
 ) -> RelocationProof:
     """
     expand `macros` without a pool and with `table_pool` (a fresh one, as for any assembly), and compare the two
@@ -235,7 +235,6 @@ def prove_relocation(
         return {value + delta for delta in deltas_at[label_addresses[index]]}
 
     # the pins the assembler keeps: the subject, judged below with none of its rules
-    table_pool.labels_resolved(pooled_labels)
     pinned, _ = resolve_pinned(table_pool.pinned_words(), pooled_labels, exclude=table_pool.pin_exclude)
     raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
     guard = table_pool.offset_guard
@@ -248,7 +247,7 @@ def prove_relocation(
             {},
             guard.alignment,
             raw=raw,
-            pads=guard.tables_inline(),
+            pads=guard.pads,
         )
 
     def arm_alignment(plain_address: int) -> int:

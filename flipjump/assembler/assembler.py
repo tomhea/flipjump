@@ -27,8 +27,6 @@ from flipjump.assembler.inner_classes.ops import (
     FlipJump,
     WordFlip,
     LastPhaseOp,
-    Macro,
-    MacroName,
     NewSegment,
     ReserveBits,
     Padding,
@@ -36,8 +34,8 @@ from flipjump.assembler.inner_classes.ops import (
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
-from flipjump.assembler.preprocessor import OpsQueue, resolve_macros
-from flipjump.assembler.table_pool import OffsetGuard, PoolHasNoRoom, TablePool, RESERVED_BELOW
+from flipjump.assembler.preprocessor import resolve_macros
+from flipjump.assembler.table_pool import BlockPool, OffsetGuard, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -139,7 +137,7 @@ class BinaryData:
         @param pinned: {jump-word address: block base} of BlockPool's pinned words
         @param pool_start: where a table pool starts: a segment below it may not reach it
         @param wflips_at: if given, every segment's wflip area is laid out from here, one after the other, rather
-        than right after its code (a pool based right above the program: TablePool.wflips_at)
+        than right after its code (a pool based right above the program: BlockPool.wflips_at)
         """
         self.memory_width = memory_width
 
@@ -771,7 +769,7 @@ def assemble(
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     defines_file: Optional[Path] = None,
-    table_pool: Optional[TablePool] = None,
+    table_pool: Optional[BlockPool] = None,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -796,29 +794,16 @@ def assemble(
             )
 
         with ProgressBar('  macro resolve:   ', print_time=print_time, total=1.0) as progress:
-            # the `...---:start:` macro-start labels are read only by the debugging file
-            def resolve(tree: Dict[MacroName, Macro], pool: Optional[TablePool]) -> Tuple[OpsQueue, Dict[str, int]]:
-                return resolve_macros(
-                    memory_width,
-                    tree,
-                    table_pool=pool,
-                    show_statistics=show_statistics,
-                    max_recursion_depth=max_recursion_depth,
-                    save_debug_labels=debugging_file_path is not None,
-                    on_progress=progress.update if progress.active else None,
-                    consume_main=True,  # the tree is ours, and dropped right below
-                )
-
-            try:
-                ops, labels = resolve(macros, table_pool)
-            except PoolHasNoRoom as no_room:
-                # the program leaves its tables no room in the memory: it is assembled without the pool (the tree
-                # was consumed: parsed again)
-                assert table_pool is not None
-                table_pool.base_reason, table_pool.allocated = f'none ({no_room})', 0
-                table_pool = None
-                macros = parse_macro_tree(input_files, memory_width, warning_as_errors, defines_file)
-                ops, labels = resolve(macros, None)
+            ops, labels = resolve_macros(
+                memory_width,
+                macros,
+                table_pool=table_pool,
+                show_statistics=show_statistics,
+                max_recursion_depth=max_recursion_depth,
+                save_debug_labels=debugging_file_path is not None,  # the macro-start labels: debugging file only
+                on_progress=progress.update if progress.active else None,
+                consume_main=True,  # the tree is ours, and dropped right below
+            )
         # MEMORY: the macro tree is not read again - free it before labels-resolve builds the binary.
         # (The op stream keeps what it still needs of it: label names, positions, the odd Expr.)
         del macros
@@ -830,8 +815,6 @@ def assemble(
         pool_start = None
         if table_pool is not None:
             pool_start = table_pool.pool_start()
-            # a BlockPool records the alias these labels imply, for its census (a dict, not the labels)
-            table_pool.labels_resolved(labels)
             pinned, table_pool.pin_conflicts = resolve_pinned(
                 table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
             )
@@ -847,7 +830,7 @@ def assemble(
                     table_pool.unpins,
                     guard.alignment,
                     raw=raw,
-                    pads=guard.tables_inline(),
+                    pads=guard.pads,
                 )
             if not pinned:
                 pinned = None
@@ -866,10 +849,6 @@ def assemble(
                 offset_guard=None if table_pool is None else table_pool.offset_guard,
                 wflips_at=None if table_pool is None else table_pool.wflips_at(),
             )
-        if table_pool is not None and table_pool.flat_limit is not None:  # (for_flat) say if it runs past the window
-            end = max(((start + length) * memory_width for start, length, _, _ in fjm_writer.segments), default=0)
-            if end > table_pool.flat_limit:
-                table_pool.base_reason += f'; the program ends at {hex(end)}, past the flat maximum'
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression
         del ops

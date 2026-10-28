@@ -187,8 +187,7 @@ def assemble(
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
-    # right above the program, ending below the flat window: --flat-max-words, else the automatic-flat threshold
-    table_pool = BlockPool.for_flat(args.width, args.flat_max_words) if args.pool_tables else None
+    table_pool = BlockPool.for_flat(args.width) if args.pool_tables else None
     assembler.assemble(
         file_tuples,
         args.width,
@@ -202,7 +201,7 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        print(f'  table pool:      {table_pool.allocated} tables moved, based at {table_pool.base_reason}')
+        print(f'  table pool:      {table_pool.deferred} tables moved, from {hex(table_pool.pool_base)}')
 
 
 def get_fjm_file_path(args: argparse.Namespace, error_func: ErrorFunc, temp_dir_name: str) -> Path:
@@ -307,7 +306,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         "the window runs in the fast flat array; segments reaching above it keep the slower paged "
         "mode for that part (hybrid). raising it costs startup time and memory (4 or 8 bytes per word "
         "of window, w<=32 / w=64), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable "
-        "sets the same limit. when assembling with --pool-tables, the table pool ends below it",
+        "sets the same limit",
     )
 
     def _io_mode(value: str) -> str:
@@ -398,19 +397,10 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         '--pool-tables',
         action='store_true',
         help="move the tables declared relocatable (the expansions of macros whose innermost namespace is "
-        "`__relocatable__`, such as hex.exact_xor's) to addresses that are cheap to arm, so every table dispatch "
-        "runs fewer ops. only declared, `$`-free tables move, and the program runs the same: where moving a table "
-        "would change an operand that names a label (an offset from another label into or across the table), the "
-        "table stays inline, and where pinning a word would, the word is not pinned; an operand that comes too late "
-        "to keep its table inline is refused. the pool sits right above the program (at the first power of two "
-        "above its end, or, where the pool would not fit below the flat window there, at its end rounded up to its "
-        "largest block) and ends below the flat window - --flat-max-words, else the automatic-flat threshold "
-        "(2^24 words) - so a program that runs flat without the pool runs flat with it; a table with no room below "
-        "it when it leaves the code stays inline (tables the code after them leaves no room run past it, and a "
-        "program that leaves them none in the memory is assembled without the pool). it costs a segment per moved "
-        "table. with it, `__relocatable__` is a reserved namespace, "
-        "and a relocatable that uses `$`, declares a label outside its ops, leaves itself through its own label, "
-        "holds more than labels and `a;b` ops, or has no power-of-two `pad` right before its call is an error",
+        "`__relocatable__`, such as hex.exact_xor's) to blocks right above the program, where they are cheap to arm, "
+        "so every table dispatch runs fewer ops. the program runs the same: a table whose move would change an "
+        "operand stays inline. with it, a relocatable that uses `$`, holds more than labels and `a;b` ops, or has no "
+        "power-of-two `pad` right before its call is an error",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')

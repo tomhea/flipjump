@@ -13,7 +13,7 @@ import pytest
 
 from flipjump import assemble_run_according_to_cmd_line_args
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
-from flipjump.utils.exceptions import FlipJumpParsingException
+from flipjump.utils.exceptions import FlipJumpException, FlipJumpParsingException
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_reader import Reader, read_fjm_header
 from flipjump.interpreter import fjm_run
@@ -413,9 +413,7 @@ def test_cli_pool_tables_runs_a_program_that_reads_through_pointers_the_same(tmp
     assert _output_and_ops(pooled)[0] == _output_and_ops(plain)[0] != b''
 
 
-def test_cli_pool_tables_keeps_inline_the_tables_of_a_program_that_fills_the_memory(tmp_path: Path) -> None:
-    # prime_sieve reserves the upper half of memory after its code: no room for its tables, so it is assembled without
-    # the pool - the binary is the plain one, byte for byte
-    plain = _cli_assemble(tmp_path, 'plain', [PROGRAMS_DIR / 'prime_sieve.fj'])
-    pooled = _cli_assemble(tmp_path, 'pooled', [PROGRAMS_DIR / 'prime_sieve.fj'], '--pool-tables')
-    assert pooled.read_bytes() == plain.read_bytes()
+def test_cli_pool_tables_refuses_a_program_that_leaves_its_tables_no_room(tmp_path: Path) -> None:
+    # prime_sieve reserves the upper half of memory after its code: no room for its tables above the program
+    with pytest.raises(FlipJumpException, match='has no room for'):
+        _cli_assemble(tmp_path, 'pooled', [PROGRAMS_DIR / 'prime_sieve.fj'], '--pool-tables')

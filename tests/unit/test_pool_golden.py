@@ -74,7 +74,6 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
         'stats': {
             'allocated': 416,
             'deferred': 416,
-            'overflowed': 0,
             'ungrouped': 0,
             'declined': 0,
             'groups': 41,
@@ -98,7 +97,6 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
         'stats': {
             'allocated': 289,
             'deferred': 289,
-            'overflowed': 0,
             'ungrouped': 0,
             'declined': 127,
             'groups': 41,
@@ -149,11 +147,8 @@ def _pool(heat: Optional[Heat] = None, cls: type = BlockPool, **knobs: Any) -> B
     pool: BlockPool = cls(
         W,
         POOL_BASE,
-        one_pass=True,
-        merge_aliases=True,
         span_bits=SPAN_BITS,
         spread_min_count=8,
-        width_buckets=True,
         **knobs,
         **({'heat': heat} if heat else {}),
     )
@@ -196,7 +191,7 @@ def _heat(tmp_path: Path) -> Heat:
 def _digests(tmp_path: Path, heat: Heat, **knobs: Any) -> Dict[str, Any]:
     pool = _pool(heat, **knobs)
     fjm, labels = _assemble(tmp_path, 'golden', pool)
-    census = pool.census(merge_aliases=True)
+    census = pool.census()
     census_json = json.dumps([census.counts, census.widths, census.width_hist, census.alias])
     return {
         'fjm': hashlib.sha256(fjm).hexdigest(),
@@ -205,7 +200,6 @@ def _digests(tmp_path: Path, heat: Heat, **knobs: Any) -> Dict[str, Any]:
         'stats': {
             'allocated': pool.allocated,
             'deferred': pool.deferred,
-            'overflowed': pool.overflowed,
             'ungrouped': pool.ungrouped,
             'declined': pool.declined,
             'groups': len(pool.groups),
