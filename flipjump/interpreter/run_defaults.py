@@ -39,11 +39,8 @@ def env_flat_max_words() -> int:
     """FLIPJUMP_FLAT_MAX_WORDS as far as the engine reads it (strtoull's leading number, any base prefix,
     an optional sign): nonzero exactly when the engine honours it; 0 when unset or not a number"""
     match = re.match(r'\s*[+-]?(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)', os.environ.get('FLIPJUMP_FLAT_MAX_WORDS', ''))
-    if not match:
-        return 0
-    digits = match.group(1)
-    base = 16 if digits[:2].lower() == '0x' else (8 if digits.startswith('0') else 10)
-    return int(digits, base)
+    digits = match.group(1) if match else '0'
+    return int(digits, 16 if digits[:2].lower() == '0x' else 8 if digits[0] == '0' else 10)
 
 
 def flat_window(
@@ -88,18 +85,13 @@ def flat_window(
 
 def flat_memory_failure_message(flat_error: FlipJumpFlatMemoryException, window: FlatWindow) -> str:
     """what to tell the user when the flat memory a run asked for could not be allocated"""
-    causes = []
-    if window.source == 'flat_memory':
-        causes.append('--flat-memory was given')
-    if window.run_flag == 'compiled':
-        causes.append("this program's run flags (compiled into the .fjm) turn on flat memory")
-    elif window.run_flag == 'given':
-        causes.append('--run-flags turns on flat memory')
-    fixes = []
-    if window.source == 'flat_memory':
-        fixes.append('without --flat-memory')
-    if window.run_flag:
-        fixes.append('with --run-flags 0')
+    asked = window.source == 'flat_memory'
+    causes = (['--flat-memory was given'] if asked else []) + {
+        'compiled': ["this program's run flags (compiled into the .fjm) turn on flat memory"],
+        'given': ['--run-flags turns on flat memory'],
+        '': [],
+    }[window.run_flag]
+    fixes = (['without --flat-memory'] if asked else []) + (['with --run-flags 0'] if window.run_flag else [])
     cause = ', and '.join(causes) or 'flat memory was asked for'
     fix = f"\nRunning it {' and '.join(fixes)} might fix that, at a cost of speed." if fixes else ''
     return (
