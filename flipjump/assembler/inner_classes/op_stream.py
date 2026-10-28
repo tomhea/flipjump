@@ -147,7 +147,7 @@ def _linear_memo(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
 class OpStream:
     """an ordered stream of last-phase ops, stored compactly (see the module docstring)"""
 
-    __slots__ = ('kinds', 'vals', 'refs', 'labels', 'marks', 'keep_label_values', 'guard')
+    __slots__ = ('kinds', 'vals', 'refs', 'labels', 'keep_label_values', 'guard')
 
     def __init__(self, refs: List[Any], labels: Dict[str, int]):
         """
@@ -158,8 +158,6 @@ class OpStream:
         self.vals = array('q')
         self.refs = refs
         self.labels = labels
-        # (op index, vals index, ref) of every OBJ op: flush_table_pool cuts the pool's stream at its NewSegments
-        self.marks: List[Tuple[int, int, Any]] = []
         # a wflip's value that names a label stays an expression (BlockPool tells an address from a number)
         self.keep_label_values = False
         # a table pool's OffsetGuard: told of every operand folded here that names a label (None: no pool)
@@ -362,7 +360,6 @@ class OpStream:
         self.vals.append(ops_count)
 
     def add_object(self, op: Union[NewSegment, ReserveBits]) -> None:
-        self.marks.append((len(self.kinds), len(self.vals), op))
         self.kinds.append(OBJ)
         self.vals.append(len(self.refs))
         self.refs.append(op)
@@ -380,23 +377,11 @@ class OpStream:
         else:
             raise TypeError(f"not a last-phase op: {op!r}")
 
-    def extend_slice(
-        self, other: OpStream, op_start: int, op_end: int, val_start: int, val_end: int, mark_start: int, mark_end: int
-    ) -> None:
-        """append other's ops [op_start, op_end) (their slots other.vals[val_start:val_end], their OBJ ops
-        other.marks[mark_start:mark_end]); both streams share `refs`"""
+    def extend_slice(self, other: OpStream, op_start: int, val_start: int, op_end: int, val_end: int) -> None:
+        """append other's ops [op_start, op_end), whose slots are other.vals[val_start:val_end] (both share `refs`)"""
         assert other.refs is self.refs
-        base_ops = len(self.kinds)
-        base_vals = len(self.vals)
-        for op_index, val_index, ref in other.marks[mark_start:mark_end]:
-            self.marks.append((base_ops + op_index - op_start, base_vals + val_index - val_start, ref))
         self.kinds += other.kinds[op_start:op_end]
         self.vals += other.vals[val_start:val_end]
-
-    def clear(self) -> None:
-        del self.kinds[:]
-        del self.vals[:]
-        self.marks.clear()
 
     # ---- reading ----
 

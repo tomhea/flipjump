@@ -411,9 +411,9 @@ def test_the_runtime_words_are_never_relocated() -> None:
     pool = BlockPool(W, POOL_BASE)
     data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
     data.labels['stl.IO'] = 64
-    assert not data.begin_relocation(16, 16, '', '(stl.IO + 32)', sum_expr('stl.IO', 32))
+    assert not data.begin_relocation(16, '', 16, sum_expr('stl.IO', 32), 'T')
     assert pool.reserved_words == 1 and pool.deferred == 0
-    assert data.begin_relocation(16, 16, '', '(x + 32)', sum_expr('x', 32))
+    assert data.begin_relocation(16, '', 16, sum_expr('x', 32), 'T')
     assert pool.reserved_words == 1 and pool.deferred == 1
 
 
