@@ -184,12 +184,10 @@ fj --run program.fjm --io pc
 - **`--io standard`** - input/output over the terminal.
 - **`--io pc`** - an interactive window: live keyboard input **and** a scaled screen,
   in one window the device owns (F11 toggles fullscreen, closing it stops the run). Needs
-  pygame-ce (`pip install flipjump[io]`); works on Windows, Linux and macOS. ⚠ pygame-ce, NOT
-  upstream pygame: they share a module name, so the wrong one is silent -- the window code
-  requires `pygame.IS_CE` and refuses otherwise.
+  pygame-ce (`pip install flipjump[io]`), not upstream pygame (the window refuses it); works on
+  Windows, Linux and macOS.
 
-A program can carry its own defaults, compiled into the `.fjm` header, so `fj --run program.fjm` is
-all it takes to run it:
+A program can carry its own defaults in the `.fjm` header, so `fj --run program.fjm` is all it takes:
 
 ```bash
 fj --asm game.fj -o game.fjm --io-mode 1 --run-flags 1   # io mode 1 = pc; run flag 1 = flat memory
@@ -198,14 +196,12 @@ fj --run game.fjm                                        # runs with the pc wind
 
 - **`--io-mode NUMBER`** (assembling): the default io device - `0` standard (the default), `1` pc.
   `--io MODE` still overrides it at run time.
-- **`--run-flags NUMBER`** (32 bits, all off by default): bit 0 (the value `1`) = **flat memory**, as
-  if `--flat-memory` were given - the whole program in the native engine's flat array, sized to its
-  highest segment (fastest; costs memory for the whole span). When assembling, the flags are
-  compiled in; when running, `--run-flags` overrides the compiled ones. If the program asks for flat
-  memory and the allocation fails, the run stops and says so - `--run-flags 0` runs it in the
-  default (slower) memory.
+- **`--run-flags NUMBER`** (32 bits, all off by default): bit 0 (`1`) = **flat memory**, as if
+  `--flat-memory` were given - the whole program in the native engine's flat array (fastest; costs
+  memory for its whole span). Compiled in when assembling; `--run-flags` overrides them when running.
+  If the flat allocation fails, the run stops and says so (`--run-flags 0` runs it slower).
 
-Any other value of either is a bad-flags error, both when assembling and when reading a `.fjm`.
+Any other value of either is a bad-flags error, when assembling and when reading a `.fjm`.
 From python, `flipjump.assemble(..., io_mode=, run_flags=)` compiles them in and `flipjump.run` /
 `flipjump.debug` follow them the same way (`run_flags=` / `flat_memory=` / an `io_device` override them).
 
