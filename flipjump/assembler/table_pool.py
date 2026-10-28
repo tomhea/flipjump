@@ -634,7 +634,7 @@ class BlockPool:
             return None
         width = max(table_ops, ops_alignment, 1)
         slot_ops = 1 << (width - 1).bit_length()
-        offset, slots, count = self._bucket_layout(group)[0][slot_ops]
+        offset, slots, _ = self._bucket_layout(group)[0][slot_ops]
         key = (group, slot_ops)
         raw = self._next_index.get(key, 0)
         if hot_site is not None:
