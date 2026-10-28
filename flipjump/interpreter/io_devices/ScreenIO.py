@@ -161,9 +161,8 @@ class InMemoryScreen(IODevice):
         self.max_fps = 0
 
         self._scr_row_bits = self._scr_column_bits = 0  # init_screen's field widths: R and C
-        self._scr_owned_slots: List[bool] = []  # a slot that does not own its list is copied before a write
-        # (format, the presented values, the presented palette) - expanded only when asked
-        self._scr_presented: Optional[Tuple[int, Tuple[int, ...], List[RGB]]] = None
+        self._scr_default: List[RGB] = []  # init_screen's palette, the list every slot starts sharing
+        self._scr_presented: Optional[Tuple[int, ...]] = None  # the presented values (expanded only when asked)
         self._scr_palette_bytes_cache: Optional[Tuple[List[RGB], bytes]] = None
         # the output stream: a partial byte, the bytes handed to the parser, and the parser's bit buffer
         self._scr_current_byte = self._scr_bits_count = self._scr_bytes_in = 0
@@ -313,8 +312,8 @@ class InMemoryScreen(IODevice):
         self._scr_row_bits, self._scr_column_bits = row_field_width(height), column_field_width(width)
         self.pixel_indices = [0] * (width * height)
         indexed = bpp != FORMAT_RGB
-        self.palettes = [list(default_palette(bpp))] * PALETTE_SLOTS if indexed else []
-        self._scr_owned_slots = [False] * PALETTE_SLOTS if indexed else []
+        self._scr_default = list(default_palette(bpp)) if indexed else []
+        self.palettes = [self._scr_default] * PALETTE_SLOTS if indexed else []
         self.selected_slot = 0
 
     def _scr_cmd_define_palette(self) -> Generator[None, int, None]:
@@ -326,10 +325,10 @@ class InMemoryScreen(IODevice):
         entries = []
         for _ in range(last - first + 1):
             entries.append(rgb_of((yield from self._scr_bits(24))))  # R:8 G:8 B:8, R first: a format-24 value
-        if not self._scr_owned_slots[slot]:
-            self.palettes[slot] = list(self.palettes[slot])
-            self._scr_owned_slots[slot] = True
-        self.palettes[slot][first : last + 1] = entries  # noqa: E203
+        palette = self.palettes[slot]
+        if palette is self._scr_default or palette is self.palette:  # shared, or frozen at a present: copy it first
+            palette = self.palettes[slot] = list(palette)
+        palette[first : last + 1] = entries  # noqa: E203
 
     def _scr_cmd_set_max_fps(self) -> Generator[None, int, None]:
         self.max_fps = yield from self._scr_bits(8)
@@ -371,7 +370,6 @@ class InMemoryScreen(IODevice):
         if builtin_id > 4:
             raise self._scr_error(f'id = {builtin_id}: the built-ins are 0..4')
         self.palettes[slot] = list(builtin_palette(builtin_id, self.bpp))
-        self._scr_owned_slots[slot] = True
 
     def _scr_cmd_draw_raw(self) -> Generator[None, int, None]:
         yield from self._scr_colours(self.pixel_indices, self.width)
@@ -473,16 +471,14 @@ class InMemoryScreen(IODevice):
         if self.bpp == FORMAT_RGB:
             hashed = b''.join(value.to_bytes(3, 'little') for value in values)
         else:
-            palette = self.palettes[self.selected_slot]
-            # the presented list is frozen from here on: a later define_palette copies the slot first
-            self._scr_owned_slots[self.selected_slot] = False
+            palette = self.palettes[self.selected_slot]  # frozen while it is self.palette (define_palette copies)
             cached = self._scr_palette_bytes_cache
             if cached is None or cached[0] is not palette:
                 cached = self._scr_palette_bytes_cache = (palette, bytes(chain.from_iterable(palette)))
             value_bytes = bytes(values) if self.bpp <= 8 else struct.pack(f'<{len(values)}H', *values)
             hashed = value_bytes + cached[1]
         self.palette = palette
-        self._scr_presented = (self.bpp, values, palette)
+        self._scr_presented = values
         self.frame_count += 1
         self.frame_hashes.append((time.time_ns(), hashlib.sha256(hashed).hexdigest()))
 
@@ -497,4 +493,4 @@ class InMemoryScreen(IODevice):
     def last_frame_rgb(self) -> List[RGB]:
         """the last presented frame as row-major RGB tuples ([] before the first present). LAZY (the window hands
         SDL the indices); its inputs are snapshotted at present time, so it is the frame that was presented."""
-        return [] if self._scr_presented is None else to_rgb(self._scr_presented[1], self._scr_presented[2])
+        return [] if self._scr_presented is None else to_rgb(self._scr_presented, self.palette)
