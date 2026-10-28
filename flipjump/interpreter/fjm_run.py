@@ -217,7 +217,7 @@ def run(
     # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
     native = not use_featured_loop and is_native_engine_active()
     try:
-        with ProgressBar('  loading memory:  ', print_time=print_time, total=1.0 if native else None) as progress:
+        with ProgressBar('  loading memory:  ', print_time=print_time) as progress:
             if native:
                 mem = _load_native(fjm_path, header, flat_max_words, flat_required, progress)
             else:
@@ -307,14 +307,13 @@ def _load_native(
         raise FlipJumpFlatMemoryException(str(memory_error), window) from memory_error
 
     def on_decompress_progress(fraction: float) -> None:
-        progress.update(fraction * _DECOMPRESS_SHARE, stage='decompressing')
+        progress.update(fraction * _DECOMPRESS_SHARE)
 
-    progress.update(0, stage='reading')
     raw_header, data = fjm_reader.read_fjm_raw(fjm_path, on_decompress_progress if progress.active else None)
     if raw_header != header:
         raise FlipJumpReadFjmException(f"{fjm_path} changed while it was being loaded.")
 
-    progress.update(_DECOMPRESS_SHARE, stage='loading')
+    progress.update(_DECOMPRESS_SHARE)
     relative_jumps = header.relative_jumps
     segments_count = max(1, len(header.segments))
     for index, (segment_start, _segment_length, data_start, data_length) in enumerate(header.segments):

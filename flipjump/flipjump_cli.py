@@ -187,8 +187,7 @@ def assemble(
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
-    # right above the program, ending below the flat window: --flat-max-words, else the automatic-flat threshold
-    table_pool = BlockPool.for_flat(args.width, args.flat_max_words) if args.pool_tables else None
+    table_pool = BlockPool.for_flat(args.width) if args.pool_tables else None
     assembler.assemble(
         file_tuples,
         args.width,
@@ -202,7 +201,7 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        print(f'  table pool:      {table_pool.allocated} tables moved, based at {table_pool.base_reason}')
+        print(f'  table pool:      {table_pool.deferred} tables moved, from {hex(table_pool.pool_base)}')
 
 
 def get_fjm_file_path(args: argparse.Namespace, error_func: ErrorFunc, temp_dir_name: str) -> Path:
@@ -307,7 +306,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         "the window runs in the fast flat array; segments reaching above it keep the slower paged "
         "mode for that part (hybrid). raising it costs startup time and memory (4 or 8 bytes per word "
         "of window, w<=32 / w=64), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable "
-        "sets the same limit. when assembling with --pool-tables, the table pool ends below it",
+        "sets the same limit",
     )
 
     def _io_mode(value: str) -> str:
@@ -397,20 +396,8 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument(
         '--pool-tables',
         action='store_true',
-        help="move the tables declared relocatable (the expansions of macros whose innermost namespace is "
-        "`__relocatable__`, such as hex.exact_xor's) to addresses that are cheap to arm, so every table dispatch "
-        "runs fewer ops. only declared, `$`-free tables move, and the program runs the same: where moving a table "
-        "would change an operand that names a label (an offset from another label into or across the table), the "
-        "table stays inline, and where pinning a word would, the word is not pinned; an operand that comes too late "
-        "to keep its table inline is refused. the pool sits right above the program (at the first power of two "
-        "above its end, or, where the pool would not fit below the flat window there, at its end rounded up to its "
-        "largest block) and ends below the flat window - --flat-max-words, else the automatic-flat threshold "
-        "(2^24 words) - so a program that runs flat without the pool runs flat with it; a table with no room below "
-        "it when it leaves the code stays inline (tables the code after them leaves no room run past it, and a "
-        "program that leaves them none in the memory is assembled without the pool). it costs a segment per moved "
-        "table. with it, `__relocatable__` is a reserved namespace, "
-        "and a relocatable that uses `$`, declares a label outside its ops, leaves itself through its own label, "
-        "holds more than labels and `a;b` ops, or has no power-of-two `pad` right before its call is an error",
+        help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
+        "they are cheap to arm: fewer ops per table dispatch, the same program",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')
@@ -563,21 +550,10 @@ _DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*
 
 def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> Optional[Path]:
     """
-    write the --define overrides into a temporary .fj file, and put it first among the input files.
-    it lands BEFORE the stl, so that a constant the stl itself uses is overridden before the stl
-    is parsed (a constant is substituted where it is used, at parse time; a non-stl first file also
-    disables the parser's stl-prefix cache, which was parsed without the override). A define's VALUE
-    may therefore use `w` (a parser builtin) and an earlier define, but not an stl constant such as
-    dw -- write 2*w instead.
-
-    The file is ordinary .fj, which is what keeps the whole expression language available to a
-    define. What makes its constants OVERRIDES rather than declarations is that the parser is told
-    which file this is - see FJParser.statement.
-
-    A dotted NAME is wrapped in its namespaces, because a constant's full name is the only way to
-    address it: `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`, so
-    a bare `-D PTRSIZE=12` does NOT reach it.
-
+    write the --define overrides into a temporary .fj file, parsed before the stl so a constant the stl uses is
+    overridden too (a define's value may use `w` and an earlier define, not an stl constant). The parser treats its
+    constants as overrides (see FJParser.statement). A dotted NAME is wrapped in its namespaces:
+    `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`.
     @param args: the parsed arguments
     @param temp_dir_name: the temp directory to write the defines file into
     @param error_func: parser's error function

@@ -9,14 +9,14 @@ import random
 import subprocess  # nosec B404 - the fuzzer drives the fj CLI
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import pytest
 
 from flipjump import assemble
 from flipjump.assembler.fj_parser import parse_macro_tree
-from flipjump.assembler.relocation_proof import prove_relocation
-from flipjump.assembler.table_pool import BlockPool, TablePool
+from tests.unit.relocation_proof import prove_relocation
+from flipjump.assembler.table_pool import BlockPool
 from flipjump.utils.functions import get_file_tuples
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -184,67 +184,29 @@ class Generator:
         return '\n'.join(lines) + '\n'
 
 
-def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], TablePool]]:
-    """name -> a factory, called in order: `fj --pool-tables`'s pool, the same one based at half the memory, one
-    with spread blocks and width buckets, one with too small a span (the overflow region), one leaving groups
-    without a block, one with an overflow region above the blocks, the two-pass recipe, a TablePool and one with
-    long runs"""
+def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], BlockPool]]:
+    """name -> a factory, called in order: `fj --pool-tables`'s pool, one based at half the memory, one with spread
+    blocks and width buckets, and one with too small a span (the overflow region)"""
     base = 1 << (memory_width - 1)
     made: Dict[str, BlockPool] = {}
 
-    def cli() -> TablePool:
+    def cli() -> BlockPool:
         made['cli'] = BlockPool.for_flat(memory_width)
         return made['cli']
 
-    def tight() -> TablePool:
+    def tight() -> BlockPool:
         used = getattr(made['cli'], '_used', 0) or 64 * 2 * memory_width
         span = max(32 * memory_width, int(used * rng.uniform(0.3, 0.95)) // (2 * memory_width) * 2 * memory_width)
-        return BlockPool(memory_width, base, one_pass=True, span_bits=span, pin_broken=rng.random() < 0.5)
+        return BlockPool(memory_width, base, span_bits=span, pin_broken=rng.random() < 0.5)
 
-    def cli_sizing() -> Dict[str, Any]:
-        """the cli pool's sizing - none if it refused the program"""
-        return made['cli'].sizing().pool_kwargs() if made['cli'].allocated else {'counts': {}}
-
-    def unblocked() -> TablePool:
-        sizing = cli_sizing()
-        sizing['unblocked'] = [group for group in sorted(sizing['counts']) if rng.random() < 0.5]
-        return BlockPool(memory_width, base, one_pass=True, pin_broken=rng.random() < 0.5, **sizing)
-
-    def overflow() -> TablePool:
-        sizing = cli_sizing()
-        sizing['unblocked'] = [group for group in sorted(sizing['counts']) if rng.random() < 0.5]
-        return BlockPool(memory_width, base, one_pass=True, overflow_base=base + (1 << (memory_width - 2)), **sizing)
-
-    def two_pass() -> TablePool:
-        counting = BlockPool(memory_width, base)
-        assemble([source], scratch / 'count.fjm', memory_width=memory_width, print_time=False, table_pool=counting)
-        return BlockPool(memory_width, base, counts=counting.counts, widths=counting.widths)
-
-    def spread_buckets() -> TablePool:
-        return BlockPool(
-            memory_width,
-            base,
-            one_pass=True,
-            spread=2,
-            spread_min_count=4,
-            max_slot_ops=512,
-            pin_broken=True,
-            width_buckets=True,
-            merge_aliases=True,
-        )
+    def spread_buckets() -> BlockPool:
+        return BlockPool(memory_width, base, spread=2, spread_min_count=4, max_slot_ops=512, pin_broken=True)
 
     return {
         'cli': cli,
-        'half': lambda: BlockPool(memory_width, base, one_pass=True),
+        'half': lambda: BlockPool(memory_width, base),
         'spread_buckets': spread_buckets,
         'tight': tight,
-        'unblocked': unblocked,
-        'overflow': overflow,
-        'two_pass': two_pass,
-        'table': lambda: TablePool(memory_width, base, run_ops=16),
-        'table256': lambda: TablePool(
-            memory_width, base, run_ops=256, span_bits=rng.choice([None, 1 << (memory_width - 3)])
-        ),
     }
 
 

@@ -8,7 +8,7 @@ import os
 import re
 from os import path
 from pathlib import Path
-from typing import Any, Callable, Iterator, Set, List, Tuple, Dict, Optional, Union
+from typing import Any, Callable, Set, List, Tuple, Dict, Optional, Union
 
 import sly
 
@@ -1003,26 +1003,12 @@ def validate_current_file(files_seen: Set[Union[str, Path]]) -> None:
     files_seen.add(abs_path)
 
 
-# report the parsing progress once per this many tokens
-_PROGRESS_TOKENS = 4096
-
-
-def _tokens_reporting_progress(tokens: Iterator[Token], on_position: Callable[[int], None]) -> Iterator[Token]:
-    """pass the lexer's tokens through, calling on_position(the token's offset in the file) now and then"""
-    for count, token in enumerate(tokens):
-        if count % _PROGRESS_TOKENS == 0:
-            on_position(token.index)
-        yield token
-
-
-def lex_parse_curr_file(lexer: FJLexer, parser: FJParser, on_position: Optional[Callable[[int], None]] = None) -> None:
+def lex_parse_curr_file(lexer: FJLexer, parser: FJParser) -> None:
     global curr_text, curr_namespace
     curr_text = curr_file.open('r', encoding='utf-8').read()
     curr_namespace = []
 
     lex_res = lexer.tokenize(curr_text)
-    if on_position is not None:
-        lex_res = _tokens_reporting_progress(lex_res, on_position)
     exit_if_errors()
 
     parser.parse(lex_res)
@@ -1126,24 +1112,16 @@ def _parse_files_into_parser(
             validate_current_file(files_seen)
         first_uncached_index = prefix_length
 
-    # the progress is measured in bytes of source, the files to parse in order (a cached prefix counts as done)
+    # the progress is measured in bytes of source, a file at a time (a cached prefix counts as done)
     sizes = [os.path.getsize(path) for _, path in input_files] if on_progress is not None else []
-    total_size = max(1, sum(sizes))
     for file_index, (curr_file_short_name, curr_file) in enumerate(input_files):
         if file_index < first_uncached_index:
             continue
         validate_current_file(files_seen)
         parser.parsing_defines = parser._parsing_the_defines_file()
-        on_position = None
         if on_progress is not None:
-            report, done_before, file_size = on_progress, sum(sizes[:file_index]), sizes[file_index]
-
-            def on_position(position: int) -> None:
-                # the token offset counts characters of the read text; the sizes count bytes of the files
-                file_part = position * file_size / max(1, len(curr_text))
-                report(min(1.0, (done_before + file_part) / total_size))
-
-        lex_parse_curr_file(lexer, parser, on_position)
+            on_progress(sum(sizes[:file_index]) / max(1, sum(sizes)))
+        lex_parse_curr_file(lexer, parser)
         if cache_key is not None and file_index == prefix_length - 1:
             _snapshot_parser_to_cache(parser, cache_key)
 
@@ -1163,7 +1141,7 @@ def parse_macro_tree(
     @param warning_as_errors:[in]: treat warnings as errors (stop execution on warnings)
     @param defines_file:[in]: the -D file among input_files, if any. Constants declared in it
     OVERRIDE the declaration elsewhere instead of adding one - see FJParser.statement.
-    @param on_progress:[in]: if given, called now and then with the fraction of the source parsed so far.
+    @param on_progress:[in]: if given, called before each file with the fraction of the source parsed so far.
     @return: the macro-dictionary.
     """
     global error_occurred, all_errors, curr_file, curr_file_short_name

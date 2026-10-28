@@ -1,33 +1,16 @@
 """
-the compact op stream: what the preprocessor (macro resolve) emits and labels-resolve consumes.
+the compact op stream: what the preprocessor (macro resolve) emits and labels-resolve consumes, ~17-60 bytes an op
+instead of ~250 for an op object and its Expr trees:
 
-One python object per op (and an Expr tree per operand) cost ~250 bytes. This stream keeps an op in
-~17-60 bytes:
-
-    kinds: bytearray        - one byte per op (FJ, FJ_POS, WFLIP, PAD, OBJ below)
+    kinds: bytearray        - one byte per op (FJ, FJ_POS, WFLIP, PAD, OBJ, FJ_PACKED below)
     vals:  array('q')       - the op's slots, in order (see each kind)
-    refs:  list             - what a slot cannot hold as a number: a label name, an Expr, a
-                              CodePosition, a NewSegment / ReserveBits. Shared by every stream of
-                              one preprocessor, so a run of ops moves between streams by slicing.
+    refs:  list             - what a slot cannot hold as a number: a label name, an Expr, a CodePosition, a
+                              NewSegment / ReserveBits. Shared by every stream of one preprocessor.
 
-An OPERAND slot is either a literal (0 <= v < 2**63) or a deferred reference, ~((r << 2) | tag)
-(always negative), naming refs[r]:
-    TAG_LABEL       refs[r] is a label name:        the value is labels[name]
-    TAG_LABEL_PLUS  refs[r] is a label name, and the NEXT slot holds a constant c (any int64):
-                                                    the value is labels[name] + c
-    TAG_EXPR        refs[r] is an Expr:             the value is expr.exact_eval(labels)
-
-Every value is the one the Expr would evaluate to, exactly: an operand is folded into a literal only
-when it is an int, or a sum of ONE label (coefficient +1) and integer constants whose label is
-already declared - labels are never reassigned, so a declared label's value is final (one-pass
-blocking's deferred tables declare theirs only when the expansion ends, so a reference to one stays
-deferred). A sum of one undeclared label and constants is kept as (label, constant) - integer +/- is
-exact, so `((x + 64) + 33) + 3` and `x + 100` evaluate alike. Anything else is kept as its Expr.
-
-An op whose operands are not all literal carries its CodePosition, so an error in labels-resolve
-still says "... in op <op>." with the op's position. The op is rebuilt for that message: a folded
-sum prints in its canonical form `(x + 100)`; the exception text itself (`Can't evaluate label x in
-expression x`) is the one the nested tree raised, since its innermost node is the same label.
+An OPERAND slot is a literal (0 <= v < 2**63), or ~((r << 2) | tag) naming refs[r]: TAG_LABEL (labels[name]),
+TAG_LABEL_PLUS (labels[name] + the next slot) or TAG_EXPR (expr.exact_eval(labels)). An operand is folded into a
+literal only when its value is final - an int, or one declared label (+1) plus integer constants - so every value is
+the one its Expr evaluates to. An op with a deferred operand keeps its CodePosition, for labels-resolve's errors.
 """
 
 from __future__ import annotations

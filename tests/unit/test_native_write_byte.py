@@ -197,7 +197,7 @@ def test_reset_starts_the_device_stream_on_a_byte_boundary(tmp_path: Path) -> No
 
     fjm_path = assemble_to_path(ELEVEN_BITS_PROGRAM, tmp_path, use_stl=True)
     header = fjm_reader.read_fjm_header(fjm_path)
-    with ProgressBar('', print_time=False, total=1.0) as progress:
+    with ProgressBar('', print_time=False) as progress:
         core = fjm_run._load_native(fjm_path, header, None, False, progress)
     core.freeze()
     kinds = []

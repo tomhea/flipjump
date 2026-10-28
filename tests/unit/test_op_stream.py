@@ -130,10 +130,9 @@ def test_labels_resolve_reads_a_stream_like_the_op_objects(tmp_path: Path) -> No
         labels_resolve(ops, labels, 64, writer, save_wflip_labels=False)
         return list(writer.data)
 
-    from collections import deque
-
-    objects = deque(stream)  # the same ops, as objects
-    objects[0].wflip_start_address = 5 * 128
+    objects = OpStream([], labels)  # the same ops, appended as objects
+    for op in stream:
+        objects.append(op)
     assert build(stream, 'stream.fjm') == build(objects, 'objects.fjm')
 
 
@@ -192,7 +191,7 @@ def test_sly_keeps_one_position_not_one_per_reduction(tmp_path: Path, monkeypatc
 
 def test_the_writer_takes_a_word_array_instead_of_copying_it(tmp_path: Path) -> None:
     writer = Writer(tmp_path / 'a.fjm', 32, FJMVersion.NormalVersion)
-    words = array(writer.data.typecode, [1, 2, 3, 4])  # type: ignore[union-attr]
+    words = array(writer.data.typecode, [1, 2, 3, 4])
     assert writer.add_data(words, take=True) == 0
     assert writer.data is words
     more = array(writer.data.typecode, [5, 6])

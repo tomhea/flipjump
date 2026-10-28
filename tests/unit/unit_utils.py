@@ -14,7 +14,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.table_pool import TablePool
+from flipjump.assembler.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
@@ -187,7 +187,7 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
 def build_and_run(
     source: str,
     tmp_path: Path,
-    pool: Optional[TablePool],
+    pool: Optional[BlockPool],
     name: str = 'p',
     fixed_input: bytes = b'',
     memory_width: int = 32,
