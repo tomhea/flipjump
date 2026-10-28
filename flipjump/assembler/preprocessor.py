@@ -206,14 +206,14 @@ class PreprocessorData:
         self._dollar_ops: Dict[int, Dict[int, bool]] = {}  # id(macro) -> its ops that name `$` (see dollar_ops)
         self._pointer_runtime_users: Dict[int, bool] = {}  # id(macro) -> it names POINTER_RUNTIME_LABELS
         self.emit_target: OpStream = self.result_ops
-        self._reloc_stack: List[Tuple[int, OpStream]] = []
+        # (emitting a deferred table's ops) the inline address and the stream the expansion resumes at after it
+        self._resume: Optional[Tuple[int, OpStream]] = None
         # (a table pool is on) how many ops the program without the pool is ahead of this one in this segment: the
         # moved tables' ops and pads, and the pads that padded differently since (see align_current_address)
         self._shift = 0
         self._code_end = 0  # (a table pool is on) where the code of the segments closed so far ends, at most
 
         self._deferred = DeferredTables()
-        self._deferring = False  # emitting a deferred table's ops
 
         self.on_progress: Optional[Callable[[float], None]] = None  # told how far into the top level the expansion is
 
@@ -271,22 +271,21 @@ class PreprocessorData:
         segment = NewSegment(0)  # its address is decided once the expansion is done
         self.pool_ops.append(segment)
         self._deferred.add(group, group_expr, ops_alignment, table_ops, site, segment)
-        self._deferring = True
-        self._reloc_stack.append((self.curr_address, self.emit_target))
+        self._resume = self.curr_address, self.emit_target
         self.emit_target = self.pool_ops
         self.curr_address = 0
         return True
 
     def _table_moved(self, table: str, ops_alignment: int, table_ops: int) -> None:
         """the table (its start label), behind a `pad ops_alignment`, leaves the inline stream here (see OffsetGuard)"""
-        if self.offset_guard is not None:
-            self.offset_guard.table_moved(self.curr_address, table)
+        assert self.offset_guard is not None
+        self.offset_guard.table_moved(self.curr_address, table)
         plain = self.curr_address // (2 * self.memory_width) + self._shift  # where the program without the pool is
         self._shift += (-plain) % ops_alignment + table_ops
 
     def _emitting(self) -> int:
         """the next inline address (OffsetGuard: a table moving out of it or above can still stay inline)"""
-        return self._reloc_stack[-1][0] if self._reloc_stack else self.curr_address
+        return self._resume[0] if self._resume is not None else self.curr_address
 
     def dollar_ops(self, macro: Macro) -> Dict[int, bool]:
         """(a table pool is on) {op index: names `$` in a sum} of the macro's ops that name `$` (the next op's
@@ -324,7 +323,7 @@ class PreprocessorData:
     def _where(self) -> str:
         """where the op being emitted is (an OffsetGuard refusal says)"""
         path = ' > '.join(call.trace_str() for call in self.curr_tree) or 'the top level'
-        if self._reloc_stack:
+        if self._resume is not None:
             return f' of an op of a moved table (in {path})'
         return f' of the op at {hex(self.curr_address - 2 * self.memory_width)} (in {path})'
 
@@ -343,18 +342,16 @@ class PreprocessorData:
         tables = self._deferred
         op_bits = 2 * self.memory_width
         guard = self.offset_guard
+        assert guard is not None
         # the program without the tables ends where its code does, or past every address an operand reaches
-        end = max(self._code_end, self.curr_address, 0 if guard is None else guard.reach + 1)
-        addresses = pool.place_deferred(tables, self.labels, end)
-        if guard is not None:
-            guard.inline_end = pool.pool_start()  # (for_flat: where the pool went)
-        moved = 0  # the tables that left the stream, in the order they did (OffsetGuard.tables)
+        addresses = pool.place_deferred(tables, self.labels, max(self._code_end, self.curr_address, guard.reach + 1))
+        guard.inline_end = pool.pool_start()  # (for_flat: where the pool went)
+        moved = 0  # the tables that left the stream, in the order they did (OffsetGuard.moved_tables)
         for index, address in enumerate(addresses):
             if not address:
                 continue  # it stayed inline: its labels are in place already
-            if guard is not None:
-                guard.table_placed(address, address + tables.sizes[index] * op_bits, guard.moved_tables[moved])
-                moved += 1
+            guard.table_placed(address, address + tables.sizes[index] * op_bits, guard.moved_tables[moved])
+            moved += 1
             for label, offset in tables.labels_of(index):
                 self.labels[label] = address + offset
                 self._label_positions.append(self._deferred_label_positions.get(label))
@@ -368,42 +365,30 @@ class PreprocessorData:
 
     def end_relocation(self) -> None:
         """close the deferred table, and resume the interrupted stream where it left off"""
-        self._deferring = False
         promised = self._deferred.sizes[-1]
         if self.curr_address != promised * 2 * self.memory_width:
             raise FlipJumpPreprocessorException(
                 f'table-placement: a deferred table holds {self.curr_address // (2 * self.memory_width)} '
                 f'ops where its pad promised {promised}'
             )
-        self.curr_address, self.emit_target = self._reloc_stack.pop()
+        assert self._resume is not None
+        self.curr_address, self.emit_target = self._resume
+        self._resume = None
 
     def flush_table_pool(self) -> None:
         """append the pool's segments after the main stream.
 
-        Each table opened its own NewSegment, placed in no particular address order, so they are sorted here. The main
-        stream's wflip area has already been patched, and the pool sits above it by construction (pool_base).
+        Each table is a NewSegment and its ops up to the next one, placed in no particular address order, so they are
+        sorted here (the stream records where each NewSegment is, so it is cut without decoding it). The main stream's
+        wflip area has already been patched, and the pool sits above it by construction (pool_base).
         """
         pool = self.pool_ops
-        if not pool:
-            return
-        # a run is a NewSegment and the ops up to the next one (ops before the first are dropped);
-        # the stream records where each OBJ op is, so the runs are cut without decoding it
         marks = pool.marks
-        starts = [mark_index for mark_index, mark in enumerate(marks) if isinstance(mark[2], NewSegment)]
-        runs: List[Tuple[NewSegment, int, int, int, int, int, int]] = []
-        for i, mark_index in enumerate(starts):
-            op_index, val_index, segment = marks[mark_index]
-            if i + 1 < len(starts):
-                mark_end = starts[i + 1]
-                op_end, val_end = marks[mark_end][0], marks[mark_end][1]
-            else:
-                mark_end = len(marks)
-                op_end, val_end = len(pool.kinds), len(pool.vals)
-            runs.append((segment, op_index, op_end, val_index, val_end, mark_index, mark_end))
-        runs.sort(key=lambda run: run[0].start_address)
-        for segment, op_start, op_end, val_start, val_end, mark_start, mark_end in runs:
+        ends = [(op_index, val_index) for op_index, val_index, _ in marks[1:]] + [(len(pool.kinds), len(pool.vals))]
+        for index in sorted(range(len(marks)), key=lambda i: marks[i][2].start_address):
+            op_start, val_start, segment = marks[index]
             self.last_new_segment = segment
-            self.result_ops.extend_slice(pool, op_start, op_end, val_start, val_end, mark_start, mark_end)
+            self.result_ops.extend_slice(pool, op_start, ends[index][0], val_start, ends[index][1], index, index + 1)
         pool.clear()
 
     def note_pointer_runtime(self, macro_name: MacroName, macro: Macro) -> None:
@@ -474,7 +459,7 @@ class PreprocessorData:
             macro_resolve_error(
                 self.curr_tree, f'label declared twice - "{label}" on ' f'{code_position} and {other_position}'
             )
-        if self._deferring:
+        if self._resume is not None:
             # a deferred table's label: an offset now, an address once the table is placed
             self._deferred_label_positions[label] = code_position
             self._deferred.add_label(label, address)
@@ -502,7 +487,7 @@ class PreprocessorData:
         @note must be called at the start of the expansion.
         @note takes the PREFIX, not the finished label: when labels are off the string is never built.
         """
-        if self.save_debug_labels and not self._deferring:
+        if self.save_debug_labels and self._resume is None:
             label = f'{labels_prefix}{MACRO_SEPARATOR_STRING}{STARTING_LABEL_IN_MACROS_STRING}'
             self.macro_start_labels.append((self.curr_address, label, code_position))
 
