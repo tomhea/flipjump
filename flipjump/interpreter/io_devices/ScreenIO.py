@@ -125,14 +125,15 @@ def to_rgb(values: Union[List[int], Tuple[int, ...]], palette: List[RGB]) -> Lis
     return [palette[value] for value in values] if palette else [rgb_of(value) for value in values]
 
 
-def encode_png(width: int, height: int, rgb_rows: bytes) -> bytes:
-    """a minimal 8-bit RGB PNG (rgb_rows: height * (1 + 3 * width) bytes of filter-byte-0-prefixed scanlines)."""
+def encode_png(width: int, height: int, rgb: bytes) -> bytes:
+    """a minimal 8-bit RGB PNG of row-major R G B bytes (unfiltered scanlines)."""
+    rows = b''.join(b'\x00' + rgb[at : at + 3 * width] for at in range(0, len(rgb), 3 * width))  # noqa: E203
 
     def chunk(chunk_type: bytes, data: bytes) -> bytes:
         return struct.pack('>I', len(data)) + chunk_type + data + struct.pack('>I', zlib.crc32(chunk_type + data))
 
     ihdr = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)  # 8-bit, color-type 2 (RGB)
-    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(rgb_rows)) + chunk(b'IEND', b'')
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b'')
 
 
 class _OutputEnded(Exception):
@@ -484,10 +485,8 @@ class InMemoryScreen(IODevice):
 
         if self.frames_dir is not None:
             self.frames_dir.mkdir(parents=True, exist_ok=True)
-            rgb, stride = bytes(chain.from_iterable(self.last_frame_rgb)), 3 * self.width
-            rows = b''.join(b'\x00' + rgb[at : at + stride] for at in range(0, len(rgb), stride))  # noqa: E203
-            png_path = self.frames_dir / f'frame_{self.frame_count - 1:06d}.png'
-            png_path.write_bytes(encode_png(self.width, self.height, rows))
+            png = encode_png(self.width, self.height, bytes(chain.from_iterable(self.last_frame_rgb)))
+            (self.frames_dir / f'frame_{self.frame_count - 1:06d}.png').write_bytes(png)
 
     @property
     def last_frame_rgb(self) -> List[RGB]:
