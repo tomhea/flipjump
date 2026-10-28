@@ -191,7 +191,7 @@ def test_sly_keeps_one_position_not_one_per_reduction(tmp_path: Path, monkeypatc
 
 def test_the_writer_takes_a_word_array_instead_of_copying_it(tmp_path: Path) -> None:
     writer = Writer(tmp_path / 'a.fjm', 32, FJMVersion.NormalVersion)
-    words = array(writer.data.typecode, [1, 2, 3, 4])  # type: ignore[union-attr]
+    words = array(writer.data.typecode, [1, 2, 3, 4])
     assert writer.add_data(words, take=True) == 0
     assert writer.data is words
     more = array(writer.data.typecode, [5, 6])

@@ -704,12 +704,12 @@ def assemble(
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        with ProgressBar('  parsing:         ', print_time=print_time, total=1.0) as progress:
+        with ProgressBar('  parsing:         ', print_time=print_time) as progress:
             macros = parse_macro_tree(
                 input_files, memory_width, warning_as_errors, defines_file, progress.update if progress.active else None
             )
 
-        with ProgressBar('  macro resolve:   ', print_time=print_time, total=1.0) as progress:
+        with ProgressBar('  macro resolve:   ', print_time=print_time) as progress:
             ops, labels = resolve_macros(
                 memory_width,
                 macros,
@@ -751,7 +751,7 @@ def assemble(
             if not pinned:
                 pinned = None
 
-        with ProgressBar('  labels resolve:  ', print_time=print_time, total=1.0) as progress:
+        with ProgressBar('  labels resolve:  ', print_time=print_time) as progress:
             # the `:wflips:N` labels are read only by the debugging file
             labels_resolve(
                 ops,
@@ -771,11 +771,8 @@ def assemble(
 
         assert_first_op_assembled(fjm_writer)
 
-        with ProgressBar('  create binary:   ', print_time=print_time, total=1.0) as progress:
-            fjm_writer.write_to_file(progress if progress.active else None)
-            if debugging_file_path is not None:
-                progress.set_total(None)  # a spinner: the labels are written in one go
-                progress.update(0, stage='debugging file')
+        with ProgressBar('  create binary:   ', print_time=print_time) as progress:
+            fjm_writer.write_to_file(progress.update if progress.active else None)
             save_debugging_labels(debugging_file_path, labels)
 
     except FlipJumpException as fj_exception:

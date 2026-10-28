@@ -11,7 +11,7 @@ import lzma
 import sys
 from pathlib import Path
 from struct import pack
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -29,55 +29,25 @@ from flipjump.fjm.fjm_consts import (
 )
 from flipjump.utils.exceptions import FlipJumpWriteFjmException
 
-if TYPE_CHECKING:
-    from flipjump.utils.progress import ProgressBar
-
-# the data is compressed in chunks of this many bytes, so the compression's progress can be shown.
-# the LZMA2 encoder's output does not depend on how its input is fed: chunked and one-shot
-# compression give the same bytes (tests/unit/test_run_flags.py::test_chunked_compression_equals_one_shot).
+# the data is compressed in chunks of this many bytes, so the compression's progress can be shown (the LZMA2
+# encoder's output does not depend on how its input is fed: test_run_flags.py::test_chunked_compression_equals_one_shot)
 _COMPRESS_CHUNK = 1 << 20
 
-# the word array's typecode per memory-width.
-# `array` typecodes are platform-sized, so the itemsize is CHECKED at runtime before use and the
-# code falls back to struct.pack when it does not match exactly (e.g. 'L' is 8 bytes on 64-bit
-# linux). Both paths produce identical bytes; this only decides which one is taken.
+# the word array's typecode per memory-width (1, 2, 4 and 8 bytes on every supported platform)
 _ARRAY_TYPECODE = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
-_STRUCT_FORMAT = {8: 'B', 16: 'H', 32: 'L', 64: 'Q'}
 
 
-def _array_fits(word_size: int) -> bool:
-    """does this platform size the `word_size`-bit array typecode exactly?"""
-    return array.array(_ARRAY_TYPECODE[word_size]).itemsize * 8 == word_size
+def new_word_buffer(word_size: int) -> 'array.array[int]':
+    """an empty buffer of `word_size`-bit words (extend() it: `+=` takes only another array)"""
+    return array.array(_ARRAY_TYPECODE[word_size])
 
 
-def new_word_buffer(word_size: int) -> 'array.array[int] | List[int]':
-    """An empty, append-efficient buffer of `word_size`-bit words.
-
-    A typed array where the platform sizes the typecode exactly, else a plain list. Callers must
-    use .extend()/.append() rather than `+=` with a tuple, which arrays do not accept.
-    """
-    return array.array(_ARRAY_TYPECODE[word_size]) if _array_fits(word_size) else []
-
-
-def _pack_words_little_endian(words: 'array.array[int] | List[int]', word_size: int) -> 'bytes | memoryview':
-    """Pack `words` as little-endian unsigned integers of `word_size` bits.
-
-    Byte-for-byte identical to struct.pack(f'<{len(words)}{fmt}', *words), which is what this
-    replaces: struct.pack would unpack the list as *args, a tuple as large as the program.
-    """
-    typecode = _ARRAY_TYPECODE[word_size]
-    if isinstance(words, array.array) and words.typecode == typecode:
-        buffer = words
-    elif _array_fits(word_size):
-        buffer = array.array(typecode, words)
-    else:  # this platform sizes the typecode differently - take the portable path
-        struct_format = _STRUCT_FORMAT[word_size]
-        return pack(f'<{len(words)}{struct_format}', *words)
+def _pack_words_little_endian(words: 'array.array[int]', word_size: int) -> 'bytes | memoryview':
+    """`words` as little-endian unsigned integers of `word_size` bits: a view of the array's own bytes, not a copy"""
     if sys.byteorder != 'little':
-        buffer = buffer[:]
-        buffer.byteswap()
-    # a view of the words' own bytes, not a copy. Every consumer - lzma, file.write - takes a buffer.
-    return memoryview(buffer).cast('B')
+        words = words[:]
+        words.byteswap()
+    return memoryview(words).cast('B')
 
 
 class Writer:
@@ -140,10 +110,10 @@ class Writer:
         self._segment_index_by_start: Dict[int, int] = {}
         self._sorted_data_starts: List[int] = []
         self._segment_index_by_data_start: Dict[int, int] = {}
-        self.data: 'array.array[int] | List[int]' = new_word_buffer(memory_width)
+        self.data = new_word_buffer(memory_width)
 
-    def _compress_data(self, data: 'bytes | memoryview', progress: Optional['ProgressBar'] = None) -> bytes:
-        """lzma-compress the data, in chunks (reporting a [0, 1] fraction to `progress`, if given)"""
+    def _compress_data(self, data: 'bytes | memoryview', progress: Optional[Callable[[float], None]] = None) -> bytes:
+        """lzma-compress the data, in chunks (telling `progress`, if given, the fraction done)"""
         try:
             compressor = lzma.LZMACompressor(
                 format=_LZMA_FORMAT,
@@ -153,17 +123,17 @@ class Writer:
             for offset in range(0, len(data), _COMPRESS_CHUNK):
                 parts.append(compressor.compress(data[offset : offset + _COMPRESS_CHUNK]))  # noqa: E203
                 if progress is not None:
-                    progress.update(min(1.0, (offset + _COMPRESS_CHUNK) / len(data)), stage='compressing')
+                    progress(min(1.0, (offset + _COMPRESS_CHUNK) / len(data)))
             parts.append(compressor.flush())
             return b''.join(parts)
         except lzma.LZMAError as e:
             raise FlipJumpWriteFjmException('Error: Unable to compress the data.') from e
 
-    def write_to_file(self, progress: Optional['ProgressBar'] = None) -> None:
+    def write_to_file(self, progress: Optional[Callable[[float], None]] = None) -> None:
         """
         writes the .fjm headers, segments and data (the data compressed in versions 3 and 4, the segments too in
         version 4: a program of many segments, as a table pool makes, gets a much smaller file) into the output_file.
-        @param progress: if given, the compression reports its progress to it (a [0, 1] fraction)
+        @param progress: if given, the compression tells it the fraction done
         @note call this after finished adding data and segments and editing the Writer.
         """
         with open(self.output_file, 'wb') as f:
@@ -177,13 +147,9 @@ class Writer:
                 f.write(pack(_segments_size_format, len(segment_table)))
             f.write(segment_table)
 
-            if progress is not None:
-                progress.update(0, stage='packing')
             fjm_data = _pack_words_little_endian(self.data, self.word_size)
             if self.version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
                 fjm_data = self._compress_data(fjm_data, progress)
-            if progress is not None:
-                progress.update(1.0, stage='writing')
 
             f.write(fjm_data)
 
@@ -333,13 +299,7 @@ class Writer:
         @return: the data start index
         """
         data_start = len(self.data)
-        if (
-            take
-            and data_start == 0
-            and isinstance(data, array.array)
-            and isinstance(self.data, array.array)
-            and data.typecode == self.data.typecode
-        ):
+        if take and data_start == 0 and isinstance(data, array.array) and data.typecode == self.data.typecode:
             self.data = data
             return 0
         # `+=` on an array only accepts another array; extend() takes any iterable of ints.
