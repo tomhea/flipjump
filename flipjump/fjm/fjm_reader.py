@@ -109,11 +109,6 @@ class Reader:
                 _header_extension_format, fjm_file.read(_header_extension_size)
             )
 
-    @property
-    def flags(self) -> int:
-        """the header's run flags and io mode as the one u64 they replaced (run_flags low, io_mode high)"""
-        return self.run_flags | (self.io_mode << 32)
-
     def _init_segments(self, fjm_file: BinaryIO) -> List[Tuple[int, int, int, int]]:
         # one read for the whole table (a read per segment is slow on some file systems)
         # (at most the rest of the file is read, so a damaged segment_num can't ask for more memory than that)
@@ -364,8 +359,7 @@ def read_fjm_header(input_file: Path) -> FjmHeader:
         return _read_header(fjm_file, input_file)
 
 
-# the decompression buffer starts at this many times the compressed size (a typical program expands
-# ~10x, so it is allocated once); it grows by doubling, up to the size the segments imply
+# the decompression buffer is at most this many times the compressed size (a typical program expands ~10x)
 _INITIAL_EXPANSION = 16
 # the decompression is fed in chunks of this many compressed bytes, so its progress can be shown
 _DECOMPRESS_CHUNK = 1 << 20
@@ -404,62 +398,46 @@ def _decompress_in_chunks(
     file_data: bytes, on_progress: Optional[Callable[[float], None]], expected_size: int = 0, stream: str = 'data'
 ) -> bytearray:
     """
-    exactly lzma.decompress(file_data, format=_LZMA_FORMAT, filters=...), fed in chunks so its progress
-    can be reported: the data must end with a complete stream; further streams after it are decoded
-    too, and junk after the last stream is ignored - as lzma.decompress does.
-    @param expected_size: the decompressed size the segments imply. The buffer is allocated at that size,
-    capped at _INITIAL_EXPANSION x the compressed size, and filled in place; beyond it, it grows with the
-    decoded data. A legitimate program is allocated once; a damaged claim costs about 2x the real data.
+    exactly lzma.decompress(file_data, format=_LZMA_FORMAT, filters=...) - its streams one after the other, junk after
+    the last ignored - fed in chunks so its progress can be reported. A stream the default filters cannot decode is
+    decoded again with the presets 7-9 dictionary. The output is allocated once at `expected_size` (the size the not
+    yet validated segments imply, trusted up to _INITIAL_EXPANSION x the compressed size), and grows past it.
     @param stream: what the stream holds, for the error message (the data, or version 4's segment table)
     """
     damaged = f'Error: The compressed {stream} is damaged; Unable to decompress.'
-    # the size comes from the (not yet validated) segment table, so it is trusted only as far as the
-    # compressed size makes plausible; past that the buffer grows as decoded bytes arrive - a damaged table
-    # costs about 2x the real data (or 16x the compressed size), never its own claim
-    expected_size = max(0, expected_size)
-    output = bytearray(min(expected_size, _INITIAL_EXPANSION * len(file_data)))
+    output = bytearray(min(max(0, expected_size), _INITIAL_EXPANSION * len(file_data)))
     size = 0
-
-    def put(piece: bytes) -> None:
-        nonlocal size
-        end = size + len(piece)
-        if end > len(output):
-            del output[size:]
-            output.extend(piece)  # bytearray's own amortized growth, no zero-filled temporary
-        else:
-            with memoryview(output) as view:
-                view[size:end] = piece  # (a slice assignment to the bytearray would copy the piece first)
-        size = end
-
-    remaining = file_data
-    first_stream = True
-    filters = _LZMA_DECOMPRESSION_FILTERS
+    remaining, first_stream, filters = file_data, True, _LZMA_DECOMPRESSION_FILTERS
     while True:
         decompressor = lzma.LZMADecompressor(format=_LZMA_FORMAT, filters=filters)
-        position = 0
-        stream_start = size
+        position, stream_start = 0, size
         try:
             while position < len(remaining) and not decompressor.eof:
-                chunk = remaining[position : position + _DECOMPRESS_CHUNK]  # noqa: E203
-                position += len(chunk)
-                put(decompressor.decompress(chunk))
+                piece = decompressor.decompress(remaining[position : position + _DECOMPRESS_CHUNK])  # noqa: E203
+                position += _DECOMPRESS_CHUNK
+                if size + len(piece) > len(output):
+                    del output[size:]
+                    output.extend(piece)
+                else:
+                    with memoryview(output) as view:
+                        view[size : size + len(piece)] = piece  # noqa: E203 - in place, no copy of the piece
+                size += len(piece)
                 if on_progress is not None:
                     on_progress(min(1.0, (len(file_data) - len(remaining) + position) / len(file_data)))
         except lzma.LZMAError as e:
             size = stream_start
             if filters is _LZMA_DECOMPRESSION_FILTERS:
-                filters = _LZMA_MAX_DICT_DECOMPRESSION_FILTERS  # presets 7-9 may match farther back: decode again
+                filters = _LZMA_MAX_DICT_DECOMPRESSION_FILTERS
                 continue
             if first_stream:
                 raise FlipJumpReadFjmException(damaged) from e
-            break  # junk after the last stream: ignored, as lzma.decompress does
+            break  # junk after the last stream
         if not decompressor.eof:
             raise FlipJumpReadFjmException(damaged)
         remaining = decompressor.unused_data + remaining[position:]
         if not remaining:
             break
-        first_stream = False
-        filters = _LZMA_DECOMPRESSION_FILTERS
+        first_stream, filters = False, _LZMA_DECOMPRESSION_FILTERS
     del output[size:]
     return output
 
