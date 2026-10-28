@@ -293,6 +293,17 @@ def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path) ->
     assert output == reference and _pool_segments(fjm_path)
 
 
+def test_a_moved_table_holds_the_ops_its_declaration_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """a declared table holds only labels and `a;b` ops, so its expansion is the ops _relocatable_table_ops counts
+    (end_relocation asserts it; it was a refusal no program could reach). The control: a miscount is caught."""
+    labels = expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
+    assert any(address >= POOL_BASE for address in labels.values())
+    counted = preprocessor._relocatable_table_ops
+    monkeypatch.setattr(preprocessor, '_relocatable_table_ops', lambda *args: counted(*args) + 1)
+    with pytest.raises(AssertionError):
+        expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
+
+
 @pytest.mark.parametrize('case', sorted(DECLARED_ERRORS))
 def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path: Path, case: str) -> None:
     part, text, message = DECLARED_ERRORS[case]
