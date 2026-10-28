@@ -15,7 +15,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.fj_parser import parse_macro_tree
-from flipjump.assembler.relocation_proof import prove_relocation
+from tests.unit.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool
 from flipjump.utils.functions import get_file_tuples
 

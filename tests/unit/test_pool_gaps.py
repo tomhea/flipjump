@@ -16,7 +16,7 @@ from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
 from flipjump.assembler import assembler, table_pool as table_pool_module
 from flipjump.assembler.fj_parser import parse_macro_tree
-from flipjump.assembler.relocation_proof import prove_relocation
+from tests.unit.relocation_proof import prove_relocation
 from flipjump.assembler.preprocessor import PreprocessorData
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard
 from flipjump.utils.functions import get_file_tuples

@@ -36,13 +36,38 @@ from flipjump.assembler.assembler import labels_resolve, resolve_pinned, unpin
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum
-from flipjump.assembler.preprocessor import resolve_macros
+from flipjump.assembler.inner_classes.ops import INITIAL_ARGS, INITIAL_LABELS_PREFIX, INITIAL_MACRO_NAME
+from flipjump.assembler.preprocessor import OpsQueue, PreprocessorData, resolve_macro_aux
 from flipjump.assembler.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
+from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpExprException
 
 _Op = Union[FlipJump, WordFlip]
+
+
+def resolve_macros(
+    memory_width: int,
+    macros: Dict[MacroName, Macro],
+    *,
+    table_pool: Optional[BlockPool] = None,
+    relocatable_extents: Optional[List[Tuple[int, int]]] = None,
+    pads: Optional[Dict[int, int]] = None,
+) -> Tuple[OpsQueue, Dict[str, int]]:
+    """preprocessor.resolve_macros with no label folded into a number (every operand keeps its expression), appending
+    [start, end) of every inline relocatable table to `relocatable_extents`, and filling `pads` (see PreprocessorData)
+    """
+    data = PreprocessorData(
+        memory_width, macros, DEFAULT_MAX_MACRO_RECURSION_DEPTH, save_debug_labels=False, table_pool=table_pool
+    )
+    data.result_ops.labels = data.pool_ops.labels = {}
+    data.relocatable_extents = relocatable_extents
+    if pads is not None:
+        data.pads = pads
+    resolve_macro_aux(data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
+    data.finish(False)
+    return data.get_result_ops_and_labels()
 
 
 @dataclasses.dataclass
@@ -138,12 +163,8 @@ def prove_relocation(
     op_bits = 2 * memory_width
     extents: List[Tuple[int, int]] = []
     plain_pads: Dict[int, int] = {}
-    plain_stream, plain_labels = resolve_macros(
-        memory_width, macros, save_debug_labels=False, fold_labels=False, relocatable_extents=extents, pads=plain_pads
-    )
-    pooled_stream, pooled_labels = resolve_macros(
-        memory_width, macros, table_pool=table_pool, save_debug_labels=False, fold_labels=False
-    )
+    plain_stream, plain_labels = resolve_macros(memory_width, macros, relocatable_extents=extents, pads=plain_pads)
+    pooled_stream, pooled_labels = resolve_macros(memory_width, macros, table_pool=table_pool)
     pool_start = table_pool.pool_start()
     mismatches: List[str] = []
 

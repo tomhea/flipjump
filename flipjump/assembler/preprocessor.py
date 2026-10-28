@@ -82,12 +82,6 @@ def macro_resolve_error(
     raise FlipJumpPreprocessorException(error_str) from orig_exception
 
 
-# a macro-expansion's progress slice thinner than this is not tracked any deeper (see PreprocessorData)
-_PROGRESS_MIN_SLICE = 1e-5
-# ...and progress is reported only when it moved at least this much (one call per macro call is too many)
-_PROGRESS_MIN_STEP = 1e-4
-
-
 class PreprocessorData:
     """
     maintains the preprocessor "global" data structures, throughout its recursion.
@@ -145,9 +139,6 @@ class PreprocessorData:
         *,
         save_debug_labels: bool = True,
         table_pool: Optional[BlockPool] = None,
-        fold_labels: bool = True,
-        relocatable_extents: Optional[List[Tuple[int, int]]] = None,
-        pads: Optional[Dict[int, int]] = None,
     ):
         """
         @param memory_width: the memory-width
@@ -157,11 +148,6 @@ class PreprocessorData:
         @param save_debug_labels: whether to record the per-expansion `...---:start:` macro-start
         labels. See insert_macro_start_label for why they can be skipped.
         @param table_pool: if given, relocate the declared tables (see relocatable_call, BlockPool)
-        @param fold_labels: fold an operand of declared labels into a number (see resolve_macros)
-        @param relocatable_extents: if given, [start, end) of every relocatable table expanded in place is
-        appended to it
-        @param pads: if given, {address: the bits a `pad` aligned it to, 0 where only a segment starts} is filled in
-        (a table pool's OffsetGuard gets one too)
         """
         self.memory_width = memory_width
         self.macros = macros
@@ -185,8 +171,7 @@ class PreprocessorData:
         self.labels: Dict[str, int] = {}
         # the emitted ops, compactly (see OpStream). Every stream of this preprocessor shares one refs list.
         self._op_refs: List[Any] = []
-        self._folded_labels = self.labels if fold_labels else {}
-        self.result_ops: OpStream = OpStream(self._op_refs, self._folded_labels)
+        self.result_ops: OpStream = OpStream(self._op_refs, self.labels)
         self.addresses_with_labels: Set[int] = set()
         self.macro_start_labels: List[Tuple[int, str, CodePosition]] = []  # (address, label, code_position)
 
@@ -205,10 +190,10 @@ class PreprocessorData:
                     'assemble()'
                 )
             table_pool.laid_out = True
-        self.pool_ops: OpStream = OpStream(self._op_refs, self._folded_labels)
+        self.pool_ops: OpStream = OpStream(self._op_refs, self.labels)
         # a pinned word's wflips tell an address from a number by its expression (BinaryData.pinned_value)
         self.result_ops.keep_label_values = self.pool_ops.keep_label_values = table_pool is not None
-        self.relocatable_extents = relocatable_extents
+        self.relocatable_extents: Optional[List[Tuple[int, int]]] = None  # (a caller's) every inline table's extent
         # an operand that would point elsewhere once the tables moved is refused (see OffsetGuard)
         self.offset_guard: Optional[OffsetGuard] = None
         if table_pool is not None:
@@ -216,7 +201,8 @@ class PreprocessorData:
             self.offset_guard.where = self._where
             self.offset_guard.emitting = self._emitting
         self.result_ops.guard = self.pool_ops.guard = self.offset_guard
-        self.pads = pads if self.offset_guard is None else self.offset_guard.pads
+        # {address: the bits a `pad` aligned it to, 0 where only a segment starts} (the OffsetGuard's, or a caller's)
+        self.pads: Optional[Dict[int, int]] = None if self.offset_guard is None else self.offset_guard.pads
         self._dollar_ops: Dict[int, Dict[int, bool]] = {}  # id(macro) -> its ops that name `$` (see dollar_ops)
         self._pointer_runtime_users: Dict[int, bool] = {}  # id(macro) -> it names POINTER_RUNTIME_LABELS
         self.emit_target: OpStream = self.result_ops
@@ -229,34 +215,13 @@ class PreprocessorData:
         self._deferred = DeferredTables()
         self._deferring = False  # emitting a deferred table's ops
 
-        # PROGRESS (off unless on_progress is given): each macro expansion owns a slice [lo, hi) of
-        # the [0, 1) progress line, split evenly among its ops; a macro call / rep iteration takes its
-        # op's sub-slice. Only CALLS look at it -- a plain op pays nothing -- and a slice thinner than
-        # _PROGRESS_MIN_SLICE is not tracked (None) below it, so the bookkeeping stays tiny.
-        self.on_progress: Optional[Callable[[float], None]] = None
-        self.progress_slice: Optional[Tuple[float, float]] = None
-        self._progress_reported = -1.0
+        self.on_progress: Optional[Callable[[float], None]] = None  # told how far into the top level the expansion is
 
         self.max_recursion_depth = max_recursion_depth
         # set python's recursion-limit so the preprocessor's own depth-check (at max_recursion_depth)
         #  triggers before python's RecursionError. Set it unconditionally - whether it's higher or lower than the
         #  current limit - so that raising max_recursion_depth actually allows deeper macro-recursion.
         sys.setrecursionlimit(max_recursion_depth + GAP_BETWEEN_PYTHONS_AND_PREPROCESSOR_MACRO_RECURSION_DEPTH)
-
-    def enter_progress_slice(
-        self, macro_slice: Tuple[float, float], op_index: int, ops_count: int, part: int, parts: int
-    ) -> None:
-        """a call at op `op_index` of a macro owning `macro_slice` (its `part`-th of `parts` rep
-        iterations): report where it starts, and make its sub-slice the callee's"""
-        lo, hi = macro_slice
-        op_width = (hi - lo) / ops_count
-        width = op_width / parts
-        start = lo + op_width * op_index + width * part
-        if start - self._progress_reported >= _PROGRESS_MIN_STEP:
-            self._progress_reported = start
-            assert self.on_progress is not None
-            self.on_progress(start)
-        self.progress_slice = (start, start + width) if width >= _PROGRESS_MIN_SLICE else None
 
     def patch_last_wflip_address(self) -> None:
         self.last_new_segment.wflip_start_address = self.curr_address
@@ -794,8 +759,11 @@ def resolve_macro_aux(
     consume = preprocessor_data.consume_main and macro_name is INITIAL_MACRO_NAME
     released_up_to = 0  # ops[:released_up_to] are None
     last_non_label = 0
+    on_progress = preprocessor_data.on_progress if macro_name is INITIAL_MACRO_NAME else None
 
     for op_index, op in enumerate(ops):
+        if on_progress is not None:
+            on_progress(op_index / len(ops))
         if consume:
             if last_non_label > released_up_to:
                 for index in range(released_up_to, last_non_label):
@@ -858,14 +826,9 @@ def resolve_macro_aux(
             next_macro_path = (
                 f"{labels_prefix}{MACRO_SEPARATOR_STRING}" if labels_prefix else ""
             ) + f"{op.code_position.short_str()}:{op.macro_name}"
-            progress_slice = preprocessor_data.progress_slice
-            if progress_slice is not None:
-                preprocessor_data.enter_progress_slice(progress_slice, op_index, len(current_macro.ops), 0, 1)
             extent_start = preprocessor_data.curr_address
             with preprocessor_data.prepare_macro_call(op):
                 resolve_macro_aux(preprocessor_data, op.macro_name, op.arguments, next_macro_path)
-            if progress_slice is not None:
-                preprocessor_data.progress_slice = progress_slice
             if op_index == relocated_call:
                 preprocessor_data.end_relocation()
             elif preprocessor_data.relocatable_extents is not None and is_relocatable(op.macro_name):
@@ -895,19 +858,12 @@ def resolve_macro_aux(
             next_macro_path = (
                 f"{labels_prefix}{MACRO_SEPARATOR_STRING}" if labels_prefix else ""
             ) + f"{op.code_position.short_str()}:rep{{}}:{op.macro_name}"
-            progress_slice = preprocessor_data.progress_slice
             with preprocessor_data.prepare_macro_call(op):
                 for i in range(rep_times):
                     op.current_index = i
-                    if progress_slice is not None:
-                        preprocessor_data.enter_progress_slice(
-                            progress_slice, op_index, len(current_macro.ops), i, rep_times
-                        )
                     resolve_macro_aux(
                         preprocessor_data, op.macro_name, op.calculate_arguments(i), next_macro_path.format(i)
                     )
-            if progress_slice is not None:
-                preprocessor_data.progress_slice = progress_slice
 
         elif isinstance(op, Segment):
             op = op.eval_new(params_dict)
@@ -937,9 +893,6 @@ def resolve_macros(
     table_pool: Optional[BlockPool] = None,
     on_progress: Optional[Callable[[float], None]] = None,
     consume_main: bool = False,
-    fold_labels: bool = True,
-    relocatable_extents: Optional[List[Tuple[int, int]]] = None,
-    pads: Optional[Dict[int, int]] = None,
 ) -> Tuple[OpsQueue, LabelsDict]:
     """
     unwind the macro tree to a serialized-queue of ops,
@@ -955,15 +908,9 @@ def resolve_macros(
     unreachable from fj source (see PreprocessorData.insert_macro_start_label), so a caller that is
     not writing a debugging file can pass False. It cannot change the emitted .fjm.
     @param on_progress: if given, called with the expansion's progress, a fraction in [0, 1) - by how
-    far into the main macro (and the calls in it) the expansion is. It cannot change the emitted .fjm.
+    far into the main macro's ops the expansion is. It cannot change the emitted .fjm.
     @param consume_main: the caller will not use `macros` again: the top level's ops are dropped (set to
     None in the main macro's op list) as the expansion passes them. It cannot change the emitted .fjm.
-    @param fold_labels: fold an operand of declared labels into a number. Off, every operand that names a
-    label keeps its expression (the relocation proof reads them). It cannot change the emitted .fjm.
-    @param relocatable_extents: if given, [start, end) of every relocatable table expanded in place is
-    appended to it (the relocation proof reads them).
-    @param pads: if given, {address: the bits a `pad` aligned it to, 0 where only a segment starts} is filled in
-    (the relocation proof reads it).
     @return: tuple of the queue of ops, and the labels' dictionary
     """
     preprocessor_data = PreprocessorData(
@@ -972,14 +919,9 @@ def resolve_macros(
         max_recursion_depth,
         save_debug_labels=save_debug_labels,
         table_pool=table_pool,
-        fold_labels=fold_labels,
-        relocatable_extents=relocatable_extents,
-        pads=pads,
     )
     preprocessor_data.consume_main = consume_main
-    if on_progress is not None:
-        preprocessor_data.on_progress = on_progress
-        preprocessor_data.progress_slice = (0.0, 1.0)
+    preprocessor_data.on_progress = on_progress
     resolve_macro_aux(preprocessor_data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
 
     preprocessor_data.finish(show_statistics)

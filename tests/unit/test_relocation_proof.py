@@ -1,5 +1,5 @@
 """
-unit-tests for the relocation proof (flipjump/assembler/relocation_proof.py): with a table pool, every program
+unit-tests for the relocation proof (tests/unit/relocation_proof.py): with a table pool, every program
 of the test tables is the program without it, moved - and the proof sees a corrupted moved op, a declared table
 moved in pieces or with an op that is not its own, an offset from an outside label into a moved table, an
 operand it cannot compare, and a pin whose arms were not rewritten; and it passes the correct crafted programs.
@@ -12,11 +12,12 @@ from typing import Any, Dict, Iterator, List, Tuple
 
 import pytest
 
-from flipjump.assembler import assembler, relocation_proof, table_pool as table_pool_module
+from flipjump.assembler import assembler, table_pool as table_pool_module
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment
-from flipjump.assembler.relocation_proof import prove_relocation
+from tests.unit import relocation_proof
+from tests.unit.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
@@ -251,7 +252,7 @@ def _with_extents_changed(monkeypatch: pytest.MonkeyPatch, start: int, end: int)
             extents[:] = [(s + start * op_bits, e + end * op_bits) for s, e in extents]
         return result
 
-    monkeypatch.setattr('flipjump.assembler.relocation_proof.resolve_macros', changing)
+    monkeypatch.setattr('tests.unit.relocation_proof.resolve_macros', changing)
 
 
 def test_a_table_moved_short_of_its_declaration_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -294,9 +295,9 @@ def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -
         return Corrupted(), labels
 
     assert prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches == []
-    monkeypatch.setattr('flipjump.assembler.relocation_proof.resolve_macros', corrupting)
-    monkeypatch.setattr('flipjump.assembler.relocation_proof.labels_resolve', lambda *args, **kwargs: None)
-    monkeypatch.setattr('flipjump.assembler.relocation_proof.unpin', lambda *args, **kwargs: None)
+    monkeypatch.setattr('tests.unit.relocation_proof.resolve_macros', corrupting)
+    monkeypatch.setattr('tests.unit.relocation_proof.labels_resolve', lambda *args, **kwargs: None)
+    monkeypatch.setattr('tests.unit.relocation_proof.unpin', lambda *args, **kwargs: None)
     mismatches = prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches
     assert any('with the pool' in mismatch for mismatch in mismatches), mismatches
 
