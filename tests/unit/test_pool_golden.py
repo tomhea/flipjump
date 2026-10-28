@@ -65,11 +65,12 @@ v: hex.hex
 p: hex.vec w/4, d
 """
 
-# each configuration's digests (frozen on 1.6.0 = e44ff3f)
+# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9, whose stl comment trims
+# moved the call-site line numbers the labels carry - the .fjm and census digests did not move)
 GOLDEN: Dict[str, Dict[str, Any]] = {
     'shipped': {
         'fjm': 'dca7d91cc81896ec582654f2f52571dafb5782279fa640f0b98808c708cbc2c4',
-        'labels': 'df11a2df2665b5c655ca89798a120189ecce5bb6e8e76028c2c490ae62626702',
+        'labels': 'a7a8f67f9419c2063e6705d1faf55392f88d32de7cdf2c0005844a697eefa1a6',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 416,
@@ -92,7 +93,7 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
     },
     'narrow': {
         'fjm': 'd56c6e1dc5e83425177b7fcf05285b46ce979e79a81f368b671aa7a0cc38d40b',
-        'labels': '11480edf6f283a40be77d11e3b012612e20c76232eadcdc2f317f617c92323ff',
+        'labels': '9a178b30a0ac750cb388b85195ee778b867bd301591e7f836f34c50c8a7cfedc',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 289,
