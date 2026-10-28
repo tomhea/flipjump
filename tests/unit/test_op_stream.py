@@ -130,10 +130,9 @@ def test_labels_resolve_reads_a_stream_like_the_op_objects(tmp_path: Path) -> No
         labels_resolve(ops, labels, 64, writer, save_wflip_labels=False)
         return list(writer.data)
 
-    from collections import deque
-
-    objects = deque(stream)  # the same ops, as objects
-    objects[0].wflip_start_address = 5 * 128
+    objects = OpStream([], labels)  # the same ops, appended as objects
+    for op in stream:
+        objects.append(op)
     assert build(stream, 'stream.fjm') == build(objects, 'objects.fjm')
 
 
