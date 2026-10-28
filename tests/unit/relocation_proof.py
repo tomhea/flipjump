@@ -273,18 +273,8 @@ def prove_relocation(
     # the pins the assembler keeps: the subject, judged below with none of its rules
     pinned, _ = resolve_pinned(table_pool.pinned_words(), pooled_labels, exclude=table_pool.pin_exclude)
     raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
-    guard = table_pool.offset_guard
-    if pinned and guard is not None:
-        unpin(
-            pooled_stream,
-            pooled_labels,
-            memory_width,
-            pinned,
-            {},
-            guard.alignment,
-            raw=raw,
-            pads=guard.pads,
-        )
+    if pinned:
+        unpin(pooled_stream, pooled_labels, memory_width, pinned, table_pool)
 
     def arm_alignment(plain_address: int) -> int:
         """the bits the table a word is armed with (at `plain_address` without the pool) is aligned to: a declared

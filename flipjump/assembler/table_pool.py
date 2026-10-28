@@ -68,9 +68,6 @@ class DeferredTables:
         self.label_offsets = array('I')
         self.label_ends = array('I')  # table i's labels are label_names[label_ends[i-1]:label_ends[i]]
 
-    def __len__(self) -> int:
-        return len(self.groups)
-
     def add(
         self, group: str, ops_alignment: int, table_ops: int, site: Optional[str], segment: Optional[NewSegment]
     ) -> None:
@@ -232,7 +229,7 @@ class OffsetGuard:
         names_a_table = False
         for coefficients, constant in parts:
             names_a_table = self._check_part(coefficients, constant, str(expr)) or names_a_table
-        if is_address and not _is_one_sum(expr):
+        if is_address:  # (a sum of one label is checked as its part was, again)
             named = expr.all_unknown_labels()
             if len(named) == 1:
                 label = next(iter(named))
@@ -294,17 +291,6 @@ class OffsetGuard:
             f'table-placement: the operand `{operand}`{self.where()} {why}. Address a moved table by its own labels, '
             f'or assemble without a table pool.'
         )
-
-
-def _is_one_sum(expr: Expr) -> bool:
-    """is all of `expr` one sum of labels and numbers (see linear_parts)?"""
-    value = expr.value
-    if not isinstance(value, tuple):
-        return True
-    op, args = value
-    if len(args) != 2 or op not in ('+', '-', '*') or not all(_is_one_sum(arg) for arg in args):
-        return False
-    return op != '*' or not args[0].all_unknown_labels() or not args[1].all_unknown_labels()
 
 
 def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
@@ -469,7 +455,7 @@ class BlockPool:
             self.counts, self.width_hist = counts, width_hist
             return self._place_cheapest(tables)
         self.lay_out(counts, width_hist)
-        addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline (too wide, declined in its turn)
+        addresses = array('Q', bytes(8 * len(tables.sizes)))  # 0: it stayed inline (too wide, declined in its turn)
         overflow = []  # (slot bits, index) of the tables whose group got no block
         for index, group in enumerate(tables.groups):
             site = tables.sites[index] if self.heat else ''
@@ -514,7 +500,7 @@ class BlockPool:
                 break
         else:
             raise self._no_room()
-        addresses = array('Q', bytes(8 * len(tables)))
+        addresses = array('Q', bytes(8 * len(tables.sizes)))
         for index, address in placed:
             addresses[index] = address
         self.allocated = len(placed)
@@ -561,7 +547,11 @@ class BlockPool:
     ) -> Optional[int]:
         """the table's address in its group's block, or None: no block, or too wide (its group breaks)"""
         group = self.alias.get(group, group)
-        hot_site = self._hot_site(group, labels_prefix) if group in self.hot_sites else None
+        hot_site = None
+        if group in self.hot_sites:  # (its site key, occurrence): counted whether it is placed or not
+            site = heat_key(labels_prefix)
+            hot_site = site, self._hot_seen.get((group, site), 0)
+            self._hot_seen[(group, site)] = hot_site[1] + 1
         if group not in self.groups:
             return None  # no block: the overflow region (place_deferred)
         if max(table_ops, ops_alignment) > self.max_slot_ops:
@@ -623,13 +613,6 @@ class BlockPool:
                 ranked[(site, occurrence)] = (slot_ops, rank)
                 self.hot_ranks[(groups[0], slot_ops)] = rank + 1
             self.hot_sites[groups[0]] = ranked
-
-    def _hot_site(self, group: str, labels_prefix: str) -> Tuple[str, int]:
-        """(site key, occurrence) of a hot group's table"""
-        site = heat_key(labels_prefix)
-        occurrence = self._hot_seen.get((group, site), 0)
-        self._hot_seen[(group, site)] = occurrence + 1
-        return site, occurrence
 
     def _hot_index(self, group: str, width: int, slots: int, site: Tuple[str, int]) -> int:
         """a hot group's table's index: a listed site's rank, else the next after every rank, in cheapest-first order"""

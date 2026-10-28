@@ -191,7 +191,7 @@ class PreprocessorData:
             table_pool.laid_out = True
             self.offset_guard = table_pool.offset_guard = OffsetGuard(table_pool.pool_start(), self.labels)
             self.offset_guard.where = self._where
-            self.offset_guard.emitting = self._emitting
+            self.offset_guard.emitting = lambda: self.curr_address if self._resume is None else self._resume[0]
             self.result_ops.guard = self.pool_ops.guard = self.offset_guard
             # a pinned word's wflips tell an address from a number by its expression (BinaryData.pinned_value)
             self.result_ops.keep_label_values = self.pool_ops.keep_label_values = True
@@ -253,10 +253,6 @@ class PreprocessorData:
         self.emit_target = self.pool_ops
         self.curr_address = 0
         return True
-
-    def _emitting(self) -> int:
-        """the next inline address"""
-        return self._resume[0] if self._resume is not None else self.curr_address
 
     def dollar_ops(self, macro: Macro) -> Dict[int, bool]:
         """{op index: names `$` in a sum} of the macro's ops that name `$` (False: it falls through)"""
@@ -587,8 +583,7 @@ def relocatable_call(
         macro_resolve_error(
             preprocessor_data.curr_tree,
             f'the relocatable table after `pad {ops_alignment}` (at {ops[pad_index].code_position}) needs a '
-            f'power-of-two pad: a pool places tables in power-of-two slots, so it could not place this one at its '
-            f'alignment',
+            f'power-of-two pad: a pool places tables in power-of-two slots',
         )
     group_expr: Optional[Expr] = None
     for after in range(index + 1, len(ops)):

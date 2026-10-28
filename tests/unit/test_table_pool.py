@@ -788,7 +788,7 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
                 tables.add_label(names[i], label * 448)
         cost = (tracemalloc.get_traced_memory()[0] - before) / count
         tracemalloc.stop()
-        assert len(tables) == count
+        assert len(tables.sizes) == count
         return cost
 
     one_label, two_labels, with_site = per_table(1, False), per_table(2, False), per_table(1, True)
