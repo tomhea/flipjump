@@ -30,14 +30,15 @@ import bisect
 import dataclasses
 from array import array
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from flipjump.assembler.assembler import labels_resolve, resolve_pinned, unpin
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum
 from flipjump.assembler.inner_classes.ops import INITIAL_ARGS, INITIAL_LABELS_PREFIX, INITIAL_MACRO_NAME
-from flipjump.assembler.preprocessor import OpsQueue, PreprocessorData, resolve_macro_aux
+from flipjump.assembler import preprocessor
+from flipjump.assembler.preprocessor import OpsQueue, PreprocessorData, is_relocatable
 from flipjump.assembler.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
@@ -56,16 +57,30 @@ def resolve_macros(
     pads: Optional[Dict[int, int]] = None,
 ) -> Tuple[OpsQueue, Dict[str, int]]:
     """preprocessor.resolve_macros with no label folded into a number (every operand keeps its expression), appending
-    [start, end) of every inline relocatable table to `relocatable_extents`, and filling `pads` (see PreprocessorData)
+    [start, end) of every expansion of a relocatable table to `relocatable_extents`, and filling `pads` (see
+    PreprocessorData)
     """
     data = PreprocessorData(
         memory_width, macros, DEFAULT_MAX_MACRO_RECURSION_DEPTH, save_debug_labels=False, table_pool=table_pool
     )
     data.result_ops.labels = data.pool_ops.labels = {}
-    data.relocatable_extents = relocatable_extents
     if pads is not None:
         data.pads = pads
-    resolve_macro_aux(data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
+    expand = preprocessor.resolve_macro_aux
+
+    def expand_recording(
+        preprocessor_data: PreprocessorData, macro_name: MacroName, args: Iterable[Expr], labels_prefix: str
+    ) -> None:
+        start = preprocessor_data.curr_address
+        expand(preprocessor_data, macro_name, args, labels_prefix)
+        if relocatable_extents is not None and is_relocatable(macro_name):
+            relocatable_extents.append((start, preprocessor_data.curr_address))
+
+    preprocessor.resolve_macro_aux = expand_recording  # (the expansion calls itself by this name)
+    try:
+        expand_recording(data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
+    finally:
+        preprocessor.resolve_macro_aux = expand
     data.finish(False)
     return data.get_result_ops_and_labels()
 
@@ -258,18 +273,8 @@ def prove_relocation(
     # the pins the assembler keeps: the subject, judged below with none of its rules
     pinned, _ = resolve_pinned(table_pool.pinned_words(), pooled_labels, exclude=table_pool.pin_exclude)
     raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
-    guard = table_pool.offset_guard
-    if pinned and guard is not None:
-        unpin(
-            pooled_stream,
-            pooled_labels,
-            memory_width,
-            pinned,
-            {},
-            guard.alignment,
-            raw=raw,
-            pads=guard.pads,
-        )
+    if pinned:
+        unpin(pooled_stream, pooled_labels, memory_width, pinned, table_pool)
 
     def arm_alignment(plain_address: int) -> int:
         """the bits the table a word is armed with (at `plain_address` without the pool) is aligned to: a declared

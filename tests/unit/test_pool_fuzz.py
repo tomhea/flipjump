@@ -5,13 +5,13 @@ no arm of a pinned word - which it must report.
 """
 
 from pathlib import Path
-from typing import Any, List
+from typing import List
 
 import pytest
 
 from flipjump.assembler import assembler
-from flipjump.assembler.preprocessor import PreprocessorData
 from tests.unit.pool_fuzzer import fuzz_case
+from tests.unit.unit_utils import labels_off_their_ops
 
 WIDTHS = (16, 32, 64)
 
@@ -42,18 +42,10 @@ def test_the_controls_case_runs_the_same_with_every_pool(tmp_path: Path) -> None
 def test_the_fuzzer_reports_a_table_moved_one_op_below_its_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    original = PreprocessorData._place_deferred_tables
-
-    def shifted(self: Any, pool: Any) -> None:
-        tables = self._deferred
-        original(self, pool)
-        for segment in tables.segments:  # the first table that left the stream: its ops one op below its labels
-            if segment is not None:
-                segment.start_address -= 2 * self.memory_width
-                segment.wflip_start_address -= 2 * self.memory_width
-                break
-
-    monkeypatch.setattr(PreprocessorData, '_place_deferred_tables', shifted)
+    # the first table that left the stream: its labels one op (w=16) above its ops
+    labels_off_their_ops(
+        monkeypatch, 2 * 16, lambda pool, tables, addresses: next(i for i, a in enumerate(addresses) if a)
+    )
     findings = _findings(tmp_path)
     assert CONTROL_FINDING in findings, findings
 

@@ -68,9 +68,6 @@ class DeferredTables:
         self.label_offsets = array('I')
         self.label_ends = array('I')  # table i's labels are label_names[label_ends[i-1]:label_ends[i]]
 
-    def __len__(self) -> int:
-        return len(self.groups)
-
     def add(
         self, group: str, ops_alignment: int, table_ops: int, site: Optional[str], segment: Optional[NewSegment]
     ) -> None:
@@ -99,9 +96,6 @@ def reached_the_pool(address: int, pool_start: int) -> FlipJumpPreprocessorExcep
     )
 
 
-_SEGMENT_START = 'the start of the segment'
-
-
 class OffsetGuard:
     """Keeps an operand from pointing elsewhere once the tables moved.
 
@@ -115,23 +109,21 @@ class OffsetGuard:
 
     The preprocessor checks the operands whose labels it knows, labels_resolve the rest. An operand reaching past the
     code emitted so far is PENDING: the table whose place it reaches over stays inline (may_move). Every other
-    violation is refused, `where()` saying where the op is.
+    violation is refused (`refuse`), `where()` saying where the op is.
     """
 
     def __init__(self, inline_end: int, labels: LabelsDict):
         self.inline_end = inline_end  # the inline stream lies below it, the moved tables above (the pool's start)
         self.labels = labels  # the preprocessor's (a moved table's are there once it is placed)
         self.anchors: List[int] = []  # the cuts of the inline stream, ascending
-        self._anchor_tables: List[str] = []  # ...and each one's table (its start label), or what cut it
+        self.cuts: List[Tuple[str, bool]] = []  # ...each one as a refusal names it, and whether a segment starts there
         self.moved_tables: List[str] = []  # the moved tables' start labels, in the order they moved
         # a label declared at an anchor before its table's pad -> (the anchor, the tables that moved out of it before)
         self.stranded: Dict[str, Tuple[int, int]] = {}
         self.watched: Set[str] = set()  # the labels checked with no offset too: the stranded ones, and `$`
         self.falls_to = -1  # where the last op that falls through to the next op falls to
         self._pending: List[Tuple[int, int, str]] = []  # (label address, target, label) reaching past the code
-        self._starts: List[int] = []  # the moved tables' [start, end), by start
-        self._ends: List[int] = []
-        self._names: List[str] = []
+        self.tables: List[Tuple[int, int, str]] = []  # the placed tables' (start, end, start label), by start
         self.where: Callable[[], str] = lambda: ''
         self.emitting: Optional[Callable[[], int]] = None  # the next inline address the preprocessor emits at
         self.pads: Dict[int, int] = {}  # inline address -> the bits a `pad` aligned it to (0: a segment starts)
@@ -146,39 +138,32 @@ class OffsetGuard:
         return None
 
     def table_moved(self, anchor: int, table: str) -> None:
-        self._cut(anchor, table)
+        self._cut(anchor, f'the place of the table {table}, which moved out of {hex(anchor)}', False)
         self.moved_tables.append(table)
 
     def pad_realigned(self, address: int, ops_alignment: int) -> None:
         """the `pad` at `address` pads differently than without the pool: an operand across it is refused"""
-        cut = (
-            f'the `pad {ops_alignment}` at {hex(address)}, which pads to another op once a table before it moved out: '
-            f'it would no longer point where it did'
-        )
+        cut = f'the `pad {ops_alignment}` at {hex(address)}, which pads to another op once a table before it moved out'
         if self.falls_to == address:
-            self._refuse('$', f'falls through to {cut}')
+            self.refuse('$', f'falls through to {cut}')
         self._cut_across(address, cut, False)
 
     def segment_started(self, address: int) -> None:
         """a segment starts at `address`, as without the pool: an operand from moved code into it is refused"""
-        cut = (
-            f'{_SEGMENT_START} at {hex(address)}, which stays where it is while code a table moved out of moves: it '
-            f'would no longer be the same distance'
-        )
-        self._cut_across(address, cut, True)
+        self._cut_across(address, f'the start of the segment at {hex(address)}, which stays where it is', True)
 
-    def _cut_across(self, address: int, cut: str, moved_only: bool) -> None:
+    def _cut_across(self, address: int, cut: str, segment: bool) -> None:
         for label_address, target, label in self._pending:
             if label_address <= address <= target:
-                if not moved_only or self.shift_class(self.piece(label, label_address)) >= 0:
-                    self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
-        self._cut(address, cut)
+                if not segment or self.shift_class(self.piece(label, label_address)) >= 0:
+                    self.refuse(_operand(label, target - label_address), f'reaches across {cut}')
+        self._cut(address, cut, segment)
 
     def shift_class(self, piece: int) -> int:
         """-1 for a piece whose code does not move (the first, or a segment's), else the piece itself"""
-        return -1 if piece == 0 or self._anchor_tables[piece - 1].startswith(_SEGMENT_START) else piece
+        return -1 if piece == 0 or self.cuts[piece - 1][1] else piece
 
-    def _cut(self, anchor: int, table: str) -> None:
+    def _cut(self, anchor: int, cut: str, segment: bool) -> None:
         anchors = self.anchors
         index = bisect.bisect_right(anchors, anchor)
         before = index - bisect.bisect_left(anchors, anchor)
@@ -193,25 +178,18 @@ class OffsetGuard:
             elif address < self.inline_end:
                 break
         anchors.insert(index, anchor)
-        self._anchor_tables.insert(index, table)
+        self.cuts.insert(index, (cut, segment))
         self._pending = [entry for entry in self._pending if entry[1] >= anchor]
 
-    def table_placed(self, start: int, end: int, table: str) -> None:
-        index = bisect.bisect_right(self._starts, start)
-        self._starts.insert(index, start)
-        self._ends.insert(index, end)
-        self._names.insert(index, table)
-
-    def table_at(self, address: int) -> int:
-        index = bisect.bisect_right(self._starts, address) - 1
-        return index if index >= 0 and address < self._ends[index] else -1
+    def table_at(self, address: int) -> Optional[Tuple[int, int, str]]:
+        """the placed table that holds `address`, or None"""
+        index = bisect.bisect_right(self.tables, (address, 1 << 64)) - 1
+        return self.tables[index] if index >= 0 and address < self.tables[index][1] else None
 
     def alignment(self, address: int) -> int:
         """the bits the table at `address` is aligned to: a moved table's size, an inline one's `pad`"""
         table = self.table_at(address)
-        if table >= 0:
-            return (self._ends[table] - self._starts[table] - 1).bit_length()
-        return self.pads.get(address, 0)
+        return (table[1] - table[0] - 1).bit_length() if table else self.pads.get(address, 0)
 
     def piece(self, label: str, address: int) -> int:
         stranded = self.stranded.get(label)
@@ -225,13 +203,13 @@ class OffsetGuard:
         self.reach = max(self.reach, target)
         if address >= self.inline_end:
             table = self.table_at(address)
-            if table < 0:
+            if table is None:
                 raise reached_the_pool(address, self.inline_end)
-            if not self._starts[table] <= target < self._ends[table]:
-                self._refuse(
+            if not table[0] <= target < table[1]:
+                self.refuse(
                     operand or _operand(label, offset),
-                    f'leaves the moved table {self._names[table]} at {hex(self._starts[table])}: an offset from a '
-                    f'moved table\'s label must stay inside it',
+                    f'leaves the moved table {table[2]} at {hex(table[0])}: an offset from a moved table\'s label '
+                    f'must stay inside it',
                 )
             return
         if target >= self.inline_end:
@@ -239,8 +217,9 @@ class OffsetGuard:
         piece = self.piece(label, address)
         aim = bisect.bisect_right(self.anchors, target)
         if aim != piece and not self.shift_class(aim) == self.shift_class(piece) == -1:
-            index = piece if aim > piece else piece - 1
-            self._refuse(operand or _operand(label, offset), self._across(index, label, offset))
+            cut = self.cuts[piece if aim > piece else piece - 1][0]
+            why = f'reaches across {cut}' if offset else f'names {label}, declared before {cut}'
+            self.refuse(operand or _operand(label, offset), why)
         if (offset > 0 or label in self.watched) and self.emitting is not None and target >= self.emitting():
             self._pending.append((address, target, label))  # a table may move out below it: it stays inline
 
@@ -250,7 +229,7 @@ class OffsetGuard:
         names_a_table = False
         for coefficients, constant in parts:
             names_a_table = self._check_part(coefficients, constant, str(expr)) or names_a_table
-        if is_address and not _is_one_sum(expr):
+        if is_address:  # (a sum of one label is checked as its part was, again)
             named = expr.all_unknown_labels()
             if len(named) == 1:
                 label = next(iter(named))
@@ -280,12 +259,8 @@ class OffsetGuard:
         value = constant + sum(coefficient * labels[label] for label, coefficient in coefficients.items())
         if moved:
             tables = {self.table_at(labels[label]) for label in coefficients}
-            if len(tables) != 1 or -1 in tables or total not in (0, 1):
-                self._refuse(
-                    operand,
-                    f'computes from {moved[0]}, a label of a moved table, with labels outside it: what it computes '
-                    f'changes with the move',
-                )
+            if len(tables) != 1 or None in tables or total not in (0, 1):
+                self.refuse(operand, f'computes from {moved[0]}, a moved table\'s label, and labels outside that table')
             if total == 1:
                 self.check(moved[0], labels[moved[0]], value - labels[moved[0]], operand)
             return True
@@ -293,7 +268,7 @@ class OffsetGuard:
             return False  # `2 * L`, the `L` of `L >> 6`: an address as a number
         pieces = sorted(self.piece(label, labels[label]) for label in coefficients)
         if len({self.shift_class(piece) for piece in pieces}) > 1:
-            self._refuse(operand, f'takes the distance across {self._cut_name(pieces[0], "be the same")}')
+            self.refuse(operand, f'takes the distance across {self.cuts[pieces[0]][0]}')
         if total == 1:
             label = next(iter(coefficients))
             self.check(label, labels[label], value - labels[label], operand)
@@ -303,50 +278,19 @@ class OffsetGuard:
         """the label nearest at or below `address` (slow - a refusal asks)"""
         return max(((value, name) for name, value in self.labels.items() if value <= address), default=(0, ''))[1]
 
-    def _cut_name(self, index: int, no_longer: str) -> str:
-        """the cut at anchors[index], as a refusal names it"""
-        cut, anchor = self._anchor_tables[index], hex(self.anchors[index])
-        if cut.startswith('the '):  # a pad that realigned, or a segment's start
-            return cut
-        return f'the place of the table {cut}, which moved out of {anchor}, so it would no longer {no_longer}'
-
-    def _across(self, index: int, label: str, offset: int) -> str:
-        if offset:
-            return f'reaches across {self._cut_name(index, "point where it did")}'
-        cut = self._anchor_tables[index]
-        if cut.startswith('the '):
-            return f'names {label}, declared before {cut}'
-        return (
-            f'names {label}, declared at {hex(self.anchors[index])} before the `pad` of the table {cut}: it named the '
-            f'table\'s start, which moved, while the label stays with the code after it'
-        )
-
-    def _refuse_inside(self, operand: str, target: int) -> NoReturn:
+    def _refuse_inside(self, operand: str, target: int) -> None:
         table = self.table_at(target)
-        where = f'inside the moved table {self._names[table]} at {hex(self._starts[table])}' if table >= 0 else ''
-        self._refuse(
-            operand,
-            f'lands at {hex(target)}, {where or "in the table pool"}, and is not one of its labels plus a constant',
-        )
+        where = f'inside the moved table {table[2]} at {hex(table[0])}' if table else 'in the table pool'
+        self.refuse(operand, f'lands at {hex(target)}, {where}, and is not one of its labels plus a constant')
 
-    def _refuse(self, operand: str, what: str) -> NoReturn:
+    def refuse(self, operand: str, why: str) -> NoReturn:
+        """refuse the program: moving the tables would change what `operand` (of the op `where()` names) means"""
         if self.emitting is not None and self.emitting() > self.inline_end:
             raise reached_the_pool(self.emitting(), self.inline_end)  # the program's own code did: that is the cause
         raise FlipJumpAssemblerException(
-            f'table-placement: the operand `{operand}`{self.where()} {what}. Address a moved table by its own labels, '
+            f'table-placement: the operand `{operand}`{self.where()} {why}. Address a moved table by its own labels, '
             f'or assemble without a table pool.'
         )
-
-
-def _is_one_sum(expr: Expr) -> bool:
-    """is all of `expr` one sum of labels and numbers (see linear_parts)?"""
-    value = expr.value
-    if not isinstance(value, tuple):
-        return True
-    op, args = value
-    if len(args) != 2 or op not in ('+', '-', '*') or not all(_is_one_sum(arg) for arg in args):
-        return False
-    return op != '*' or not args[0].all_unknown_labels() or not args[1].all_unknown_labels()
 
 
 def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
@@ -511,7 +455,7 @@ class BlockPool:
             self.counts, self.width_hist = counts, width_hist
             return self._place_cheapest(tables)
         self.lay_out(counts, width_hist)
-        addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline (too wide, declined in its turn)
+        addresses = array('Q', bytes(8 * len(tables.sizes)))  # 0: it stayed inline (too wide, declined in its turn)
         overflow = []  # (slot bits, index) of the tables whose group got no block
         for index, group in enumerate(tables.groups):
             site = tables.sites[index] if self.heat else ''
@@ -556,7 +500,7 @@ class BlockPool:
                 break
         else:
             raise self._no_room()
-        addresses = array('Q', bytes(8 * len(tables)))
+        addresses = array('Q', bytes(8 * len(tables.sizes)))
         for index, address in placed:
             addresses[index] = address
         self.allocated = len(placed)
@@ -603,7 +547,11 @@ class BlockPool:
     ) -> Optional[int]:
         """the table's address in its group's block, or None: no block, or too wide (its group breaks)"""
         group = self.alias.get(group, group)
-        hot_site = self._hot_site(group, labels_prefix) if group in self.hot_sites else None
+        hot_site = None
+        if group in self.hot_sites:  # (its site key, occurrence): counted whether it is placed or not
+            site = heat_key(labels_prefix)
+            hot_site = site, self._hot_seen.get((group, site), 0)
+            self._hot_seen[(group, site)] = hot_site[1] + 1
         if group not in self.groups:
             return None  # no block: the overflow region (place_deferred)
         if max(table_ops, ops_alignment) > self.max_slot_ops:
@@ -665,13 +613,6 @@ class BlockPool:
                 ranked[(site, occurrence)] = (slot_ops, rank)
                 self.hot_ranks[(groups[0], slot_ops)] = rank + 1
             self.hot_sites[groups[0]] = ranked
-
-    def _hot_site(self, group: str, labels_prefix: str) -> Tuple[str, int]:
-        """(site key, occurrence) of a hot group's table"""
-        site = heat_key(labels_prefix)
-        occurrence = self._hot_seen.get((group, site), 0)
-        self._hot_seen[(group, site)] = occurrence + 1
-        return site, occurrence
 
     def _hot_index(self, group: str, width: int, slots: int, site: Tuple[str, int]) -> int:
         """a hot group's table's index: a listed site's rank, else the next after every rank, in cheapest-first order"""

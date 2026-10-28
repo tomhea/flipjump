@@ -10,7 +10,7 @@ import gc
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Iterable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional
+from typing import Callable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -332,39 +332,21 @@ def resolve_pinned(
 _PROGRESS_CHUNK = 1 << 16
 
 
-def window_top(base: int, alignments: Iterable[int]) -> int:
-    """the lowest bit of a pinned word (resting at `base`, armed with tables aligned to `alignments` bits) that holds
-    an address: a flip below it is a value or a move inside the armed table, the same with the pool as without; only
-    an arm, xored with the base, may flip at or above it."""
-    top = (base & -base).bit_length() - 1 if base else 1 << 30
-    alignments = list(alignments)
-    return min(top, max(alignments)) if alignments else top
-
-
-def unpin(
-    stream: OpStream,
-    labels: Dict[str, int],
-    memory_width: int,
-    pinned: Dict[int, int],
-    reasons: Dict[str, int],
-    table_alignment: Callable[[int], int] = lambda address: 0,
-    *,
-    raw: bool = False,
-    pads: Optional[Dict[int, int]] = None,
-) -> None:
+def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: Dict[int, int], pool: BlockPool) -> None:
     """Un-pin every word of `pinned` ({jump-word address: block base}) whose pin could not hold, counting each in
-    `reasons` by why (an un-pinned word is always right, only slower). A pin holds when the word has an op of its own
-    and every flip of it arms it (a label plus a constant, flipped xor the base) or stays below its window_top: no
+    `pool.unpins` by why (an un-pinned word is always right, only slower). A pin holds when the word has an op of its
+    own and every flip of it arms it (a label plus a constant, flipped xor the base) or stays below its window: no
     number or computed value above it (`wflip x+w, 0x4000`, `T1 ^ T2`), no `a;b` flip above it, no wflip across two
-    words; and while an op that is no arm of it jumps through it, no table below its window (`pads`: {address: the
-    bits a pad aligned it to}) is a value its flips can make (tables_armed_below). `table_alignment(address)`: the
-    bits the table armed at `address` is aligned to. `raw`: the pointer runtime and no pin_exclude - no pin holds."""
+    words; and while an op that is no arm of it jumps through it, no table below its window (OffsetGuard.pads) is a
+    value its flips can make (tables_armed_below). With the pointer runtime and no pin_exclude, no pin holds."""
+    guard = pool.offset_guard
+    assert guard is not None  # a pool's preprocessor made it
 
     def drop(word: int, reason: str) -> None:
         if pinned.pop(word, None) is not None:
-            reasons[reason] = reasons.get(reason, 0) + 1
+            pool.unpins[reason] = pool.unpins.get(reason, 0) + 1
 
-    if raw:
+    if pool.reads_words_raw and pool.pin_exclude is None:
         for word in list(pinned):
             drop(word, 'the pointer runtime')
         return
@@ -389,7 +371,7 @@ def unpin(
             if value < 0:
                 kind_of_value = _deferred_value_kind(stream, ~value)
                 if kind_of_value == VALUE_ADDRESS and word in arms:
-                    arms[word].append(table_alignment(_label_address(stream, ~value, labels)))
+                    arms[word].append(guard.alignment(_label_address(stream, ~value, labels)))
                 value = _deferred_value(stream, ~value, next_slot, labels, None)
             return_address = next_slot()
             if return_address < 0:
@@ -431,9 +413,13 @@ def unpin(
             if word in arms:
                 flipped_bits[word] = flipped_bits.get(word, 0) | 1 << (flip - word)
             address += 2 * w
-    low = sorted((pads or {}).items())
+    low = sorted(guard.pads.items())
     for word, base in list(pinned.items()):
-        top = window_top(base, arms[word])
+        # its window: the bits below its base's alignment and the widest table it is armed with. A flip there is a
+        # value or a move inside the armed table, the same with the pool as without; only an arm may flip above it
+        top = (base & -base).bit_length() - 1 if base else 1 << 30
+        if arms[word]:
+            top = min(top, max(arms[word]))
         above = ~((1 << top) - 1)
         if word not in rests:
             drop(word, 'no op of its own')
@@ -692,17 +678,13 @@ def assemble(
 
         # BlockPool's pinned words are expressions, resolved now that every label is known; a pin that cannot hold
         # is dropped (the pool's unpins say why)
-        pinned = pool_start = guard = wflips_at = None
+        pinned = None
         if table_pool is not None:
-            pool_start, guard, wflips_at = table_pool.pool_start(), table_pool.offset_guard, table_pool.wflips_at()
-            assert guard is not None  # a pool's preprocessor made it
             pinned, table_pool.pin_conflicts = resolve_pinned(
                 table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
             )
-            raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
             if pinned:
-                unpin(ops, labels, memory_width, pinned, table_pool.unpins, guard.alignment, raw=raw, pads=guard.pads)
-            pinned = pinned or None
+                unpin(ops, labels, memory_width, pinned, table_pool)
 
         with ProgressBar('  labels resolve:  ', print_time=print_time) as progress:
             # the `:wflips:N` labels are read only by the debugging file
@@ -712,11 +694,11 @@ def assemble(
                 memory_width,
                 fjm_writer,
                 save_wflip_labels=debugging_file_path is not None,
-                pinned=pinned,
+                pinned=pinned or None,
                 on_progress=progress.update if progress.active else None,
-                pool_start=pool_start,
-                offset_guard=guard,
-                wflips_at=wflips_at,
+                pool_start=None if table_pool is None else table_pool.pool_start(),
+                offset_guard=None if table_pool is None else table_pool.offset_guard,
+                wflips_at=None if table_pool is None else table_pool.wflips_at(),
             )
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression
