@@ -597,48 +597,30 @@ static int mem_decide_storage_once(MemoryObject* m)
                         "address 0 is missing");
         return -1;
     }
-    if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
-        if (m->flat_required) {
-            PyErr_Format(PyExc_MemoryError, "the flat-storage window of %llu words is too large to allocate",
-                         (unsigned long long)low_max_end);
-            return -1;
-        }
-        fprintf(stderr, "flipjump: flat-storage window is too large (byte size overflows); running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-        fflush(stderr);
-        return 0; /* paged fallback */
-    }
-
+    m->cell_bytes = (m->w <= 32) ? 4 : 8;
     {
-        /* deterministic allocation-failure injection for the error-path test
+        /* FLIPJUMP_TEST_FLAT_ALLOC_FAIL=1: a deterministic allocation failure for the error-path tests
            (a real flat-array OOM is not safely reproducible across platforms) */
         const char* simulate_alloc_fail = getenv("FLIPJUMP_TEST_FLAT_ALLOC_FAIL");
-        if (simulate_alloc_fail && simulate_alloc_fail[0] == '1') {
-            if (m->flat_required) {
-                PyErr_Format(PyExc_MemoryError,
-                             "allocating the flat-storage window of %llu words failed (test injection)",
-                             (unsigned long long)low_max_end);
-                return -1;
-            }
-            fprintf(stderr, "flipjump: flat-storage allocation failed (test injection); running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-            fflush(stderr);
-            return 0; /* paged fallback */
+        const char* failure = NULL;
+        if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
+            failure = "its byte size overflows";
+        } else if (simulate_alloc_fail && simulate_alloc_fail[0] == '1') {
+            failure = "test injection";
+        } else if (!(m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes))) {
+            failure = "out of memory";
         }
-    }
-    m->cell_bytes = (m->w <= 32) ? 4 : 8;
-    m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes);
-    if (!m->flat && m->flat_required) {
-        PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words (%llu bytes) failed",
-                     (unsigned long long)low_max_end,
-                     (unsigned long long)low_max_end * (unsigned long long)m->cell_bytes);
-        return -1;
-    }
-    if (!m->flat) {
-        fprintf(stderr, "flipjump: flat-storage allocation failed; running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-        fflush(stderr);
-        return 0; /* paged fallback - the program still runs, just slower */
+        if (failure && m->flat_required) {
+            PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words failed (%s)",
+                         (unsigned long long)low_max_end, failure);
+            return -1;
+        }
+        if (failure) {
+            fprintf(stderr, "flipjump: flat-storage allocation failed (%s); running paged (slower). lower --flat-max-words / "
+                    "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n", failure);
+            fflush(stderr);
+            return 0; /* paged fallback - the program still runs, just slower */
+        }
     }
     m->flat_count = low_max_end;
     m->flat_covers_all = (max_end <= low_max_end);
