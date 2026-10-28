@@ -19,14 +19,7 @@ from array import array
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.inner_classes.ops import (
-    CodePosition,
-    FlipJump,
-    NewSegment,
-    Padding,
-    ReserveBits,
-    WordFlip,
-)
+from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, NewSegment, Padding, ReserveBits, WordFlip
 
 # op kinds. Slots per kind:
 FJ = 0  # flip, jump - both literal
@@ -59,11 +52,8 @@ def linear_sum(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
 
 
 def _linear_in(expr: Expr, params: Dict[str, Expr]) -> Optional[Tuple[Optional[str], int]]:
-    """(label, constant) if expr.eval_new(params) is a +/- tree of at most one label (coefficient +1) and
-    ints, else None - without building the substituted tree: a name is replaced by its params value once
-    (as eval_new does - the values are already minimal), and the +/- tree is summed. None also where
-    eval_new would fold something else (the caller then takes the eval_new path, so every other operator -
-    and its errors - stays eval_new's)."""
+    """linear_sum(expr.eval_new(params)) without building the substituted tree; None also where eval_new would fold
+    something else (the caller then takes the eval_new path, its errors and all)"""
     value: Any = expr.value
     if value.__class__ is int:
         return None, value
@@ -133,9 +123,8 @@ def linear_parts(expr: Expr) -> List[LinearPart]:
     return parts
 
 
-# the linear sums of the macro arguments (the params values): an argument such as `va + 2*dw` is referenced by
-# many ops of its expansion, so its sum is computed once. Keyed by the Expr object (Expr has identity
-# hashing, and the key keeps it alive, so an id cannot be reused); bounded by clearing.
+# the linear sums of the macro arguments (`va + 2*dw` is named by many ops of its expansion), by Expr (identity
+# hashed, kept alive by the key); bounded by clearing
 _LINEAR_MEMO: Dict[Expr, Optional[Tuple[Optional[str], int]]] = {}
 _LINEAR_MEMO_LIMIT = 1 << 16
 _MISSING: Any = object()
@@ -169,8 +158,7 @@ class OpStream:
         self.vals = array('q')
         self.refs = refs
         self.labels = labels
-        # (op index, vals index, ref) of every OBJ op, in order: flush_table_pool cuts the pool's
-        # stream at its NewSegments without decoding it
+        # (op index, vals index, ref) of every OBJ op: flush_table_pool cuts the pool's stream at its NewSegments
         self.marks: List[Tuple[int, int, Any]] = []
         # a wflip's value that names a label stays an expression (BlockPool tells an address from a number)
         self.keep_label_values = False
@@ -235,8 +223,7 @@ class OpStream:
         return False
 
     def _guarded(self, name: str, const: int) -> None:
-        """the table pool's guard checks the operand `name + const` now if `name` is declared (else labels_resolve
-        does), whether or not it is folded"""
+        """the pool's guard checks `name + const` now if `name` is declared (else labels_resolve does)"""
         address = self.guard.labels.get(name)
         if address is not None:
             self.guard.check(name, address, const)
@@ -363,27 +350,12 @@ class OpStream:
             refs.append(expr)
 
     def add_flip_jump(self, flip: Expr, jump: Expr, code_position: CodePosition) -> None:
-        f: Any = flip.value
-        j: Any = jump.value
-        if f.__class__ is int and j.__class__ is int and 0 <= f <= LITERAL_MAX and 0 <= j <= LITERAL_MAX:
-            self.vals.append(f)
-            self.vals.append(j)
-            self._literal_flip_jump()
-            return
-        deferred = self._operand(flip)
-        deferred = self._operand(jump) or deferred
-        self._end_flip_jump(deferred, code_position)
+        self.add_flip_jump_in(flip, jump, _NO_PARAMS, code_position)
 
     def add_word_flip(
         self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition
     ) -> None:
-        self._operand(word_address)
-        if self.keep_label_values:
-            self._value(flip_value)
-        else:
-            self._operand(flip_value, False)
-        self._operand(return_address)
-        self._end_word_flip(code_position)
+        self.add_word_flip_in(word_address, flip_value, return_address, _NO_PARAMS, code_position)
 
     def add_padding(self, ops_count: int) -> None:
         self.kinds.append(PAD)
@@ -411,9 +383,8 @@ class OpStream:
     def extend_slice(
         self, other: OpStream, op_start: int, op_end: int, val_start: int, val_end: int, mark_start: int, mark_end: int
     ) -> None:
-        """append other's ops [op_start, op_end) - whose slots are other.vals[val_start:val_end], and whose
-        OBJ ops are other.marks[mark_start:mark_end] - to this stream. Both must share `refs` (a reference
-        is an index into it)."""
+        """append other's ops [op_start, op_end) (their slots other.vals[val_start:val_end], their OBJ ops
+        other.marks[mark_start:mark_end]); both streams share `refs`"""
         assert other.refs is self.refs
         base_ops = len(self.kinds)
         base_vals = len(self.vals)
