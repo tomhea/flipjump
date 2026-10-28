@@ -13,7 +13,9 @@ import gzip
 from array import array
 import hashlib
 import json
+import struct
 import sys
+import zlib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -29,7 +31,7 @@ CORPUS_PATH = Path(__file__).with_name('screen_golden_corpus.json.gz')
 
 # sha256 of each section's per-entry digests, joined (the corpus file holds the per-entry ones)
 SECTION_DIGESTS = {
-    'screens': 'f2bd2c1a1548ab6826f91f7ab361baec4cb1925b038192cb07f6cfdb68c20fb8',
+    'screens': 'c643658224d2153bad483902687fa1792dc7e44c1b4d9978a9e97fd0000e0a25',
     'keyboards': 'ddb4ae4de902f161593f51debea15f35488d2c2ea13377c17d8be71810e52578',
     'texts': '378402ea715f22488f100f243644ff61c4517879581b887cfed0e6f8119e6919',
     'keycodes': '386dfe21ea9998d16021b080953f97ae483406c8b86e0552ca9d03fd08110ad1',
@@ -101,10 +103,24 @@ def _palettes_sha(palettes: List[Any]) -> str:
     return _sha([by_id[id(slot)] for slot in palettes])
 
 
+def _png_sha(png: bytes) -> str:
+    """a PNG's chunks with its IDAT decompressed: zlib's compressed bytes differ between platforms' zlib builds"""
+    chunks, at, idat = [], 8, b''
+    while at < len(png):
+        (length,) = struct.unpack('>I', png[at : at + 4])
+        kind, data = png[at + 4 : at + 8], png[at + 8 : at + 8 + length]
+        if kind == b'IDAT':
+            idat += data
+        else:
+            chunks.append((kind, data))
+        at += 12 + length
+    return _sha((png[:8], chunks, zlib.decompress(idat)))
+
+
 def screen_digest(log: Dict[str, Any], frames_dir: Path) -> str:
     notes = replay_screen(log, InMemoryScreen(frames_dir=frames_dir))
     pngs = sorted(frames_dir.glob('*.png')) if frames_dir.exists() else []
-    notes.append([(png.name, _sha(png.read_bytes())) for png in pngs])
+    notes.append([(png.name, _png_sha(png.read_bytes())) for png in pngs])
     return _sha(notes)
 
 
