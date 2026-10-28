@@ -3,17 +3,20 @@ a golden test of the table pool: a real stl program assembled with a one-pass Bl
 shipped build is (merged aliases, spread 2, max_slot_ops 512, pin_broken, width buckets, a heat list, a
 pin_exclude), whose .fjm, labels and census are frozen by their sha256. A refactor of the pool may not move a byte.
 
-The negative controls perturb a real knob (the spread, the heat list's order) and require the digests to change.
+The negative controls perturb a real knob (the spread, the heat list's order) or the raw placement's index order,
+and require the digests to change. EXTRA freezes more configurations: the CLI's flat pool, a raw program, the
+overflow region and the constructor's defaults.
 """
 
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
 from flipjump import assemble
+from flipjump.assembler import table_pool
 from flipjump.assembler.table_pool import BlockPool, heat_key
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
@@ -160,12 +163,14 @@ def _exclude_d(address: int, labels: Dict[str, int]) -> bool:
     return address == labels['d'] + W  # the cell the pointer reads (its jump word)
 
 
-def _assemble(tmp_path: Path, name: str, pool: Optional[BlockPool]) -> Tuple[bytes, Dict[str, int]]:
-    """the .fjm bytes and the debugging labels of PROGRAM assembled with `pool`"""
+def _assemble(
+    tmp_path: Path, name: str, pool: Optional[BlockPool], exclude: bool = True
+) -> Tuple[bytes, Dict[str, int]]:
+    """the .fjm bytes and the debugging labels of PROGRAM assembled with `pool` (`exclude`: its pin_exclude)"""
     source = tmp_path / f'{name}.fj'
     source.write_text(PROGRAM)
     fjm, debug = tmp_path / f'{name}.fjm', tmp_path / f'{name}.fjd'
-    if pool is not None:
+    if pool is not None and exclude:
         pool.pin_exclude = _exclude_d
     assemble([source], fjm, memory_width=W, print_time=False, table_pool=pool, debugging_file_path=debug)
     return fjm.read_bytes(), load_debugging_labels(debug)
@@ -189,9 +194,11 @@ def _heat(tmp_path: Path) -> Heat:
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}
 
 
-def _digests(tmp_path: Path, heat: Heat, **knobs: Any) -> Dict[str, Any]:
-    pool = _pool(heat, **knobs)
-    fjm, labels = _assemble(tmp_path, 'golden', pool)
+def _digests(
+    tmp_path: Path, heat: Heat, pool: Optional[BlockPool] = None, exclude: bool = True, **knobs: Any
+) -> Dict[str, Any]:
+    pool = _pool(heat, **knobs) if pool is None else pool
+    fjm, labels = _assemble(tmp_path, 'golden', pool, exclude)
     census = pool.census()
     census_json = json.dumps([census.counts, census.widths, census.width_hist, census.alias])
     return {
@@ -225,6 +232,173 @@ def test_golden(tmp_path: Path, heat: Heat, config: str) -> None:
     assert digests == GOLDEN[config]
 
 
+# more configurations, frozen on f55290d (before the second shrink round): {name: (the pool, its pin_exclude is set,
+# its digests)} - the CLI's flat pool (with a pin_exclude it lays blocks out above the program; without one the
+# pointer read makes the program raw: each table takes a cheap address), a raw program at POOL_BASE, a span too small
+# for every block (the overflow region) and the constructor's defaults
+EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
+    'flat': (
+        lambda heat: BlockPool.for_flat(W),
+        True,
+        {
+            'fjm': 'bdc8e5dd8aa7a0d2923237d7e5c27793e5a67316598999733b739a8c57704a75',
+            'labels': '1646034a149d1a3e3a67d67d4a826df8ff0e43c5bffbc3bc35eb1b581dc09fad',
+            'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
+            'stats': {
+                'allocated': 400,
+                'deferred': 400,
+                'ungrouped': 0,
+                'declined': 16,
+                'groups': 41,
+                'pinned_words': 25,
+                'broken_groups': 16,
+                'unpins': {},
+                'heat': {
+                    'hot_groups': 0,
+                    'hot_groups_missing': 0,
+                    'hot_groups_ambiguous': 0,
+                    'hot_sites_listed': 0,
+                    'hot_sites_matched': 0,
+                    'hot_sites_width_changed': 0,
+                },
+                'overflowed': 0,
+                'end': 2381824,
+            },
+        },
+    ),
+    'flat_raw': (
+        lambda heat: BlockPool.for_flat(W),
+        False,
+        {
+            'fjm': 'd414bcbf643c069c887c278547824d353cd787defd3bee951e78491c52bad437',
+            'labels': '967d5453523f79aff2e00bc4b46035fa33f5dcd1646b727d3cb873379ddc8d73',
+            'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
+            'stats': {
+                'allocated': 416,
+                'deferred': 416,
+                'ungrouped': 0,
+                'declined': 0,
+                'groups': 0,
+                'pinned_words': 0,
+                'broken_groups': 0,
+                'unpins': {'the pointer runtime': 41},
+                'heat': {
+                    'hot_groups': 0,
+                    'hot_groups_missing': 0,
+                    'hot_groups_ambiguous': 0,
+                    'hot_sites_listed': 0,
+                    'hot_sites_matched': 0,
+                    'hot_sites_width_changed': 0,
+                },
+                'overflowed': 0,
+                'end': 234882048,
+            },
+        },
+    ),
+    'raw': (
+        lambda heat: _pool(),
+        False,
+        {
+            'fjm': '328751a21ccf58e62e271b8ec042109246127146b5a6a7a85d9d290b6788973a',
+            'labels': '44ac4ace5c33a058b4ad637b5f5e9b308612fbf533596695944865bc51d78a62',
+            'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
+            'stats': {
+                'allocated': 416,
+                'deferred': 416,
+                'ungrouped': 0,
+                'declined': 0,
+                'groups': 0,
+                'pinned_words': 0,
+                'broken_groups': 0,
+                'unpins': {'the pointer runtime': 41},
+                'heat': {
+                    'hot_groups': 0,
+                    'hot_groups_missing': 0,
+                    'hot_groups_ambiguous': 0,
+                    'hot_sites_listed': 0,
+                    'hot_sites_matched': 0,
+                    'hot_sites_width_changed': 0,
+                },
+                'overflowed': 0,
+                'end': 2382365696,
+            },
+        },
+    ),
+    'overflow': (
+        lambda heat: BlockPool(
+            W, POOL_BASE, span_bits=0x278000, spread=2, spread_min_count=8, max_slot_ops=MAX_SLOT_OPS, heat=heat
+        ),
+        True,
+        {
+            'fjm': '4c0d3ce9fcd2d1655d70b939c1fa92b0118df4e9837e07df2fda32cc9c78967f',
+            'labels': '08fc67ca5ffa1e60561c0e19ab8b3ce45935a06e5a22dd5d2ca227d7044c41dd',
+            'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
+            'stats': {
+                'allocated': 306,
+                'deferred': 416,
+                'ungrouped': 0,
+                'declined': 0,
+                'groups': 7,
+                'pinned_words': 7,
+                'broken_groups': 0,
+                'unpins': {},
+                'heat': {
+                    'hot_groups': 3,
+                    'hot_groups_missing': 0,
+                    'hot_groups_ambiguous': 0,
+                    'hot_sites_listed': 9,
+                    'hot_sites_matched': 9,
+                    'hot_sites_width_changed': 0,
+                },
+                'overflowed': 110,
+                'end': 2150017024,
+            },
+        },
+    ),
+    'defaults': (
+        lambda heat: BlockPool(W, POOL_BASE),
+        True,
+        {
+            'fjm': '0e4a821802c1075e2eba8f89641f74b48bcea5d862befaab9ddfb3b1ab1a54ed',
+            'labels': 'd18b90a2a771ce9a098d737caccb050abd3788bb81a6dbc659a20e4dbce2f632',
+            'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
+            'stats': {
+                'allocated': 400,
+                'deferred': 400,
+                'ungrouped': 0,
+                'declined': 16,
+                'groups': 41,
+                'pinned_words': 25,
+                'broken_groups': 16,
+                'unpins': {},
+                'heat': {
+                    'hot_groups': 0,
+                    'hot_groups_missing': 0,
+                    'hot_groups_ambiguous': 0,
+                    'hot_sites_listed': 0,
+                    'hot_sites_matched': 0,
+                    'hot_sites_width_changed': 0,
+                },
+                'overflowed': 0,
+                'end': 2148816896,
+            },
+        },
+    ),
+}
+
+
+@pytest.mark.parametrize('config', sorted(EXTRA))
+def test_golden_extra(tmp_path: Path, heat: Heat, config: str) -> None:
+    make, exclude, golden = EXTRA[config]
+    pool = make(heat)
+    digests = _digests(tmp_path, heat, pool, exclude)
+    digests['stats']['overflowed'] = pool.overflowed
+    digests['stats']['end'] = pool.end
+    print(json.dumps(digests, indent=1))
+    assert digests['stats']['allocated'] >= 200
+    assert digests == golden
+
+
 def test_golden_program_runs_as_without_the_pool(tmp_path: Path, heat: Heat) -> None:
     outputs = []
     for name, pool in (('plain', None), ('pooled', _pool(heat))):
@@ -246,3 +420,11 @@ def test_golden_negative_control_heat_order(tmp_path: Path, heat: Heat) -> None:
     reversed_heat = {group: sites[::-1] for group, sites in reversed(list(heat.items()))}
     digests = _digests(tmp_path, reversed_heat)
     assert digests['fjm'] != GOLDEN['shipped']['fjm'] and digests['labels'] != GOLDEN['shipped']['labels']
+
+
+def test_golden_negative_control_raw_order(tmp_path: Path, heat: Heat, monkeypatch: pytest.MonkeyPatch) -> None:
+    """R9: a raw program's tables take the cheapest addresses - in plain ascending order, the layout changes"""
+    monkeypatch.setattr(table_pool, '_cheapest', lambda bits: iter(range(1 << bits)))
+    make, exclude, golden = EXTRA['flat_raw']
+    digests = _digests(tmp_path, heat, make(heat), exclude)
+    assert digests['fjm'] != golden['fjm'] and digests['labels'] != golden['labels']
