@@ -7,24 +7,24 @@ area that leaves the memory says so, fj --pool-tables' pool sits right above the
 
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
 from flipjump import assemble, assemble_run_according_to_cmd_line_args, flipjump_quickstart
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
-from flipjump.assembler import assembler, table_pool as table_pool_module
+from flipjump.assembler import assembler
 from flipjump.assembler.fj_parser import parse_macro_tree
+from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
-from flipjump.assembler.preprocessor import PreprocessorData
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard
 from flipjump.utils.functions import get_file_tuples
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from tests.unit.pool_fuzzer import pools, run
-from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, relocatable
+from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, every_table_moves, no_refusals, relocatable
 
 GAPS = Path(__file__).parent / 'pool_gaps'
 W = 32
@@ -39,8 +39,8 @@ def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> BlockPo
 
 SAME = None
 GUARD_C06 = (
-    r'the operand `L` of the op at 0x480 \(in the top level\) names L, declared at 0x400 before the `pad` of the '
-    r'table T: it named the table\'s start'
+    r'the operand `L` of the op at 0x480 \(in the top level\) names L, declared before the place of the table T, '
+    r'which moved out of 0x400'
 )
 GUARD_C07_PLUS = (
     r'the operand `T \+ 64` of the op at 0x80 \(after the label f1:l11:stl.startup---code_start\) leaves the moved '
@@ -57,7 +57,7 @@ GUARD_C29 = (
 )
 GUARD_C35 = (
     r'the operand `L \+ 448` of the op at 0x100 \(in the top level\) reaches across the `pad 8` at 0x140, which pads '
-    r'to another op once a table before it moved out: it would no longer point where it did'
+    r'to another op once a table before it moved out'
 )
 GUARD_C37 = (
     r'the operand `\(\(end - start\) / 64\)` .* takes the distance across the place of the table '
@@ -65,7 +65,7 @@ GUARD_C37 = (
 )
 GUARD_C38 = (
     r'the operand .*\(S - M\).* takes the distance across the start of the segment at 0x4000, which stays where it '
-    r'is while code a table moved out of moves'
+    r'is\.'
 )
 REACHES = 'an operand reaches over its place'
 BELOW = 'a flip below its window could arm a table there'
@@ -178,8 +178,7 @@ def test_without_the_offset_guard_a_reach_into_a_moved_table_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, pool: str
 ) -> None:
     # the control: each refusal above prevents a real miscompile, which this run shows
-    monkeypatch.setattr(OffsetGuard, 'check', lambda self, label, address, offset, operand=None: None)
-    monkeypatch.setattr(OffsetGuard, 'check_expr', lambda self, expr, value, is_address=True: None)
+    no_refusals(monkeypatch)
     source = GAPS / f'{name}.fj'
     plain = tmp_path / 'plain.fjm'
     assemble([source], plain, memory_width=W, print_time=False)
@@ -205,9 +204,9 @@ def _differs(source: Path, tmp_path: Path, pool: str) -> bool:
 def test_without_keeping_its_table_inline_a_reach_over_its_place_miscompiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, pool: str
 ) -> None:
-    # the control: the table moves, and nothing later checks the operand
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
-    monkeypatch.setattr(OffsetGuard, 'check_expr', lambda self, expr, value, is_address=True: None)
+    # the control: the table moves, and nothing later refuses the operand
+    every_table_moves(monkeypatch)
+    no_refusals(monkeypatch)
     assert _differs(GAPS / f'{name}.fj', tmp_path, pool)
 
 
@@ -216,7 +215,7 @@ def test_without_the_distance_check_a_label_difference_across_a_moved_table_misc
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pool: str
 ) -> None:
     # the control: `b - a` across a moved table's place is a different number
-    monkeypatch.setattr(OffsetGuard, '_check_part', lambda self, coefficients, constant, operand: False)
+    no_refusals(monkeypatch)
     assert _differs(GAPS / 'c29_label_difference_value.fj', tmp_path, pool)
 
 
@@ -258,34 +257,44 @@ def test_count_bits_keeps_its_pin(tmp_path: Path) -> None:
     assert pool.offset_guard is not None and pool.offset_guard.pads[0x400] == 10
 
 
+_real_alignment = OffsetGuard.alignment
+
+
 def _address_alignment(self: OffsetGuard, address: int) -> int:
-    """OffsetGuard.alignment without its check: an inline table's alignment taken as its address's own"""
-    table = self.table_at(address)
-    if table >= 0:
-        return (self._ends[table] - self._starts[table] - 1).bit_length()
+    """OffsetGuard.alignment without its rule: an inline table's alignment taken as its address's own"""
+    if self.table_at(address) is not None:
+        return _real_alignment(self, address)
     return (address & -address).bit_length() - 1 if address else 1 << 30
 
 
-# each program's check, disabled: {program: [(the owner of a check, its name, its stand-in)]}. C34's segment at
-# 0x4000 is a table below the wide window too, so C32's check catches it as well: both are disabled.
-Check = Tuple[Any, str, Any]
-NO_LOW_TABLE: Check = (assembler, 'tables_armed_below', lambda pads, top, rest, flips: False)
-DISABLED: Dict[str, List[Check]] = {
-    'c32_numeric_arm_below_window': [NO_LOW_TABLE],
-    'c33_bitwise_arm_below_window': [NO_LOW_TABLE],
-    'c34_numeric_arm_wide_window': [NO_LOW_TABLE, (OffsetGuard, 'alignment', _address_alignment)],
-    'c35_offset_across_realigned_pad': [(OffsetGuard, 'pad_realigned', lambda self, address, ops_alignment: None)],
-    'c36_opaque_label_plus_offset': [(table_pool_module, '_moves_with', lambda expr, label, address, value: False)],
-    # a rep's count the expansion evaluates, a distance across a segment's end
-    'c37_rep_count_across_table': [(PreprocessorData, 'check_evaluated', lambda self, expr, value, is_address=0: None)],
-    'c38_distance_into_numeric_segment': [(OffsetGuard, 'segment_started', lambda self, address: None)],
-    'c39_distance_into_earlier_segment': [(OffsetGuard, 'segment_started', lambda self, address: None)],
+def _keep_every_pin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the control: the assembler drops no pin (and neither does the relocation proof's copy of it)"""
+    monkeypatch.setattr(assembler, 'unpin', lambda *args, **kwargs: None)
+    monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
+
+
+def _moved_unrefused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the control: C36's table moves, and labels_resolve lets the operand that reaches over its place through"""
+    every_table_moves(monkeypatch)
+    no_refusals(monkeypatch)
+
+
+# each program's control: C32 .. C34's pins kept, C36's table moved, the operands of C35 and C37 .. C39 let through
+# (a distance across a realigned pad, a rep's count the expansion evaluates, a distance across a segment's start)
+DISABLED: Dict[str, Callable[[pytest.MonkeyPatch], None]] = {
+    'c32_numeric_arm_below_window': _keep_every_pin,
+    'c33_bitwise_arm_below_window': _keep_every_pin,
+    'c34_numeric_arm_wide_window': _keep_every_pin,
+    'c35_offset_across_realigned_pad': no_refusals,
+    'c36_opaque_label_plus_offset': _moved_unrefused,
+    'c37_rep_count_across_table': no_refusals,
+    'c38_distance_into_numeric_segment': no_refusals,
+    'c39_distance_into_earlier_segment': no_refusals,
 }
 
 
 def _disable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-    for owner, attribute, stand_in in DISABLED[name]:
-        monkeypatch.setattr(owner, attribute, stand_in)
+    DISABLED[name](monkeypatch)
 
 
 # C32's and C33's miscompiles never halt: their pin-keeping pools run into the 30 s timeout (with --slow)
@@ -370,8 +379,8 @@ def test_an_offset_from_outside_into_a_moved_table_is_refused_wherever_it_is_see
     path.write_text(source)
     with pytest.raises(FlipJumpException, match=refusal):
         build_and_run(source, tmp_path, _pool('half', W, path, tmp_path), name='pooled')
-    # the control: without the guard it is a miscompile
-    monkeypatch.setattr(OffsetGuard, 'check', lambda self, label, address, offset: None)
+    # the control: without the guard's refusal it is a miscompile
+    no_refusals(monkeypatch)
     table_pool = _pool('half', W, path, tmp_path)
     assert build_and_run(source, tmp_path, table_pool, name='unguarded')[0] != b'B' and table_pool.allocated
 
@@ -381,7 +390,7 @@ def test_a_table_an_earlier_offset_reaches_over_stays_inline(tmp_path: Path, mon
     assert build_and_run(PENDING, tmp_path, pool, name='pooled')[0] == b'B'
     assert pool.unsafe_declines == {REACHES: 1} and pool.allocated == 0
     # the control: moved, the program miscompiles
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
+    every_table_moves(monkeypatch)
     assert build_and_run(PENDING, tmp_path, BlockPool(W, 1 << (W - 1)), name='moved')[0] != b'B'
 
 

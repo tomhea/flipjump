@@ -12,16 +12,16 @@ from typing import Any, Dict, Iterator, List, Tuple
 
 import pytest
 
-from flipjump.assembler import assembler, table_pool as table_pool_module
+from flipjump.assembler import assembler
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard
+from flipjump.assembler.table_pool import BlockPool
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
-from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, relocatable
+from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, every_table_moves, no_refusals, relocatable
 
 W = 32
 POOL_BASE = 1 << 26
@@ -115,7 +115,7 @@ def test_an_offset_from_outside_into_a_moved_table_fails_the_proof(
     assert build_and_run(OUTSIDE_OFFSET_PROGRAM, tmp_path, None, name='plain')[0] == b'B'
     with pytest.raises(FlipJumpException, match='reaches across the place of the table tbl_start'):
         build_and_run(OUTSIDE_OFFSET_PROGRAM, tmp_path, BlockPool(W, POOL_BASE), name='pooled')
-    monkeypatch.setattr(OffsetGuard, 'check', lambda self, label, address, offset, operand=None: None)
+    no_refusals(monkeypatch)
     assert build_and_run(OUTSIDE_OFFSET_PROGRAM, tmp_path, BlockPool(W, POOL_BASE), name='unguarded')[0] != b'B'
 
 
@@ -126,9 +126,9 @@ def test_an_outside_label_reaching_a_moved_tables_place_fails_the_proof(name: st
 
 def test_a_label_before_a_moved_tables_pad_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -> None:
     # c06: its pooled expansion is refused (OffsetGuard), and without that the proof fails it
-    with pytest.raises(FlipJumpException, match='names L, declared at 0x400 before the `pad` of the table T'):
+    with pytest.raises(FlipJumpException, match='names L, declared before the place of the table T'):
         prove_relocation(W, _macros(_gap('c06_label_before_pad'), W), _cli_pool(W))
-    monkeypatch.setattr(OffsetGuard, 'check', lambda self, label, address, offset, operand=None: None)
+    no_refusals(monkeypatch)
     assert prove_relocation(W, _macros(_gap('c06_label_before_pad'), W), _cli_pool(W)).mismatches
 
 
@@ -154,10 +154,10 @@ def test_an_operand_computed_from_unmoved_labels_is_counted_unchecked(tmp_path: 
 
 
 def test_an_address_computed_on_from_one_label_is_compared(monkeypatch: pytest.MonkeyPatch) -> None:
-    # `(L | 0) + 15*dw` is L plus what it adds - compared whole, so with the guard's check disabled the
-    # moved table it reaches over fails the proof
+    # `(L | 0) + 15*dw` is L plus what it adds - compared whole, so with the table it reaches over moved
+    # (the guard keeps it inline) it fails the proof
     assert prove_relocation(W, _macros(_gap('c36_opaque_label_plus_offset'), W), _cli_pool(W)).mismatches == []
-    monkeypatch.setattr(table_pool_module, '_moves_with', lambda expr, label, address, value: False)
+    every_table_moves(monkeypatch)
     mismatches = prove_relocation(W, _macros(_gap('c36_opaque_label_plus_offset'), W), _cli_pool(W)).mismatches
     assert any('((L | 0) + 960) should be' in mismatch for mismatch in mismatches), mismatches
 
@@ -203,23 +203,24 @@ def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch,
     # the control: the assembler keeps every pin (assembler.unpin does nothing); the proof judges the pins from the
     # plain program, not by the assembler's rules
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
-    if mismatch == 'pointer runtime':  # a raw program's pool places its tables in no block: blocked, they pin words
-        monkeypatch.setattr(BlockPool, '_raw', lambda self: False)
-    mismatches = prove_relocation(W, _macros(_gap(name), W), _cli_pool(W)).mismatches
+    pool = _cli_pool(W)
+    if mismatch == 'pointer runtime':  # a raw program's pool places its tables in no block - but a pool with a heat
+        pool.heat = {'(no such group)': []}  # list blocks them, and pins their words
+    mismatches = prove_relocation(W, _macros(_gap(name), W), pool).mismatches
     assert any(mismatch in found for found in mismatches), mismatches
 
 
 def test_the_proof_compares_a_number_where_an_address_goes(monkeypatch: pytest.MonkeyPatch) -> None:
     # the control: the table moves under `;$ + 15*dw`
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
+    every_table_moves(monkeypatch)
     mismatches = prove_relocation(W, _macros(_gap('c20_dollar_across_table'), W), _cli_pool(W)).mismatches
     assert any('1152 should be' in mismatch for mismatch in mismatches), mismatches
 
 
 def test_the_proof_compares_the_sums_of_a_computed_operand(monkeypatch: pytest.MonkeyPatch) -> None:
     # the control: the table moves under `(L + 15*dw) | 0`, and `b - a` spans a moved table
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
-    monkeypatch.setattr(OffsetGuard, '_check_part', lambda self, coefficients, constant, operand: False)
+    every_table_moves(monkeypatch)
+    no_refusals(monkeypatch)
     for name, operand in [
         ('c21_inline_compound_across_table', '((L + 960) | 0) should be'),
         ('c29_label_difference_value', '((((b - a) >> 6) & 15) * 64) should be'),

@@ -14,7 +14,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.table_pool import BlockPool
+from flipjump.assembler.table_pool import BlockPool, OffsetGuard
 from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
@@ -182,6 +182,21 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
         + entries
         + '        }\n    }\n}\n'
     )
+
+
+# the table pool's controls switch its safety rules off through these public seams only, so the pool's insides can
+# change freely: every operand refusal goes through OffsetGuard.refuse, every keep-inline decision through
+# OffsetGuard.may_move, every dropped pin through assembler.unpin
+
+
+def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the control: the table pool's OffsetGuard refuses no operand (its checks run, and let every one pass)"""
+    monkeypatch.setattr(OffsetGuard, 'refuse', lambda self, operand, why: None)
+
+
+def every_table_moves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the control: the table pool's OffsetGuard keeps no table inline"""
+    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
 
 
 def build_and_run(

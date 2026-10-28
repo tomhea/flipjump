@@ -323,7 +323,7 @@ class PreprocessorData:
         for index, address in enumerate(addresses):
             if not address:
                 continue  # it stayed inline: its labels are in place already
-            guard.table_placed(address, address + tables.sizes[index] * op_bits, guard.moved_tables[moved])
+            guard.tables.append((address, address + tables.sizes[index] * op_bits, guard.moved_tables[moved]))
             moved += 1
             for label, offset in tables.labels_of(index):
                 self.labels[label] = address + offset
@@ -334,6 +334,7 @@ class PreprocessorData:
             assert segment is not None
             segment.start_address = address
             segment.wflip_start_address = address + tables.sizes[index] * op_bits  # a table has no wflips
+        guard.tables.sort()
         self._deferred = DeferredTables()  # release them
 
     def end_relocation(self) -> None:
