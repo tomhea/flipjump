@@ -265,12 +265,12 @@ class PreprocessorData:
         group = '' if group is None else group  # (a raw program's table may have none: BlockPool._place_cheapest)
         site = sys.intern(heat_key(labels_prefix)) if pool.heat else None
         if verdict == DEFER_TOO_WIDE:
-            self._deferred.add(group, group_expr, ops_alignment, table_ops, site, None)
+            self._deferred.add(group, ops_alignment, table_ops, site, None)
             return False  # aligned and emitted in place
         self._table_moved(table, ops_alignment, table_ops)
         segment = NewSegment(0)  # its address is decided once the expansion is done
         self.pool_ops.append(segment)
-        self._deferred.add(group, group_expr, ops_alignment, table_ops, site, segment)
+        self._deferred.add(group, ops_alignment, table_ops, site, segment)
         self._resume = self.curr_address, self.emit_target
         self.emit_target = self.pool_ops
         self.curr_address = 0
@@ -399,7 +399,6 @@ class PreprocessorData:
             uses = self._pointer_runtime_users[id(macro)] = bool(get_used_labels(macro.ops) & POINTER_RUNTIME_LABELS)
         if uses and self.table_pool is not None:
             self.table_pool.reads_words_raw = True
-            self.table_pool.raw_reader = str(macro_name)
 
     def _refuse_reaching_the_pool(self, address: int) -> None:
         """The pool sits above the main stream by construction. If a segment of the program reaches it, a

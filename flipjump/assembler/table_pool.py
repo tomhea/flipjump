@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import bisect
 import dataclasses
+import functools
 import re
 import sys
 from array import array
@@ -44,8 +45,7 @@ _SITE_COORDINATES = re.compile(r'(?<![\w.])[fs]\d+:l\d+:')
 
 
 def heat_key(path: str) -> str:
-    """a macro-expansion path (or a group expression) without its call-site coordinates, so a site keeps its heat
-    when lines above it move (see BlockPool's `heat`)"""
+    """a macro-expansion path (or a group expression) without its call-site coordinates (see BlockPool's `heat`)"""
     return _SITE_COORDINATES.sub('', path)
 
 
@@ -72,21 +72,8 @@ class DeferredTables:
     behind a NewSegment whose address is set once it is placed; its labels wait here as bit offsets from its start.
     One that stayed inline (too wide) is queued so the pool declines it in its turn."""
 
-    __slots__ = (
-        'groups',
-        'exprs',
-        'aligns',
-        'sizes',
-        'segments',
-        'sites',
-        'label_names',
-        'label_offsets',
-        'label_ends',
-    )
-
     def __init__(self) -> None:
         self.groups: List[str] = []
-        self.exprs: Dict[str, Optional[Expr]] = {}  # group -> its source-word Expr
         self.aligns = array('I')
         self.sizes = array('I')
         self.segments: List[Optional[NewSegment]] = []  # None for a table that stayed inline
@@ -99,17 +86,9 @@ class DeferredTables:
         return len(self.groups)
 
     def add(
-        self,
-        group: str,
-        group_expr: Optional[Expr],
-        ops_alignment: int,
-        table_ops: int,
-        site: Optional[str],
-        segment: Optional[NewSegment],
+        self, group: str, ops_alignment: int, table_ops: int, site: Optional[str], segment: Optional[NewSegment]
     ) -> None:
-        group = sys.intern(group)
-        self.exprs.setdefault(group, group_expr)
-        self.groups.append(group)
+        self.groups.append(sys.intern(group))
         self.aligns.append(ops_alignment)
         self.sizes.append(table_ops)
         self.segments.append(segment)
@@ -137,6 +116,9 @@ def reached_the_pool(address: int, pool_start: int) -> FlipJumpPreprocessorExcep
     )
 
 
+_SEGMENT_START = 'the start of the segment'
+
+
 class OffsetGuard:
     """Keeps an operand from pointing elsewhere once the tables moved.
 
@@ -153,32 +135,9 @@ class OffsetGuard:
     violation is refused, `where()` saying where the op is.
     """
 
-    __slots__ = (
-        'inline_end',
-        'labels',
-        'anchors',
-        '_anchor_tables',
-        'moved_tables',
-        'stranded',
-        'watched',
-        'falls_to',
-        '_pending',
-        '_starts',
-        '_ends',
-        '_names',
-        'where',
-        'emitting',
-        'pads',
-        'reach',
-    )
-
     def __init__(self, inline_end: int, labels: LabelsDict):
-        """
-        @param inline_end: the inline stream lies below it, the moved tables above (the pool's start)
-        @param labels: the preprocessor's labels (a moved table's are there once it is placed)
-        """
-        self.inline_end = inline_end
-        self.labels = labels
+        self.inline_end = inline_end  # the inline stream lies below it, the moved tables above (the pool's start)
+        self.labels = labels  # the preprocessor's (a moved table's are there once it is placed)
         self.anchors: List[int] = []  # the cuts of the inline stream, ascending
         self._anchor_tables: List[str] = []  # ...and each one's table (its start label), or what cut it
         self.moved_tables: List[str] = []  # the moved tables' start labels, in the order they moved
@@ -199,9 +158,8 @@ class OffsetGuard:
         """why the table about to move out of `anchor` must stay inline, or None"""
         if self.falls_to == anchor:
             return 'the op before it falls through to it'
-        for address, target, _ in self._pending:
-            if address <= anchor <= target:
-                return 'an operand reaches over its place'
+        if any(address <= anchor <= target for address, target, _ in self._pending):
+            return 'an operand reaches over its place'
         return None
 
     def table_moved(self, anchor: int, table: str) -> None:
@@ -212,21 +170,29 @@ class OffsetGuard:
     def pad_realigned(self, address: int, ops_alignment: int) -> None:
         """the `pad` at the inline `address` pads differently than without the pool (a table moved out before it):
         the distance across it changes, so an operand already emitted across it is refused"""
-        cut = f'the `pad {ops_alignment}` at {hex(address)}, {_PADS_DIFFERENTLY}'
+        cut = (
+            f'the `pad {ops_alignment}` at {hex(address)}, which pads to another op once a table before it moved out: '
+            f'it would no longer point where it did'
+        )
         if self.falls_to == address:
             self._refuse('$', f'falls through to {cut}')
-        for label_address, target, label in self._pending:
-            if label_address <= address <= target:
-                self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
-        self._cut(address, cut)
+        self._cut_across(address, cut, False)
 
     def segment_started(self, address: int) -> None:
         """a segment starts at the inline `address`, where it does without the pool: an operand already emitted from
         moved code that reaches into it is refused"""
-        cut = f'{_SEGMENT_START} at {hex(address)}, {_SEGMENT_STAYS}'
+        cut = (
+            f'{_SEGMENT_START} at {hex(address)}, which stays where it is while code a table moved out of moves: it '
+            f'would no longer be the same distance'
+        )
+        self._cut_across(address, cut, True)
+
+    def _cut_across(self, address: int, cut: str, moved_only: bool) -> None:
+        """refuse the pending operands that reach across `address` (`moved_only`: from moved code), then cut there"""
         for label_address, target, label in self._pending:
-            if label_address <= address <= target and self.shift_class(self.piece(label, label_address)) >= 0:
-                self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
+            if label_address <= address <= target:
+                if not moved_only or self.shift_class(self.piece(label, label_address)) >= 0:
+                    self._refuse(_operand(label, target - label_address), f'reaches across {cut}')
         self._cut(address, cut)
 
     def shift_class(self, piece: int) -> int:
@@ -355,16 +321,7 @@ class OffsetGuard:
             return False  # `2 * L`, the `L` of `L >> 6`: an address as a number
         pieces = sorted(self.piece(label, labels[label]) for label in coefficients)
         if len({self.shift_class(piece) for piece in pieces}) > 1:
-            cut = self._anchor_tables[pieces[0]]
-            self._refuse(
-                operand,
-                (
-                    f'takes the distance across {cut}'
-                    if cut.startswith('the ')
-                    else f'takes the distance across the place of the table {cut}, which moved out '
-                    f'of {hex(self.anchors[pieces[0]])}, so it would no longer be the same'
-                ),
-            )
+            self._refuse(operand, f'takes the distance across {self._cut_name(pieces[0], "be the same")}')
         if total == 1:
             label = next(iter(coefficients))
             self.check(label, labels[label], value - labels[label], operand)
@@ -374,29 +331,36 @@ class OffsetGuard:
         """the label nearest at or below `address` (slow - a refusal asks)"""
         return max(((value, name) for name, value in self.labels.items() if value <= address), default=(0, ''))[1]
 
-    def _across(self, anchor_index: int, label: str, offset: int) -> str:
-        anchor = self.anchors[anchor_index]
-        cut = self._anchor_tables[anchor_index]
+    def _cut_name(self, index: int, no_longer: str) -> str:
+        """the cut at anchors[index], as a refusal names it (a moved table's place: it would `no_longer` do)"""
+        cut = self._anchor_tables[index]
         if cut.startswith('the '):  # a pad that realigned, or a segment's start
-            return f'names {label}, declared before {cut}' if offset == 0 else f'reaches across {cut}'
-        if offset == 0:
-            return (
-                f'names {label}, declared at {hex(anchor)} before the `pad` of the table {cut}: it named the '
-                f'table\'s start, which moved, while the label stays with the code after it'
-            )
+            return cut
         return (
-            f'reaches across the place of the table {cut}, which moved out of {hex(anchor)}, so it would no longer '
-            f'point where it did'
+            f'the place of the table {cut}, which moved out of {hex(self.anchors[index])}, so it would no longer '
+            + (no_longer)
         )
 
-    def _refuse_inside(self, operand: str, target: int) -> None:
+    def _across(self, index: int, label: str, offset: int) -> str:
+        """why `label + offset` may not reach across the cut at anchors[index]"""
+        if offset:
+            return f'reaches across {self._cut_name(index, "point where it did")}'
+        cut = self._anchor_tables[index]
+        if cut.startswith('the '):
+            return f'names {label}, declared before {cut}'
+        return (
+            f'names {label}, declared at {hex(self.anchors[index])} before the `pad` of the table {cut}: it named the '
+            f'table\'s start, which moved, while the label stays with the code after it'
+        )
+
+    def _refuse_inside(self, operand: str, target: int) -> NoReturn:
         """an operand that is not one of a moved table's labels plus a constant lands in the pool, at `target`"""
         table = self.table_at(target)
-        if table >= 0:
-            where = f'inside the moved table {self._names[table]} at {hex(self._starts[table])}'
-        else:
-            where = 'in the table pool'
-        self._refuse(operand, f'lands at {hex(target)}, {where}, and is not one of its labels plus a constant')
+        where = f'inside the moved table {self._names[table]} at {hex(self._starts[table])}' if table >= 0 else ''
+        self._refuse(
+            operand,
+            f'lands at {hex(target)}, {where or "in the table pool"}, and is not one of its labels plus a constant',
+        )
 
     def _refuse(self, operand: str, what: str) -> NoReturn:
         if self.emitting is not None and self.emitting() > self.inline_end:
@@ -405,13 +369,6 @@ class OffsetGuard:
             f'table-placement: the operand `{operand}`{self.where()} {what}. Address a moved table by its own labels, '
             f'or assemble without a table pool.'
         )
-
-
-_PADS_DIFFERENTLY = 'which pads to another op once a table before it moved out: it would no longer point where it did'
-_SEGMENT_START = 'the start of the segment'
-_SEGMENT_STAYS = (
-    'which stays where it is while code a table moved out of moves: it would no longer be the same distance'
-)
 
 
 def _is_one_sum(expr: Expr) -> bool:
@@ -434,6 +391,11 @@ def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
         return False
 
 
+def _operand(label: str, offset: int) -> str:
+    """`label + offset` as the source would say it"""
+    return f'{label} + {offset}' if offset > 0 else f'{label} - {-offset}' if offset else label
+
+
 def _cheapest(bits: int) -> Iterator[int]:
     """the values below 2**bits, fewest set bits first, ascending within a popcount (generated lazily)"""
     yield 0
@@ -446,9 +408,10 @@ def _cheapest(bits: int) -> Iterator[int]:
             value = ripple | (((value ^ ripple) >> 2) // lowest)
 
 
-def _operand(label: str, offset: int) -> str:
-    """`label + offset` as the source would say it"""
-    return f'{label} + {offset}' if offset > 0 else f'{label} - {-offset}' if offset else label
+@functools.lru_cache(maxsize=None)
+def _cheapest_order(slots: int) -> List[int]:
+    """every index of a block of `slots`, lowest popcount first (shared: read only)"""
+    return sorted(range(slots), key=lambda v: (bin(v).count('1'), v))
 
 
 class BlockPool:
@@ -461,11 +424,11 @@ class BlockPool:
     cannot be read or written raw: see POINTER_RUNTIME_LABELS and `pin_exclude(address, labels) -> bool`, which vetoes
     the pin of a cell's jump word that a pointer can reach.
 
-    ONE PASS: nothing during the expansion needs a table's address, so the preprocessor takes each table out of the
-    op stream as it reaches it (`defer`) and has the pool place them all when it is done (`place_deferred`), sizing the
-    blocks from that expansion's census (`census()`). Blocks are power-of-two sized and aligned to their own size, one
-    sub-block per table width (_bucket_layout); groups whose words resolve to one address share a block (alias). A
-    table too wide for any slot stays inline; where the blocks do not fit, the last groups go to an overflow region.
+    ONE PASS: the preprocessor takes each table out of the op stream as it reaches it (`defer`), and has the pool
+    place them all when it is done (`place_deferred`), sizing the blocks from that expansion's census (`census()`).
+    Blocks are power-of-two sized and aligned to their own size, one sub-block per table width (_bucket_layout);
+    groups whose words resolve to one address share a block (alias). A table too wide for any slot stays inline;
+    where the blocks do not fit, the last groups go to an overflow region.
 
     PIN PROTECTION (`heat`, for re-placing a profiled program): the hot groups are laid out first, in heat order, are
     always pinned, and in each slot width the k-th listed site gets the k-th cheapest index (_hot_index).
@@ -486,7 +449,6 @@ class BlockPool:
         heat: Optional[Mapping[str, Sequence[Tuple[str, int, int]]]] = None,
     ):
         """
-        @param memory_width: the memory-width
         @param pool_base: the pool's first address, above everything the program reaches
         @param span_bits: how far above pool_base the pool may reach (None: to the top of memory)
         @param max_slot_ops: the widest table a slot holds (32 fits the stl's widest, `hex.cmp`'s 31 ops)
@@ -510,7 +472,6 @@ class BlockPool:
         self.pin_exclude: Optional[Callable[[int, LabelsDict], bool]] = None
         self.pin_conflicts = 0
         self.reads_words_raw = False  # set by the preprocessor when a macro naming POINTER_RUNTIME_LABELS expands
-        self.raw_reader = ''  # ...the first such macro
         self.laid_out = False  # set by the preprocessor that lays this pool out
         self.offset_guard: Optional[OffsetGuard] = None
         self.unsafe_declines: Dict[str, int] = {}  # tables kept inline: moving them would change an operand
@@ -529,12 +490,10 @@ class BlockPool:
         self.exprs: Dict[str, Expr] = {}  # raw group -> its source-word Expr
         self.alias: Dict[str, str] = {}
         self.groups: Dict[str, Tuple[int, Optional[Expr]]] = {}  # group -> (block base, source-word Expr)
-        # a group that could not place every table is not pinned (see pinned_words)
-        self.broken_groups: Set[str] = set()
+        self.broken_groups: Set[str] = set()  # a group that could not place every table is not pinned (pinned_words)
         self._used = 0  # the blocks' bits, from pool_base
         self._layout_cache: Dict[str, Tuple[Dict[int, Tuple[int, int, int]], int]] = {}
         self._next_index: Dict[Tuple[str, int], int] = {}  # (group, slot width) -> tables placed
-        self._cheap_index_cache: Dict[int, List[int]] = {}
         self.hot_sites: Dict[str, Dict[Tuple[str, int], Tuple[int, int]]] = {}  # group -> site -> (width, rank)
         self.hot_ranks: Dict[Tuple[str, int], int] = {}  # (group, width) -> ranks reserved for its sites
         self._hot_seen: Dict[Tuple[str, str], int] = {}  # (group, site) -> occurrences reached so far
@@ -555,8 +514,8 @@ class BlockPool:
     def defer(
         self, ops_alignment: int, table_ops: int, group: Optional[str], group_expr: Optional[Expr], labels_prefix: str
     ) -> str:
-        """what becomes of a table the expansion reached, at its pad (DEFER_*). It is counted in the census first.
-        A subclass that overrides it sees every table at its pad, in order, with its site path."""
+        """what becomes of a table the expansion reached, at its pad (DEFER_*), counted in the census first. A
+        subclass that overrides it sees every table at its pad, in order, with its site path."""
         width = max(table_ops, ops_alignment)
         if group is not None:
             self.counts[group] = self.counts.get(group, 0) + 1
@@ -574,7 +533,7 @@ class BlockPool:
 
     def place_deferred(self, tables: DeferredTables, labels: LabelsDict, end: int) -> Sequence[int]:
         """the address of every queued table (0 for one that stayed inline), in the order the expansion reached them.
-        `labels`: the program's labels (a deferred table's are not in yet), `end`: where the program ends.
+        `labels`: the program's (a deferred table's are not in yet), `end`: where the program ends.
 
         Merges the groups whose words these labels resolve to one address (a word that names a deferred table's label
         cannot be resolved, and is counted in alias_unresolved), lays the blocks out, then places every table in turn.
@@ -595,35 +554,34 @@ class BlockPool:
                 self.alias[group] = first
         counts: Dict[str, int] = {}
         width_hist: Dict[str, Dict[int, int]] = {}
-        for group, count in self.counts.items():
-            canonical = self.alias.get(group, group)
-            counts[canonical] = counts.get(canonical, 0) + count
         for group, hist in self.width_hist.items():
-            into = width_hist.setdefault(self.alias.get(group, group), {})
+            canonical = self.alias.get(group, group)
+            counts[canonical] = counts.get(canonical, 0) + self.counts[group]
+            into = width_hist.setdefault(canonical, {})
             for width, count in hist.items():
                 into[width] = into.get(width, 0) + count
         if self._raw():
             self.counts, self.width_hist = counts, width_hist
             return self._place_cheapest(tables)
         self.lay_out(counts, width_hist)
-
         addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline (too wide, declined in its turn)
-        overflow = []
+        overflow = []  # (slot bits, index) of the tables whose group got no block
         for index, group in enumerate(tables.groups):
             site = tables.sites[index] if self.heat else ''
-            address = self.reserve(tables.aligns[index], tables.sizes[index], group, tables.exprs[group], site)
-            if address is None and tables.segments[index] is not None:
-                overflow.append(index)  # its group got no block
-            elif address is not None:
+            address = self.reserve(tables.aligns[index], tables.sizes[index], group, self.exprs.get(group), site)
+            if address is not None:
                 addresses[index] = address
-        # the overflow region, right after the blocks: a slot of its width's power of two per table, widest first
-        overflow.sort(key=lambda i: -self._slot_bits(max(tables.sizes[i], tables.aligns[i])))
-        cursor = self.pool_base + self._used
-        for index in overflow:
-            slot_bits = self._slot_bits(max(tables.sizes[index], tables.aligns[index]))
-            addresses[index] = -(-cursor // slot_bits) * slot_bits  # (only the first is not aligned already)
-            cursor = addresses[index] + slot_bits
+            elif tables.segments[index] is not None:
+                overflow.append((self._slot_bits(max(tables.sizes[index], tables.aligns[index])), index))
+        cursor = self.pool_base + self._used  # the overflow region, right after the blocks: widest slot first
+        for slot_bits, index in sorted(overflow, key=lambda entry: -entry[0]):
+            addresses[index] = cursor = -(-cursor // slot_bits) * slot_bits
+            cursor += slot_bits
         self.overflowed = len(overflow)
+        return self._ended(tables, addresses)
+
+    def _ended(self, tables: DeferredTables, addresses: Sequence[int]) -> Sequence[int]:
+        """`addresses`, the end of the last table placed at them noted"""
         for index, address in enumerate(addresses):
             if address:
                 self.end = max(self.end, address + tables.sizes[index] * self.op_bits)
@@ -653,18 +611,20 @@ class BlockPool:
             if cursor <= self._pool_limit():
                 break
         else:
-            raise FlipJumpPreprocessorException(
-                f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
-                f'tables. Raise span_bits, or assemble without the pool.'
-            )
+            raise self._no_room()
         addresses = array('Q', bytes(8 * len(tables)))
         for index, address in placed:
             addresses[index] = address
-            self.end = max(self.end, address + tables.sizes[index] * self.op_bits)
         self.allocated = len(placed)
         if self.counts:
             self.unpins['the pointer runtime'] = len(self.counts)  # the words a block would have pinned
-        return addresses
+        return self._ended(tables, addresses)
+
+    def _no_room(self) -> FlipJumpPreprocessorException:
+        return FlipJumpPreprocessorException(
+            f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
+            f'tables. Raise span_bits, or assemble without the pool.'
+        )
 
     def lay_out(self, counts: Dict[str, int], width_hist: Dict[str, Dict[int, int]]) -> None:
         """Size the blocks of the census (`counts` and `width_hist`, by canonical group) and give each a base: the hot
@@ -692,10 +652,7 @@ class BlockPool:
         limit = self._pool_limit()
         blocked = next((k for k in kept if -(-ends[k] // widest[k]) * widest[k] + room[k] <= limit), None)
         if blocked is None:
-            raise FlipJumpPreprocessorException(
-                f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
-                f'tables. Raise span_bits, or assemble without the pool.'
-            )
+            raise self._no_room()
         for k in range(blocked):
             self.groups[order[k]] = (ends[k + 1] - bits[order[k]], None)
         self._used = ends[blocked] - self.pool_base
@@ -704,8 +661,7 @@ class BlockPool:
         self, ops_alignment: int, table_ops: int, group: str, group_expr: Optional[Expr], labels_prefix: str
     ) -> Optional[int]:
         """the address of a table (of the raw `group`, at the site `labels_prefix`) in its group's block, or None: its
-        group got no block, or it is too wide for any slot - then its group breaks: its word may not be pinned (see
-        pinned_words)."""
+        group got no block, or it is too wide for any slot - then its group breaks (see pinned_words)."""
         group = self.alias.get(group, group)
         hot_site = self._hot_site(group, labels_prefix) if group in self.hot_sites else None
         if group not in self.groups:
@@ -714,15 +670,14 @@ class BlockPool:
             self.declined += 1
             self.broken_groups.add(group)
             return None
-        width = max(table_ops, ops_alignment, 1)
-        slot_ops = 1 << (width - 1).bit_length()
+        slot_ops = 1 << (max(table_ops, ops_alignment, 1) - 1).bit_length()
         offset, slots, _ = self._bucket_layout(group)[0][slot_ops]
         key = (group, slot_ops)
         raw = self._next_index.get(key, 0)
         if hot_site is not None:
             index = self._hot_index(group, slot_ops, slots, hot_site)
         elif self.spread > 1 and self.counts[group] >= self.spread_min_count:
-            index = self._cheapest_order(slots)[raw]
+            index = _cheapest_order(slots)[raw]
         else:
             index = raw
         base, previous_expr = self.groups[group]
@@ -732,8 +687,7 @@ class BlockPool:
         return base + offset + index * slot_ops * self.op_bits
 
     def census(self) -> BlockCensus:
-        """the counts, widths, width histogram and alias of every table this pool was offered, merged by the alias
-        its blocks were sized with (once placed)"""
+        """the census of every table this pool was offered, merged by the alias its blocks were sized with (placed)"""
         return BlockCensus(
             dict(self.counts),
             {group: max(hist) for group, hist in self.width_hist.items()},
@@ -751,13 +705,6 @@ class BlockPool:
             'hot_sites_matched': self.hot_sites_matched,
             'hot_sites_width_changed': self.hot_sites_width_changed,
         }
-
-    def _cheapest_order(self, slots: int) -> List[int]:
-        """every index of a block of `slots`, lowest popcount first (cached and shared: read only)"""
-        cached = self._cheap_index_cache.get(slots)
-        if cached is None:
-            cached = self._cheap_index_cache[slots] = sorted(range(slots), key=lambda v: (bin(v).count('1'), v))
-        return cached
 
     def _resolve_heat(self, heat: Mapping[str, Sequence[Tuple[str, int, int]]]) -> None:
         """match the heat list's groups to this program's and rank each group's sites per width"""
@@ -802,7 +749,7 @@ class BlockPool:
             unlisted = self._hot_next.get((group, width), 0)
             self._hot_next[(group, width)] = unlisted + 1
             rank = self.hot_ranks.get((group, width), 0) + unlisted
-        return self._cheapest_order(slots)[rank]
+        return _cheapest_order(slots)[rank]
 
     def _bucket_layout(self, group: str) -> Tuple[Dict[int, Tuple[int, int, int]], int]:
         """({slot_ops: (offset in the block, slots, tables)}, the block's bits): a sub-block per power-of-two width,
@@ -841,9 +788,8 @@ class BlockPool:
 
     def _pool_limit(self) -> int:
         """the first address past the pool: pool_base + span_bits, and never past the memory"""
-        if self.span_bits is None:
-            return 1 << self.memory_width
-        return min(1 << self.memory_width, self.pool_base + self.span_bits)
+        top = 1 << self.memory_width
+        return top if self.span_bits is None else min(top, self.pool_base + self.span_bits)
 
     def pool_start(self) -> int:
         """the lowest address the pool places a table at (for_flat before it placed one: the top of memory)"""

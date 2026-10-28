@@ -763,7 +763,6 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
     NewSegment, the label strings, the site path string): see DeferredTables"""
     count = 20000
     groups = [f'((f13:l2210:sim.pass(3)---hp + {128 * (i % 50)}) + 32)' for i in range(count)]
-    exprs = {group: Expr(group) for group in groups}
     segments = [NewSegment(0) for _ in range(count)]
     names = [f'f13:l2210:sim.pass(3)---s2:l40:rep{i}:hex.exact_xor(5)---switch' for i in range(count)]
     sites = [name.rpartition('---')[0] for name in names]
@@ -773,7 +772,7 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
         before = tracemalloc.get_traced_memory()[0]
         tables = DeferredTables()
         for i in range(count):
-            tables.add(groups[i], exprs[groups[i]], 16, 16, sites[i] if keep_sites else None, segments[i])
+            tables.add(groups[i], 16, 16, sites[i] if keep_sites else None, segments[i])
             for label in range(labels_per_table):
                 tables.add_label(names[i], label * 448)
         cost = (tracemalloc.get_traced_memory()[0] - before) / count
