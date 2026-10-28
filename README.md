@@ -150,16 +150,12 @@ fj --run hello_world.fjm
 - The second line will run your code.
 
 `--pool-tables` makes the assembled program run fewer ops: it moves the tables the stl declares relocatable (those
-of `hex.exact_xor` and its kin, and of the bit shifts) to addresses that are cheap to arm. The program runs the same:
-where moving a table would change an operand that names a label (an offset from another label into or across the
-table), the table stays where it is, or - if the operand comes too late for that - the program is refused with the
-reason. The tables move right above the program - to the first power of two above its end, or, where the pool would
-not fit below the flat window there, to its end rounded up to the pool's largest block - and the pool ends below that
-window: `--flat-max-words`, else the automatic-flat threshold (2^24 words), so a program that runs flat without the
-pool runs flat with it. A table with no room below the window when it leaves the code stays inline; tables the code
-after them leaves no room run past the window (the program runs the same, partly outside the flat array), and a
-program that leaves them no room in the memory at all is assembled without the pool. With it, `__relocatable__` is a
-reserved namespace: a macro whose innermost namespace has that name is a table the pool may move.
+of `hex.exact_xor` and its kin, and of the bit shifts) to blocks right above the program (from the first power of two
+above its end), where they are cheap to arm. The program runs the same: where moving a table would change an operand
+that names a label (an offset from another label into or across the table), the table stays where it is, or - if the
+operand comes too late for that - the program is refused with the reason, as is a program that leaves the tables no
+room in the memory. With it, `__relocatable__` is a reserved namespace: a macro whose innermost namespace has that
+name is a table the pool may move.
 
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>

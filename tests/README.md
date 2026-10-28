@@ -134,10 +134,11 @@ In summary, they check:
 | [test_run_defaults.py](unit/test_run_defaults.py) | the python API's run defaults: the compiled io mode and flat window, the assemble_and_* helpers |
 | [test_progress.py](unit/test_progress.py) | the progress bars: their output on and off a terminal, and their hooks |
 | [test_op_stream.py](unit/test_op_stream.py) | the assembler's compact op stream and positions: the same values, binary and errors |
-| [test_table_pool.py](unit/test_table_pool.py) | the table placement: TablePool, BlockPool, the declared tables, the pin resolver |
+| [test_table_pool.py](unit/test_table_pool.py) | the table placement: BlockPool, the declared tables, the pin resolver |
 | [test_pool_gaps.py](unit/test_pool_gaps.py) | the table pool on crafted programs (unit/pool_gaps): runs the same, or is refused |
 | [test_pool_fuzz.py](unit/test_pool_fuzz.py) | the table pool's differential fuzzer (unit/pool_fuzzer.py) and its two controls |
-| [test_relocation_proof.py](unit/test_relocation_proof.py) | the relocation proof: every test-table program with a pool, and what it catches |
+| [test_relocation_proof.py](unit/test_relocation_proof.py) | the relocation proof (unit/relocation_proof.py): every test-table program with a pool, and what it catches |
+| [test_pool_golden.py](unit/test_pool_golden.py) | the pool's golden digests on fjdoom's shipped knob set, and their negative controls |
 | [test_ptr_cell_bits.py](unit/test_ptr_cell_bits.py) | `hex.pointers.PTR_CELL_BITS` / `PTR_WIDE_BITS`: the pointer programs at every width |
 | [test_stl_chain.py](unit/test_stl_chain.py) | the stl's chained table dances: return labels 128 ops apart |
 | [test_stl_n_cell_ops.py](unit/test_stl_n_cell_ops.py) | the stl's n-cell pointer ops refuse n < 1 |
