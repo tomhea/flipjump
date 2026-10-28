@@ -214,6 +214,25 @@ def test_a_palette_change_after_present_does_not_change_the_presented_frame() ->
     assert device.palettes[0] == [BLACK, (1, 2, 3)]
 
 
+def test_a_palette_change_after_present_does_not_change_a_presented_builtin() -> None:
+    """the same as above for a slot that holds its own list (a built-in's), not the shared default"""
+    stream = ss.init_screen(1, 1, 1) + ss.builtin_palette(0, 0) + ss.draw_raw([1], 1) + ss.PRESENT
+    device = screen_after(stream + ss.define_palette(0, 1, [(1, 2, 3)], 1))
+    assert device.last_frame_rgb == [WHITE] and device.palette == [BLACK, WHITE]
+
+
+def test_a_slot_presented_before_another_present_takes_its_new_colours() -> None:
+    """slot 0 is presented, then slot 1, then slot 0 rewritten and presented again: the frame (and its hash, through
+    the palette-bytes cache) is the new slot 0, and the other slots keep the default"""
+    stream = ss.init_screen(1, 1, 1) + ss.draw_raw([1], 1) + ss.PRESENT + ss.select_palette(1) + ss.PRESENT
+    device = screen_after(stream + ss.define_palette(0, 1, [(1, 2, 3)], 1) + ss.select_palette(0) + ss.PRESENT)
+    fresh = screen_after(ss.init_screen(1, 1, 1) + ss.draw_raw([1], 1) + ss.define_palette(0, 1, [(1, 2, 3)], 1))
+    ss.feed(fresh, ss.PRESENT)
+    assert device.last_frame_rgb == [(1, 2, 3)]
+    assert device.frame_hashes[-1][1] == fresh.frame_hashes[-1][1]
+    assert device.palettes[1] == device.palettes[255] == [BLACK, WHITE]
+
+
 def test_a_palette_command_needs_no_redraw_to_take_effect() -> None:
     device = screen_after(ss.init_screen(1, 1, 1) + ss.draw_raw([1], 1) + ss.PRESENT)
     ss.feed(device, ss.define_palette(0, 1, [(1, 2, 3)], 1) + ss.PRESENT)

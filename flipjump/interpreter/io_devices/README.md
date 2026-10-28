@@ -19,16 +19,10 @@ so `fj --run game.fjm` needs no `--io` flag.
 
 ## Keyboard
 
-The program **polls**: it reads one status nibble per poll (`hex.input_hex`). There is no timer; the program
-keeps its own frame clock, and idle polling never hits end-of-input.
-
-| Status nibble | Meaning | Then |
-|---|---|---|
-| `0x0` | no event | — |
-| `0x9` | a key was **pressed** | read the keycode byte (`hex.input`) |
-| `0x8` | a key was **released** | read the keycode byte (`hex.input`) |
-
-The keycode byte **must** be read after an event, or every later poll is out of phase.
+The program **polls**: it reads one status nibble per poll (`hex.input_hex`): `0x0` no event, `0x9` a key was
+**pressed**, `0x8` a key was **released**. After an event it **must** read the keycode byte (`hex.input`), or every
+later poll is out of phase. There is no timer; the program keeps its own frame clock, and idle polling never hits
+end-of-input.
 
 ### Keycodes
 
@@ -39,8 +33,8 @@ other key at `0x88` + its USB HID usage ID**.
   `'0'`–`'9'`, whatever modifiers are held. Shift is its own event.
 - A key with an ASCII code is always sent as it (Backspace `8`, Tab `9`, Enter `13`, Esc `27`, Space `32`), so
   `0x88`–`0xC0` are never sent. Delete is `0xD4` (its HID code); ASCII 127 is never sent.
-- The printable codes follow the keyboard layout's unshifted key (on a French layout the key that types `&`
-  sends `'&'`). A key whose unshifted character is not ASCII is not delivered.
+- The printable codes follow the layout's unshifted key (on a French layout the key that types `&` sends `'&'`);
+  a key whose unshifted character is not ASCII is not delivered.
 
 | Code | Key |
 |---|---|
@@ -70,13 +64,10 @@ Scripted input (tests, replays) is a text file of `tic, down/up, keycode` lines 
 
 ### How a command is written
 
-1. A command starts on a **byte boundary** with its **opcode byte**.
-2. Its fields follow **packed back to back at exactly their width in bits**, least-significant bit first
-   (the order FlipJump outputs bits in): 8 pixels of 3 bits take 3 bytes.
-3. The command ends with **zero bits up to the next byte boundary**.
-4. Multi-byte numbers (`w`, `h`, ...) are little-endian.
-5. Nothing reaches the screen until **`present`** (`0x1F`), except the black screen `init_screen` shows.
-
+A command starts on a **byte boundary** with its **opcode byte**; its fields follow **packed back to back at
+exactly their width in bits**, least-significant bit first (the order FlipJump outputs bits in: 8 pixels of 3 bits
+take 3 bytes), and it ends with **zero bits up to the next byte boundary**. Multi-byte numbers (`w`, `h`, ...) are
+little-endian. Nothing reaches the screen until **`present`** (`0x1F`), except the black screen `init_screen` shows.
 The screen **never reads program memory**: every command carries its data in the output stream.
 
 ### Opcodes
@@ -119,19 +110,11 @@ RGB565), and each channel is scaled to 0-255 by `round(level × 255 / (2^bits �
   flash or a fade costs 2 bytes, not a redraw.
 - 256 slots, each starting as the format's default. `define_palette` sets entries `first`…`last` (inclusive) of
   one slot, always as 8-bit R, G, B; a large palette can be sent in several ranges.
-- `builtin_palette` copies a built-in into a slot. A built-in has exactly `2^B` entries: a longer one is cut, a
+- `builtin_palette` copies built-in `id` into a slot: `0` black / white, `1` the grey ramp (`2^B` levels), `2`
+  EGA-16, `3` xterm-256, `4` the RGB cube of `B` bits. A built-in has exactly `2^B` entries: a longer one is cut, a
   shorter one padded with black.
-
-| `id` | Built-in |
-|---|---|
-| `0` | black / white |
-| `1` | grey ramp, `2^B` levels |
-| `2` | EGA-16 |
-| `3` | xterm-256 |
-| `4` | the RGB cube of `B` bits |
-
-The icon's colours go through the palette selected when `set_window_icon` runs (format 24: their RGB); the icon
-has no transparency.
+- The icon's colours go through the palette selected when `set_window_icon` runs (format 24: their RGB); the icon
+  has no transparency.
 
 ### The screen's life cycle
 
@@ -145,12 +128,13 @@ has no transparency.
 ### `draw_collines` — the picture as column runs
 
 Each column is a list of **runs** from the top down; the program has already resolved what is in front, so the
-device only fills. **Field widths** (fixed by `init_screen`, a multiple of 4 bits):
+device only fills. **Field widths** (fixed by `init_screen`, a multiple of 4 bits) and their **top values, which
+are tokens**:
 
-| Field | Width | Top values are tokens | Limit |
+| Field | Width | Tokens (at `R = 8` / `C = 8`) | Limit |
 |---|---|---|---|
-| row (`y2`, `y`) | `R` = the smallest of 4, 8, 12, 16 with `h < 2^R − 4` | the top **4** | `h ≤ 11 / 251 / 4,091 / 65,531` |
-| column (`x`) | `C` = the smallest of 4, 8, 12, 16 with `w < 2^C − 1` | the top **2** | `w ≤ 14 / 254 / 4,094 / 65,534` |
+| row (`y2`, `y`) | `R` = the smallest of 4, 8, 12, 16 with `h < 2^R − 4` | END `2^R − 1` (`0xFF`), KEEP `2^R − 2` (`0xFE`), COPY `2^R − 3` (`0xFD`), reserved `2^R − 4` (`0xFC`); `0 … h` a row | `h ≤ 11 / 251 / 4,091 / 65,531` |
+| column (`x`) | `C` = the smallest of 4, 8, 12, 16 with `w < 2^C − 1` | END_CMD `2^C − 1` (`0xFF`): the command is over, reserved `2^C − 2` (`0xFE`); `0 … w−1` a column | `w ≤ 14 / 254 / 4,094 / 65,534` |
 
 ```
 draw_collines := 0x11  ( column )*  END_CMD
@@ -160,20 +144,6 @@ item          := y2 colour                      fill rows [cursor, y2) with colo
                | KEEP y                         rows [cursor, y) keep what the screen shows there; cursor = y
                | COPY y                         rows [cursor, y) copy the column to the left (x − 1); cursor = y
 ```
-
-| Row-field value | Token | At `R = 8` |
-|---|---|---|
-| `2^R − 1` | END (column) | `0xFF` |
-| `2^R − 2` | KEEP | `0xFE` |
-| `2^R − 3` | COPY | `0xFD` |
-| `2^R − 4` | reserved | `0xFC` |
-| `0 … h` | a row | `0x00`–`0xFB` |
-
-| Column-field value | Token | At `C = 8` |
-|---|---|---|
-| `2^C − 1` | END_CMD: the command is over | `0xFF` |
-| `2^C − 2` | reserved | `0xFE` |
-| `0 … w−1` | a column | `0x00`–`0xFD` |
 
 - Each column's cursor starts at row 0. A fill, KEEP or COPY moves it to `y2` / `y` with `cursor ≤ y2 ≤ h`; an
   item of zero rows paints nothing, and only a row behind the cursor is an error.
@@ -215,20 +185,16 @@ ScreenIO: draw_collines (0x11) at output byte 1,204, frame 37, column 17, cursor
 | unknown opcode | `opcode 0x23 is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)` |
 | reserved opcode | `opcode 0x00 is reserved (a stray zero byte?)` |
 | a command before `init_screen` | `select_palette (0x06) before init_screen: the first command must be init_screen (0x01)` |
-| screen size | `w = 0: must be 1..65,534` · `h = 65,534: must be 1..65,531` |
-| format | `format = 20: must be 1-16 or 24` |
+| screen size / format | `w = 0: must be 1..65,534` · `h = 65,534: must be 1..65,531` · `format = 20: must be 1-16 or 24` |
 | a palette command in RGB | `define_palette (0x02) in format 24 (direct RGB): palettes exist only in formats 1-16` |
-| palette range | `first = 12 > last = 3` |
-| built-in palette | `id = 7: the built-ins are 0..4` |
+| palette range / built-in | `first = 12 > last = 3` · `id = 7: the built-ins are 0..4` |
 | column | `x = 170: the screen has columns 0..159 (w = 160)` |
-| reserved column token | `x = 0xFE is the reserved column token (2^C - 2, C = 8)` |
+| reserved tokens | `x = 0xFE is the reserved column token (2^C - 2, C = 8)` · `0xFC is the reserved row token (2^R - 4, R = 8)` |
 | row past the screen | `y2 = 90 is past the screen (rows end at h = 84)` |
 | a row behind the cursor | `y2 = 30 is behind the cursor (need 40 <= y2 <= 84)` |
-| reserved row token | `0xFC is the reserved row token (2^R - 4, R = 8)` |
 | COPY in column 0 | `COPY copies column x - 1, and column 0 has none` |
 | non-zero padding | `the padding bits after the command are 0b0101, not zero (the stream is probably misaligned)` |
-| icon size | `set_window_icon: w = 0: must be 1..255` |
-| title | `set_window_title: title byte 5 (0xC3) is not valid UTF-8` |
+| icon size / title | `set_window_icon: w = 0: must be 1..255` · `set_window_title: title byte 5 (0xC3) is not valid UTF-8` |
 | output ends inside a command | `the program's output ended inside draw_collines (0x11): 37 of its bits read` |
 | output ends inside an opcode byte | `the program's output ended inside an opcode byte: 3 of its 8 bits read` (where: `an opcode at output byte N, frame F`) |
 

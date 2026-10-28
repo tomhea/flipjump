@@ -13,14 +13,14 @@ from typing import List, Optional, Set
 from flipjump.assembler import assembler
 from flipjump.assembler.table_pool import BlockPool
 from flipjump.interpreter.debugging.breakpoints import get_breakpoint_handler
-from flipjump.fjm.fjm_consts import FJMVersion
+from flipjump.fjm.fjm_consts import IO_MODE_NAMES, FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.io_devices.cli_devices import make_io_device
-from flipjump.interpreter.run_defaults import flat_memory_failure_message, flat_window, io_mode_name
+from flipjump.interpreter.run_defaults import flat_memory_failure_message, flat_window
 from flipjump.utils.classes import TerminationCause
 from flipjump.utils.constants import (
     IO_BYTES_ENCODING,
@@ -193,7 +193,7 @@ def debug(
     header = read_fjm_header(fjm_path)
     created_device = io_device is None
     if io_device is None:
-        io_device = make_io_device(io_mode_name(header))
+        io_device = make_io_device(IO_MODE_NAMES[header.io_mode])
     try:
         window = flat_window(header, flat_max_words=flat_max_words, flat_memory=flat_memory, run_flags=run_flags)
 

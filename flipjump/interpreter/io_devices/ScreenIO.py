@@ -1,9 +1,6 @@
 """
-the InMemoryScreen output-device - headless-first. it implements io_devices/README.md ("Screen"): the wire
-format, its errors and the frame hash.
-
-the device's own internals are all named `_scr_...` (the subclass hooks `_init_screen`, `_set_window_title`,
-`_set_window_icon`, `_present` and `_extension_command` aside), so a subclass's private names cannot collide with them.
+the InMemoryScreen output-device, headless-first: io_devices/README.md's "Screen" (the wire format, its errors and
+the frame hash). Its internals are all `_scr_...` (the subclass hooks aside), so a subclass's names cannot collide.
 """
 
 import hashlib
@@ -11,6 +8,7 @@ import struct
 import time
 import zlib
 from functools import lru_cache
+from itertools import chain
 from pathlib import Path
 from typing import Callable, Generator, List, Literal, Optional, Tuple, Union
 
@@ -19,48 +17,26 @@ from flipjump.utils.exceptions import IODeviceException, IOReadOnEOF
 
 RGB = Tuple[int, int, int]
 
-CMD_RESERVED = 0x00
-CMD_INIT_SCREEN = 0x01
-CMD_DEFINE_PALETTE = 0x02
-CMD_SET_MAX_FPS = 0x03
-CMD_SET_WINDOW_TITLE = 0x04
-CMD_SET_WINDOW_ICON = 0x05
-CMD_SELECT_PALETTE = 0x06
-CMD_BUILTIN_PALETTE = 0x07
-CMD_DRAW_RAW = 0x10
-CMD_DRAW_COLLINES = 0x11
-CMD_PRESENT = 0x1F
-
+# opcode -> command; each is parsed by the `_scr_cmd_<name>` method
 COMMAND_NAMES = {
-    CMD_INIT_SCREEN: 'init_screen',
-    CMD_DEFINE_PALETTE: 'define_palette',
-    CMD_SET_MAX_FPS: 'set_max_fps',
-    CMD_SET_WINDOW_TITLE: 'set_window_title',
-    CMD_SET_WINDOW_ICON: 'set_window_icon',
-    CMD_SELECT_PALETTE: 'select_palette',
-    CMD_BUILTIN_PALETTE: 'builtin_palette',
-    CMD_DRAW_RAW: 'draw_raw',
-    CMD_DRAW_COLLINES: 'draw_collines',
-    CMD_PRESENT: 'present',
+    0x01: 'init_screen',
+    0x02: 'define_palette',
+    0x03: 'set_max_fps',
+    0x04: 'set_window_title',
+    0x05: 'set_window_icon',
+    0x06: 'select_palette',
+    0x07: 'builtin_palette',
+    0x10: 'draw_raw',
+    0x11: 'draw_collines',
+    0x1F: 'present',
 }
-PALETTE_COMMANDS = (CMD_DEFINE_PALETTE, CMD_SELECT_PALETTE, CMD_BUILTIN_PALETTE)
+PALETTE_COMMANDS = ('define_palette', 'select_palette', 'builtin_palette')
 
 FORMAT_RGB = 24
-INDEXED_FORMATS = range(1, 17)
 PALETTE_SLOTS = 256
-
 MAX_WIDTH = 65_534  # C = 16 needs w < 2^16 - 1
 MAX_HEIGHT = 65_531  # R = 16 needs h < 2^16 - 4
 FIELD_WIDTHS = (4, 8, 12, 16)
-
-BUILTIN_BLACK_WHITE = 0
-BUILTIN_GREY_RAMP = 1
-BUILTIN_EGA16 = 2
-BUILTIN_XTERM256 = 3
-BUILTIN_RGB_CUBE = 4
-BUILTIN_IDS = range(5)
-
-PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 
 def row_field_width(height: int) -> int:
@@ -77,8 +53,7 @@ def column_field_width(width: int) -> int:
 
 
 def scale_level(level: int, bits: int) -> int:
-    """a `bits`-bit channel level as an 8-bit one: round(level * 255 / (2^bits - 1)), halves up;
-    a channel of 0 bits is always 0."""
+    """a `bits`-bit channel level as an 8-bit one: round(level * 255 / (2^bits - 1)), halves up; 0 bits give 0."""
     if bits == 0:
         return 0
     top = (1 << bits) - 1
@@ -96,16 +71,11 @@ EGA16 = _hex_colours(
 _XTERM16 = _hex_colours(
     '000000 800000 008000 808000 000080 800080 008080 c0c0c0 808080 ff0000 00ff00 ffff00 0000ff ff00ff 00ffff ffffff'
 )
-_XTERM_CUBE_LEVELS = (0, 95, 135, 175, 215, 255)
+_XTERM_LEVELS = (0, 95, 135, 175, 215, 255)
 XTERM256: Tuple[RGB, ...] = (
     _XTERM16
-    + tuple(
-        (_XTERM_CUBE_LEVELS[r], _XTERM_CUBE_LEVELS[g], _XTERM_CUBE_LEVELS[b])
-        for r in range(6)
-        for g in range(6)
-        for b in range(6)
-    )
-    + tuple((8 + 10 * k, 8 + 10 * k, 8 + 10 * k) for k in range(24))
+    + tuple((_XTERM_LEVELS[v // 36], _XTERM_LEVELS[v // 6 % 6], _XTERM_LEVELS[v % 6]) for v in range(216))
+    + tuple((8 + 10 * k,) * 3 for k in range(24))
 )
 
 
@@ -116,27 +86,16 @@ def rgb_cube_split(bits: int) -> Tuple[int, int, int]:
     return red, green, bits - green - red
 
 
-def _fit(colours: Tuple[RGB, ...], bits: int) -> Tuple[RGB, ...]:
-    """exactly 2^bits entries: cut a longer list, pad a shorter one with black."""
-    size = 1 << bits
-    return colours[:size] + ((0, 0, 0),) * (size - len(colours))
-
-
 @lru_cache(maxsize=None)
 def builtin_palette(builtin_id: int, bits: int) -> Tuple[RGB, ...]:
-    """the built-in palette `builtin_id` for a format of `bits` bits per colour: exactly 2^bits entries."""
+    """built-in `builtin_id` (0 black/white, 1 grey ramp, 2 EGA-16, 3 xterm-256, 4 the RGB cube) for a format of
+    `bits` bits per colour: exactly 2^bits entries (a longer list cut, a shorter one padded with black)."""
     size = 1 << bits
-    if builtin_id == BUILTIN_BLACK_WHITE:
-        return _fit(((0, 0, 0), (255, 255, 255)), bits)
-    if builtin_id == BUILTIN_GREY_RAMP:
-        return tuple((level, level, level) for level in (scale_level(i, bits) for i in range(size)))
-    if builtin_id == BUILTIN_EGA16:
-        return _fit(EGA16, bits)
-    if builtin_id == BUILTIN_XTERM256:
-        return _fit(XTERM256, bits)
-    if builtin_id == BUILTIN_RGB_CUBE:
+    if builtin_id == 1:
+        colours = tuple((scale_level(i, bits),) * 3 for i in range(size))
+    elif builtin_id == 4:
         red_bits, green_bits, blue_bits = rgb_cube_split(bits)
-        return tuple(
+        colours = tuple(
             (
                 scale_level(value >> (green_bits + blue_bits), red_bits),
                 scale_level((value >> blue_bits) & ((1 << green_bits) - 1), green_bits),
@@ -144,15 +103,16 @@ def builtin_palette(builtin_id: int, bits: int) -> Tuple[RGB, ...]:
             )
             for value in range(size)
         )
-    raise ValueError(f'no built-in palette {builtin_id}')
+    elif builtin_id in (0, 2, 3):
+        colours = {0: ((0, 0, 0), (255, 255, 255)), 2: EGA16, 3: XTERM256}[builtin_id]
+    else:
+        raise ValueError(f'no built-in palette {builtin_id}')
+    return colours[:size] + ((0, 0, 0),) * (size - len(colours))
 
 
 def default_palette(screen_format: int) -> Tuple[RGB, ...]:
-    """the palette every slot holds after init_screen."""
-    builtin_id = {1: BUILTIN_BLACK_WHITE, 2: BUILTIN_GREY_RAMP, 4: BUILTIN_EGA16, 8: BUILTIN_XTERM256}.get(
-        screen_format, BUILTIN_RGB_CUBE
-    )
-    return builtin_palette(builtin_id, screen_format)
+    """the palette every slot holds after init_screen: formats 1, 2, 4, 8 get built-ins 0-3, the others the cube."""
+    return builtin_palette({1: 0, 2: 1, 4: 2, 8: 3}.get(screen_format, 4), screen_format)
 
 
 def rgb_of(value: int) -> RGB:
@@ -160,23 +120,20 @@ def rgb_of(value: int) -> RGB:
     return value & 0xFF, (value >> 8) & 0xFF, value >> 16
 
 
-# ---------------------------------------------------------------- png
+def to_rgb(values: Union[List[int], Tuple[int, ...]], palette: List[RGB]) -> List[RGB]:
+    """colour values as RGB tuples: through `palette`, or as format-24 values when it is empty."""
+    return [palette[value] for value in values] if palette else [rgb_of(value) for value in values]
 
 
-def encode_png(width: int, height: int, rgb_rows: bytes) -> bytes:
-    """encode a minimal 8-bit RGB PNG (no filtering; rgb_rows is height*(1+3*width) bytes
-    of filter-byte-0-prefixed scanlines)."""
+def encode_png(width: int, height: int, rgb: bytes) -> bytes:
+    """a minimal 8-bit RGB PNG of row-major R G B bytes (unfiltered scanlines)."""
+    rows = b''.join(b'\x00' + rgb[at : at + 3 * width] for at in range(0, len(rgb), 3 * width))  # noqa: E203
 
     def chunk(chunk_type: bytes, data: bytes) -> bytes:
-        return (
-            struct.pack('>I', len(data))
-            + chunk_type
-            + data
-            + struct.pack('>I', zlib.crc32(chunk_type + data) & 0xFFFFFFFF)
-        )
+        return struct.pack('>I', len(data)) + chunk_type + data + struct.pack('>I', zlib.crc32(chunk_type + data))
 
     ihdr = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)  # 8-bit, color-type 2 (RGB)
-    return PNG_SIGNATURE + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(rgb_rows)) + chunk(b'IEND', b'')
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b'')
 
 
 class _OutputEnded(Exception):
@@ -191,40 +148,27 @@ class InMemoryScreen(IODevice):
 
     def __init__(self, *, frames_dir: Optional[Path] = None):
         self.frames_dir = frames_dir
-
-        self.width = 0
-        self.height = 0
+        self.width = self.height = 0
         self.bpp = 8
         self.pixel_indices: List[int] = []
         # slots never written may share one list object: read-only; the device copies a slot before writing it
         self.palettes: List[List[RGB]] = []
         self.selected_slot = 0
         self.palette: List[RGB] = []  # the slot selected at the last present
-
         self.frame_count = 0
         self.frame_hashes: List[Tuple[int, str]] = []  # (present-time ns, sha256 hexdigest)
-
         self.window_title: Optional[str] = None
         self.window_icon: Optional[Tuple[int, int, List[RGB]]] = None
         self.max_fps = 0
 
-        # the field widths init_screen fixes: R bits per row field, C per column field
-        self._scr_row_bits = 0
-        self._scr_column_bits = 0
-        # which slots own their list (a slot that does not may share it, and is copied before a write)
-        self._scr_owned_slots: List[bool] = []
-        # (format, the presented values, the presented palette) - expanded only when asked
-        self._scr_presented: Optional[Tuple[int, Tuple[int, ...], List[RGB]]] = None
+        self._scr_row_bits = self._scr_column_bits = 0  # init_screen's field widths: R and C
+        self._scr_default: List[RGB] = []  # init_screen's palette, the list every slot starts sharing
+        self._scr_presented: Optional[Tuple[int, ...]] = None  # the presented values (expanded only when asked)
         self._scr_palette_bytes_cache: Optional[Tuple[List[RGB], bytes]] = None
-
         # the output stream: a partial byte, the bytes handed to the parser, and the parser's bit buffer
-        self._scr_current_byte = 0
-        self._scr_bits_count = 0
-        self._scr_bytes_in = 0
-        self._scr_acc = 0
-        self._scr_nacc = 0
-        # the command being parsed: (name, opcode, offset of its opcode byte), None between commands
-        self._scr_command: Optional[Tuple[str, int, int]] = None
+        self._scr_current_byte = self._scr_bits_count = self._scr_bytes_in = 0
+        self._scr_acc = self._scr_nacc = 0
+        self._scr_command: Optional[Tuple[str, int, int]] = None  # (name, opcode, its byte offset) inside a command
         self._scr_failure: Optional[IODeviceException] = None
         self._scr_in_extension = False  # inside an _extension_command's payload
         self._scr_parser: Parser = self._scr_parse()
@@ -246,28 +190,19 @@ class InMemoryScreen(IODevice):
         if self._scr_failure is not None:
             raise self._scr_failure
         self._scr_bytes_in += 1
-        try:
-            self._scr_parser.send(byte)
-        except IODeviceException as failure:
-            self._scr_failure = failure
-            raise
+        self._scr_parser.send(byte)
 
     def read_bit(self) -> bool:
         raise IOReadOnEOF('the screen device has no input - use a device that also reads input (e.g. --io pc)')
 
     def end_of_run(self) -> None:
-        """the program's output must not have ended inside a command (an unfinished _extension_command payload
-        is the subclass's business)."""
+        """the output must not have ended inside a command (inside an _extension_command is the subclass's business)"""
         if self._scr_failure is not None:
             raise self._scr_failure
         if self._scr_in_extension:
             return
         if self._scr_command is not None:
-            try:
-                self._scr_parser.throw(_OutputEnded())
-            except IODeviceException as failure:
-                self._scr_failure = failure
-                raise
+            self._scr_parser.throw(_OutputEnded())
         elif self._scr_bits_count:
             raise IODeviceException(
                 f'ScreenIO: an opcode at output byte {self._scr_bytes_in:,}, frame {self.frame_count:,}: '
@@ -284,10 +219,9 @@ class InMemoryScreen(IODevice):
 
     def _extension_command(self, opcode: int) -> Optional[Union[Callable[[int], bool], Literal[True]]]:
         """
-        a subclass hook (not the wire API) for an opcode byte that is not a command (nor the reserved 0x00).
-        None: the unknown-opcode error. True: a complete command with no payload. a callable: it is handed every
-        following output byte until it returns True, then commands resume at the next byte. the byte offsets
-        and the frame count keep counting through these bytes.
+        a subclass hook (not the wire API) for an opcode that is not a command (nor 0x00). None: the unknown-opcode
+        error. True: a command with no payload. A callable: handed every next output byte until it returns True;
+        commands resume at the next byte. The byte offsets and the frame count count through these bytes.
         """
         return None
 
@@ -301,76 +235,63 @@ class InMemoryScreen(IODevice):
         self._scr_nacc -= count
         return value
 
-    def _scr_error(
-        self,
-        reason: str,
-        *,
-        column: Optional[int] = None,
-        cursor: Optional[int] = None,
-        pixel: Optional[Tuple[int, int]] = None,
-    ) -> IODeviceException:
+    def _scr_error(self, reason: Optional[str] = None, at: str = '') -> IODeviceException:
+        """the current command's error, `at` a place inside it; no reason: the output ended inside the command"""
         assert self._scr_command is not None
         name, opcode, offset = self._scr_command
-        where = f'ScreenIO: {name} (0x{opcode:02X}) at output byte {offset:,}, frame {self.frame_count:,}'
-        if column is not None:
-            where += f', column {column:,}, cursor {cursor:,}'
-        if pixel is not None:
-            where += f', pixel ({pixel[0]:,}, {pixel[1]:,})'
-        return IODeviceException(f'{where}: {reason}')
-
-    def _scr_ended_reason(self) -> str:
-        assert self._scr_command is not None
-        name, opcode, offset = self._scr_command
-        bits = (self._scr_bytes_in - offset) * 8 + self._scr_bits_count
-        return f"the program's output ended inside {name} (0x{opcode:02X}): {bits:,} of its bits read"
+        if reason is None:
+            bits = (self._scr_bytes_in - offset) * 8 + self._scr_bits_count
+            reason = f"the program's output ended inside {name} (0x{opcode:02X}): {bits:,} of its bits read"
+        where = f'{name} (0x{opcode:02X}) at output byte {offset:,}, frame {self.frame_count:,}{at}'
+        return IODeviceException(f'ScreenIO: {where}: {reason}')
 
     def _scr_parse(self) -> Parser:
         """the command parser: a generator sent one output byte at a time."""
         handlers = {opcode: getattr(self, f'_scr_cmd_{name}') for opcode, name in COMMAND_NAMES.items()}
-        while True:
-            assert self._scr_nacc == 0  # every command starts on a byte boundary
-            opcode = yield from self._scr_bits(8)
-            offset = self._scr_bytes_in - 1
-            name = COMMAND_NAMES.get(opcode)
-            if name is None:
-                if opcode == CMD_RESERVED:
-                    self._scr_command = ('reserved', opcode, offset)
-                    raise self._scr_error('opcode 0x00 is reserved (a stray zero byte?)')
-                extension = self._extension_command(opcode)
-                if extension is None:
-                    self._scr_command = ('unknown', opcode, offset)
-                    raise self._scr_error(
-                        f'opcode 0x{opcode:02X} is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)'
-                    )
-                if extension is not True:
+        try:
+            while True:
+                assert self._scr_nacc == 0  # every command starts on a byte boundary
+                opcode = yield from self._scr_bits(8)
+                offset = self._scr_bytes_in - 1
+                name = COMMAND_NAMES.get(opcode, 'unknown' if opcode else 'reserved')
+                extension = self._extension_command(opcode) if name == 'unknown' else None
+                if extension is not None:  # the subclass's command: its payload bytes are its own
                     self._scr_in_extension = True
-                    while not extension((yield)):
+                    while extension is not True and not extension((yield)):
                         pass
                     self._scr_in_extension = False
-                continue
+                    continue
+                self._scr_command = (name, opcode, offset)
+                if opcode not in COMMAND_NAMES:
+                    raise self._scr_error(
+                        f'opcode 0x{opcode:02X} is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)'
+                        if opcode
+                        else 'opcode 0x00 is reserved (a stray zero byte?)'
+                    )
+                if opcode != 0x01 and self.width == 0:
+                    raise self._scr_error(
+                        f'{name} (0x{opcode:02X}) before init_screen: the first command must be init_screen (0x01)'
+                    )
+                if name in PALETTE_COMMANDS and self.bpp == FORMAT_RGB:
+                    raise self._scr_error(
+                        f'{name} (0x{opcode:02X}) in format 24 (direct RGB): palettes exist only in formats 1-16'
+                    )
+                try:
+                    yield from handlers[opcode]()
+                except _OutputEnded:
+                    raise self._scr_error() from None
 
-            self._scr_command = (name, opcode, offset)
-            if opcode != CMD_INIT_SCREEN and self.width == 0:
-                raise self._scr_error(
-                    f'{name} (0x{opcode:02X}) before init_screen: the first command must be init_screen (0x01)'
-                )
-            if opcode in PALETTE_COMMANDS and self.bpp == FORMAT_RGB:
-                raise self._scr_error(
-                    f'{name} (0x{opcode:02X}) in format 24 (direct RGB): palettes exist only in formats 1-16'
-                )
-            try:
-                yield from handlers[opcode]()
-            except _OutputEnded:
-                raise self._scr_error(self._scr_ended_reason()) from None
-
-            padding_bits, padding = self._scr_nacc, self._scr_acc
-            self._scr_acc = self._scr_nacc = 0
-            if padding:
-                raise self._scr_error(
-                    f'the padding bits after the command are 0b{padding:0{padding_bits}b}, '
-                    'not zero (the stream is probably misaligned)'
-                )
-            self._scr_command = None
+                padding_bits, padding = self._scr_nacc, self._scr_acc
+                self._scr_acc = self._scr_nacc = 0
+                if padding:
+                    raise self._scr_error(
+                        f'the padding bits after the command are 0b{padding:0{padding_bits}b}, '
+                        'not zero (the stream is probably misaligned)'
+                    )
+                self._scr_command = None
+        except IODeviceException as failure:  # the parser is over: every later call raises it again
+            self._scr_failure = failure
+            raise
 
     # ---------------------------------------------------------------- screen functions
 
@@ -382,30 +303,19 @@ class InMemoryScreen(IODevice):
             raise self._scr_error(f'w = {width:,}: must be 1..{MAX_WIDTH:,}')
         if not 1 <= height <= MAX_HEIGHT:
             raise self._scr_error(f'h = {height:,}: must be 1..{MAX_HEIGHT:,}')
-        if bpp not in INDEXED_FORMATS and bpp != FORMAT_RGB:
+        if not 1 <= bpp <= 16 and bpp != FORMAT_RGB:
             raise self._scr_error(f'format = {bpp}: must be 1-16 or 24')
         self._init_screen(width, height, bpp)
 
     def _init_screen(self, width: int, height: int, bpp: int) -> None:
         """the life cycle's init_screen: everything but the title, the icon, max fps and the frame count resets."""
         self.width, self.height, self.bpp = width, height, bpp
-        self._scr_row_bits = row_field_width(height)
-        self._scr_column_bits = column_field_width(width)
+        self._scr_row_bits, self._scr_column_bits = row_field_width(height), column_field_width(width)
         self.pixel_indices = [0] * (width * height)
-        if bpp == FORMAT_RGB:
-            self.palettes = []
-            self._scr_owned_slots = []
-        else:
-            shared_default = list(default_palette(bpp))
-            self.palettes = [shared_default] * PALETTE_SLOTS
-            self._scr_owned_slots = [False] * PALETTE_SLOTS
+        indexed = bpp != FORMAT_RGB
+        self._scr_default = list(default_palette(bpp)) if indexed else []
+        self.palettes = [self._scr_default] * PALETTE_SLOTS if indexed else []
         self.selected_slot = 0
-
-    def _scr_writable_slot(self, slot: int) -> List[RGB]:
-        if not self._scr_owned_slots[slot]:
-            self.palettes[slot] = list(self.palettes[slot])
-            self._scr_owned_slots[slot] = True
-        return self.palettes[slot]
 
     def _scr_cmd_define_palette(self) -> Generator[None, int, None]:
         slot = yield from self._scr_bits(8)
@@ -415,20 +325,18 @@ class InMemoryScreen(IODevice):
             raise self._scr_error(f'first = {first:,} > last = {last:,}')
         entries = []
         for _ in range(last - first + 1):
-            entries.append(
-                ((yield from self._scr_bits(8)), (yield from self._scr_bits(8)), (yield from self._scr_bits(8)))
-            )
-        self._scr_writable_slot(slot)[first : last + 1] = entries  # noqa: E203
+            entries.append(rgb_of((yield from self._scr_bits(24))))  # R:8 G:8 B:8, R first: a format-24 value
+        palette = self.palettes[slot]
+        if palette is self._scr_default or palette is self.palette:  # shared, or frozen at a present: copy it first
+            palette = self.palettes[slot] = list(palette)
+        palette[first : last + 1] = entries  # noqa: E203
 
     def _scr_cmd_set_max_fps(self) -> Generator[None, int, None]:
         self.max_fps = yield from self._scr_bits(8)
 
     def _scr_cmd_set_window_title(self) -> Generator[None, int, None]:
         title = bytearray()
-        while True:
-            byte = yield from self._scr_bits(8)
-            if byte == 0:
-                break
+        while (byte := (yield from self._scr_bits(8))) != 0:
             title.append(byte)
         try:
             text = title.decode('utf-8')
@@ -444,18 +352,12 @@ class InMemoryScreen(IODevice):
     def _scr_cmd_set_window_icon(self) -> Generator[None, int, None]:
         width = yield from self._scr_bits(8)
         height = yield from self._scr_bits(8)
-        if width == 0:
-            raise self._scr_error('set_window_icon: w = 0: must be 1..255')
-        if height == 0:
-            raise self._scr_error('set_window_icon: h = 0: must be 1..255')
+        if width == 0 or height == 0:
+            raise self._scr_error(f'set_window_icon: {"w" if width == 0 else "h"} = 0: must be 1..255')
         values = [0] * (width * height)
         yield from self._scr_colours(values, width)
-        if self.bpp == FORMAT_RGB:
-            colours = [rgb_of(value) for value in values]
-        else:
-            palette = self.palettes[self.selected_slot]
-            colours = [palette[value] for value in values]
-        self._set_window_icon(width, height, colours)
+        palette = [] if self.bpp == FORMAT_RGB else self.palettes[self.selected_slot]
+        self._set_window_icon(width, height, to_rgb(values, palette))
 
     def _set_window_icon(self, width: int, height: int, colours: List[RGB]) -> None:
         self.window_icon = (width, height, colours)
@@ -466,10 +368,9 @@ class InMemoryScreen(IODevice):
     def _scr_cmd_builtin_palette(self) -> Generator[None, int, None]:
         slot = yield from self._scr_bits(8)
         builtin_id = yield from self._scr_bits(8)
-        if builtin_id not in BUILTIN_IDS:
+        if builtin_id > 4:
             raise self._scr_error(f'id = {builtin_id}: the built-ins are 0..4')
         self.palettes[slot] = list(builtin_palette(builtin_id, self.bpp))
-        self._scr_owned_slots[slot] = True
 
     def _scr_cmd_draw_raw(self) -> Generator[None, int, None]:
         yield from self._scr_colours(self.pixel_indices, self.width)
@@ -488,7 +389,7 @@ class InMemoryScreen(IODevice):
                     nacc += 8
                 values[index], acc, nacc = acc & mask, acc >> bits, nacc - bits
         except _OutputEnded:
-            raise self._scr_error(self._scr_ended_reason(), pixel=(index % width, index // width)) from None
+            raise self._scr_error(at=f', pixel ({index % width:,}, {index // width:,})') from None
         self._scr_acc, self._scr_nacc = acc, nacc
 
     def _scr_cmd_draw_collines(self) -> Generator[None, int, None]:
@@ -501,8 +402,8 @@ class InMemoryScreen(IODevice):
         x: Optional[int] = None
         cursor = 0
 
-        def refuse(reason: str) -> IODeviceException:
-            return self._scr_error(reason, column=x, cursor=cursor)
+        def refuse(reason: Optional[str] = None) -> IODeviceException:  # at the column and its cursor, once x is read
+            return self._scr_error(reason, '' if x is None else f', column {x:,}, cursor {cursor:,}')
 
         try:
             while True:
@@ -515,12 +416,11 @@ class InMemoryScreen(IODevice):
                     self._scr_acc, self._scr_nacc = acc, nacc
                     return
                 if column == reserved_column:
-                    raise self._scr_error(
-                        f'x = 0x{column:0{column_bits // 4}X} is the reserved column token '
-                        f'(2^C - 2, C = {column_bits})'
+                    raise refuse(
+                        f'x = 0x{column:0{column_bits // 4}X} is the reserved column token (2^C - 2, C = {column_bits})'
                     )
                 if column >= width:
-                    raise self._scr_error(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
+                    raise refuse(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
                 x, cursor = column, 0
                 while True:  # only END closes a column, also once the cursor reached h
                     while nacc < row_bits:
@@ -559,63 +459,37 @@ class InMemoryScreen(IODevice):
                         picture[start:stop:width] = [colour] * (row - cursor)
                     cursor = row
         except _OutputEnded:
-            if x is None:
-                raise self._scr_error(self._scr_ended_reason()) from None
-            raise refuse(self._scr_ended_reason()) from None
+            raise refuse() from None
 
     def _scr_cmd_present(self) -> Generator[None, int, None]:
         self._present()
-        return
-        yield  # a generator, like every command
-
-    def _scr_palette_bytes(self, palette: List[RGB]) -> bytes:
-        cached = self._scr_palette_bytes_cache
-        if cached is not None and cached[0] is palette:
-            return cached[1]
-        palette_bytes = bytes(channel for colour in palette for channel in colour)
-        self._scr_palette_bytes_cache = (palette, palette_bytes)
-        return palette_bytes
+        yield from ()  # a generator, like every command
 
     def _present(self) -> None:
         """record the picture as a frame: the snapshot behind last_frame_rgb, the hash, the PNG."""
         values = tuple(self.pixel_indices)
+        palette: List[RGB] = []
         if self.bpp == FORMAT_RGB:
-            palette: List[RGB] = []
             hashed = b''.join(value.to_bytes(3, 'little') for value in values)
         else:
-            palette = self.palettes[self.selected_slot]
-            # the presented list is frozen from here on: a later define_palette copies the slot first
-            self._scr_owned_slots[self.selected_slot] = False
-            if self.bpp <= 8:
-                value_bytes = bytes(values)
-            else:
-                value_bytes = struct.pack(f'<{len(values)}H', *values)
-            hashed = value_bytes + self._scr_palette_bytes(palette)
+            palette = self.palettes[self.selected_slot]  # frozen while it is self.palette (define_palette copies)
+            cached = self._scr_palette_bytes_cache
+            if cached is None or cached[0] is not palette:
+                cached = self._scr_palette_bytes_cache = (palette, bytes(chain.from_iterable(palette)))
+            value_bytes = bytes(values) if self.bpp <= 8 else struct.pack(f'<{len(values)}H', *values)
+            hashed = value_bytes + cached[1]
         self.palette = palette
-        self._scr_presented = (self.bpp, values, palette)
+        self._scr_presented = values
         self.frame_count += 1
         self.frame_hashes.append((time.time_ns(), hashlib.sha256(hashed).hexdigest()))
 
         if self.frames_dir is not None:
             self.frames_dir.mkdir(parents=True, exist_ok=True)
-            frame_rgb = self.last_frame_rgb  # bound once: the property expands the whole frame on every read
-            row_slices = [
-                frame_rgb[row * self.width : (row + 1) * self.width] for row in range(self.height)  # noqa: E203
-            ]
-            rows = b''.join(b'\x00' + b''.join(bytes(rgb) for rgb in row_slice) for row_slice in row_slices)
-            png_path = self.frames_dir / f'frame_{self.frame_count - 1:06d}.png'
-            png_path.write_bytes(encode_png(self.width, self.height, rows))
+            png = encode_png(self.width, self.height, bytes(chain.from_iterable(self.last_frame_rgb)))
+            (self.frames_dir / f'frame_{self.frame_count - 1:06d}.png').write_bytes(png)
 
     @property
     def last_frame_rgb(self) -> List[RGB]:
-        """the last presented frame, expanded to row-major RGB tuples ([] before the first present).
-
-        LAZY: the interactive window does not need it (it hands SDL the indices). The INPUTS are
-        snapshotted at present time, so this is the frame that was presented, not whatever the device
-        has been drawing since."""
-        if self._scr_presented is None:
-            return []
-        screen_format, values, palette = self._scr_presented
-        if screen_format == FORMAT_RGB:
-            return [rgb_of(value) for value in values]
-        return [palette[value] for value in values]
+        """the last presented frame as row-major RGB tuples ([] before the first present). LAZY (the window hands
+        SDL the indices); its inputs are snapshotted at present time, so it is the frame that was presented."""
+        return [] if self._scr_presented is None else to_rgb(self._scr_presented, self.palette)

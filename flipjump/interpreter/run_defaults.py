@@ -11,7 +11,7 @@ import os
 import re
 from typing import NamedTuple, Optional
 
-from flipjump.fjm.fjm_consts import IO_MODE_NAMES, RUN_FLAG_FLAT_MEMORY, bad_run_flags_message
+from flipjump.fjm.fjm_consts import RUN_FLAG_FLAT_MEMORY, bad_run_flags_message
 from flipjump.fjm.fjm_reader import FjmHeader
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 
@@ -19,11 +19,6 @@ from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 # its own: the array costs at most 64 MB (4-byte cells, w<=32) or 128 MB (w=64), small enough to allocate unasked;
 # a larger span keeps the engine's default window
 FLAT_MEMORY_AUTO_MAX_WORDS = 1 << 24
-
-
-def io_mode_name(header: FjmHeader) -> str:
-    """the name of the io device the program asks for (an `--io` mode: 'standard' unless it was compiled in)"""
-    return IO_MODE_NAMES[header.io_mode]
 
 
 class FlatWindow(NamedTuple):
