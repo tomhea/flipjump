@@ -138,3 +138,31 @@ def test_the_named_keycodes_are_the_readmes() -> None:
     assert modifiers == list(range(0x80, 0x88))
     assert (KEYCODE_RIGHT, KEYCODE_LEFT, KEYCODE_DOWN, KEYCODE_UP) == (0xD7, 0xD8, 0xD9, 0xDA)
     assert KEYCODE_UP == HID_KEYCODE_BASE + 0x52  # HID usage 0x52 is Up Arrow
+
+
+# the key table as 1.6.0 spelled it out, entry by entry: the computed KEYCODES must be exactly it
+_SDL = 1 << 30
+_SPELLED_OUT_KEYCODES = {
+    0x08: 0x08,
+    0x09: 0x09,
+    0x0D: 0x0D,
+    0x1B: 0x1B,
+    **{code: code for code in range(0x20, 0x7F) if not ord('A') <= code <= ord('Z')},
+    0x7F: 0x88 + 0x4C,
+    _SDL | 0xE0: 0x80,
+    _SDL | 0xE1: 0x81,
+    _SDL | 0xE2: 0x82,
+    _SDL | 0xE3: 0x83,
+    _SDL | 0xE4: 0x84,
+    _SDL | 0xE5: 0x85,
+    _SDL | 0xE6: 0x86,
+    _SDL | 0xE7: 0x87,
+    **{_SDL | usage: 0x88 + usage for usage in range(0x39, 0x4C)},
+    **{_SDL | usage: 0x88 + usage for usage in range(0x4D, 0x64)},
+    _SDL | 0x65: 0x88 + 0x65,
+    **{_SDL | usage: 0x88 + usage for usage in range(0x68, 0x74)},
+}
+
+
+def test_the_key_table_is_the_spelled_out_one() -> None:
+    assert KEYCODES == _SPELLED_OUT_KEYCODES and len(KEYCODES) == 137
