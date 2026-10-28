@@ -35,9 +35,8 @@ class IODevice(ABC):
 
     def end_of_run(self) -> None:
         """
-        called by the interpreter once, when a run ends by itself (looping, a null ip, end of input).
-        a device whose protocol can be left unfinished (e.g. the screen, inside a command) raises its error here.
-        not called after Ctrl+C, a closed window or a memory error, or when the run raised. the default does nothing.
+        called once when a run ends by itself (looping, a null ip, end of input) - e.g. the screen raises here
+        if the output stopped inside a command. the default does nothing.
         """
 
     @abstractmethod
@@ -50,9 +49,7 @@ class IODevice(ABC):
 
     def write_byte(self, byte: int) -> None:
         """
-        write 8 output bits at once, lsb first: exactly write_bit of each. the native engine calls this once a
-        byte (only from a byte boundary of the output stream), instead of write_bit once a bit; a device whose
-        output is bytes overrides it to skip the 8 calls.
+        write 8 output bits, lsb first. a device that overrides it is called once a byte by the native engine.
         """
         for i in range(8):
             self.write_bit(bool((byte >> i) & 1))
