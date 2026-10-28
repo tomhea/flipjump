@@ -185,16 +185,7 @@ def debug(
     @param print_time: if true print running times
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
-    @param profile: if true collect the full per-op statistics (uses the slower featured run-loop)
-    @param flat_max_words: the native engine's flat-storage window, in words (None: see run_flags below).
-    only affects native-engine runs - ignored when a pure-python loop runs (e.g. when
-    breakpoints/tracing/profiling force the featured loop)
-    @param flat_required: the flat window must be allocated: if it cannot be, raise
-    FlipJumpFlatMemoryException instead of falling back to the slower paged memory
-    @param flat_memory: size the flat window to the whole program and require it (`fj --flat-memory`)
-    @param run_flags: the run flags (fjm_consts.RUN_FLAG_*) to run with, instead of the ones compiled into the .fjm.
-    With neither flat_max_words nor flat_memory, the window follows run_defaults.flat_window: the env var, then the
-    flat-memory run flag, then the program's span when it is at most 2^24 words, else the engine's default
+    @param profile, flat_max_words, flat_required, flat_memory, run_flags: as in run()
     @return: the run's termination-statistics
 
     :note: This is a wrapper function to the fjm_run.run() function.

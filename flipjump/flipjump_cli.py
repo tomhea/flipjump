@@ -396,11 +396,8 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument(
         '--pool-tables',
         action='store_true',
-        help="move the tables declared relocatable (the expansions of macros whose innermost namespace is "
-        "`__relocatable__`, such as hex.exact_xor's) to blocks right above the program, where they are cheap to arm, "
-        "so every table dispatch runs fewer ops. the program runs the same: a table whose move would change an "
-        "operand stays inline. with it, a relocatable that uses `$`, holds more than labels and `a;b` ops, or has no "
-        "power-of-two `pad` right before its call is an error",
+        help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
+        "they are cheap to arm: fewer ops per table dispatch, the same program",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')
@@ -553,21 +550,10 @@ _DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*
 
 def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> Optional[Path]:
     """
-    write the --define overrides into a temporary .fj file, and put it first among the input files.
-    it lands BEFORE the stl, so that a constant the stl itself uses is overridden before the stl
-    is parsed (a constant is substituted where it is used, at parse time; a non-stl first file also
-    disables the parser's stl-prefix cache, which was parsed without the override). A define's VALUE
-    may therefore use `w` (a parser builtin) and an earlier define, but not an stl constant such as
-    dw -- write 2*w instead.
-
-    The file is ordinary .fj, which is what keeps the whole expression language available to a
-    define. What makes its constants OVERRIDES rather than declarations is that the parser is told
-    which file this is - see FJParser.statement.
-
-    A dotted NAME is wrapped in its namespaces, because a constant's full name is the only way to
-    address it: `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`, so
-    a bare `-D PTRSIZE=12` does NOT reach it.
-
+    write the --define overrides into a temporary .fj file, parsed before the stl so a constant the stl uses is
+    overridden too (a define's value may use `w` and an earlier define, not an stl constant). The parser treats its
+    constants as overrides (see FJParser.statement). A dotted NAME is wrapped in its namespaces:
+    `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`.
     @param args: the parsed arguments
     @param temp_dir_name: the temp directory to write the defines file into
     @param error_func: parser's error function
