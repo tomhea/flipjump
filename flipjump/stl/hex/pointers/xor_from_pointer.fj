@@ -24,10 +24,7 @@ ns hex {
     //  Time Complexity: w(0.5@+4) + (1+2*PTR_WIDE/4)@ + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+2*PTR_WIDE/4)@ + 24(PTR_WIDE/4) + 16
     //   like:  dst[:PTR_WIDE/4] ^= *ptr
-    //   Reads a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
-    //
-    // This is what a wide cell buys: xor_byte_from_ptr pays the whole dereference for 8 bits,
-    // and reading 16 bits as two bytes pays it twice.
+    //   Reads a whole cell (all PTR_WIDE bits) in one dereference.
     // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_cell_from_ptr dst, ptr < hex.pointers.read_byte {
@@ -43,9 +40,7 @@ ns hex {
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       dst[i*h:(i+1)*h] ^= *(ptr+i*2w)      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
         //
-        // The n read dances as one chain: .ret_after_read_byte is set once, to_flip keeps its read offset, to_flip+w
-        //   moves from each dance's landing label to the next one's with one wflip (see hex.tables.chained_jump), and
-        //   the armed fields advance by 2w between the cells instead of being re-armed.
+        // The n read dances as one chain (see hex.tables.chained_jump); the armed fields advance by 2w per cell.
         // dst is a hex[:n*h]; h (1 or 2) is the hexes taken from each cell.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def xor_cells_from_inners_ptrs n, h, dst @ last < .read_byte, .ret_after_read_byte, .to_flip {
@@ -75,9 +70,7 @@ ns hex {
 
         //  Time Complexity: 18         (the two moves of to_flip+w, 5.7 and 2.9 on average, and the dance's 5 + popcount(the byte))
         // Space Complexity: 9          (the two moves' popcounts, 5.7 and 2.9 on average)
-        //   The read dance of read_cell_from_inners_ptrs, chained: to_flip+w moves from prev_return to `read`, and from
-        //   there to this macro's end, where the dance lands. .ret_after_read_byte (= to_flip) and to_flip's read offset
-        //   are the caller's, set once for the whole chain.
+        //   The read dance of read_cell_from_inners_ptrs, chained (the caller sets .ret_after_read_byte once).
         // @Assumes: to_flip+w holds prev_return (0 if it's clear).
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_cell_chained prev_return @ read, cleanup < .to_flip, .to_jump {
@@ -102,8 +95,7 @@ ns hex {
 
         //  Time Complexity: (1+PTR_WIDE/4)@ + PTR_WIDE/2 + 21   (at w=64, where dbit+bits has 5 on-bits)
         // Space Complexity: (1+PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 16
-        //   the same dance against the WIDE table, so it returns PTR_WIDE_BITS bits from one
-        //   dereference. Only valid when PTR_WIDE_BITS is non-zero.
+        //   the same dance against the wide table (PTR_WIDE_BITS > 0).
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_wide_from_inners_ptrs < .ret_after_read_wide {
             .read_cell_from_inners_ptrs .PTR_WIDE_BITS, .ret_after_read_wide
@@ -113,12 +105,7 @@ ns hex {
         // Space Complexity: (1+bits/4)@ + 3bits + 16
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       hex.pointers.read_byte[:bits/4] = *ptr
-        //
-        // `bits` is what makes this one macro serve BOTH decoder tables: the slot is armed by
-        // flipping dbit+bits, and that lands it on its own entry of the table at op 2^bits. So
-        // bits=PTR_CELL_BITS reads through the narrow table and bits=PTR_WIDE_BITS through the
-        // wide one, in the same program, and a narrow read pays nothing for the wide table.
-        // `ret` is that table's return opcode.
+        // bits picks the decoder table (PTR_CELL_BITS or PTR_WIDE_BITS), and ret is that table's return opcode.
         // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def read_cell_from_inners_ptrs bits, ret @ read_ptr_and_flip_back, cleanup \
