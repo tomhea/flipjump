@@ -61,6 +61,15 @@ class StandardIO(IODevice):
             self.current_output_byte = 0
             self.bits_to_write_in_output_byte = 0
 
+    def write_byte(self, byte: int) -> None:
+        if self.bits_to_write_in_output_byte:  # mid-byte: the bit path
+            super().write_byte(byte)
+            return
+        if self.output_verbose:
+            stdout.write(bytes((byte,)).decode(encoding=IO_BYTES_ENCODING))
+            stdout.flush()
+        self._output += bytes((byte,))
+
     def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
         if not allow_incomplete_output and 0 != self.bits_to_write_in_output_byte:
             raise IncompleteOutput(

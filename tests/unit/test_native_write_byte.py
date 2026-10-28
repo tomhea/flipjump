@@ -171,7 +171,7 @@ def test_only_a_device_with_its_own_write_byte_gets_bytes() -> None:
         return type(device).write_byte is not IODevice.write_byte
 
     assert not gathers(BitIO())
-    assert not gathers(FixedIO(b''))  # a byte stream, but its bits are cheap: main's per-bit device
+    assert gathers(FixedIO(b''))
     assert gathers(RecordingIO(b''))
     assert gathers(InMemoryScreen())
 
