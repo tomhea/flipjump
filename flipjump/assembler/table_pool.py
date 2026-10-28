@@ -434,6 +434,18 @@ def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
         return False
 
 
+def _cheapest(bits: int) -> Iterator[int]:
+    """the values below 2**bits, fewest set bits first, ascending within a popcount (generated lazily)"""
+    yield 0
+    for ones in range(1, bits + 1):
+        value = (1 << ones) - 1
+        while value < 1 << bits:
+            yield value
+            lowest = value & -value  # the next larger value with as many set bits (Gosper's hack)
+            ripple = value + lowest
+            value = ripple | (((value ^ ripple) >> 2) // lowest)
+
+
 def _operand(label: str, offset: int) -> str:
     """`label + offset` as the source would say it"""
     return f'{label} + {offset}' if offset > 0 else f'{label} - {-offset}' if offset else label
@@ -545,16 +557,17 @@ class BlockPool:
     ) -> str:
         """what becomes of a table the expansion reached, at its pad (DEFER_*). It is counted in the census first.
         A subclass that overrides it sees every table at its pad, in order, with its site path."""
-        if group is None:
+        width = max(table_ops, ops_alignment)
+        if group is not None:
+            self.counts[group] = self.counts.get(group, 0) + 1
+            hist = self.width_hist.setdefault(group, {})
+            hist[width] = hist.get(width, 0) + 1
+            if group_expr is not None:
+                self.exprs.setdefault(group, group_expr)
+        elif not self._raw():  # (a raw program's tables need no group: see _place_cheapest)
             self.ungrouped += 1
             return DEFER_INLINE
-        width = max(table_ops, ops_alignment)
-        self.counts[group] = self.counts.get(group, 0) + 1
-        hist = self.width_hist.setdefault(group, {})
-        hist[width] = hist.get(width, 0) + 1
-        if group_expr is not None:
-            self.exprs.setdefault(group, group_expr)
-        if width > self.max_slot_ops:
+        if width > self.max_slot_ops and not self._raw():
             return DEFER_TOO_WIDE
         self.deferred += 1
         return DEFER_OUT
@@ -589,6 +602,9 @@ class BlockPool:
             into = width_hist.setdefault(self.alias.get(group, group), {})
             for width, count in hist.items():
                 into[width] = into.get(width, 0) + count
+        if self._raw():
+            self.counts, self.width_hist = counts, width_hist
+            return self._place_cheapest(tables)
         self.lay_out(counts, width_hist)
 
         addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline (too wide, declined in its turn)
@@ -611,6 +627,43 @@ class BlockPool:
         for index, address in enumerate(addresses):
             if address:
                 self.end = max(self.end, address + tables.sizes[index] * self.op_bits)
+        return addresses
+
+    def _raw(self) -> bool:
+        """does the program read words raw (the pointer runtime, and no pin_exclude)? Then no word can be pinned
+        (assembler.unpin), and a heat list aside, the tables are placed by _place_cheapest"""
+        return self.reads_words_raw and self.pin_exclude is None and not self.heat
+
+    def _place_cheapest(self, tables: DeferredTables) -> Sequence[int]:
+        """place_deferred for a raw program: no word is pinned, so each table takes a cheap ADDRESS instead - a slot of
+        its width's power of two at the offsets with the fewest set bits of a region of 256 times their slots, if the
+        pool has room for it (unused slots emit no data), else of their slots"""
+        by_slot: Dict[int, List[int]] = {}
+        for index, segment in enumerate(tables.segments):
+            if segment is not None:
+                by_slot.setdefault(self._slot_bits(max(tables.sizes[index], tables.aligns[index])), []).append(index)
+        for spread_bits in (8, 0):
+            cursor, placed = self.pool_base, []
+            for slot_bits in sorted(by_slot, reverse=True):
+                indices = by_slot[slot_bits]
+                index_bits = (len(indices) - 1).bit_length() + spread_bits
+                base = -(-cursor // (slot_bits << index_bits)) * (slot_bits << index_bits)
+                placed += [(i, base + offset * slot_bits) for i, offset in zip(indices, _cheapest(index_bits))]
+                cursor = base + (slot_bits << index_bits)
+            if cursor <= self._pool_limit():
+                break
+        else:
+            raise FlipJumpPreprocessorException(
+                f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
+                f'tables. Raise span_bits, or assemble without the pool.'
+            )
+        addresses = array('Q', bytes(8 * len(tables)))
+        for index, address in placed:
+            addresses[index] = address
+            self.end = max(self.end, address + tables.sizes[index] * self.op_bits)
+        self.allocated = len(placed)
+        if self.counts:
+            self.unpins['the pointer runtime'] = len(self.counts)  # the words a block would have pinned
         return addresses
 
     def lay_out(self, counts: Dict[str, int], width_hist: Dict[str, Dict[int, int]]) -> None:

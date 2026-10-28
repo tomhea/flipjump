@@ -203,6 +203,8 @@ def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch,
     # the control: the assembler keeps every pin (assembler.unpin does nothing); the proof judges the pins from the
     # plain program, not by the assembler's rules
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
+    if mismatch == 'pointer runtime':  # a raw program's pool places its tables in no block: blocked, they pin words
+        monkeypatch.setattr(BlockPool, '_raw', lambda self: False)
     mismatches = prove_relocation(W, _macros(_gap(name), W), _cli_pool(W)).mismatches
     assert any(mismatch in found for found in mismatches), mismatches
 

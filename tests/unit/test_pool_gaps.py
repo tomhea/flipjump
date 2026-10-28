@@ -440,16 +440,23 @@ def _ops(fjm: Path, stdin: bytes = b'') -> Tuple[bytes, int]:
 
 
 def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: Path) -> None:
-    # the pointer runtime, with no pin_exclude, unpins every word: the tables still move to blocks, armed with their
-    # whole address - the same program, and here fewer ops than without the pool
+    # the pointer runtime, with no pin_exclude, unpins every word: fj --pool-tables places each table at a cheap
+    # address instead (BlockPool._place_cheapest) - no block, no pinned word, and fewer ops than without the pool
+    # (pointer_setters: 15137 plain, 11431 cheapest-first)
     source = [PROGRAMS_DIR / 'hexlib_tests' / 'basics2' / 'pointer_setters.fj']
     assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
     plain = _ops(tmp_path / 'plain.fjm')
     pool = BlockPool.for_flat(64)
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
-    assert pool.reads_words_raw and pool.allocated and list(pool.unpins) == ['the pointer runtime']
-    assert pooled[0] == plain[0] and pooled[1] < plain[1]
+    assert pool.reads_words_raw and pool.allocated and not pool.groups and pool.pinned_words() == {}
+    assert list(pool.unpins) == ['the pointer runtime'] and pooled[0] == plain[0] and pooled[1] < plain[1]
+    # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run more ops
+    blocked_pool = BlockPool.for_flat(64)
+    blocked_pool.pin_exclude = lambda address, labels: True
+    assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
+    blocked = _ops(tmp_path / 'blocked.fjm')
+    assert blocked_pool.groups and blocked[0] == plain[0] and blocked[1] > pooled[1]
 
 
 # the flat spec: fj --pool-tables's pool (BlockPool.for_flat) sits at the first power of two above the program

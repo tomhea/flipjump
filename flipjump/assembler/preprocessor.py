@@ -262,7 +262,7 @@ class PreprocessorData:
         verdict = pool.defer(ops_alignment, table_ops, group, group_expr, labels_prefix)
         if verdict == DEFER_INLINE:
             return False
-        assert group is not None
+        group = '' if group is None else group  # (a raw program's table may have none: BlockPool._place_cheapest)
         site = sys.intern(heat_key(labels_prefix)) if pool.heat else None
         if verdict == DEFER_TOO_WIDE:
             self._deferred.add(group, group_expr, ops_alignment, table_ops, site, None)
