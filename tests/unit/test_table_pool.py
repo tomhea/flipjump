@@ -375,9 +375,22 @@ def test_a_table_too_wide_for_any_slot_declines_and_breaks_the_group() -> None:
     assert list(pool.pinned_words().values()) == [POOL_BASE]  # ...unless the caller opts in
 
 
-def test_a_pool_too_small_for_its_blocks_is_refused() -> None:
+def test_where_the_blocks_do_not_fit_the_last_groups_get_none() -> None:
+    # big (4 slots) and mid (3 tables, 4 slots) are laid out before small; in 8 slots of span only big keeps its
+    # block: mid's 3 tables and small's 1 take 4 slots of the overflow region after it
+    slot = 16 * OP_BITS
+    assert set(_uniform({'big': 4, 'mid': 3, 'small': 1}, span_bits=9 * slot).groups) == {'big', 'mid', 'small'}
+    pool = _uniform({'big': 4, 'mid': 3, 'small': 1}, span_bits=8 * slot)
+    assert set(pool.groups) == {'big'} and pool._used == 4 * slot
+    assert _reserve(pool, group='mid') is None and _reserve(pool, group='big') == POOL_BASE  # mid: the overflow
+    # a hot group always keeps its block (small: 2 slots, with its rank), laid out first: the others give theirs up
+    hot = _uniform({'big': 4, 'mid': 3, 'small': 1}, span_bits=9 * slot, heat={'small': [('h', 0, 16)]})
+    assert set(hot.groups) == {'small'}
+
+
+def test_a_pool_too_small_for_its_tables_is_refused() -> None:
     for heat in (None, {'g': [('h', 0, 16)]}):
-        with pytest.raises(FlipJumpPreprocessorException, match='has no room for the block of g'):
+        with pytest.raises(FlipJumpPreprocessorException, match='has no room for its tables'):
             _uniform({'a': 1, 'g': 2}, span_bits=16 * OP_BITS, heat=heat)
 
 
@@ -656,9 +669,56 @@ def test_a_table_too_wide_for_any_slot_stays_inline_and_the_program_runs_the_sam
         assert (expr in pinned) == (expr is not None and (pin_broken or group not in pool.broken_groups))
 
 
+# a span too small for hex.cmp's blocks: the groups at the end of the layout order go to the overflow region
+NO_ROOM_SPAN = 0x30000
+
+
+def _overflow_starts(pool: BlockPool, fjm_path: Path) -> List[int]:
+    blocks_end = POOL_BASE + pool._used
+    return [s.segment_start * W for s in Reader(fjm_path).memory_segments if s.segment_start * W >= blocks_end]
+
+
+@pytest.mark.parametrize('pin_broken', [False, True], ids=['unpin-broken', 'pin-broken'])
+def test_what_gets_no_block_goes_to_the_overflow_region(tmp_path: Path, pin_broken: bool) -> None:
+    reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
+    pool = BlockPool(W, POOL_BASE, span_bits=NO_ROOM_SPAN, pin_broken=pin_broken)
+    output, _, fjm_path = build_and_run(CMP_PROGRAM, tmp_path, pool)
+    assert output == reference
+    assert pool.overflowed > 0 and pool.allocated > 0 and pool.deferred == pool.allocated + pool.overflowed
+    starts = _overflow_starts(pool, fjm_path)
+    assert len(starts) == pool.overflowed and max(starts) < POOL_BASE + NO_ROOM_SPAN  # after the blocks, in the pool
+    unblocked = [group for group in pool.exprs if pool.alias.get(group, group) not in pool.groups]
+    assert (
+        unblocked and pool.pinned_words() and not {pool.exprs[group] for group in unblocked} & set(pool.pinned_words())
+    )
+
+
+def test_an_overflow_table_moved_off_its_labels_is_caught(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """the control: the first overflow table's ops one slot higher than its labels - not the same program"""
+    reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
+    original = PreprocessorData._place_deferred_tables
+
+    def shifted(self: PreprocessorData, pool: BlockPool) -> None:
+        tables = self._deferred
+        original(self, pool)
+        segment = min(
+            (s for s in tables.segments if s is not None and s.start_address >= pool.pool_base + pool._used),
+            key=lambda s: s.start_address,
+        )
+        segment.start_address -= 16 * OP_BITS  # into the blocks' last slot, which no table of the program fills
+        segment.wflip_start_address -= 16 * OP_BITS
+
+    monkeypatch.setattr(PreprocessorData, '_place_deferred_tables', shifted)
+    try:
+        output = build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, span_bits=NO_ROOM_SPAN))[0]
+    except FlipJumpException:
+        output = None  # (refused: its segment overlaps another)
+    assert output != reference
+
+
 def test_a_program_too_big_for_its_pool_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(FlipJumpException, match='has no room for the'):
-        build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, span_bits=0x30000), name='tiny')
+    with pytest.raises(FlipJumpException, match='has no room for its tables'):
+        build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, span_bits=1 << 14), name='tiny')
 
 
 def test_the_op_stream_does_not_depend_on_what_the_pool_decides(tmp_path: Path) -> None:

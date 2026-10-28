@@ -453,7 +453,7 @@ class BlockPool:
     op stream as it reaches it (`defer`) and has the pool place them all when it is done (`place_deferred`), sizing the
     blocks from that expansion's census (`census()`). Blocks are power-of-two sized and aligned to their own size, one
     sub-block per table width (_bucket_layout); groups whose words resolve to one address share a block (alias). A
-    table too wide for any slot stays inline, and a pool too small for its blocks is refused.
+    table too wide for any slot stays inline; where the blocks do not fit, the last groups go to an overflow region.
 
     PIN PROTECTION (`heat`, for re-placing a profiled program): the hot groups are laid out first, in heat order, are
     always pinned, and in each slot width the k-th listed site gets the k-th cheapest index (_hot_index).
@@ -506,6 +506,7 @@ class BlockPool:
         self.reserved_words = 0  # tables through the runtime's words, never relocated
         self.deferred = 0  # tables taken out of the op stream
         self.allocated = 0  # ...placed in a block
+        self.overflowed = 0  # ...placed in the overflow region
         self.declined = 0  # tables kept inline: too wide for any slot
         self.ungrouped = 0
         self.alias_unresolved = 0  # group words that name a deferred table's label: unknown when the pool is sized
@@ -565,8 +566,10 @@ class BlockPool:
         Merges the groups whose words these labels resolve to one address (a word that names a deferred table's label
         cannot be resolved, and is counted in alias_unresolved), lays the blocks out, then places every table in turn.
         """
-        if self.auto_base:
+        if self.auto_base:  # the first power of two above the program, or right above it where there is none
             self.pool_base = 1 << max(0, (end - 1).bit_length())
+            if self.pool_base >= 1 << self.memory_width:
+                self.pool_base = end
         by_address: Dict[int, str] = {}
         for group in sorted(self.exprs):
             try:
@@ -589,19 +592,33 @@ class BlockPool:
         self.lay_out(counts, width_hist)
 
         addresses = array('Q', bytes(8 * len(tables)))  # 0: it stayed inline (too wide, declined in its turn)
+        overflow = []
         for index, group in enumerate(tables.groups):
             site = tables.sites[index] if self.heat else ''
             address = self.reserve(tables.aligns[index], tables.sizes[index], group, tables.exprs[group], site)
-            if address is not None:
+            if address is None and tables.segments[index] is not None:
+                overflow.append(index)  # its group got no block
+            elif address is not None:
                 addresses[index] = address
+        # the overflow region, right after the blocks: a slot of its width's power of two per table, widest first
+        overflow.sort(key=lambda i: -self._slot_bits(max(tables.sizes[i], tables.aligns[i])))
+        cursor = self.pool_base + self._used
+        for index in overflow:
+            slot_bits = self._slot_bits(max(tables.sizes[index], tables.aligns[index]))
+            addresses[index] = -(-cursor // slot_bits) * slot_bits  # (only the first is not aligned already)
+            cursor = addresses[index] + slot_bits
+        self.overflowed = len(overflow)
+        for index, address in enumerate(addresses):
+            if address:
                 self.end = max(self.end, address + tables.sizes[index] * self.op_bits)
         return addresses
 
     def lay_out(self, counts: Dict[str, int], width_hist: Dict[str, Dict[int, int]]) -> None:
         """Size the blocks of the census (`counts` and `width_hist`, by canonical group) and give each a base: the hot
         groups first, in heat order, then biggest first - each aligned to its own size, so in descending size each
-        lands on an address the ones before already aligned past. A block that does not fit below the pool's end is
-        refused."""
+        lands on an address the ones before already aligned past. Where they do not all fit below the pool's end, the
+        groups at the end of that order get no block: their tables go to the overflow region after the blocks (see
+        place_deferred), and their words are not pinned."""
         self.counts, self.width_hist = counts, width_hist
         if self.heat:
             self._resolve_heat(self.heat)
@@ -609,25 +626,37 @@ class BlockPool:
         order = list(self.hot_sites) + sorted(
             (g for g in counts if g not in self.hot_sites), key=lambda g: (-bits[g], g)
         )
-        cursor = self.pool_base
+        ends = [self.pool_base]  # where the first k blocks end
         for group in order:
-            base = -(-cursor // bits[group]) * bits[group]
-            if base + bits[group] > self._pool_limit():
-                raise FlipJumpPreprocessorException(
-                    f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for the '
-                    f'block of {group}. Raise span_bits, or assemble without the pool.'
-                )
-            self.groups[group] = (base, None)
-            cursor = base + bits[group]
-        self._used = cursor - self.pool_base
+            ends.append(-(-ends[-1] // bits[group]) * bits[group] + bits[group])
+        # the overflow region of the groups from k on: its widest slot, and all its slots
+        widest, room = [1] * (len(order) + 1), [0] * (len(order) + 1)
+        for k in range(len(order) - 1, -1, -1):
+            hist = width_hist[order[k]]
+            widest[k] = max([widest[k + 1]] + [self._slot_bits(width) for width in hist])
+            room[k] = room[k + 1] + sum(self._slot_bits(width) * count for width, count in hist.items())
+        kept = range(len(order), len(self.hot_sites) - 1, -1)  # a hot group always gets a block
+        limit = self._pool_limit()
+        blocked = next((k for k in kept if -(-ends[k] // widest[k]) * widest[k] + room[k] <= limit), None)
+        if blocked is None:
+            raise FlipJumpPreprocessorException(
+                f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
+                f'tables. Raise span_bits, or assemble without the pool.'
+            )
+        for k in range(blocked):
+            self.groups[order[k]] = (ends[k + 1] - bits[order[k]], None)
+        self._used = ends[blocked] - self.pool_base
 
     def reserve(
         self, ops_alignment: int, table_ops: int, group: str, group_expr: Optional[Expr], labels_prefix: str
     ) -> Optional[int]:
-        """the address of a table (of the raw `group`, at the site `labels_prefix`) in its group's block, or None: too
-        wide for any slot. Its group then breaks: its word may not be pinned (see pinned_words)."""
+        """the address of a table (of the raw `group`, at the site `labels_prefix`) in its group's block, or None: its
+        group got no block, or it is too wide for any slot - then its group breaks: its word may not be pinned (see
+        pinned_words)."""
         group = self.alias.get(group, group)
         hot_site = self._hot_site(group, labels_prefix) if group in self.hot_sites else None
+        if group not in self.groups:
+            return None  # no block: the overflow region (place_deferred)
         if max(table_ops, ops_alignment) > self.max_slot_ops:
             self.declined += 1
             self.broken_groups.add(group)
@@ -749,6 +778,10 @@ class BlockPool:
             offset += bits
         result = self._layout_cache[group] = (layout, 1 << max(0, (offset - 1).bit_length()))
         return result
+
+    def _slot_bits(self, width: int) -> int:
+        """the bits of an overflow region's slot for a table `width` ops wide (or aligned)"""
+        return (1 << (max(width, 1) - 1).bit_length()) * self.op_bits
 
     def _block_bits(self, group: str) -> int:
         return self._bucket_layout(group)[1]

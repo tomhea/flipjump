@@ -89,7 +89,7 @@ CASES: Dict[Tuple[str, int], Dict[str, Optional[str]]] = {
     ('c09_pad3', 32): {'cli': 'power-of-two pad'},
     # a pool at half the memory is reached; fj --pool-tables's is based above the program
     ('c10_wflip_area_crosses_pool', 16): {'cli': SAME, 'half': 'its wflip area reach'},
-    ('c11_segment_above_pool', 16): {'cli': 'has no room for', 'half': 'inside the table pool'},
+    ('c11_segment_above_pool', 16): {'cli': SAME, 'half': 'inside the table pool'},
     ('c14_accidental_namespace', 32): {'cli': 'needs a `pad`'},  # a reserved namespace
     ('c13_label_between_pad_and_call', 32): {'cli': SAME},
     ('c15_nested_namespaces', 32): {'cli': SAME},
@@ -529,5 +529,5 @@ def test_a_program_that_leaves_its_tables_no_room_is_refused(tmp_path: Path) -> 
     # prime_sieve's code comes first, its tables leave the stream, and then a reserve fills the upper half of the
     # memory: no room for them above the program
     source = [PROGRAMS_DIR / 'prime_sieve.fj']
-    with pytest.raises(FlipJumpException, match='has no room for the'):
+    with pytest.raises(FlipJumpException, match='has no room for its tables'):
         assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=BlockPool.for_flat(64))
