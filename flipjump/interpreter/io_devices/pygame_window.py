@@ -1,31 +1,14 @@
 """
-the pygame/SDL window host shared by the interactive io-devices, and the two devices that
-use it.
+the pygame-ce window shared by the interactive io-devices, and the devices that use it.
 
-PygameWindow owns the single SDL window and its event pump: it captures live key events
-(into a queue), presents frames, toggles fullscreen on F11, and raises KeyboardInterrupt
-when the window is closed (a clean run-termination). It is a *neutral* resource - the
-interactive screen draws to it and the keyboard reads keys from it, but neither depends
-on the other. PcIO.interactive() wires both onto the one window it creates, so it shows
-the frames and captures the keys.
+PygameWindow owns the one SDL window and its event pump: it queues key events (as io_devices/README.md's
+keycodes), presents frames, toggles fullscreen on F11, and raises KeyboardInterrupt when closed (a clean end of
+the run). PcIO.interactive() puts the screen and the keyboard on one window. SDL delivers keys only to an open
+window: the screen opens it on init_screen, and ensure_open_for_input opens a small one for a keyboard alone.
+The window must be driven from the main thread (a macOS/SDL requirement); tests use SDL's dummy driver.
 
-SDL only delivers key events to a focusable window, so capturing live keys needs one open.
-In `pc` the screen opens+sizes the window on the program's init-screen command; for a window
-with no screen to size it (e.g. standalone keyboard tests), ensure_open_for_input opens a
-small default window.
-
-keycodes delivered to the fj program (one byte) are io_devices/README.md's; KEYCODES below is the one
-table. Keys not in it are not delivered; F11 is captured for the fullscreen toggle and is never delivered.
-
-pygame-ce is an optional dependency: `pip install flipjump[io]`. the window must be
-driven from the main thread (a macOS/SDL requirement) - the interpreter already runs
-there. works on Windows, Linux and macOS; tests run headless with SDL's dummy driver.
-
-PYGAME-CE ONLY, AND CHECKED AT IMPORT. upstream `pygame` and `pygame-ce` install under the SAME
-module name, so having the wrong one is silent: everything here would import and run. The two
-diverge on newer API (`pygame.Window`) and ship different SDL builds, so "it happens to work"
-is not the same as "it is the tested configuration". `_import_pygame` requires `pygame.IS_CE`,
-which only pygame-ce defines, and names the fix if it is missing.
+pygame-ce only (`pip install flipjump[io]`), checked at import: upstream pygame installs under the same module
+name, so the wrong one would be silent - `_import_pygame` requires `pygame.IS_CE`.
 """
 
 import os
@@ -40,47 +23,22 @@ from flipjump.interpreter.io_devices.KeyboardIO import KeyboardIO, KeyEventSourc
 from flipjump.interpreter.io_devices.ScreenIO import InMemoryScreen
 from flipjump.utils.exceptions import IODeviceException
 
-# the >=0x80 keycodes (io_devices/README.md, "Keycodes")
-KEYCODE_LEFT_CTRL = 0x80
-KEYCODE_LEFT_SHIFT = 0x81
-KEYCODE_LEFT_ALT = 0x82
-KEYCODE_LEFT_GUI = 0x83
-KEYCODE_RIGHT_CTRL = 0x84
-KEYCODE_RIGHT_SHIFT = 0x85
-KEYCODE_RIGHT_ALT = 0x86
-KEYCODE_RIGHT_GUI = 0x87
-KEYCODE_RIGHT = 0xD7
-KEYCODE_LEFT = 0xD8
-KEYCODE_DOWN = 0xD9
-KEYCODE_UP = 0xDA
+# some of the keycodes delivered to the program (io_devices/README.md, "Keycodes")
+KEYCODE_LEFT_CTRL, KEYCODE_LEFT_SHIFT, KEYCODE_LEFT_ALT, KEYCODE_LEFT_GUI = 0x80, 0x81, 0x82, 0x83
+KEYCODE_RIGHT_CTRL, KEYCODE_RIGHT_SHIFT, KEYCODE_RIGHT_ALT, KEYCODE_RIGHT_GUI = 0x84, 0x85, 0x86, 0x87
+KEYCODE_RIGHT, KEYCODE_LEFT, KEYCODE_DOWN, KEYCODE_UP = 0xD7, 0xD8, 0xD9, 0xDA
 
-# SDL2 gives a key with a character its ASCII code, and every other key its USB HID usage ID (SDL's
-# "scancode") with bit 30 set. pygame's event.key is that SDL keycode.
+# pygame's event.key is SDL2's keycode: a key's ASCII code if it has one (never 'A'-'Z'), else its USB HID usage ID
+# with bit 30 set. The program gets ASCII as is, the modifiers (HID 0xE0-0xE7) as 0x80-0x87, the rest as 0x88 + HID.
 SDL_SCANCODE_KEY = 1 << 30
-HID_KEYCODE_BASE = 0x88  # a key outside ASCII and the modifiers is sent as 0x88 + its HID usage ID
+HID_KEYCODE_BASE = 0x88
 
-# THE key table: SDL keycode -> the byte delivered to the program (io_devices/README.md, "Keycodes").
+# THE key table: SDL keycode -> the byte delivered to the program
 KEYCODES: Dict[int, int] = {
-    0x08: 0x08,  # Backspace
-    0x09: 0x09,  # Tab
-    0x0D: 0x0D,  # Enter
-    0x1B: 0x1B,  # Esc
-    # the printable keys, unshifted: Space, punctuation, '0'-'9', 'a'-'z' (SDL never gives 'A'-'Z')
-    **{code: code for code in range(0x20, 0x7F) if not ord('A') <= code <= ord('Z')},
-    0x7F: HID_KEYCODE_BASE + 0x4C,  # Delete: SDL gives it ASCII DEL; the table's Delete is HID 0x4C (0xD4)
-    # the modifiers, HID 0xE0-0xE7 -> 0x80-0x87
-    SDL_SCANCODE_KEY | 0xE0: KEYCODE_LEFT_CTRL,
-    SDL_SCANCODE_KEY | 0xE1: KEYCODE_LEFT_SHIFT,
-    SDL_SCANCODE_KEY | 0xE2: KEYCODE_LEFT_ALT,
-    SDL_SCANCODE_KEY | 0xE3: KEYCODE_LEFT_GUI,  # Windows / Command
-    SDL_SCANCODE_KEY | 0xE4: KEYCODE_RIGHT_CTRL,
-    SDL_SCANCODE_KEY | 0xE5: KEYCODE_RIGHT_SHIFT,
-    SDL_SCANCODE_KEY | 0xE6: KEYCODE_RIGHT_ALT,
-    SDL_SCANCODE_KEY | 0xE7: KEYCODE_RIGHT_GUI,
-    # 0x88 + HID: Caps Lock (0x39), F1-F12 (0x3A-0x45), Print Screen, Scroll Lock, Pause (0x46-0x48),
-    # Insert, Home, Page Up (0x49-0x4B), End, Page Down (0x4D, 0x4E; Delete is 0x7F above),
-    # Right, Left, Down, Up (0x4F-0x52), Num Lock (0x53), keypad / * - + Enter (0x54-0x58),
-    # keypad 1-9, 0, . (0x59-0x63), Menu (0x65, "Application"), F13-F24 (0x68-0x73)
+    **{code: code for code in (0x08, 0x09, 0x0D, 0x1B, *range(0x20, ord('A')), *range(ord('Z') + 1, 0x7F))},
+    0x7F: HID_KEYCODE_BASE + 0x4C,  # Delete: SDL gives it ASCII DEL, the program its HID code
+    **{SDL_SCANCODE_KEY | usage: KEYCODE_LEFT_CTRL + usage - 0xE0 for usage in range(0xE0, 0xE8)},
+    # Caps Lock, F1-F12, Print Screen .. Page Up (0x39-0x4B), End .. keypad '.' (0x4D-0x63), Menu, F13-F24
     **{
         SDL_SCANCODE_KEY | usage: HID_KEYCODE_BASE + usage
         for usage in [*range(0x39, 0x4C), *range(0x4D, 0x64), 0x65, *range(0x68, 0x74)]
@@ -163,30 +121,22 @@ class PygameWindow:
             self._resize_window(max(1, round(WINDOW_HEIGHT * width / height)), WINDOW_HEIGHT)
 
     def _os_window(self) -> Any:
-        """the OS window behind the display surface (pygame.window.Window).
-
-        `from_display_module` is pygame-ce's only handle to a window that `display.set_mode`
-        created; it is deprecated in favour of building on `pygame.Window` from the start, which
-        is a larger change than this module wants, so the deprecation warning is silenced here."""
+        """the OS window behind the display surface. `from_display_module` is pygame-ce's only handle to a
+        `display.set_mode` window; its deprecation (in favour of building on `pygame.Window`) is silenced."""
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', DeprecationWarning)
             return self._pygame.window.Window.from_display_module()
 
     def _resize_window(self, width: int, height: int) -> None:
-        """Shrink the OS window without touching the logical surface - SCALED keeps doing the
-        upscale, so the program still draws into its own width x height.
-
-        Best effort: a video driver that refuses (SDL_VIDEODRIVER=dummy, some remote desktops)
-        keeps pygame's default size rather than failing the run; the program's output does not
-        depend on it."""
+        """size the OS window, not the logical surface (SCALED keeps upscaling). best effort: a video driver
+        that refuses (the dummy one, some remote desktops) keeps pygame's default size."""
         try:
             self._os_window().size = (width, height)
         except self._pygame.error:
             pass
 
     def set_title(self, title: str) -> None:
-        """set the caption now and remember it: `ensure_open` re-applies `self._title` whenever it
-        (re)creates the surface, so the title survives a resize"""
+        """set the caption, now and whenever `ensure_open` (re)creates the window"""
         self._title = title
         if self._screen_surface is not None:
             self._pygame.display.set_caption(title)
@@ -246,10 +196,7 @@ class PygameWindow:
         self._pygame.display.flip()
 
     def draw(self, width: int, height: int, rgb_pixels: List[Tuple[int, int, int]]) -> None:
-        """blit a full frame given as row-major RGB tuples, and present it.
-
-        Prefer `draw_indexed` when the caller already has palette indices: this signature forces
-        the palette expansion to happen in python, one tuple per pixel."""
+        """blit a full frame given as row-major RGB tuples, and present it (`draw_indexed` is ~30x faster)."""
         if self._screen_surface is None:
             return
         pg = self._pygame
@@ -257,10 +204,7 @@ class PygameWindow:
         self._blit(pg.image.frombuffer(rgb_bytes, (width, height), 'RGB'))
 
     def draw_indexed(self, width: int, height: int, indices: bytes, palette: List[Tuple[int, int, int]]) -> None:
-        """blit a frame given as raw PALETTE INDICES, and present it.
-
-        SDL expands the palette itself, so no per-pixel work is done in python (about 30x faster
-        than `draw`, which builds an RGB list first)."""
+        """blit a frame given as palette indices, and present it: SDL expands the palette, not python."""
         if self._screen_surface is None:
             return
         pg = self._pygame
@@ -291,11 +235,8 @@ class WindowKeyEventSource(KeyEventSource):
 
 
 class InteractiveScreen(InMemoryScreen):
-    """the InMemoryScreen command stream, presented into a real window.
-
-    takes a PygameWindow to draw to (creating its own when not given a shared one); it does
-    not deal with input - a live keyboard reads keys from the same window through its own
-    WindowKeyEventSource, so the two devices share only the window, not each other."""
+    """the InMemoryScreen command stream, presented into a PygameWindow (its own unless given a shared one).
+    it takes no input: a live keyboard reads the same window through a WindowKeyEventSource."""
 
     def __init__(self, *, frames_dir: Optional[Path] = None, window: Optional[PygameWindow] = None):
         super().__init__(frames_dir=frames_dir)
@@ -330,9 +271,8 @@ class InteractiveScreen(InMemoryScreen):
         self.window.pump_events()
 
     def _wait_for_frame_slot(self) -> None:
-        """the set_max_fps (0x03) cap: hold this present until 1/max_fps s have passed since the previous one.
-        The wait sleeps in short slices and keeps pumping the window, so keys still queue and closing
-        the window still ends the run while a fast frame waits."""
+        """the set_max_fps cap: hold this present until 1/max_fps s after the previous one, pumping the window
+        meanwhile (keys still queue, and closing the window still ends the run)."""
         if self.max_fps:
             due = self._last_flush + 1.0 / self.max_fps
             remaining = due - time.perf_counter()
@@ -344,12 +284,8 @@ class InteractiveScreen(InMemoryScreen):
 
 
 class PcIO(IODevice):
-    """the complete 'pc' io-device: live keyboard input + the screen, together.
-
-    a single device that owns both channels: read_bit comes from the keyboard, write_bit
-    drives the screen. interactive() wires both onto the one real window it owns (the keys
-    and the pixels). For a headless variant (e.g. scripted keys + PNG frames) build it from
-    explicit components, via __init__ or headless()."""
+    """the 'pc' io-device: read_bit from the keyboard, write_bit to the screen. interactive() puts both on one
+    real window; headless() (or __init__) builds it from explicit components, e.g. scripted keys + PNG frames."""
 
     def __init__(self, screen: InMemoryScreen, keyboard: KeyboardIO):
         self._screen = screen

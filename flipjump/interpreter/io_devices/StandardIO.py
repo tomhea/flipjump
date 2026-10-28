@@ -34,22 +34,13 @@ class StandardIO(IODevice):
         # when verbose, write_bit prints each byte to stdout during the run
         return self.output_verbose
 
-    def _next_input_byte(self) -> int:
-        read_bytes = stdin.read(1).encode(encoding=IO_BYTES_ENCODING)
-        if 0 == len(read_bytes):
-            raise IOReadOnEOF("Read an empty input on standard IO (EOF)")
-        return read_bytes[0]
-
-    def _emit_output_byte(self, byte: int) -> None:
-        curr_output: bytes = byte.to_bytes(1, 'little')
-        if self.output_verbose:
-            stdout.write(curr_output.decode(encoding=IO_BYTES_ENCODING))
-            stdout.flush()
-        self._output += curr_output
-
     def read_bit(self) -> bool:
         if 0 == self.bits_to_read_in_input_byte:
-            self.current_input_byte = self._next_input_byte()
+            read_bytes = stdin.read(1).encode(encoding=IO_BYTES_ENCODING)
+            if 0 == len(read_bytes):
+                raise IOReadOnEOF("Read an empty input on standard IO (EOF)")
+
+            self.current_input_byte = read_bytes[0]
             self.bits_to_read_in_input_byte = 8
 
         bit = (self.current_input_byte & 1) == 1
@@ -62,20 +53,30 @@ class StandardIO(IODevice):
         self.bits_to_write_in_output_byte += 1
 
         if 8 == self.bits_to_write_in_output_byte:
-            self._emit_output_byte(self.current_output_byte)
+            curr_output: bytes = self.current_output_byte.to_bytes(1, 'little')
+            if self.output_verbose:
+                stdout.write(curr_output.decode(encoding=IO_BYTES_ENCODING))
+                stdout.flush()
+            self._output += curr_output
             self.current_output_byte = 0
             self.bits_to_write_in_output_byte = 0
 
     def read_byte(self) -> int:
-        if self.bits_to_read_in_input_byte:  # never from the engine (it reads bytes from a byte boundary only)
+        if self.bits_to_read_in_input_byte:  # mid-byte: the bit path
             return super().read_byte()
-        return self._next_input_byte()
+        read_bytes = stdin.read(1).encode(encoding=IO_BYTES_ENCODING)
+        if 0 == len(read_bytes):
+            raise IOReadOnEOF("Read an empty input on standard IO (EOF)")
+        return read_bytes[0]
 
     def write_byte(self, byte: int) -> None:
-        if self.bits_to_write_in_output_byte:  # never from the engine (it writes bytes from a byte boundary only)
+        if self.bits_to_write_in_output_byte:  # mid-byte: the bit path
             super().write_byte(byte)
             return
-        self._emit_output_byte(byte)
+        if self.output_verbose:
+            stdout.write(bytes((byte,)).decode(encoding=IO_BYTES_ENCODING))
+            stdout.flush()
+        self._output += bytes((byte,))
 
     def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
         if not allow_incomplete_output and 0 != self.bits_to_write_in_output_byte:

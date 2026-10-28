@@ -158,6 +158,11 @@ class RecordingIO(FixedIO):
         super().write_byte(byte)
 
 
+def overrides(io_device: IODevice, method: str) -> bool:
+    """does the device's class override IODevice's `method` - what makes fjm_run hand the engine its byte call"""
+    return getattr(type(io_device), method) is not getattr(IODevice, method)
+
+
 def run_recorded(
     fjm_path: Path, io_device: IODevice, *, native: bool, monkeypatch: pytest.MonkeyPatch, **kwargs: Any
 ) -> TerminationStatistics:

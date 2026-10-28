@@ -119,28 +119,23 @@ typedef struct {
     uint64_t page_cache_valid_start[16];
     uint64_t page_cache_valid_end[16];
 
-    SegmentRange* segments; /* sorted once storage is decided; NOT merged - see segments_disjoint */
-    int segments_disjoint;  /* 1: sorted AND non-overlapping (set in mem_decide_storage), so a binary search is valid */
+    SegmentRange* segments; /* sorted once storage is decided, not merged */
+    int segments_disjoint;  /* sorted and non-overlapping: flat_seg_contains may binary-search */
     Py_ssize_t segment_count;
     Py_ssize_t segment_capacity;
     int segments_sorted;
 
     /* flat-storage mode (built at the first run when eligible; NULL = paged mode) */
-    void* flat;           /* cells are `cell_bytes` wide: uint32_t at w<=32, else uint64_t; accessed through
-                             flat_load/flat_store or, in the hot loop, a compile-time-folded branch */
-    int cell_bytes;       /* 4 at w<=32 (half the cache footprint), else 8 */
+    void* flat;           /* cell_bytes-wide cells: uint32_t at w<=32 (half the cache footprint), else uint64_t */
+    int cell_bytes;
     uint64_t flat_count;
     uint64_t flat_max_words; /* constructor override; 0 = use the env var / default */
-    int flat_required;       /* constructor flag: a flat window that cannot be allocated RAISES
-                                MemoryError instead of falling back to paged (`--flat-memory`) */
+    int flat_required;       /* a flat window that cannot be allocated raises MemoryError, not runs paged */
     int storage_decided;
     int flat_covers_all; /* 1: every segment fits in the flat window ('flat'); 0 with a
                             non-NULL flat: low window flat, the rest paged ('hybrid') */
 
-    /* freeze()/reset(): a memcpy snapshot of the pristine flat image, so a caller that runs
-       the same self-modifying program many times restores it in one memcpy instead of
-       re-loading every word */
-    void* pristine;       /* a RAW BYTE snapshot of `flat` (flat_count cells of cell_bytes) */
+    void* pristine; /* freeze()'s copy of `flat`, restored by reset() */
 
     int mem_error;            /* set when garbage_stop fired */
     uint64_t error_bit_address;
@@ -148,20 +143,14 @@ typedef struct {
     unsigned long long last_run_op_count; /* op count of the last run (also on exceptions) */
     double last_run_paused_seconds;       /* IO-paused seconds of the last run (also on exceptions) */
 
-    /* run(write_byte=...): the output bits are gathered here into whole bytes, so the device is called
-       once a byte instead of once a bit (a Python call per bit dominates an output-heavy program).
-       `out_write_byte` is borrowed for the duration of one run (NULL = per-bit). `out_phase` is how many
-       bits of the device's current byte were delivered through write_bit (mod 8), across runs: bits are
-       gathered only from a byte boundary, so a device sees exactly the stream it saw bit by bit. */
+    /* run(write_byte=): output bits gathered into bytes, so the device is called once a byte. Only from a byte
+       boundary of its stream (out_phase: bits sent through write_bit, mod 8, across runs). borrowed for one run */
     PyObject* out_write_byte;
     unsigned out_acc;
     int out_n;
     int out_phase;
-
-    /* run(read_byte=...): the input side. A whole byte is fetched from the device (`in_read_byte`, borrowed for one
-       run) at a byte boundary of its input stream (`in_phase`: bits taken through read_bit, mod 8, across runs) and
-       its bits handed to the program from `in_acc` (`in_n` left, lsb first). Bits still buffered at the end of a run
-       stay here for the next one; reset() drops them (a fresh stream). */
+    /* run(read_byte=): a whole input byte fetched from the device at a byte boundary of its stream (in_phase: bits
+       taken through read_bit, mod 8, across runs), its bits handed out from in_acc (in_n left). borrowed for one run */
     PyObject* in_read_byte;
     unsigned in_acc;
     int in_n;
@@ -365,9 +354,7 @@ static inline int flat_seg_contains(const MemoryObject* m, uint64_t word_address
     return 0;
 }
 
-/* the flat array's cells are `cell_bytes` wide; these are the ONLY way the cold paths touch
-   them. The branch is predictable and these are not on the per-op path -- the hot loop folds the
-   same choice at compile time instead. */
+/* the flat cells, for the cold paths (the hot loop folds the cell width at compile time) */
 static FJ_ALWAYS_INLINE uint64_t flat_load(const MemoryObject* m, uint64_t i)
 {
     return (m->cell_bytes == 4) ? (uint64_t)((const uint32_t*)m->flat)[i]
@@ -535,20 +522,7 @@ static uint64_t mem_flat_words_limit(MemoryObject* m)
    WARNS to stderr and falls back to paged (set FLIPJUMP_NO_FLAT=1 to opt into paged silently);
    but no segments, or no segment in the low window (the first op at address 0), RAISE - those
    are malformed programs, not resource limits. */
-static int mem_decide_storage_once(MemoryObject* m);
-
-/* a failed decision (a malformed program, or a flat window that must but cannot be allocated) leaves the
-   storage UNdecided, so a later decide_storage()/run() reports the same error instead of running paged */
 static int mem_decide_storage(MemoryObject* m)
-{
-    const int result = mem_decide_storage_once(m);
-    if (result < 0) {
-        m->storage_decided = 0;
-    }
-    return result;
-}
-
-static int mem_decide_storage_once(MemoryObject* m)
 {
     uint64_t max_end = 0, low_max_end = 0, limit, i;
     Py_ssize_t seg;
@@ -561,6 +535,7 @@ static int mem_decide_storage_once(MemoryObject* m)
         PyErr_SetString(PyExc_ValueError,
                         "the program has no memory segments - a FlipJump program must define its "
                         "first op at address 0");
+        m->storage_decided = 0; /* a failed decision stays undecided: a later run reports the same error */
         return -1;
     }
     if (!m->garbage_stop) {
@@ -604,50 +579,34 @@ static int mem_decide_storage_once(MemoryObject* m)
         PyErr_SetString(PyExc_ValueError,
                         "the program has no segment in the low address window - the first op at "
                         "address 0 is missing");
+        m->storage_decided = 0;
         return -1;
-    }
-    if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
-        if (m->flat_required) {
-            PyErr_Format(PyExc_MemoryError, "the flat-storage window of %llu words is too large to allocate",
-                         (unsigned long long)low_max_end);
-            return -1;
-        }
-        fprintf(stderr, "flipjump: flat-storage window is too large (byte size overflows); running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-        fflush(stderr);
-        return 0; /* paged fallback */
-    }
-
-    {
-        /* deterministic allocation-failure injection for the error-path test
-           (a real flat-array OOM is not safely reproducible across platforms) */
-        const char* simulate_alloc_fail = getenv("FLIPJUMP_TEST_FLAT_ALLOC_FAIL");
-        if (simulate_alloc_fail && simulate_alloc_fail[0] == '1') {
-            if (m->flat_required) {
-                PyErr_Format(PyExc_MemoryError,
-                             "allocating the flat-storage window of %llu words failed (test injection)",
-                             (unsigned long long)low_max_end);
-                return -1;
-            }
-            fprintf(stderr, "flipjump: flat-storage allocation failed (test injection); running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-            fflush(stderr);
-            return 0; /* paged fallback */
-        }
     }
     m->cell_bytes = (m->w <= 32) ? 4 : 8;
-    m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes);
-    if (!m->flat && m->flat_required) {
-        PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words (%llu bytes) failed",
-                     (unsigned long long)low_max_end,
-                     (unsigned long long)low_max_end * (unsigned long long)m->cell_bytes);
-        return -1;
-    }
-    if (!m->flat) {
-        fprintf(stderr, "flipjump: flat-storage allocation failed; running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-        fflush(stderr);
-        return 0; /* paged fallback - the program still runs, just slower */
+    {
+        /* FLIPJUMP_TEST_FLAT_ALLOC_FAIL=1: a deterministic allocation failure for the error-path tests
+           (a real flat-array OOM is not safely reproducible across platforms) */
+        const char* simulate_alloc_fail = getenv("FLIPJUMP_TEST_FLAT_ALLOC_FAIL");
+        const char* failure = NULL;
+        if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
+            failure = "its byte size overflows";
+        } else if (simulate_alloc_fail && simulate_alloc_fail[0] == '1') {
+            failure = "test injection";
+        } else if (!(m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes))) {
+            failure = "out of memory";
+        }
+        if (failure && m->flat_required) {
+            PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words failed (%s)",
+                         (unsigned long long)low_max_end, failure);
+            m->storage_decided = 0;
+            return -1;
+        }
+        if (failure) {
+            fprintf(stderr, "flipjump: flat-storage allocation failed (%s); running paged (slower). lower --flat-max-words / "
+                    "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n", failure);
+            fflush(stderr);
+            return 0; /* paged fallback - the program still runs, just slower */
+        }
     }
     m->flat_count = low_max_end;
     m->flat_covers_all = (max_end <= low_max_end);
@@ -688,8 +647,7 @@ static int mem_decide_storage_once(MemoryObject* m)
                     hi = low_max_end; /* the part above the window stays page-backed */
                 }
                 if (lo < hi) {
-                    /* the staging pages hold uint64_t words; the flat cells may be narrower, so
-                       this is a CONVERSION, not a byte copy. memcpy only when the widths match. */
+                    /* the staging pages hold uint64_t words: a conversion into narrower cells */
                     const uint64_t* src = m->slots[i].page->words + (lo - page_start);
                     if (m->cell_bytes == 8) {
                         memcpy((uint64_t*)m->flat + lo, src, (size_t)(hi - lo) * sizeof(uint64_t));
@@ -918,12 +876,8 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
-/* bulk-load from the .fjm's raw data: set_words_bytes(start_word_address, data, data_word_offset,
-   count, relative_jumps=False). `data` is a bytes object of little-endian w-bit words (the .fjm data
-   pool, decompressed); words [data_word_offset, data_word_offset + count) of it are stored at
-   start_word_address onward. relative_jumps: the .fjm v2/v3 encoding, where every odd word of a
-   segment (a jump word) is stored minus its own bit address -- added back here.
-   set_words needs one Python int per word; this reads the bytes in place. */
+/* set_words without a Python int per word: the words are read in place from the .fjm's decompressed data
+   (bytes or a bytearray). relative_jumps: the .fjm v2/v3 jump words, stored minus their own bit address */
 static PyObject* Memory_set_words_bytes(MemoryObject* self, PyObject* args)
 {
     unsigned long long start_word, data_word_offset, count;
@@ -942,7 +896,6 @@ static PyObject* Memory_set_words_bytes(MemoryObject* self, PyObject* args)
         PyErr_SetString(PyExc_RuntimeError, "set_words_bytes on a Memory that was never initialized");
         return NULL;
     }
-    /* bytes, or a bytearray (the loader builds the decompressed data in one, to hold a single copy) */
     if (PyByteArray_Check(data)) {
         buffer = PyByteArray_AsString(data);
         buffer_length = PyByteArray_Size(data);
@@ -988,20 +941,6 @@ static PyObject* Memory_set_words_bytes(MemoryObject* self, PyObject* args)
 
 #define CAUSE_PYTHON_ERROR (-2)
 
-/* the dedicated flat-storage run loop - the common fast case (no last-ops ring, flat
-   memory): all paged-mode and ring branches are out of the per-op path.
-
-   shaped for the hot path:
-   - every rare condition (unaligned ip, out-of-span words, garbage sentinels, IO hits,
-     termination) is a forward goto to a cold block after the main body, so the common op
-     runs straight-line with all conditional branches fall-through;
-   - the two IO range tests fold to one unsigned compare each;
-   - the signal check is strip-mined into an outer loop (the inner do-while back-edge is
-     a fused dec-jnz), keeping the per-op signal cost at one decrement;
-   - width/ww arrive as literals from run_flat_loop's dispatch, so the shifts and the
-     IO-range constants are immediates - freeing enough registers that the loop's live
-     values stop spilling to the stack.
-   returns the termination cause, or CAUSE_PYTHON_ERROR with the python error set. */
 /* deliver one output bit through write_bit, keeping the device's bit phase */
 static int out_call_bit(MemoryObject* self, PyObject* write_bit, int bit, double* paused_seconds_out)
 {
@@ -1133,6 +1072,20 @@ static int in_bit(MemoryObject* self, PyObject* read_bit, PyObject* write_bit, P
     }
 }
 
+/* the dedicated flat-storage run loop - the common fast case (no last-ops ring, flat
+   memory): all paged-mode and ring branches are out of the per-op path.
+
+   shaped for the hot path:
+   - every rare condition (unaligned ip, out-of-span words, garbage sentinels, IO hits,
+     termination) is a forward goto to a cold block after the main body, so the common op
+     runs straight-line with all conditional branches fall-through;
+   - the two IO range tests fold to one unsigned compare each;
+   - the signal check is strip-mined into an outer loop (the inner do-while back-edge is
+     a fused dec-jnz), keeping the per-op signal cost at one decrement;
+   - width/ww arrive as literals from run_flat_loop's dispatch, so the shifts and the
+     IO-range constants are immediates - freeing enough registers that the loop's live
+     values stop spilling to the stack.
+   returns the termination cause, or CAUSE_PYTHON_ERROR with the python error set. */
 static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
                                                PyObject* eof_exception_type, uint64_t start_ip, uint64_t* ops_out,
                                                double* paused_seconds_out, const uint64_t width, const uint64_t ww)
@@ -1705,9 +1658,8 @@ static PyObject* build_run_result(MemoryObject* self, int cause, uint64_t ops, u
     return Py_BuildValue("iKNNd", cause, (unsigned long long)ops, error_address, last_ops_list, paused_seconds);
 }
 
-/* decide_storage(): choose the storage mode now instead of at the first run, so a bulk load that
-   follows (set_words_bytes) writes straight into the flat image -- no staging pages, no copy -- and a
-   flat window that cannot be allocated fails BEFORE the load rather than after it. */
+/* decide_storage(): the storage mode now, so a bulk load after it goes straight into the flat image,
+   and a flat window that cannot be allocated fails before the load */
 static PyObject* Memory_decide_storage(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
     if (mem_decide_storage(self) < 0) {
@@ -1716,10 +1668,8 @@ static PyObject* Memory_decide_storage(MemoryObject* self, PyObject* Py_UNUSED(i
     Py_RETURN_NONE;
 }
 
-/* freeze(): decide the storage mode NOW (building the flat image from the loaded pages,
-   exactly as the first run would) and capture it as the pristine snapshot for reset().
-   Use: add_segment -> load -> freeze(), then per run reset() + run(). Pure-flat programs
-   only: a hybrid/paged snapshot would also need the page tables. */
+/* freeze(): decide the storage mode and snapshot the flat image for reset() ('flat' mode only:
+   a hybrid/paged snapshot would also need the page tables) */
 static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
     if (mem_decide_storage(self) < 0) {
@@ -1740,9 +1690,8 @@ static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     Py_RETURN_NONE;
 }
 
-/* reset(): restore the frozen image - one memcpy instead of re-loading every word through
-   set_words - and drop all pages (device/API memory above the segments, dirtied by the
-   previous run's IO device), so a rerun starts from the exact frozen state. */
+/* reset(): restore the frozen image in one memcpy, and drop all pages (device/API memory above the
+   segments), so a rerun starts from the exact frozen state */
 static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
 {
     if (!self->pristine || !self->flat) {
@@ -1764,8 +1713,7 @@ static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     memset(self->page_cache_key_plus1, 0, sizeof(self->page_cache_key_plus1));
     self->mem_error = 0;
     self->error_bit_address = 0;
-    /* a reset run starts fresh streams: both bit phases start at a byte boundary again, and no input bit of the
-       old stream is still buffered */
+    /* a reset run starts fresh streams: both bit phases at a byte boundary, no input bit buffered */
     self->out_phase = 0;
     self->in_phase = 0;
     self->in_n = 0;
@@ -1882,12 +1830,6 @@ static PyObject* Memory_get_paused_seconds(MemoryObject* self, void* closure)
 {
     (void)closure;
     return PyFloat_FromDouble(self->last_run_paused_seconds);
-}
-
-static PyObject* Memory_get_cell_bytes(MemoryObject* self, void* closure)
-{
-    (void)closure;
-    return PyLong_FromLong((long)self->cell_bytes);
 }
 
 static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
@@ -2027,8 +1969,6 @@ static PyGetSetDef Memory_getset[] = {
      "bytes allocated for memory pages (footprint scales with touched memory, not segment sizes)", NULL},
     {"storage_mode", (getter)Memory_get_storage_mode, NULL,
      "'flat'/'hybrid'/'paged' - the storage mode chosen at the first run (None before it)", NULL},
-    {"cell_bytes", (getter)Memory_get_cell_bytes, NULL,
-     "bytes per flat cell: 4 for a w<=32 program (half the cache footprint), else 8", NULL},
     {NULL, NULL, NULL, NULL, NULL},
 };
 
@@ -2076,6 +2016,5 @@ PyMODINIT_FUNC PyInit__fjcore(void)
     PyModule_AddIntConstant(module, "TERM_NULL_IP", TERM_NULL_IP);
     PyModule_AddIntConstant(module, "TERM_MEMORY_ERROR", TERM_MEMORY_ERROR);
     PyModule_AddObject(module, "FLAT_GARBAGE_MAGIC", PyLong_FromUnsignedLongLong(FLAT_GARBAGE_MAGIC));
-    PyModule_AddObject(module, "FLAT_GARBAGE_MAGIC32", PyLong_FromUnsignedLongLong(FLAT_GARBAGE_MAGIC32));
     return module;
 }

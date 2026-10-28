@@ -1,35 +1,9 @@
 """
-the InMemoryScreen output-device - headless-first.
+the InMemoryScreen output-device - headless-first. it implements io_devices/README.md ("Screen"): the wire
+format, its errors and the frame hash.
 
-The wire format is io_devices/README.md ("Screen"), and that file is the authority: this module
-implements it.
-
-Every error raises IODeviceException with a message of the form
-    ScreenIO: <command> (0xNN) at output byte <offset>, frame <n>[, column <x>, cursor <c> | pixel (<x>, <y>)]: <reason>
-The interpreter calls `end_of_run` when a run ends by itself; it raises if the output stopped inside a command.
-The device's own internals are all named `_scr_...` (the subclass hooks `_init_screen`, `_set_window_title`,
+the device's own internals are all named `_scr_...` (the subclass hooks `_init_screen`, `_set_window_title`,
 `_set_window_icon`, `_present` and `_extension_command` aside), so a subclass's private names cannot collide with them.
-
-The headless backend (this class) keeps, per `present`: the frame count, a (time ns, sha256) hash
-(`frame_hashes`), the presented picture as RGB (`last_frame_rgb`, expanded lazily) and a PNG per
-frame when `frames_dir` is given. It never waits (`max_fps` is recorded; only the interactive
-window in pygame_window.py waits).
-
-The frame hash:
-- indexed formats: sha256(the picture's values, row-major, one byte each for formats 1-8 and two
-  bytes little-endian each for formats 9-16  +  the RGB bytes of all 2^B entries of the palette
-  selected at present);
-- format 24: sha256(the picture's row-major R, G, B bytes).
-
-Subclass hook (not part of the wire API): `_extension_command(opcode)` is consulted for an opcode
-byte that is not an API opcode (and not the reserved 0x00). The base returns None, which makes it
-the normal unknown-opcode error. A subclass may instead return
-- True: a recognised extension command with no payload, already complete - parsing resumes at the
-  very next byte;
-- a callable: the device hands it every following output byte, one whole byte at a time, until it
-  returns True, and resumes parsing commands at the next byte.
-The byte offsets and the frame count keep counting through these bytes. A test harness uses this to
-multiplex its own messages into the stream.
 """
 
 import hashlib
@@ -111,42 +85,16 @@ def scale_level(level: int, bits: int) -> int:
     return (level * 510 + top) // (2 * top)
 
 
-EGA16: Tuple[RGB, ...] = (
-    (0, 0, 0),
-    (0, 0, 170),
-    (0, 170, 0),
-    (0, 170, 170),
-    (170, 0, 0),
-    (170, 0, 170),
-    (170, 85, 0),
-    (170, 170, 170),
-    (85, 85, 85),
-    (85, 85, 255),
-    (85, 255, 85),
-    (85, 255, 255),
-    (255, 85, 85),
-    (255, 85, 255),
-    (255, 255, 85),
-    (255, 255, 255),
-)
+def _hex_colours(colours: str) -> Tuple[RGB, ...]:
+    """'rrggbb rrggbb ...' as RGB tuples."""
+    return tuple((int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)) for c in colours.split())
 
-_XTERM16: Tuple[RGB, ...] = (
-    (0, 0, 0),
-    (128, 0, 0),
-    (0, 128, 0),
-    (128, 128, 0),
-    (0, 0, 128),
-    (128, 0, 128),
-    (0, 128, 128),
-    (192, 192, 192),
-    (128, 128, 128),
-    (255, 0, 0),
-    (0, 255, 0),
-    (255, 255, 0),
-    (0, 0, 255),
-    (255, 0, 255),
-    (0, 255, 255),
-    (255, 255, 255),
+
+EGA16 = _hex_colours(
+    '000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff'
+)
+_XTERM16 = _hex_colours(
+    '000000 800000 008000 808000 000080 800080 008080 c0c0c0 808080 ff0000 00ff00 ffff00 0000ff ff00ff 00ffff ffffff'
 )
 _XTERM_CUBE_LEVELS = (0, 95, 135, 175, 215, 255)
 XTERM256: Tuple[RGB, ...] = (
@@ -239,7 +187,7 @@ Parser = Generator[None, int, None]
 
 
 class InMemoryScreen(IODevice):
-    """see the module docstring for the command stream."""
+    """the screen: the command stream of io_devices/README.md, presented as frames in memory."""
 
     def __init__(self, *, frames_dir: Optional[Path] = None):
         self.frames_dir = frames_dir
@@ -308,24 +256,8 @@ class InMemoryScreen(IODevice):
         raise IOReadOnEOF('the screen device has no input - use a device that also reads input (e.g. --io pc)')
 
     def end_of_run(self) -> None:
-        """the run is over: the program's output must not have ended inside a command (the README's "output ends
-        inside a command" error). An unfinished _extension_command payload is the subclass's business: silent."""
-        self._scr_check_output_complete()
-
-    def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
-        """the screen has no byte output. Unless `allow_incomplete_output`, the program's output must not
-        have ended inside a command (as end_of_run checks)."""
-        if not allow_incomplete_output:
-            self._scr_check_output_complete()
-        return b''
-
-    # ---------------------------------------------------------------- command decoding
-
-    def _extension_command(self, opcode: int) -> Optional[Union[Callable[[int], bool], Literal[True]]]:
-        """a subclass hook, not part of the wire API: see the module docstring. None = an unknown opcode."""
-        return None
-
-    def _scr_check_output_complete(self) -> None:
+        """the program's output must not have ended inside a command (an unfinished _extension_command payload
+        is the subclass's business)."""
         if self._scr_failure is not None:
             raise self._scr_failure
         if self._scr_in_extension:
@@ -341,6 +273,23 @@ class InMemoryScreen(IODevice):
                 f'ScreenIO: an opcode at output byte {self._scr_bytes_in:,}, frame {self.frame_count:,}: '
                 f"the program's output ended inside an opcode byte: {self._scr_bits_count} of its 8 bits read"
             )
+
+    def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
+        """the screen has no byte output. unless `allow_incomplete_output`, checks what end_of_run checks."""
+        if not allow_incomplete_output:
+            self.end_of_run()
+        return b''
+
+    # ---------------------------------------------------------------- command decoding
+
+    def _extension_command(self, opcode: int) -> Optional[Union[Callable[[int], bool], Literal[True]]]:
+        """
+        a subclass hook (not the wire API) for an opcode byte that is not a command (nor the reserved 0x00).
+        None: the unknown-opcode error. True: a complete command with no payload. a callable: it is handed every
+        following output byte until it returns True, then commands resume at the next byte. the byte offsets
+        and the frame count keep counting through these bytes.
+        """
+        return None
 
     def _scr_bits(self, count: int) -> Generator[None, int, int]:
         """read the next `count` bits of the stream as a number (lsb first)."""

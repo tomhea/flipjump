@@ -150,16 +150,12 @@ fj --run hello_world.fjm
 - The second line will run your code.
 
 `--pool-tables` makes the assembled program run fewer ops: it moves the tables the stl declares relocatable (those
-of `hex.exact_xor` and its kin, and of the bit shifts) to addresses that are cheap to arm. The program runs the same:
-where moving a table would change an operand that names a label (an offset from another label into or across the
-table), the table stays where it is, or - if the operand comes too late for that - the program is refused with the
-reason. The tables move right above the program - to the first power of two above its end, or, where the pool would
-not fit below the flat window there, to its end rounded up to the pool's largest block - and the pool ends below that
-window: `--flat-max-words`, else the automatic-flat threshold (2^24 words), so a program that runs flat without the
-pool runs flat with it. A table with no room below the window when it leaves the code stays inline; tables the code
-after them leaves no room run past the window (the program runs the same, partly outside the flat array), and a
-program that leaves them no room in the memory at all is assembled without the pool. With it, `__relocatable__` is a
-reserved namespace: a macro whose innermost namespace has that name is a table the pool may move.
+of `hex.exact_xor` and its kin, and of the bit shifts) to addresses that are cheap to arm, right above the program and
+below the flat window (`--flat-max-words`, else 2^24 words) - so a program that runs flat without the pool runs flat
+with it. The program runs the same: a table that an operand reaches through a label offset stays where it is (or, if
+that operand comes too late, the program is refused with the reason), and a table with no room left stays inline,
+runs past the window, or the program is assembled without the pool. With it, `__relocatable__` is a reserved
+namespace: a macro whose innermost namespace has that name is a table the pool may move.
 
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
@@ -188,12 +184,10 @@ fj --run program.fjm --io pc
 - **`--io standard`** - input/output over the terminal.
 - **`--io pc`** - an interactive window: live keyboard input **and** a scaled screen,
   in one window the device owns (F11 toggles fullscreen, closing it stops the run). Needs
-  pygame-ce (`pip install flipjump[io]`); works on Windows, Linux and macOS. ⚠ pygame-ce, NOT
-  upstream pygame: they share a module name, so the wrong one is silent -- the window code
-  requires `pygame.IS_CE` and refuses otherwise.
+  pygame-ce (`pip install flipjump[io]`), not upstream pygame (the window refuses it); works on
+  Windows, Linux and macOS.
 
-A program can carry its own defaults, compiled into the `.fjm` header, so `fj --run program.fjm` is
-all it takes to run it:
+A program can carry its own defaults in the `.fjm` header, so `fj --run program.fjm` is all it takes:
 
 ```bash
 fj --asm game.fj -o game.fjm --io-mode 1 --run-flags 1   # io mode 1 = pc; run flag 1 = flat memory
@@ -202,14 +196,12 @@ fj --run game.fjm                                        # runs with the pc wind
 
 - **`--io-mode NUMBER`** (assembling): the default io device - `0` standard (the default), `1` pc.
   `--io MODE` still overrides it at run time.
-- **`--run-flags NUMBER`** (32 bits, all off by default): bit 0 (the value `1`) = **flat memory**, as
-  if `--flat-memory` were given - the whole program in the native engine's flat array, sized to its
-  highest segment (fastest; costs memory for the whole span). When assembling, the flags are
-  compiled in; when running, `--run-flags` overrides the compiled ones. If the program asks for flat
-  memory and the allocation fails, the run stops and says so - `--run-flags 0` runs it in the
-  default (slower) memory.
+- **`--run-flags NUMBER`** (32 bits, all off by default): bit 0 (`1`) = **flat memory**, as if
+  `--flat-memory` were given - the whole program in the native engine's flat array (fastest; costs
+  memory for its whole span). Compiled in when assembling; `--run-flags` overrides them when running.
+  If the flat allocation fails, the run stops and says so (`--run-flags 0` runs it slower).
 
-Any other value of either is a bad-flags error, both when assembling and when reading a `.fjm`.
+Any other value of either is a bad-flags error, when assembling and when reading a `.fjm`.
 From python, `flipjump.assemble(..., io_mode=, run_flags=)` compiles them in and `flipjump.run` /
 `flipjump.debug` follow them the same way (`run_flags=` / `flat_memory=` / an `io_device` override them).
 

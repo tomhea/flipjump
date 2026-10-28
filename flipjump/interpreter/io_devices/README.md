@@ -1,8 +1,7 @@
 # FlipJump I/O devices
 
-A FlipJump program has exactly two I/O channels: an **input bit stream** and an **output bit stream**.
-Every device here is a protocol on top of them. The program writes commands to its output and reads
-events from its input; the device does the rest.
+A FlipJump program has two I/O channels, an **input bit stream** and an **output bit stream**; every device
+here is a protocol on top of them. The program writes commands to its output and reads events from its input.
 
 | Device | File | Channels | Use |
 |---|---|---|---|
@@ -33,16 +32,15 @@ The keycode byte **must** be read after an event, or every later poll is out of 
 
 ### Keycodes
 
-The codes are the ones Arduino's `Keyboard.h` uses: **ASCII below `0x80`**, the **modifiers at `0x80`–`0x87`**,
-and **every other key at `0x88` + its USB HID usage ID**.
+The codes are Arduino `Keyboard.h`'s: **ASCII below `0x80`**, the **modifiers at `0x80`–`0x87`**, and **every
+other key at `0x88` + its USB HID usage ID**.
 
-- A key is reported as the key, not as what it types: letters are lowercase (`'a'` = 97), the digit row is
+- A key is reported as the key, not as what it types: letters are lowercase (`'a'` = 97) and the digit row is
   `'0'`–`'9'`, whatever modifiers are held. Shift is its own event.
-- A key that has an ASCII code is always sent as that code: Backspace `8`, Tab `9`, Enter `13`, Esc `27`,
-  Space `32`. So `0x88`–`0xC0` (the HID numbers of those keys and of the printable keys) are never sent.
-- Delete is `0xD4` (its HID code); ASCII 127 is never sent.
-- The printable codes follow the current keyboard layout's unshifted key: on a French layout the key that types
-  `&` sends `'&'`. A key whose unshifted character is not ASCII is not delivered.
+- A key with an ASCII code is always sent as it (Backspace `8`, Tab `9`, Enter `13`, Esc `27`, Space `32`), so
+  `0x88`–`0xC0` are never sent. Delete is `0xD4` (its HID code); ASCII 127 is never sent.
+- The printable codes follow the keyboard layout's unshifted key (on a French layout the key that types `&`
+  sends `'&'`). A key whose unshifted character is not ASCII is not delivered.
 
 | Code | Key |
 |---|---|
@@ -63,8 +61,8 @@ and **every other key at `0x88` + its USB HID usage ID**.
 | `0xF0`–`0xFB` | F13–F24 |
 
 A program that wants "either Ctrl" tests both `0x80` and `0x84` (the same for Shift, Alt and GUI).
-Keys not in the table are not delivered. In the PC window F11 toggles fullscreen and is never delivered.
-Scripted input (tests, replays): a text file of `tic, down/up, keycode` lines (`ScriptedKeyEventSource`).
+Keys not in the table are not delivered; in the PC window F11 toggles fullscreen and is never delivered.
+Scripted input (tests, replays) is a text file of `tic, down/up, keycode` lines (`ScriptedKeyEventSource`).
 
 ---
 
@@ -73,64 +71,56 @@ Scripted input (tests, replays): a text file of `tic, down/up, keycode` lines (`
 ### How a command is written
 
 1. A command starts on a **byte boundary** with its **opcode byte**.
-2. Its fields follow, **packed back to back at exactly their width in bits**, least-significant bit first
-   (the order FlipJump already outputs bits in). A 4-bit pixel costs 4 bits; 8 pixels of 3 bits take 3 bytes.
+2. Its fields follow **packed back to back at exactly their width in bits**, least-significant bit first
+   (the order FlipJump outputs bits in): 8 pixels of 3 bits take 3 bytes.
 3. The command ends with **zero bits up to the next byte boundary**.
 4. Multi-byte numbers (`w`, `h`, ...) are little-endian.
-5. Nothing reaches the screen until **`present`** (`0x1F`) — except that `init_screen` shows a black screen
-   at once (see [The screen's life cycle](#the-screens-life-cycle)).
+5. Nothing reaches the screen until **`present`** (`0x1F`), except the black screen `init_screen` shows.
+
+The screen **never reads program memory**: every command carries its data in the output stream.
 
 ### Opcodes
 
-| Opcode | Command | Fields | Group |
-|---|---|---|---|
-| `0x00` | — | reserved: an error (catches a stray zero byte) | |
-| `0x01` | `init_screen` | `w:16` `h:16` `format:8` | setup |
-| `0x02` | `define_palette` | `slot:8` `first:B` `last:B` then `(last−first+1) × (R:8 G:8 B:8)` | setup |
-| `0x03` | `set_max_fps` | `fps:8` (0 = no cap) | setup |
-| `0x04` | `set_window_title` | UTF-8 bytes, then `0x00` | setup |
-| `0x05` | `set_window_icon` | `w:8` `h:8` then `w×h` colours of `B` bits | setup |
-| `0x06` | `select_palette` | `slot:8` | setup |
-| `0x07` | `builtin_palette` | `slot:8` `id:8` | setup |
-| `0x10` | `draw_raw` | `w×h` colours of `B` bits, row-major | draw |
-| `0x11` | `draw_collines` | columns (below), ended by the top column value | draw |
-| `0x1F` | `present` | — | show |
+| Opcode | Command | Fields |
+|---|---|---|
+| `0x00` | — | reserved: an error (catches a stray zero byte) |
+| `0x01` | `init_screen` | `w:16` `h:16` `format:8` |
+| `0x02` | `define_palette` | `slot:8` `first:B` `last:B` then `(last−first+1) × (R:8 G:8 B:8)` |
+| `0x03` | `set_max_fps` | `fps:8` (0 = no cap) |
+| `0x04` | `set_window_title` | UTF-8 bytes, then `0x00` |
+| `0x05` | `set_window_icon` | `w:8` `h:8` then `w×h` colours of `B` bits |
+| `0x06` | `select_palette` | `slot:8` |
+| `0x07` | `builtin_palette` | `slot:8` `id:8` |
+| `0x10` | `draw_raw` | `w×h` colours of `B` bits, row-major |
+| `0x11` | `draw_collines` | columns (below), ended by the top column value |
+| `0x1F` | `present` | — |
 
 `B` = the format's bits per colour. `init_screen` must come first; `0x02`, `0x06`, `0x07` exist only in indexed
 formats.
 
-The screen **never reads program memory**: every command carries its data in the output stream, so the device
-needs no memory hook.
-
 ### Formats (`init_screen`'s `format` = bits per colour)
 
-| `format` | Model | Colour | Default palette in slot 0 |
-|---|---|---|---|
-| `1` | indexed | 1 bit | black, white |
-| `2` | indexed | 2 bits | 4 greys |
-| `4` | indexed | 4 bits | the 16 EGA/VGA colours |
-| `8` | indexed | 8 bits | xterm-256: the 16 colours, a 6×6×6 RGB cube, 24 greys |
-| `3`, `5`–`7`, `9`–`16` | indexed | that many bits | the RGB cube of that many bits (below) |
-| `0`, `17`–`23`, `25`–`255` | — | refused | — |
-| `24` | direct RGB | 24 bits: `R:8 G:8 B:8` | none (no palettes) |
+| `format` | Model | Default palette |
+|---|---|---|
+| `1` | indexed | black, white |
+| `2` | indexed | 4 greys |
+| `4` | indexed | the 16 EGA/VGA colours |
+| `8` | indexed | xterm-256: the 16 colours, a 6×6×6 RGB cube, 24 greys |
+| `3`, `5`–`7`, `9`–`16` | indexed | the RGB cube of that many bits |
+| `24` | direct RGB, `R:8 G:8 B:8` (`R` the first, lowest byte) | none (no palettes) |
 
-**The RGB cube of `b` bits**: green gets `⌈b/3⌉` bits, red `⌈(b − green)/2⌉`, blue the rest —
-3 → 1:1:1 (8 colours), 6 → 2:2:2, 12 → 4:4:4, 15 → 5:5:5, 16 → 5:6:5 ("high colour").
-The value is red, green, blue from the high bits down: at 16 it is RGB565 (`0xF800` red, `0x07E0` green,
-`0x001F` blue). Each channel is scaled to 0-255 (`round(level × 255 / (2^bits − 1))`).
-
-In format 24, `R` is the first (lowest) byte of a colour: `R:8 G:8 B:8` in stream order.
-
-The picture starts as colour 0 everywhere.
+Any other `format` is refused. **The RGB cube of `b` bits**: green gets `⌈b/3⌉` bits, red `⌈(b − green)/2⌉`,
+blue the rest (3 → 1:1:1, 12 → 4:4:4, 16 → 5:6:5); the value is red, green, blue from the high bits down (at 16,
+RGB565), and each channel is scaled to 0-255 by `round(level × 255 / (2^bits − 1))`.
 
 ### Palettes (indexed formats)
 
-- The picture holds **colour indices**; the palette **selected when `present` runs** gives them their RGB.
-  So switching palette (a flash, a fade) costs 2 bytes, not a redraw.
-- 256 slots. Slot 0 holds the format's default; the others start as copies of it.
-- `define_palette` sets entries `first`…`last` (inclusive) of one slot. Entries are always 8-bit R, G, B.
-  A large palette can be sent in several ranges.
-- `builtin_palette` copies a built-in into a slot:
+- The picture holds **colour indices**; the palette **selected when `present` runs** gives them their RGB, so a
+  flash or a fade costs 2 bytes, not a redraw.
+- 256 slots, each starting as the format's default. `define_palette` sets entries `first`…`last` (inclusive) of
+  one slot, always as 8-bit R, G, B; a large palette can be sent in several ranges.
+- `builtin_palette` copies a built-in into a slot. A built-in has exactly `2^B` entries: a longer one is cut, a
+  shorter one padded with black.
 
 | `id` | Built-in |
 |---|---|
@@ -140,39 +130,31 @@ The picture starts as colour 0 everywhere.
 | `3` | xterm-256 |
 | `4` | the RGB cube of `B` bits |
 
-A built-in has exactly `2^B` entries: a longer one is cut, a shorter one padded with black (black / white is
-black, white, then black).
-
-The icon's colours go through the palette selected when `set_window_icon` runs (format 24: their RGB). The icon
+The icon's colours go through the palette selected when `set_window_icon` runs (format 24: their RGB); the icon
 has no transparency.
 
 ### The screen's life cycle
 
 | Moment | What happens |
 |---|---|
-| `init_screen` | The window shows a **black** screen of `w×h` at once. The picture is colour 0 everywhere, every palette slot holds the format's default, and slot 0 is selected. |
-| before the first `present` | The window stays black. The headless backend records no frame. |
-| `present` | Shows the picture through the selected palette, and counts as a frame. |
-| `present` with nothing drawn since the last one | Shows the same picture again. It still counts as a frame: the `set_max_fps` wait applies, and the headless backend records it. |
-| another `init_screen` | Starts over exactly like the first: the window shows a black screen at the new `w×h` at once; the format, the field widths, the palettes and the selected slot (0) all reset, and the picture is colour 0 again. The window's title, icon and max fps stay; the frame count keeps counting. |
+| `init_screen` | The window shows a **black** `w×h` screen at once. The picture is colour 0 everywhere, every palette slot holds the format's default, and slot 0 is selected. |
+| before the first `present` | The window stays black; the headless backend records no frame. |
+| `present` | Shows the picture through the selected palette, and counts as a frame — also with nothing drawn since the last one (the `set_max_fps` wait applies, and the headless backend records it). |
+| another `init_screen` | Starts over like the first, at the new `w×h`: the format, field widths, palettes, selected slot and picture all reset. The title, icon and max fps stay; the frame count keeps counting. |
 
 ### `draw_collines` — the picture as column runs
 
-A picture as vertical runs: each column is a list of **runs** from the top down, and the program has already
-resolved what is in front, so the device only fills.
-
-**Field widths** (fixed by `init_screen`, always a multiple of 4 bits):
+Each column is a list of **runs** from the top down; the program has already resolved what is in front, so the
+device only fills. **Field widths** (fixed by `init_screen`, a multiple of 4 bits):
 
 | Field | Width | Top values are tokens | Limit |
 |---|---|---|---|
 | row (`y2`, `y`) | `R` = the smallest of 4, 8, 12, 16 with `h < 2^R − 4` | the top **4** | `h ≤ 11 / 251 / 4,091 / 65,531` |
 | column (`x`) | `C` = the smallest of 4, 8, 12, 16 with `w < 2^C − 1` | the top **2** | `w ≤ 14 / 254 / 4,094 / 65,534` |
 
-**Grammar:**
-
 ```
 draw_collines := 0x11  ( column )*  END_CMD
-column        := x  item*  END                  x = the column to draw (any order; repeats allowed);
+column        := x  item*  END                  x = the column to draw (any order; skips, repeats allowed);
                                                 END closes it (rows below the cursor are left as they are)
 item          := y2 colour                      fill rows [cursor, y2) with colour; cursor = y2
                | KEEP y                         rows [cursor, y) keep what the screen shows there; cursor = y
@@ -193,23 +175,17 @@ item          := y2 colour                      fill rows [cursor, y2) with colo
 | `2^C − 2` | reserved | `0xFE` |
 | `0 … w−1` | a column | `0x00`–`0xFD` |
 
-**Rules:**
-
-- Each column's cursor starts at row 0. A fill, KEEP or COPY moves it to `y2` / `y` with `cursor ≤ y2 ≤ h`:
-  it may stay where it is (an item of zero rows paints nothing); only a row behind the cursor is an error.
-- END always closes a column, also when the cursor has reached `h`: after that only END may follow (or another
-  zero-row item).
-- KEEP and COPY act on rows `[cursor, y)` only — from where the column is now, not from row 0.
-- **KEEP** keeps the pixels the last presented frame had in those rows — unless this frame already drew them,
-  in which case it keeps the new ones.
-- **COPY** copies the same rows of the column to the left (`x − 1`), as that column is at that moment: its new
-  pixels if this frame already drew it, otherwise the last frame's. COPY in column 0 is an error, whatever its `y`.
-- Columns can come in any order, be skipped, or be drawn again (e.g. an overlay: `KEEP` down to it, then fill).
+- Each column's cursor starts at row 0. A fill, KEEP or COPY moves it to `y2` / `y` with `cursor ≤ y2 ≤ h`; an
+  item of zero rows paints nothing, and only a row behind the cursor is an error.
+- END always closes a column, also once the cursor reached `h` (after which only END or zero-row items may follow).
+- **KEEP** keeps rows `[cursor, y)` as they are: the last presented frame's pixels, or this frame's if it already
+  drew them. **COPY** copies the same rows of column `x − 1` as it is at that moment (likewise new or last frame's
+  pixels); COPY in column 0 is an error, whatever its `y`.
 
 ### Example
 
-A 4×3 screen, 8-bit colour: column 0 filled with colour 5, column 1 copied from it, then shown.
-Here `R = 4` and `C = 4` (both fields are nibbles); the first field of each byte is in its low nibble.
+A 4×3 screen, format 8 (`R = C = 4`; the first field of each byte is its low nibble): column 0 filled
+with colour 5, column 1 copied from it, then shown.
 
 ```
 01  04 00  03 00  08      init_screen  w=4 h=3 format=8
@@ -223,18 +199,18 @@ FF                          END | END_CMD                     (column 1 closed; 
 
 ### Errors
 
-Every error raises `IODeviceException`, and its message says exactly **where** and **why, with the numbers**:
+Every error raises `IODeviceException`, saying **where** and **why, with the numbers**:
 
 ```
 ScreenIO: draw_collines (0x11) at output byte 1,204, frame 37, column 17, cursor 40: y2 = 90 is past the screen (rows end at h = 84)
 ```
 
-- **Where**: the command and its opcode (`unknown (0xNN)` and `reserved (0x00)` for a byte that is not a
-  command); the byte offset of its opcode in the program's output (from 0); the frame (the number of `present`s so
-  far); and inside a draw, the column `x` and the cursor (or the pixel `(x, y)` in `draw_raw` and the icon).
-- **Why**: the field, the value it got, and the values it allows.
+- **Where**: the command and its opcode (`unknown (0xNN)` / `reserved (0x00)` for a byte that is not one); the byte
+  offset of its opcode in the program's output (from 0); the frame (the `present`s so far); inside a draw, the
+  column `x` and the cursor (the pixel `(x, y)` in `draw_raw` and the icon).
+- **Why**: the field, the value it got, and the values it allows:
 
-| Error | The message's reason, for example (after the "where") |
+| Error | The reason, for example |
 |---|---|
 | unknown opcode | `opcode 0x23 is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)` |
 | reserved opcode | `opcode 0x00 is reserved (a stray zero byte?)` |
@@ -256,12 +232,16 @@ ScreenIO: draw_collines (0x11) at output byte 1,204, frame 37, column 17, cursor
 | output ends inside a command | `the program's output ended inside draw_collines (0x11): 37 of its bits read` |
 | output ends inside an opcode byte | `the program's output ended inside an opcode byte: 3 of its 8 bits read` (where: `an opcode at output byte N, frame F`) |
 
-"N of its bits read" counts from the first bit of the command's opcode. The run checks it when it ends by itself
-(looping, a null jump, end of input): a program whose output stops inside a command is an error.
+"N of its bits read" counts from the command's opcode. It is checked when the run ends by itself (looping, a null
+jump, end of input).
 
 ### Backends
 
-| Backend | Output per `present` |
-|---|---|
-| headless (default in tests) | the RGB frame in memory, a PNG per frame, a sha256 per frame (for golden tests) |
-| PC window | a scaled window; `set_max_fps` makes `present` wait (the headless backend never waits) |
+The headless backend (`InMemoryScreen`, the default in tests) keeps, per `present`, the RGB frame
+(`last_frame_rgb`), a PNG when given a `frames_dir`, and a `(time ns, sha256)` in `frame_hashes` (for golden tests);
+it never waits. The sha256 is of the picture's values, row-major (one byte each in formats 1-8, two little-endian
+in 9-16), then the RGB bytes of all `2^B` entries of the presented palette; in format 24, of its R, G, B bytes.
+The PC window shows a scaled frame, and `set_max_fps` makes `present` wait.
+
+A subclass may claim an opcode that is not a command through `InMemoryScreen._extension_command` (not part of
+the wire API; a test harness multiplexes its own messages this way).
