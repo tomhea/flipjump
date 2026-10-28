@@ -105,10 +105,11 @@ def _palettes_sha(palettes: List[Any]) -> str:
 
 def _png_sha(png: bytes) -> str:
     """a PNG's chunks with its IDAT decompressed: zlib's compressed bytes differ between platforms' zlib builds"""
-    chunks, at, idat = [], 8, b''
+    chunks: List[Any] = []
+    at, idat = 8, b''
     while at < len(png):
-        (length,) = struct.unpack('>I', png[at : at + 4])
-        kind, data = png[at + 4 : at + 8], png[at + 8 : at + 8 + length]
+        length, kind = struct.unpack_from('>I4s', png, at)
+        data = png[at + 8 : at + 8 + length]  # noqa: E203
         if kind == b'IDAT':
             idat += data
         else:
