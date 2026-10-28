@@ -61,6 +61,14 @@ class StandardIO(IODevice):
             self.current_output_byte = 0
             self.bits_to_write_in_output_byte = 0
 
+    def read_byte(self) -> int:
+        if self.bits_to_read_in_input_byte:  # mid-byte: the bit path
+            return super().read_byte()
+        read_bytes = stdin.read(1).encode(encoding=IO_BYTES_ENCODING)
+        if 0 == len(read_bytes):
+            raise IOReadOnEOF("Read an empty input on standard IO (EOF)")
+        return read_bytes[0]
+
     def write_byte(self, byte: int) -> None:
         if self.bits_to_write_in_output_byte:  # mid-byte: the bit path
             super().write_byte(byte)

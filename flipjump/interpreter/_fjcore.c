@@ -149,6 +149,12 @@ typedef struct {
     unsigned out_acc;
     int out_n;
     int out_phase;
+    /* run(read_byte=): a whole input byte fetched from the device at a byte boundary of its stream (in_phase: bits
+       taken through read_bit, mod 8, across runs), its bits handed out from in_acc (in_n left). borrowed for one run */
+    PyObject* in_read_byte;
+    unsigned in_acc;
+    int in_n;
+    int in_phase;
 } MemoryObject;
 
 /* ---------------------------------------------------------------- pages */
@@ -727,6 +733,7 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->last_run_op_count = 0;
     self->last_run_paused_seconds = 0.0;
     self->out_acc = 0, self->out_n = 0, self->out_phase = 0;
+    self->in_acc = 0, self->in_n = 0, self->in_phase = 0;
     return 0;
 }
 
@@ -995,6 +1002,76 @@ static int out_flush_bits(MemoryObject* self, PyObject* write_bit, double* pause
     return 0;
 }
 
+#define IN_EOF (-2)
+
+/* one input bit through read_bit, keeping the device's input phase: 0/1, -1 on error, IN_EOF on the EOF exception */
+static int in_call_bit(MemoryObject* self, PyObject* read_bit, PyObject* eof_exception_type, double* paused_seconds_out)
+{
+    double io_start = monotonic_seconds();
+    PyObject* result = PyObject_CallNoArgs(read_bit);
+    int bit_value;
+    *paused_seconds_out += monotonic_seconds() - io_start;
+    if (!result) {
+        if (PyErr_ExceptionMatches(eof_exception_type)) {
+            PyErr_Clear();
+            return IN_EOF;
+        }
+        return -1;
+    }
+    bit_value = PyObject_IsTrue(result);
+    Py_DECREF(result);
+    if (bit_value < 0) {
+        return -1;
+    }
+    self->in_phase = (self->in_phase + 1) & 7;
+    return bit_value;
+}
+
+/* the program's next input bit: a buffered bit of the last fetched byte; else a whole byte from read_byte when the
+   device has one and its stream is at a byte boundary; else read_bit. The pending output bits go to the device before
+   it is asked for anything (it has seen every bit the program output). 0/1, -1 on error, IN_EOF on EOF */
+static int in_bit(MemoryObject* self, PyObject* read_bit, PyObject* write_bit, PyObject* eof_exception_type,
+                  double* paused_seconds_out)
+{
+    if (self->in_n) {
+        int bit_value = (int)(self->in_acc & 1u);
+        self->in_acc >>= 1;
+        self->in_n--;
+        return bit_value;
+    }
+    if (self->out_n && out_flush_bits(self, write_bit, paused_seconds_out) < 0) {
+        return -1;
+    }
+    if (!self->in_read_byte || self->in_phase) {
+        return in_call_bit(self, read_bit, eof_exception_type, paused_seconds_out);
+    }
+    {
+        double io_start = monotonic_seconds();
+        PyObject* result = PyObject_CallNoArgs(self->in_read_byte);
+        long value;
+        *paused_seconds_out += monotonic_seconds() - io_start;
+        if (!result) {
+            if (PyErr_ExceptionMatches(eof_exception_type)) {
+                PyErr_Clear();
+                return IN_EOF;
+            }
+            return -1;
+        }
+        value = PyLong_AsLong(result);
+        Py_DECREF(result);
+        if (value == -1 && PyErr_Occurred()) {
+            return -1;
+        }
+        if (value < 0 || value > 255) {
+            PyErr_Format(PyExc_ValueError, "read_byte() must return 0..255, got %ld", value);
+            return -1;
+        }
+        self->in_acc = (unsigned)value >> 1;
+        self->in_n = 7;
+        return (int)(value & 1);
+    }
+}
+
 /* the dedicated flat-storage run loop - the common fast case (no last-ops ring, flat
    memory): all paged-mode and ring branches are out of the per-op path.
 
@@ -1142,8 +1219,8 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
 
     cold_output:
     {
-        /* time the output callback as paused, exactly like the input callback below - so the
-           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
+        /* the device's callbacks are timed as paused (out_bit), exactly like the input callback below - so
+           the reported run-time is net fj-compute, excluding the cost of the IO device's writes */
         if (out_bit(self, write_bit, f == dw + 1, paused_seconds_out) < 0) {
             goto done;
         }
@@ -1152,25 +1229,12 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
 
     cold_input:
     {
-        PyObject* result;
-        int bit_value;
-        double io_start;
-        if (self->out_n && out_flush_bits(self, write_bit, paused_seconds_out) < 0) {
-            goto done; /* the device sees every output bit before it is asked for input */
-        }
-        io_start = monotonic_seconds();
-        result = PyObject_CallNoArgs(read_bit);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
-            if (PyErr_ExceptionMatches(eof_exception_type)) {
-                PyErr_Clear();
-                cause = TERM_EOF;
-                goto done;
-            }
+        /* the device's callbacks are timed as paused (in_bit) -- the reported run-time is net fj-compute */
+        int bit_value = in_bit(self, read_bit, write_bit, eof_exception_type, paused_seconds_out);
+        if (bit_value == IN_EOF) {
+            cause = TERM_EOF;
             goto done;
         }
-        bit_value = PyObject_IsTrue(result);
-        Py_DECREF(result);
         if (bit_value < 0) {
             goto done;
         }
@@ -1277,7 +1341,8 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
     const uint64_t dw = 2 * width;
     const uint64_t in_addr = 3 * width + ww + 1; /* 3w + #w */
     const uint64_t in_lo_exclusive = in_addr - dw;
-    /* the debugger's ring lane, not the hot path: the flat array is read through flat_load */
+    /* NO raw view of the array here: its element type changes with cell_bytes, and this lane
+       is the debugger's ring mode rather than the hot path, so it reads through the accessor. */
     const int has_flat = (self->flat != NULL);
     const uint64_t flat_count = self->flat_count;
 
@@ -1459,8 +1524,8 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
 
     cold_output:
     {
-        /* time the output callback as paused, exactly like the input callback below - so the
-           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
+        /* the device's callbacks are timed as paused (out_bit), exactly like the input callback below - so
+           the reported run-time is net fj-compute, excluding the cost of the IO device's writes */
         if (out_bit(self, write_bit, f == dw + 1, paused_seconds_out) < 0) {
             goto loop_done;
         }
@@ -1469,25 +1534,12 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
 
     cold_input:
     {
-        PyObject* result;
-        int bit_value;
-        double io_start;
-        if (self->out_n && out_flush_bits(self, write_bit, paused_seconds_out) < 0) {
-            goto loop_done; /* the device sees every output bit before it is asked for input */
-        }
-        io_start = monotonic_seconds();
-        result = PyObject_CallNoArgs(read_bit);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
-            if (PyErr_ExceptionMatches(eof_exception_type)) {
-                PyErr_Clear();
-                cause = TERM_EOF;
-                goto loop_done;
-            }
+        /* the device's callbacks are timed as paused (in_bit) -- the reported run-time is net fj-compute */
+        int bit_value = in_bit(self, read_bit, write_bit, eof_exception_type, paused_seconds_out);
+        if (bit_value == IN_EOF) {
+            cause = TERM_EOF;
             goto loop_done;
         }
-        bit_value = PyObject_IsTrue(result);
-        Py_DECREF(result);
         if (bit_value < 0) {
             goto loop_done;
         }
@@ -1661,7 +1713,11 @@ static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
     memset(self->page_cache_key_plus1, 0, sizeof(self->page_cache_key_plus1));
     self->mem_error = 0;
     self->error_bit_address = 0;
-    self->out_phase = 0; /* a reset run starts a fresh output stream, at a byte boundary */
+    /* a reset run starts fresh streams: both bit phases at a byte boundary, no input bit buffered */
+    self->out_phase = 0;
+    self->in_phase = 0;
+    self->in_n = 0;
+    self->in_acc = 0;
     Py_RETURN_NONE;
 }
 
@@ -1669,30 +1725,35 @@ static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write
                          PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip);
 
 /* the run loop.
-   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None)
+   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
    -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds)
    paused_seconds excludes the final flush of a partial output byte; last_run_paused_seconds includes it */
 static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
 {
     static char* kwlist[] = {"read_bit", "write_bit", "eof_exception_type", "last_ops_length", "start_ip",
-                             "write_byte", NULL};
+                             "write_byte", "read_byte", NULL};
     PyObject* read_bit;
     PyObject* write_bit;
     PyObject* eof_exception_type;
     PyObject* write_byte = Py_None;
+    PyObject* read_byte = Py_None;
     Py_ssize_t last_ops_length = 0;
     unsigned long long start_ip = 0;
     PyObject* run_result;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOO|nKO", kwlist, &read_bit, &write_bit, &eof_exception_type,
-                                     &last_ops_length, &start_ip, &write_byte)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOO|nKOO", kwlist, &read_bit, &write_bit, &eof_exception_type,
+                                     &last_ops_length, &start_ip, &write_byte, &read_byte)) {
         return NULL;
     }
     /* write_byte(b) must act as write_bit of b's 8 bits, lsb first; the engine then calls it once a byte
        (see out_bit). Borrowed: the caller's argument outlives the run */
     self->out_write_byte = (write_byte == Py_None) ? NULL : write_byte;
+    /* read_byte() must return the next 8 read_bit() values as a byte (lsb first), whatever the program outputs while
+       it takes them; the engine then calls it once a byte (see in_bit). Borrowed, as write_byte */
+    self->in_read_byte = (read_byte == Py_None) ? NULL : read_byte;
     run_result = mem_run(self, read_bit, write_bit, eof_exception_type, last_ops_length, start_ip);
     self->out_write_byte = NULL;
+    self->in_read_byte = NULL;
     /* the bits of a partial byte still pending go out bit by bit -- also when the run failed, keeping its error */
     if (self->out_n) {
         PyObject *et, *ev, *tb;
@@ -1894,7 +1955,7 @@ static PyMethodDef Memory_methods[] = {
     {"reset", (PyCFunction)Memory_reset, METH_NOARGS,
      "reset() - restore the frozen pristine image (one memcpy) and drop device/API pages"},
     {"run", (PyCFunction)Memory_run, METH_VARARGS | METH_KEYWORDS,
-     "run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None)\n"
+     "run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)\n"
      "-> (termination_cause, op_count, error_bit_address_or_None, last_ops, paused_seconds)"},
     {NULL, NULL, 0, NULL},
 };

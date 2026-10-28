@@ -128,6 +128,7 @@ In summary, they check:
 | [test_screen_errors.py](unit/test_screen_errors.py) | every row of the README's error table, with the exact message                                               |
 | [test_screen_window.py](unit/test_screen_window.py) | the interactive window (SDL dummy driver): life cycle, title, icon, keys, fullscreen, max fps               |
 | [test_devices_e2e.py](unit/test_devices_e2e.py) | .fj programs driving the screen/keyboard devices end-to-end, and the complete `PcIO` device      |
+| [test_native_read_byte.py](unit/test_native_read_byte.py) | the native engine's byte input: the same streams as bit by bit, bytes only on a boundary |
 | [test_native_write_byte.py](unit/test_native_write_byte.py) | the native engine's byte output: the same stream as bit by bit, unaligned bits too |
 | [test_run_flags.py](unit/test_run_flags.py) | the .fjm's run flags and io mode, the CLI's flat window, and the lean native load |
 | [test_run_defaults.py](unit/test_run_defaults.py) | the python API's run defaults: the compiled io mode and flat window, the assemble_and_* helpers |

@@ -47,6 +47,13 @@ class IODevice(ABC):
     def write_bit(self, bit: bool) -> None:
         pass
 
+    def read_byte(self) -> int:
+        """
+        read 8 input bits, lsb first. a device that overrides it is called once a byte by the native engine, so it
+        overrides it only when its next byte does not depend on what the program outputs meanwhile (a byte stream).
+        """
+        return sum(int(self.read_bit()) << i for i in range(8))
+
     def write_byte(self, byte: int) -> None:
         """
         write 8 output bits, lsb first. a device that overrides it is called once a byte by the native engine.
