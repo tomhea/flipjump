@@ -173,13 +173,6 @@ def _trace_flip(ip: int, flip_address: int, show_trace: bool) -> None:
         print(hex(flip_address)[2:], end='; ', flush=True)
 
 
-def _overrides(io_device: IODevice, method: str) -> bool:
-    """does the device handle a whole byte itself in `method` ('write_byte' / 'read_byte'), not IODevice's per-bit
-    default? a device that answers bit by bit (the keyboard's read_byte) does not, and the engine asks it bit by bit"""
-    own = getattr(type(io_device), method, None)
-    return own is not None and own is not getattr(IODevice, method)
-
-
 def run(
     fjm_path: Path,
     *,
@@ -355,8 +348,8 @@ def _run_native(
             last_ops_length=last_ops.maxlen if last_ops is not None and last_ops.maxlen else 0,
             # only a device that handles whole bytes itself: the default write_byte is 8 write_bits anyway,
             # and gathering would only delay each bit (and a device error) to its byte's end
-            write_byte=io_device.write_byte if _overrides(io_device, 'write_byte') else None,
-            read_byte=io_device.read_byte if _overrides(io_device, 'read_byte') else None,
+            write_byte=io_device.write_byte if type(io_device).write_byte is not IODevice.write_byte else None,
+            read_byte=io_device.read_byte if type(io_device).read_byte is not IODevice.read_byte else None,
         )
     finally:
         # keep op_counter, the IO-paused time and the storage mode valid on the exception

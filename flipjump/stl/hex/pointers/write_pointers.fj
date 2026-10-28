@@ -17,9 +17,7 @@ ns hex {
     //  Time Complexity: w( 0.5@+4) + (1+6*PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + PTR_CELL_BITS/2 + 21   (at w=64; 13@+49 at the default 8)
     // Space Complexity: w( 0.5@+22) + (1+6*PTR_CELL_BITS/4)@ + 88(PTR_CELL_BITS/4) + 16
     //   like:  *ptr = 0
-    //   Zeroes the whole NARROW cell - all PTR_CELL_BITS bits. The read dance decodes that many
-    //   bits into read_byte, so the write-back must cover the same width: flipping back only the
-    //   low byte of a 12/16-bit cell would leave the top of the cell standing.
+    //   Zeroes the whole narrow cell (all PTR_CELL_BITS bits).
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
     def zero_ptr ptr < hex.pointers.read_byte {
@@ -43,11 +41,7 @@ ns hex {
     //  Time Complexity: w(0.5@+4) + (1+7*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+7*PTR_WIDE/4)@ + 100(PTR_WIDE/4) + 16
     //   like:  *ptr = src[:PTR_WIDE/4]
-    //   Writes a WHOLE CELL - all PTR_WIDE bits - in ONE dereference.
-    //
-    // The read-side twin is hex.read_cell, and the two must stay width-twins: a cell written
-    // narrower than it is read back does not produce a wrong value, it returns whatever was
-    // left standing in the top of the cell.
+    //   Writes a whole cell (all PTR_WIDE bits) in one dereference. The read twin is hex.read_cell.
     // src is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
     // @note: at the defaults (PTR_CELL_BITS=8, no wide table) this is exactly write_byte.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
@@ -62,12 +56,7 @@ ns hex {
     //  Time Complexity: w(0.5@+4) + (1+6*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+6*PTR_WIDE/4)@ + 88(PTR_WIDE/4) + 16
     //   like:  *ptr = 0     for a whole cell, all PTR_WIDE bits of it.
-    //
-    // @note: on a WIDE cell only this macro may zero; hex.zero_ptr is the NARROW one and must
-    //   not be pointed at a wide cell. Width is a property of the REGION, not of the call: the
-    //   read dance arms a slot by flipping dbit+width, and a wide cell armed at
-    //   dbit+PTR_CELL_BITS lands outside the narrow table entirely. That is not a wrong value,
-    //   it is an unbounded jump.
+    // @note: a wide cell must be zeroed by this macro: hex.zero_ptr on it is a wild jump.
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
     def zero_cell_ptr ptr < hex.pointers.read_byte {

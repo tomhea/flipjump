@@ -6,26 +6,18 @@ ns hex {
         // Space Complexity: 0.5w + 2^PTR_CELL_BITS + PTR_CELL_BITS/4 + 3   (= 0.5w+261 at PTR_CELL_BITS=8)
         //   Initializes the global opcodes and pointer-copies required for the pointers macros.
         //   Initializes the read-byte-handling table and the result/return variables to the read-byte table.
-        // A pointed cell must hold a value below 2^PTR_CELL_BITS (2^PTR_WIDE_BITS for a wide read), times dw, and a
-        //   pointer must be dw-aligned: anything else jumps outside the table (a wild jump, not a wrong value).
+        // A pointed cell must hold a value below 2^PTR_CELL_BITS (2^PTR_WIDE_BITS for a wide read), and a pointer
+        //   must be dw-aligned: anything else is a wild jump.
         //
-        // @output-param read_byte:  hex[:PTR_WIDE/4] variable. The read dance zeroes it itself.
-        //                           After jumping into ptr_jump, it's xored with the read byte.
+        // @output-param read_byte:  hex[:PTR_WIDE/4] variable. After jumping into ptr_jump, it's xored with the read byte.
         // @output-param ret_after_read_byte:  The return address. Jumps to it after finishing reading a byte.
         //
         // @output-param to_flip:  address of opcode that holds a flipping address in its first word. jumping into it will flip wanted bit.
         // @output-param to_jump:  address of opcode that holds a jumping address in its second word. jumping into it will jump to the wanted address.
-        // @output-param to_ptr_var:  the hex-vector (pointer) that shadows BOTH of them. The two address
-        //                            fields sit in different parts of different opcodes - to_flip's first
-        //                            word, to_jump's second - but they always hold the one address being
-        //                            pointed at, so a single shadow serves both.
+        // @output-param to_ptr_var:  the hex-vector (pointer) that shadows both to_flip and to_jump (they hold the same address).
         def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_ptr_var, \
                                              read_byte, ret_after_read_byte, nth_ptr {
-            // PTR_CELL_BITS is a -D knob, so its contract is enforced here rather than only
-            // stated: a bad width does not fault, it silently returns the wrong value (7
-            // reads 0x41 back as 0x01) or wild-jumps (4, because the byte API writes two
-            // hexes into a register sized PTR_CELL_BITS/4). rep() of an undefined macro is
-            // the assemble-time failure, and it names the rule it broke.
+            // a bad -D PTR_CELL_BITS would read wrong values silently: refuse it (the undefined macro names the rule).
             rep(.PTR_CELL_BITS % 4 != 0, i) \
                 .PTR_CELL_BITS__must_be_a_multiple_of_4
             rep(.PTR_CELL_BITS < 8, i) \
@@ -35,23 +27,14 @@ ns hex {
 
             pad 1<<.PTR_CELL_BITS
           // Time Complexity: PTR_CELL_BITS (when jumping to hex.pointers.to_jump, until finished)
-          //   -- one step per SET bit of the value, so 4 for a hex, 8 for a byte.
-          //
-          // Entry d flips d's top set bit into read_byte and jumps to entry d-without-it, so
-          // landing on entry V xors V into read_byte in popcount(V) steps. Bit number (#d)-1
-          // lives in hex (#d-1)/4 of read_byte, at bit (#d-1)%4 of it.
+          // Entry d flips d's top set bit into read_byte and jumps to entry d-without-it.
           read_ptr_byte_table:
             rep(1<<.PTR_CELL_BITS, d) stl.fj \
                 d==0 ? 0 : (.read_byte + (((#d)-1)/4)*dw + dbit + ((#d)-1)%4), \
                 (d==((1<<(#d))>>1)) ? .ret_after_read_byte : read_ptr_byte_table+(d^((1<<(#d))>>1))*dw
 
-          // the WIDE table, laid only when PTR_WIDE_BITS asks for it. Same construction at op
-          // 2^PTR_WIDE_BITS instead, so a slot armed with dbit+PTR_WIDE_BITS lands HERE and
-          // one armed with dbit+PTR_CELL_BITS lands in the narrow table above. The flipped
-          // bit is what selects the table, which is why both can coexist.
             rep(.PTR_WIDE_BITS > 0, i) .wide_table_init
 
-          // the destination of a read: as wide as the WIDER of the two tables.
           read_byte:
             hex.vec .PTR_WIDE/4
           ret_after_read_byte:
@@ -70,10 +53,8 @@ ns hex {
             hex.vec w/4, 0
         }
 
-        // Space Complexity: 2^PTR_WIDE_BITS   (nothing at all when PTR_WIDE_BITS is 0)
-        //   The wide decoder table. It is a separate macro only so that ptr_init can emit
-        //   it conditionally; it must begin at op exactly 2^PTR_WIDE_BITS, which is what
-        //   the pad is for, and it shares hex.pointers.read_byte with the narrow table.
+        // Space Complexity: 2^PTR_WIDE_BITS
+        //   The wide decoder table, at op exactly 2^PTR_WIDE_BITS (a wide read flips dbit+PTR_WIDE_BITS to land here).
         // @requires hex.pointers.ptr_init (stl.ptr_init lays it, when PTR_WIDE_BITS > 0)
         def wide_table_init @ read_ptr_wide_table < .read_byte > ret_after_read_wide {
             rep(.PTR_WIDE_BITS % 4 != 0, i) \
@@ -98,16 +79,7 @@ ns hex {
         // Space Complexity: w(0.5@+22)
         //   Sets to_flip, to_jump and their shared shadow to point to the given pointer.
         //   (  to_flip = to_jump{+w} = to_ptr_var = ptr  )
-        //
-        //   Two passes over the pointer's hexes, not three: one k=3 xor clears all three fields,
-        //   a second sets them. A shadow per address field needed a clearing pass EACH, which is
-        //   where the extra quarter-w used to go.
-        //
-        // @Invariant: to_flip == to_jump+w == to_ptr_var on entry to, and on exit from, every one
-        //   of the three setters. The macros that offset to_flip by a compile-time constant -
-        //   read_byte_from_inners_ptrs (dbit+8), ptr_flip_dbit (dbit), xor_hex_to_flip_ptr (its
-        //   gray walk) and ptr_wflip (its advance) - each restore it before they end, so none of
-        //   them observes or breaks the invariant.
+        // @Invariant: to_flip == to_jump+w == to_ptr_var between pointer macros (one that offsets to_flip restores it).
         // ptr is a hex[:w/4] that holds an address.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_flip_and_jump_pointers ptr < .to_flip, .to_jump, .to_ptr_var {
@@ -117,14 +89,8 @@ ns hex {
 
         //  Time Complexity: w(0.5@+4)
         // Space Complexity: w(0.5@+22)
-        //   Sets to_jump - and with it to_flip and the shared shadow - to point to the given pointer.
-        //   (  to_jump{+w} = to_flip = to_ptr_var = ptr  )
-        //
-        // @note: this is an ALIAS of set_flip_and_jump_pointers, and it must stay one. A setter that
-        //   wrote only to_jump would leave to_flip holding an older address while the shadow held the
-        //   new one, and the NEXT setter would then xor the wrong value out of to_flip and aim it at
-        //   (older ^ new ^ next). That is not a slow path, it is a wild jump. hex.ptr_jump - and so
-        //   stl.return - reaches here.
+        //   Sets to_jump (and with it to_flip and the shared shadow) to point to the given pointer.
+        // @note: must stay an alias of set_flip_and_jump_pointers: setting to_jump alone breaks the shadow invariant.
         // ptr is a hex[:w/4] that holds an address.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_jump_pointer ptr {
@@ -133,11 +99,8 @@ ns hex {
 
         //  Time Complexity: w(0.5@+4)
         // Space Complexity: w(0.5@+22)
-        //   Sets to_flip - and with it to_jump and the shared shadow - to point to the given pointer.
-        //   (  to_flip = to_jump{+w} = to_ptr_var = ptr  )
-        //
-        // @note: an ALIAS of set_flip_and_jump_pointers, for the reason given at set_jump_pointer.
-        //   hex.ptr_flip, hex.ptr_wflip and hex.xor_*_to_ptr reach here.
+        //   Sets to_flip (and with it to_jump and the shared shadow) to point to the given pointer.
+        // @note: an alias of set_flip_and_jump_pointers (see set_jump_pointer).
         // ptr is a hex[:w/4] that holds an address.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_flip_pointer ptr {
@@ -146,11 +109,8 @@ ns hex {
 
         //  Time Complexity: 2@+6           (two advance_bits on average: the carry stops on 1 bit in 2)
         // Space Complexity: (w-#w)(@+18)
-        //   to_flip = to_jump{+w} = to_ptr_var += 2w      (the armed address moves on to the next op)
-        //
-        // The next address without re-arming (set_flip_and_jump_pointers xors all w/4 hexes): a binary increment of
-        //   the three fields from bit #w (2w's) up, that stops at the first bit that becomes 1.
-        // @Assumes: the armed address is dw-aligned (an offset below 2w in to_flip, like the read dance's, is kept).
+        //   to_flip = to_jump{+w} = to_ptr_var += 2w      (a binary increment from bit #w, without re-arming)
+        // @Assumes: the armed address is dw-aligned (an offset below 2w in to_flip is kept).
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def advance @ done {
             rep(w-#w, i) .advance_bit #w+i, done

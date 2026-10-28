@@ -35,9 +35,8 @@ class IODevice(ABC):
 
     def end_of_run(self) -> None:
         """
-        called by the interpreter once, when a run ends by itself (looping, a null ip, end of input).
-        a device whose protocol can be left unfinished (e.g. the screen, inside a command) raises its error here.
-        not called after Ctrl+C, a closed window or a memory error, or when the run raised. the default does nothing.
+        called once when a run ends by itself (looping, a null ip, end of input) - e.g. the screen raises here
+        if the output stopped inside a command. the default does nothing.
         """
 
     @abstractmethod
@@ -50,22 +49,14 @@ class IODevice(ABC):
 
     def read_byte(self) -> int:
         """
-        read 8 input bits at once, lsb first: exactly 8 read_bit calls in a row. the native engine calls this once a
-        byte (only from a byte boundary of the input stream) when the device's class overrides it, instead of
-        read_bit once a bit -- so a device overrides it only when its next byte does not depend on what the program
-        outputs while it reads that byte (a byte stream: stdin, a fixed buffer). a device that answers bit by bit
-        (a keyboard queueing 12-bit events) keeps the default and is asked bit by bit.
+        read 8 input bits, lsb first. a device that overrides it is called once a byte by the native engine, so it
+        overrides it only when its next byte does not depend on what the program outputs meanwhile (a byte stream).
         """
-        value = 0
-        for i in range(8):
-            value |= int(self.read_bit()) << i
-        return value
+        return sum(int(self.read_bit()) << i for i in range(8))
 
     def write_byte(self, byte: int) -> None:
         """
-        write 8 output bits at once, lsb first: exactly write_bit of each. the native engine calls this once a
-        byte (only from a byte boundary of the output stream), instead of write_bit once a bit; a device whose
-        output is bytes overrides it to skip the 8 calls.
+        write 8 output bits, lsb first. a device that overrides it is called once a byte by the native engine.
         """
         for i in range(8):
             self.write_bit(bool((byte >> i) & 1))

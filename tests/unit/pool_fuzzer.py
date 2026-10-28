@@ -99,7 +99,7 @@ class Generator:
     def op(self) -> str:  # noqa: C901 - one branch per macro
         r = self.rng
         n = r.randint(1, self.digits)
-        kinds = ['xor', 'xor1', 'xor_zero', 'double_xor', 'triple', 'quad', 'sparse_xor', 'sparse_double']
+        kinds = ['xor', 'xor1', 'xor_zero', 'double_xor', 'triple', 'quad', 'sparse_xor', 'sparse_mov']
         kinds += ['shl_bit', 'shr_bit', 'shl_hex', 'shr_hex', 'inc', 'dec', 'not', 'neg', 'mov', 'zero', 'if']
         kinds += ['rep_xor', 'set', 'count_bits', 'offset_jump', 'skip', 'set_label', 'distance']
         if self.init:
@@ -121,8 +121,8 @@ class Generator:
             return f'hex.quadrupled_exact_xor {bits}, {self.digit()}'
         if kind == 'sparse_xor':
             return f'hex.sparse_xor {r.choice([16, 32, 64])}, {n}, {self.vec(n)}, {self.vec(n)}'
-        if kind == 'sparse_double':
-            return f'hex.sparse_double_xor {r.choice([16, 32, 64])}, {self.digit()}, {self.digit()}, {self.digit()}'
+        if kind == 'sparse_mov':
+            return f'hex.sparse_mov {r.choice([16, 32, 64])}, {n}, {self.vec(n)}, {self.vec(n)}'
         if kind in ('shl_bit', 'shr_bit', 'inc', 'dec', 'not', 'neg', 'zero'):
             return f'hex.{kind} {n}, {self.vec(n)}'
         if kind in ('shl_hex', 'shr_hex'):

@@ -25,7 +25,14 @@ from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.utils.classes import TerminationCause
-from tests.unit.unit_utils import CAT_PROGRAM, RecordingIO, assemble_to_path, native_engine_required, run_recorded
+from tests.unit.unit_utils import (
+    CAT_PROGRAM,
+    RecordingIO,
+    overrides,
+    assemble_to_path,
+    native_engine_required,
+    run_recorded,
+)
 
 # a bit, output, a bit (both taken one by one through read_byte's buffer of one byte), output, then 3 single bits read
 # across a byte boundary -- 1 + 1 + ... -- and a whole byte read, with output pending (3 bits) at an input read
@@ -171,12 +178,12 @@ def test_only_a_device_with_its_own_read_byte_is_read_by_byte() -> None:
     from flipjump.interpreter.io_devices.ScreenIO import InMemoryScreen
     from flipjump.interpreter.io_devices.KeyboardIO import KeyboardIO, ScriptedKeyEventSource
 
-    assert fjm_run._overrides(FixedIO(b''), 'read_byte')
-    assert fjm_run._overrides(StandardIO(False), 'read_byte')
+    assert overrides(FixedIO(b''), 'read_byte')
+    assert overrides(StandardIO(False), 'read_byte')
     pc = PcIO(InMemoryScreen(), KeyboardIO(ScriptedKeyEventSource([])))
-    assert not fjm_run._overrides(pc, 'read_byte')
-    assert fjm_run._overrides(pc, 'write_byte')
-    assert not fjm_run._overrides(BitOnlyIO(b''), 'read_byte')
+    assert not overrides(pc, 'read_byte')
+    assert overrides(pc, 'write_byte')
+    assert not overrides(BitOnlyIO(b''), 'read_byte')
 
 
 @native_engine_required

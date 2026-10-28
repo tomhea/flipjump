@@ -15,7 +15,14 @@ import pytest
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.IODevice import IODevice
-from tests.unit.unit_utils import CAT_PROGRAM, RecordingIO, assemble_to_path, native_engine_required, run_recorded
+from tests.unit.unit_utils import (
+    CAT_PROGRAM,
+    RecordingIO,
+    overrides,
+    assemble_to_path,
+    native_engine_required,
+    run_recorded,
+)
 
 # 3 bits out, a read (3 bits of a byte pending), 8 + 5 more (back on a byte boundary), a whole byte, an aligned
 # read, then 3 bits left pending at the end of the run
@@ -174,10 +181,10 @@ def test_only_a_device_with_its_own_write_byte_gets_bytes() -> None:
         def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
             return b''
 
-    assert not fjm_run._overrides(BitIO(), 'write_byte')
-    assert fjm_run._overrides(FixedIO(b''), 'write_byte')
-    assert fjm_run._overrides(RecordingIO(b''), 'write_byte')
-    assert fjm_run._overrides(InMemoryScreen(), 'write_byte')
+    assert not overrides(BitIO(), 'write_byte')
+    assert overrides(FixedIO(b''), 'write_byte')
+    assert overrides(RecordingIO(b''), 'write_byte')
+    assert overrides(InMemoryScreen(), 'write_byte')
 
 
 @native_engine_required
