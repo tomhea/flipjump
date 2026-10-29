@@ -5,8 +5,9 @@ formatting, the debug actions (single step / skips / continue), and the memory- 
 fj-variable-inspection helpers - all headless.
 """
 
+import random
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 import pytest
 
@@ -38,6 +39,25 @@ class TestBreakpointResolution:
         labels = {'main': 256, 'main---inner---loop': 512, 'other': 1024}
         breakpoints = get_breakpoints({2048}, {'main'}, {'inner'}, labels)
         assert breakpoints == {2048: None, 512: 'main---inner---loop', 256: 'main'}
+
+    def test_substring_breakpoints_match_a_loop_over_the_labels(self) -> None:
+        """every label holding one of the strings, an address keeping its first such label - the plain loop's
+        breakpoints, on random labels (empty ones, several at an address) and strings (empty, holding a newline)"""
+
+        def plain(contains: Set[str], labels: Dict[str, int]) -> Dict[int, str]:
+            found: Dict[int, str] = {}
+            for label in tuple(labels)[::-1]:
+                if any(bcl in label for bcl in contains):
+                    found[labels[label]] = label
+            return found
+
+        rng = random.Random(248)  # nosec B311 - deterministic test data, not security
+        for _ in range(2000):
+            labels = {
+                ''.join(rng.choices('ab-', k=rng.randrange(5))): rng.randrange(6) for _ in range(rng.randrange(9))
+            }
+            contains = {''.join(rng.choices('ab-\n', k=rng.randrange(4))) for _ in range(rng.randrange(4))}
+            assert get_breakpoints(None, None, contains, labels) == plain(contains, labels), (contains, labels)
 
     def test_missing_breakpoint_label_warns_but_does_not_raise(self, capsys: pytest.CaptureFixture[str]) -> None:
         breakpoints = get_breakpoints(None, {'no_such_label'}, None, {})

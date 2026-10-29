@@ -5,6 +5,8 @@ back to labels, and pauses the run to let the user inspect memory and program st
 """
 
 import re
+from bisect import bisect_right
+from itertools import accumulate
 from pathlib import Path
 from typing import Optional, Dict, Set, Tuple
 
@@ -394,12 +396,21 @@ def update_breakpoints_from_breakpoint_contains_set(
     add breakpoints generated with breakpoint_contains_labels.
     param breakpoints[in,out] - adds breakpoints to it
     """
-    if breakpoint_contains_labels:
-        for label in tuple(label_to_address)[::-1]:
-            for bcl in breakpoint_contains_labels:
-                if bcl in label:
-                    address = label_to_address[label]
-                    breakpoints[address] = label
+    labels = tuple(label_to_address)
+    if breakpoint_contains_labels and labels:
+        # one search of all the labels' text per string, instead of a Python loop over every label per string
+        text = '\n'.join(labels)  # no label holds a newline
+        starts = list(accumulate((len(label) + 1 for label in labels), initial=0))
+        found: Set[int] = set()
+        for bcl in breakpoint_contains_labels:
+            index = -1 if '\n' in bcl else text.find(bcl)
+            while index != -1:
+                label_index = bisect_right(starts, index) - 1
+                found.add(label_index)
+                index = text.find(bcl, starts[label_index + 1])  # a label is found once
+        for label_index in sorted(found, reverse=True):  # an address keeps its first label
+            label = labels[label_index]
+            breakpoints[label_to_address[label]] = label
 
 
 def update_breakpoints_from_addresses_set(
