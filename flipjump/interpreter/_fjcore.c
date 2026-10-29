@@ -14,9 +14,9 @@
  */
 
 #define PY_SSIZE_T_CLEAN
-/* the stable ABI (abi3): one wheel per platform/arch covers every CPython >= 3.10 */
+/* the stable ABI (abi3): one wheel per platform/arch covers every CPython >= 3.11 */
 #ifndef Py_LIMITED_API
-#define Py_LIMITED_API 0x030A0000
+#define Py_LIMITED_API 0x030B0000
 #endif
 #include <Python.h>
 #include <stdint.h>

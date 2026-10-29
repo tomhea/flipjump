@@ -10,7 +10,7 @@ description = "The single instruction language - Flip a bit, then Jump"
 authors = [{ name = "Tom Herman", email = "flipjumpproject@gmail.com" }]
 license = { text = "BSD-2-Clause-Simplified" }
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["esolang", "oisc", "assembly"]
 classifiers = [
     "Topic :: Education",
@@ -20,11 +20,11 @@ classifiers = [
     "Topic :: Software Development :: Interpreters",
     "Topic :: Software Development :: Libraries",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Other",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
@@ -79,13 +79,13 @@ disable_error_code = ["name-defined", "no-redef", "index", "no-any-return", "mis
 
 [tool.black]
 line-length = 120
-target-version = ["py310", "py311", "py312", "py313", "py314"]
+target-version = ["py311", "py312", "py313", "py314", "py315"]
 skip-string-normalization = true
 
 
 [tool.cibuildwheel]
-# abi3: build once per platform/arch with CPython 3.10 - the wheel covers >= 3.10
-build = "cp310-*"
+# abi3: build once per platform/arch with CPython 3.11 - the wheel covers >= 3.11
+build = "cp311-*"
 # verify the just-built wheel IN its target env (every os/arch, incl. musllinux & native-arm):
 # native engine active + exact op-counts (correctness) + cpu-normalized speed floors. runs the
 # installed wheel against the repo's .fj programs ({project} is the checkout). see the script.

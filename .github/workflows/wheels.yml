@@ -1,6 +1,6 @@
 # Builds the release artifacts: one abi3 wheel per platform/arch (with the compiled native
 # interpreter engine) + the pure sdist, and publishes them to PyPI on every release.
-# The abi3 tag means each wheel covers every CPython >= 3.10.
+# The abi3 tag means each wheel covers every CPython >= 3.11.
 
 name: Build wheels and publish
 
