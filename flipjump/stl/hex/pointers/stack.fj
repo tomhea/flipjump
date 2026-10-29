@@ -43,7 +43,7 @@ ns hex {
     // @requires hex.add.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def push_ret_address return_address < hex.pointers.sp {
         .sp_inc
-        .zero_ptr hex.pointers.sp
+        .zero_byte hex.pointers.sp
         .ptr_wflip_2nd_word hex.pointers.sp, return_address
     }
 
