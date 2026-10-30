@@ -19,6 +19,8 @@
 #define Py_LIMITED_API 0x030B0000
 #endif
 #include <Python.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
