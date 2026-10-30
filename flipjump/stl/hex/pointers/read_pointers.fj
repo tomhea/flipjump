@@ -147,7 +147,7 @@ ns hex {
     //   op, ptr+index of an _nth_ op; 0 before any.
     // @Assumes: on every path here, no pointer operation (push / pop and stl.call / stl.return included) ran since.
     // @Assumes: armed is dw-aligned (not the ptr+w of ptr_wflip_2nd_word, and so of stl.call / stl.return).
-    // @Assumes: the armed cell is a narrow one (not after read_cell / write_cell / zero_cell_ptr with a wide table).
+    // @Assumes: the armed cell is a narrow one (not after read_cell / write_cell / zero_cell with a wide table).
     // dst is a hex[:2].
     // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_back dst < hex.pointers.read_byte {

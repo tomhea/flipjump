@@ -30,10 +30,10 @@ stl.startup_and_init_all
     hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
     stl.output '\n'
 
-// 3. zero_cell_ptr clears the WHOLE cell. hex.zero_ptr is the NARROW one and would
+// 3. zero_cell clears the WHOLE cell. hex.zero_byte is the NARROW one and would
 //    arm this cell at dbit+PTR_CELL_BITS, landing outside the narrow table -- a wild jump.
     stl.output "zeroed:"
-    hex.zero_cell_ptr p
+    hex.zero_cell p
     hex.read_cell dst, p
     hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
     stl.output '\n'
@@ -69,7 +69,7 @@ stl.startup_and_init_all
     hex.print_as_digit hex.pointers.PTR_WIDE/4, dst2, 0
     stl.output '\n'
 
-// 6. hex.zero_ptr zeroes the whole NARROW cell -- all PTR_CELL_BITS bits of it, not just the
+// 6. hex.zero_byte zeroes the whole NARROW cell -- all PTR_CELL_BITS bits of it, not just the
 //    low byte. With no wide table the narrow cell IS the wide one and read_cell can check every
 //    bit; with a wide table present this is the narrow-dereference-coexists check instead, and
 //    the top of a narrow cell is not reachable through the public byte API to assert on.
@@ -92,12 +92,12 @@ stl.startup_and_init_all
   nv:     hex.vec 1, 0
 
 
-// fill the whole narrow cell with ones, zero_ptr it, and read every bit back.  ->  0 * PTR_WIDE/4
+// fill the whole narrow cell with ones, zero_byte it, and read every bit back.  ->  0 * PTR_WIDE/4
 def zeroptr_narrow_check < p, src, dst, nv {
     hex.set w/4, p, nv
     rep(hex.pointers.PTR_WIDE/4, i) hex.set src+i*dw, 0xf
     hex.write_cell p, src
-    hex.zero_ptr p
+    hex.zero_byte p
     hex.read_cell dst, p
     hex.print_as_digit hex.pointers.PTR_WIDE/4, dst, 0
 }
@@ -108,7 +108,7 @@ def zeroptr_dual_check < p, bv, nv {
     hex.set w/4, p, nv
     hex.set 2, bv, 0xff
     hex.write_byte p, bv
-    hex.zero_ptr p
+    hex.zero_byte p
     hex.zero 2, bv
     hex.read_byte bv, p
     hex.print_as_digit 2, bv, 0

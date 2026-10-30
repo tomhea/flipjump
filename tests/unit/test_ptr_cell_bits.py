@@ -141,7 +141,7 @@ def test_a_whole_cell_round_trips_at_every_width(tmp_path: Path, cell_bits: int,
     # every other pointer program stores values that fit in a byte, so it never lands on a table entry above 255,
     # never sets a high hex of read_byte, and cannot tell a wide table from a narrow one. the wide_bits>0 rows run
     # narrow and wide dereferences against BOTH tables in one program, and walk adjacent cells with the _and_inc
-    # pair; zero_ptr covering less than the whole narrow cell fails the (16, 0) row
+    # pair; zero_byte covering less than the whole narrow cell fails the (16, 0) row
     fjm = _assemble_at(tmp_path, 'programs/hexlib_tests/basics2/wide_cells.fj', cell_bits, wide_bits)
     assert run_test_output(
         fjm, b'', _expected_wide_cells(cell_bits, wide_bits), print_time=False, print_termination=False

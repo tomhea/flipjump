@@ -20,7 +20,7 @@ ns hex {
     //   Zeroes the whole narrow cell (all PTR_CELL_BITS bits).
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
-    def zero_ptr ptr < hex.pointers.read_byte {
+    def zero_byte ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
         rep(.pointers.PTR_CELL_BITS/4, i) .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte+i*dw, 4*i
@@ -56,10 +56,10 @@ ns hex {
     //  Time Complexity: w(0.5@+4) + (1+6*PTR_WIDE/4)@ + 12(PTR_WIDE/4) + PTR_WIDE/2 + 21   (at w=64)
     // Space Complexity: w(0.5@+22) + (1+6*PTR_WIDE/4)@ + 88(PTR_WIDE/4) + 16
     //   like:  *ptr = 0     for a whole cell, all PTR_WIDE bits of it.
-    // @note: a wide cell must be zeroed by this macro: hex.zero_ptr on it is a wild jump.
+    // @note: a wide cell must be zeroed by this macro: hex.zero_byte on it is a wild jump.
     // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
-    def zero_cell_ptr ptr < hex.pointers.read_byte {
+    def zero_cell ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
         rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
