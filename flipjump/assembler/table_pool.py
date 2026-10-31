@@ -53,6 +53,28 @@ class BlockCensus:
     alias: Dict[str, str]
 
 
+@dataclasses.dataclass(frozen=True)
+class PoolReport:
+    """what a BlockPool did in its assembly (BlockPool.report, set when the assembly ends)"""
+
+    pool_base: int  # the address of the pool's first block
+    end: int  # the end of the last table placed (0: none)
+    pinned: Dict[int, int]  # the pinned words: {jump-word address: block base}
+    moved: int  # tables taken out of the program...
+    in_blocks: int  # ...of them placed in a block (the others: in the overflow region)
+    overflowed: int
+    too_wide: int  # tables kept in place: wider than any slot
+    ungrouped: int  # ...dispatched through no word the pool can name
+    runtime_words: int  # ...dispatched through the runtime's words
+    unsafe_declines: Dict[str, int]  # ...whose move would change an operand, by why
+    unpins: Dict[str, int]  # pinnable words left unpinned, by why
+    pin_conflicts: int  # words two groups pin with two bases (left unpinned)
+    pin_all_but_missing: List[str]  # pin_all_but's labels the program does not define
+    alias_unresolved: int  # group words that name a moved table's label (their groups are not merged)
+    heat: Dict[str, int]  # what the heat list found (BlockPool.heat_report)
+    census: BlockCensus  # the tables met, by group
+
+
 # BlockPool.defer's verdicts on a table the expansion reached
 DEFER_OUT = 'out'  # it leaves the op stream, and is placed once the expansion is done
 DEFER_TOO_WIDE = 'too_wide'  # it stays inline (no slot can hold it), and is declined in its turn
@@ -417,6 +439,7 @@ class BlockPool:
         self.hot_missing: List[str] = []  # listed groups this program does not have
         self.hot_ambiguous: List[str] = []  # listed keys that name two of its groups
         self.hot_sites_matched = self.hot_sites_width_changed = 0
+        self.report: Optional[PoolReport] = None  # what this pool did (set when the assembly ends)
 
     def defer(
         self, ops_alignment: int, table_ops: int, group: Optional[str], group_expr: Optional[Expr], labels_prefix: str
@@ -611,6 +634,27 @@ class BlockPool:
             {group: max(hist) for group, hist in self.width_hist.items()},
             {group: dict(hist) for group, hist in self.width_hist.items()},
             dict(self.alias),
+        )
+
+    def make_report(self, pinned: Dict[int, int]) -> PoolReport:
+        """the report of this pool's assembly, given the words it pinned (assembler.pins)"""
+        return PoolReport(
+            pool_base=self.pool_base,
+            end=self.end,
+            pinned=dict(pinned),
+            moved=self.deferred,
+            in_blocks=self.allocated,
+            overflowed=self.overflowed,
+            too_wide=self.declined,
+            ungrouped=self.ungrouped,
+            runtime_words=self.reserved_words,
+            unsafe_declines=dict(self.unsafe_declines),
+            unpins=dict(self.unpins),
+            pin_conflicts=self.pin_conflicts,
+            pin_all_but_missing=list(self.pin_all_but_missing),
+            alias_unresolved=self.alias_unresolved,
+            heat=self.heat_report(),
+            census=self.census(),
         )
 
     def heat_report(self) -> Dict[str, int]:

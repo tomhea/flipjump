@@ -301,10 +301,7 @@ class BinaryData:
 
 
 def resolve_pinned(
-    pinned_exprs: Dict[Expr, int],
-    labels: Dict[str, int],
-    reserved_below: int = RESERVED_BELOW,
-    unpinned_words: AbstractSet[int] = frozenset(),
+    pinned_exprs: Dict[Expr, int], labels: Dict[str, int], unpinned_words: AbstractSet[int] = frozenset()
 ) -> Tuple[Dict[int, int], int]:
     """({jump-word address: block base}, number of aliased addresses dropped): two group expressions that resolve to
     one address with different bases (`(x + 32)`, `(x + w)`) leave it unpinned, and so does a word of `unpinned_words`
@@ -316,7 +313,7 @@ def resolve_pinned(
             address = expr.exact_eval(labels)
         except FlipJumpExprException:
             continue  # an unresolvable word simply is not pinned
-        if address < reserved_below:
+        if address < RESERVED_BELOW:
             continue  # the runtime's word (stl.IO), not the program's
         if address in unpinned_words:
             continue  # the program reads this word raw
@@ -330,6 +327,20 @@ def resolve_pinned(
 
 # labels_resolve reports its progress once per this many ops
 _PROGRESS_CHUNK = 1 << 16
+
+
+def pins(
+    ops: OpStream, labels: Dict[str, int], memory_width: int, pool: BlockPool, warning_as_errors: bool
+) -> Dict[int, int]:
+    """the words the pool pins, {jump-word address: block base}: its candidates (pool.pinned_words) resolved by
+    `labels`, less pin_all_but's words, an address two groups pin with two bases, and every pin that cannot hold"""
+    unpinned_words = pool.unpinned_words(labels)
+    if pool.pin_all_but_missing:
+        pin_all_but_warning(pool.pin_all_but_missing, warning_as_errors)
+    pinned, pool.pin_conflicts = resolve_pinned(pool.pinned_words(), labels, unpinned_words)
+    if pinned:
+        unpin(ops, labels, memory_width, pinned, pool)
+    return pinned
 
 
 def pin_all_but_warning(missing: List[str], warning_as_errors: bool) -> None:
@@ -517,11 +528,9 @@ def labels_resolve(
     fjm_writer: Writer,
     *,
     save_wflip_labels: bool = True,
-    pinned: Optional[Dict[int, int]] = None,
     on_progress: Optional[Callable[[float], None]] = None,
-    pool_start: Optional[int] = None,
-    offset_guard: Optional[OffsetGuard] = None,
-    wflips_at: Optional[int] = None,
+    table_pool: Optional[BlockPool] = None,
+    pinned: Optional[Dict[int, int]] = None,
 ) -> None:
     """
     resolve the labels and expressions to get the list of fj ops, and add all the data and segments into the fjm_writer.
@@ -531,9 +540,37 @@ def labels_resolve(
     @param fjm_writer: [out]: the .fjm file writer
     @param save_wflip_labels: record a `:wflips:N` debugging label per generated wflip-chain op
     @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction of ops resolved
-    @param pinned, pool_start, wflips_at: a BlockPool's (see BinaryData)
-    @param offset_guard: the table pool's: it checks the operands that waited for a label
+    @param table_pool: the pool the preprocessor laid out, if any; `pinned`: the words it pins (assembler.pins)
     """
+    resolve_into(
+        ops,
+        labels,
+        memory_width,
+        fjm_writer,
+        save_wflip_labels=save_wflip_labels,
+        on_progress=on_progress,
+        pinned=pinned or None,
+        pool_start=None if table_pool is None else table_pool.pool_start(),
+        offset_guard=None if table_pool is None else table_pool.offset_guard,
+        wflips_at=None if table_pool is None else table_pool.wflips_at(),
+    )
+
+
+def resolve_into(
+    ops: OpStream,
+    labels: Dict[str, int],
+    memory_width: int,
+    fjm_writer: Writer,
+    *,
+    save_wflip_labels: bool,
+    on_progress: Optional[Callable[[float], None]],
+    pinned: Optional[Dict[int, int]],
+    pool_start: Optional[int],
+    offset_guard: Optional[OffsetGuard],
+    wflips_at: Optional[int],
+) -> None:
+    """labels_resolve, with the pool's parts given one by one (`pinned`, `pool_start`, `wflips_at`: see
+    BinaryData; `offset_guard`: it checks the operands that waited for a label)"""
     first_segment = ops.first_object()
     if not isinstance(first_segment, NewSegment):
         raise FlipJumpAssemblerException(
@@ -686,18 +723,8 @@ def assemble(
         # (The op stream keeps what it still needs of it: label names, positions, the odd Expr.)
         del macros
 
-        # BlockPool's pinned words are expressions, resolved now that every label is known; a pin that cannot hold
-        # is dropped (the pool's unpins say why)
-        pinned = None
-        if table_pool is not None:
-            unpinned_words = table_pool.unpinned_words(labels)
-            if table_pool.pin_all_but_missing:
-                pin_all_but_warning(table_pool.pin_all_but_missing, warning_as_errors)
-            pinned, table_pool.pin_conflicts = resolve_pinned(
-                table_pool.pinned_words(), labels, unpinned_words=unpinned_words
-            )
-            if pinned:
-                unpin(ops, labels, memory_width, pinned, table_pool)
+        # BlockPool's pinned words are expressions, resolved now that every label is known
+        pinned = {} if table_pool is None else pins(ops, labels, memory_width, table_pool, warning_as_errors)
 
         with ProgressBar('  labels resolve:  ', print_time=print_time) as progress:
             # the `:wflips:N` labels are read only by the debugging file
@@ -707,12 +734,12 @@ def assemble(
                 memory_width,
                 fjm_writer,
                 save_wflip_labels=debugging_file_path is not None,
-                pinned=pinned or None,
                 on_progress=progress.update if progress.active else None,
-                pool_start=None if table_pool is None else table_pool.pool_start(),
-                offset_guard=None if table_pool is None else table_pool.offset_guard,
-                wflips_at=None if table_pool is None else table_pool.wflips_at(),
+                table_pool=table_pool,
+                pinned=pinned,
             )
+        if table_pool is not None:
+            table_pool.report = table_pool.make_report(pinned)
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression
         del ops

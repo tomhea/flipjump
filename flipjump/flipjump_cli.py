@@ -244,7 +244,10 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        print(f'  table pool:      {table_pool.deferred} tables moved, from {hex(table_pool.pool_base)}')
+        report = table_pool.report
+        assert report is not None
+        moved, base, pinned = report.moved, hex(report.pool_base), len(report.pinned)
+        print(f'  table pool:      {moved} tables moved, from {base}; {pinned} words pinned')
 
 
 def get_fjm_file_path(args: argparse.Namespace, error_func: ErrorFunc, temp_dir_name: str) -> Path:

@@ -26,6 +26,7 @@ from flipjump.assembler.table_pool import RESERVED_BELOW, BlockPool, DeferredTab
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
+from flipjump.utils.functions import load_debugging_labels
 from flipjump.utils.functions import get_file_tuples
 from tests.unit.unit_utils import build_and_run, labels_off_their_ops, relocatable, sum_expr
 
@@ -690,6 +691,30 @@ def test_a_pin_all_but_label_the_program_does_not_define_is_an_error_or_a_warnin
     pool = _pin_all_but('d')
     assemble([source], tmp_path / 'd.fjm', memory_width=W, print_time=False, table_pool=pool)
     assert pool.pin_all_but_missing == []
+
+
+def test_the_report_holds_the_words_the_pool_pinned(tmp_path: Path) -> None:
+    # pool.report.pinned is the final pin map: with `d` left out its jump word is not in it, with [] it is
+    source = tmp_path / 'p.fj'
+    source.write_text(POINTER_PROGRAM)
+    reports = {}
+    for name, cells in (('all_but_d', [('d', 1)]), ('all', [])):
+        pool = BlockPool(W, POOL_BASE, pin_all_but=cells)
+        debug = tmp_path / f'{name}.fjd'
+        assemble(
+            [source],
+            tmp_path / f'{name}.fjm',
+            memory_width=W,
+            print_time=False,
+            table_pool=pool,
+            debugging_file_path=debug,
+        )
+        assert pool.report is not None and pool.report.moved == pool.deferred > 0
+        reports[name] = (pool.report, load_debugging_labels(debug)['d'] + W)
+    report, d_jump = reports['all_but_d']
+    assert report.pinned and d_jump not in report.pinned
+    report, d_jump = reports['all']
+    assert d_jump in report.pinned
 
 
 def _pin_all_but(*cells: str) -> BlockPool:

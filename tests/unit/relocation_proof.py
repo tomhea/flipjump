@@ -32,7 +32,7 @@ from array import array
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
-from flipjump.assembler.assembler import labels_resolve, resolve_pinned, unpin
+from flipjump.assembler.assembler import resolve_into, resolve_pinned, unpin
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum
@@ -401,14 +401,16 @@ def _check_pins(
             'the program uses the pointer runtime and no pin_all_but says which words it reaches, yet words are pinned'
         )
     writer = Writer(Path('relocation_proof.fjm'), memory_width, FJMVersion.NormalVersion)
-    labels_resolve(
+    resolve_into(
         stream,
         labels,
         memory_width,
         writer,
         save_wflip_labels=False,
+        on_progress=None,
         pinned=pinned,
         pool_start=pool_start,
+        offset_guard=None,
         wflips_at=wflips_at,
     )
     image = _Image(writer, memory_width)

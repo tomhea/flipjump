@@ -299,7 +299,7 @@ def test_a_corrupted_moved_op_fails_the_proof(monkeypatch: pytest.MonkeyPatch) -
 
     assert prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches == []
     monkeypatch.setattr('tests.unit.relocation_proof.resolve_macros', corrupting)
-    monkeypatch.setattr('tests.unit.relocation_proof.labels_resolve', lambda *args, **kwargs: None)
+    monkeypatch.setattr('tests.unit.relocation_proof.resolve_into', lambda *args, **kwargs: None)
     monkeypatch.setattr('tests.unit.relocation_proof.unpin', lambda *args, **kwargs: None)
     mismatches = prove_relocation(64, _macros(files, 64), _cli_pool(64)).mismatches
     assert any('with the pool' in mismatch for mismatch in mismatches), mismatches
