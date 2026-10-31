@@ -5,6 +5,7 @@ assemble and/or run flows according to the chosen --asm / --run options.
 """
 
 import argparse
+import copy
 import lzma
 import os
 import sys
@@ -35,6 +36,23 @@ from flipjump.utils.exceptions import FlipJumpFlatMemoryException, FlipJumpReadF
 from flipjump.utils.functions import bad_define_message, get_file_tuples, get_temp_directory_suffix
 
 ErrorFunc = Callable[[str], None]
+
+# option spellings that parse but are not listed in the help: the underscore spellings of the hyphenated options,
+# and --version, which names the fjm version (-v / --fjm-version), not the tool's (-V)
+HIDDEN_ALIASES = frozenset(
+    {'--breakpoint_contains', '--lzma_preset', '--max_recursion_depth', '--no_stl', '--flipjump_version', '--version'}
+)
+
+
+class HelpFormatter(argparse.HelpFormatter):
+    """argparse's help, without the HIDDEN_ALIASES spellings"""
+
+    def _format_action_invocation(self, action: argparse.Action) -> str:
+        if not HIDDEN_ALIASES.intersection(action.option_strings):
+            return super()._format_action_invocation(action)
+        shown = copy.copy(action)
+        shown.option_strings = [option for option in action.option_strings if option not in HIDDEN_ALIASES]
+        return super()._format_action_invocation(shown)
 
 
 def verify_file_exists(error_func: ErrorFunc, path: Path) -> None:
@@ -186,7 +204,7 @@ def assemble(
     verify_fj_files(error_func, file_tuples)
     defines = parse_defines(args.define, error_func)
 
-    version = get_version(args.version, args.outfile is not None, error_func)
+    version = get_version(args.fjm_version, args.outfile is not None, error_func)
     if version == FJMVersion.BaseVersion and (args.flat_memory or IO_MODE_NUMBERS[args.io_mode] != IO_MODE_STANDARD):
         error_func('fjm version 0 has no header room for --flat-memory / --io-mode; use version 1 or above.')
     fjm_writer = Writer(
@@ -336,6 +354,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
     )
     run_arguments.add_argument(
         '-B',
+        '--breakpoint-contains',
         '--breakpoint_contains',
         metavar='NAME',
         default=[],
@@ -366,6 +385,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     supported_versions = ', '.join(f"{version}: {name}" for version, name in SUPPORTED_VERSIONS_NAMES.items())
     asm_arguments.add_argument(
         '-v',
+        '--fjm-version',
         '--version',
         metavar='VERSION',
         type=int,
@@ -385,6 +405,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
     asm_arguments.add_argument(
+        '--lzma-preset',
         '--lzma_preset',
         type=int,
         default=lzma.PRESET_DEFAULT,
@@ -412,12 +433,15 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')
     asm_arguments.add_argument(
+        '--max-recursion-depth',
         '--max_recursion_depth',
         type=int,
         default=DEFAULT_MAX_MACRO_RECURSION_DEPTH,
         help='The compiler supports macros that recursively uses other macros, ' 'up to the this specified depth',
     )
-    asm_arguments.add_argument('--no_stl', help="don't assemble/link the standard library files", action='store_true')
+    asm_arguments.add_argument(
+        '--no-stl', '--no_stl', help="don't assemble/link the standard library files", action='store_true'
+    )
 
     asm_arguments.add_argument(
         '-D',
@@ -450,6 +474,7 @@ def add_universal_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('files', help="the .fj files to assemble (if run-only, the .fjm file to run)", nargs='+')
     parser.add_argument(
         '-V',
+        '--flipjump-version',
         '--flipjump_version',
         action='version',
         version=f'flipjump {FLIPJUMP_VERSION}',
@@ -497,6 +522,7 @@ def get_argument_parser() -> argparse.ArgumentParser:
     @return: the argument parser
     """
     return argparse.ArgumentParser(
+        formatter_class=HelpFormatter,
         description='Assemble and Run FlipJump programs.',
         usage='fj [--asm | --run] [arguments] files [files ...]\n'
         'example usage:\n'
@@ -504,7 +530,7 @@ def get_argument_parser() -> argparse.ArgumentParser:
         '  fj  a.fj b.fj  -o out.fjm                          // assemble save and run\n'
         '  fj  code.fj  -d  -B swap_start exit_label          // assemble and debug\n\n'
         '  fj --asm  -o o.fjm a.fj  -d dir/debug.fjd          // assemble and save debug info\n'
-        '  fj --asm  -o out.fjm  a.fj b.fj  --no_stl  -w 32   '
+        '  fj --asm  -o out.fjm  a.fj b.fj  --no-stl  -w 32   '
         '// assemble without the standard library, 32 bit memory\n\n'
         '  fj --run  prog.fjm                                 // just run\n'
         '  fj --run  o.fjm  -d dir/debug.fjd  -B label        // run and debug\n ',

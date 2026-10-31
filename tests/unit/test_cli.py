@@ -17,7 +17,7 @@ from flipjump.utils.exceptions import FlipJumpException, FlipJumpParsingExceptio
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_reader import Reader, read_fjm_header
 from flipjump.interpreter import fjm_run
-from flipjump.flipjump_cli import get_version, parse_arguments
+from flipjump.flipjump_cli import HIDDEN_ALIASES, add_arguments, get_argument_parser, get_version, parse_arguments
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
 from tests.unit.unit_utils import (
     HELLO_NO_STL,
@@ -38,7 +38,7 @@ def test_cli_assemble_only(tmp_path: Path) -> None:
     fj_path = _write_hello(tmp_path)
     out_path = tmp_path / 'out.fjm'
     assemble_run_according_to_cmd_line_args(
-        cmd_line_args=['--asm', '-o', str(out_path), '--no_stl', '-w', '32', '-s', str(fj_path)]
+        cmd_line_args=['--asm', '-o', str(out_path), '--no-stl', '-w', '32', '-s', str(fj_path)]
     )
     assert out_path.is_file()
     assert Reader(out_path).memory_width == 32
@@ -55,7 +55,7 @@ def test_cli_assemble_only(tmp_path: Path) -> None:
 def test_cli_fjm_version_flag(tmp_path: Path, flags: List[str], version: FJMVersion) -> None:
     out_path = tmp_path / 'out.fjm'
     assemble_run_according_to_cmd_line_args(
-        cmd_line_args=['--asm', '-o', str(out_path), '--no_stl', '-s', *flags, str(_write_hello(tmp_path))]
+        cmd_line_args=['--asm', '-o', str(out_path), '--no-stl', '-s', *flags, str(_write_hello(tmp_path))]
     )
     assert read_fjm_header(out_path).version == version
     assert Reader(out_path).version == version
@@ -68,7 +68,7 @@ def test_cli_run_only(tmp_path: Path) -> None:
 
 def test_cli_assemble_and_run(tmp_path: Path) -> None:
     fj_path = _write_hello(tmp_path)
-    assemble_run_according_to_cmd_line_args(cmd_line_args=['--no_stl', '-s', str(fj_path)])
+    assemble_run_according_to_cmd_line_args(cmd_line_args=['--no-stl', '-s', str(fj_path)])
 
 
 from tests.unit.unit_utils import native_engine_required  # noqa: E402
@@ -105,7 +105,7 @@ def test_cli_invalid_width(tmp_path: Path) -> None:
     out_path = tmp_path / 'out.fjm'
     with pytest.raises(SystemExit):
         assemble_run_according_to_cmd_line_args(
-            cmd_line_args=['--asm', '-o', str(out_path), '--no_stl', '-w', '7', str(fj_path)]
+            cmd_line_args=['--asm', '-o', str(out_path), '--no-stl', '-w', '7', str(fj_path)]
         )
 
 
@@ -113,7 +113,7 @@ def test_cli_missing_file(tmp_path: Path) -> None:
     out_path = tmp_path / 'out.fjm'
     with pytest.raises(SystemExit):
         assemble_run_according_to_cmd_line_args(
-            cmd_line_args=['--asm', '-o', str(out_path), '--no_stl', str(tmp_path / 'does_not_exist.fj')]
+            cmd_line_args=['--asm', '-o', str(out_path), '--no-stl', str(tmp_path / 'does_not_exist.fj')]
         )
 
 
@@ -313,15 +313,63 @@ def test_cli_no_output_flag_is_gone(tmp_path: Path) -> None:
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', '--no_output', str(fjm_path)])
 
 
-@pytest.mark.parametrize('flag', ['-V', '--flipjump_version'])
+@pytest.mark.parametrize('flag', ['-V', '--flipjump-version', '--flipjump_version'])
 def test_cli_flipjump_version_flag(flag: str, capsys: pytest.CaptureFixture[str]) -> None:
-    # -V / --flipjump_version print the package version and exit 0, before the required `files` positional.
+    # -V / --flipjump-version print the package version and exit 0, before the required `files` positional.
     from flipjump import __version__
 
     with pytest.raises(SystemExit) as exc_info:
         parse_arguments(cmd_line_args=[flag])
     assert exc_info.value.code == 0
     assert capsys.readouterr().out.strip() == f'flipjump {__version__}'
+
+
+# each hyphen spelling and its underscore (or older) alias: the same option
+_SPELLINGS = [
+    (['--breakpoint-contains', 'x'], ['--breakpoint_contains', 'x'], 'breakpoint_contains', ['x']),
+    (['--lzma-preset', '5'], ['--lzma_preset', '5'], 'lzma_preset', 5),
+    (['--max-recursion-depth', '7'], ['--max_recursion_depth', '7'], 'max_recursion_depth', 7),
+    (['--no-stl'], ['--no_stl'], 'no_stl', True),
+    (['--fjm-version', '2'], ['--version', '2'], 'fjm_version', 2),
+    (['--fjm-version', '2'], ['-v', '2'], 'fjm_version', 2),
+]
+
+
+@pytest.mark.parametrize('spelling, alias, dest, value', _SPELLINGS)
+def test_cli_hyphen_spelling_and_alias_are_one_option(
+    spelling: List[str], alias: List[str], dest: str, value: object
+) -> None:
+    default = getattr(parse_arguments(cmd_line_args=['a.fj'])[0], dest)
+    assert default != value  # the control: the value is not just the default
+    for flags in (spelling, alias):
+        args, _ = parse_arguments(cmd_line_args=['a.fj', *flags])
+        assert getattr(args, dest) == value, flags
+
+
+def _parser_options() -> List[str]:
+    parser = get_argument_parser()
+    add_arguments(parser)
+    return [option for action in parser._actions for option in action.option_strings]
+
+
+def test_cli_help_lists_the_hyphen_spellings_only(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        parse_arguments(cmd_line_args=['-h'])
+    help_text = capsys.readouterr().out
+    options = _parser_options()
+    for alias in sorted(HIDDEN_ALIASES):
+        assert alias in options, alias  # the control: the alias is a real option, so its absence below means hidden
+        assert not re.search(rf'{re.escape(alias)}\b(?!-)', help_text), alias
+    for shown in ('--breakpoint-contains', '--lzma-preset', '--max-recursion-depth', '--no-stl', '--fjm-version'):
+        assert shown in help_text, shown
+    assert '--flipjump-version' in help_text and '--flat-memory, --no-flat-memory' in help_text
+
+
+def test_cli_every_underscore_option_is_a_hidden_alias_of_a_hyphen_one() -> None:
+    options = _parser_options()
+    underscored = {option for option in options if option.startswith('--') and '_' in option}
+    assert underscored and underscored <= HIDDEN_ALIASES
+    assert all(option.replace('_', '-') in options for option in underscored)
 
 
 # the span of a high_segment_program decides the flat window (the native engine's default window is 2^23

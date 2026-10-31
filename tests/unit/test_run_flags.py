@@ -119,12 +119,12 @@ def test_cli_compiles_the_flags_into_the_fjm(tmp_path: Path) -> None:
     fj_path.write_text(_looping_source())
     out = tmp_path / 'out.fjm'
     assemble_run_according_to_cmd_line_args(
-        cmd_line_args=['--asm', '-s', '--no_stl', '-o', str(out), '--io-mode', 'pc', '--flat-memory', str(fj_path)]
+        cmd_line_args=['--asm', '-s', '--no-stl', '-o', str(out), '--io-mode', 'pc', '--flat-memory', str(fj_path)]
     )
     header = read_fjm_header(out)
     assert (header.run_flags, header.io_mode) == (RUN_FLAG_FLAT_MEMORY, IO_MODE_PC)
     for off in ([], ['--no-flat-memory']):  # the control: without --flat-memory, nothing is compiled in
-        args = ['--asm', '-s', '--no_stl', '-o', str(out), *off, str(fj_path)]
+        args = ['--asm', '-s', '--no-stl', '-o', str(out), *off, str(fj_path)]
         assemble_run_according_to_cmd_line_args(cmd_line_args=args)
         assert read_fjm_header(out).run_flags == 0
 
@@ -495,7 +495,7 @@ def test_version_0_with_flags_is_a_usage_error(tmp_path: Path, capsys: pytest.Ca
                 cmd_line_args=[
                     '--asm',
                     '-s',
-                    '--no_stl',
+                    '--no-stl',
                     '-v',
                     '0',
                     '-o',
@@ -507,7 +507,7 @@ def test_version_0_with_flags_is_a_usage_error(tmp_path: Path, capsys: pytest.Ca
         assert 'version 0' in capsys.readouterr().err
     # the control: the default io mode, given explicitly, fits version 0
     assemble_run_according_to_cmd_line_args(
-        cmd_line_args=['--asm', '-s', '--no_stl', '-v', '0', '-o', str(tmp_path / 'o.fjm'), '--io-mode', 'standard']
+        cmd_line_args=['--asm', '-s', '--no-stl', '-v', '0', '-o', str(tmp_path / 'o.fjm'), '--io-mode', 'standard']
         + [str(fj_path)]
     )
 
@@ -518,7 +518,7 @@ def test_assemble_and_run_in_one_command_uses_the_compiled_io_mode(
     fj_path = tmp_path / 'p.fj'
     fj_path.write_text(_looping_source())
     modes = _spy_io_modes(monkeypatch)
-    assemble_run_according_to_cmd_line_args(cmd_line_args=['-s', '--no_stl', '--io-mode', 'pc', str(fj_path)])
+    assemble_run_according_to_cmd_line_args(cmd_line_args=['-s', '--no-stl', '--io-mode', 'pc', str(fj_path)])
     assert modes == ['pc']
 
 
@@ -533,7 +533,7 @@ def test_assemble_and_run_in_one_command_compiles_and_runs_flat_memory(
         with monkeypatch.context() as patch:
             seen = spy_engine_runs(patch)
             assemble_run_according_to_cmd_line_args(
-                cmd_line_args=['-s', '--no_stl', '-o', str(out), *extra, str(fj_path)]
+                cmd_line_args=['-s', '--no-stl', '-o', str(out), *extra, str(fj_path)]
             )
         assert [required_ for _, required_, _ in seen] == [required]
         assert read_fjm_header(out).run_flags == (RUN_FLAG_FLAT_MEMORY if required else 0)
