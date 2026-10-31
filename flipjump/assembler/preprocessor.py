@@ -139,6 +139,8 @@ class PreprocessorData:
         *,
         save_debug_labels: bool = True,
         table_pool: Optional[BlockPool] = None,
+        consume_main: bool = False,
+        on_progress: Optional[Callable[[float], None]] = None,
     ):
         """
         @param memory_width: the memory-width
@@ -147,11 +149,13 @@ class PreprocessorData:
         up to the specified recursion depth.
         @param save_debug_labels: record the `...---:start:` macro-start labels (see insert_macro_start_label)
         @param table_pool: if given, relocate the declared tables (see relocatable_call, BlockPool)
+        @param consume_main: the caller will not use `macros` again: the top level's ops are dropped as they expand
+        @param on_progress: if given, told how far into the top level the expansion is (a fraction in [0, 1))
         """
         self.memory_width = memory_width
         self.macros = macros
         self.save_debug_labels = save_debug_labels
-        self.consume_main = False  # see resolve_macros
+        self.consume_main = consume_main
 
         self.curr_address: int = 0
 
@@ -168,19 +172,8 @@ class PreprocessorData:
         self._deferred_label_positions: Dict[str, CodePosition] = {}
 
         self.labels: Dict[str, int] = {}
-        # the emitted ops, compactly (see OpStream). Every stream of this preprocessor shares one refs list.
-        self._op_refs: List[Any] = []
-        self.result_ops: OpStream = OpStream(self._op_refs, self.labels)
-        self.addresses_with_labels: Set[int] = set()
-        self.macro_start_labels: List[Tuple[int, str, CodePosition]] = []  # (address, label, code_position)
-
-        first_segment: NewSegment = NewSegment(0)
-        self.last_new_segment: NewSegment = first_segment
-        self.result_ops.append(first_segment)
-
-        # TABLE PLACEMENT: a table the pool takes goes into pool_ops behind a NewSegment, placed by finish()
+        # TABLE PLACEMENT: the guard of the operands a moved table could change (see OffsetGuard)
         self.table_pool = table_pool
-        self.pool_ops: OpStream = OpStream(self._op_refs, self.labels)
         self.offset_guard: Optional[OffsetGuard] = None
         if table_pool is not None:
             if table_pool.laid_out:
@@ -189,12 +182,24 @@ class PreprocessorData:
                     'assemble()'
                 )
             table_pool.laid_out = True
-            self.offset_guard = table_pool.offset_guard = OffsetGuard(table_pool.pool_start(), self.labels)
-            self.offset_guard.where = self._where
-            self.offset_guard.emitting = lambda: self.curr_address if self._resume is None else self._resume[0]
-            self.result_ops.guard = self.pool_ops.guard = self.offset_guard
-            # a pinned word's wflips tell an address from a number by its expression (BinaryData.pinned_value)
-            self.result_ops.keep_label_values = self.pool_ops.keep_label_values = True
+            self.offset_guard = table_pool.offset_guard = OffsetGuard(
+                table_pool.pool_start(),
+                self.labels,
+                where=self._where,
+                emitting=lambda: self.curr_address if self._resume is None else self._resume[0],
+            )
+        # the emitted ops, compactly (see OpStream). Every stream of this preprocessor shares one refs list.
+        self._op_refs: List[Any] = []
+        self.result_ops: OpStream = OpStream(self._op_refs, self.labels, self.offset_guard)
+        self.addresses_with_labels: Set[int] = set()
+        self.macro_start_labels: List[Tuple[int, str, CodePosition]] = []  # (address, label, code_position)
+
+        first_segment: NewSegment = NewSegment(0)
+        self.last_new_segment: NewSegment = first_segment
+        self.result_ops.append(first_segment)
+
+        # TABLE PLACEMENT: a table the pool takes goes into pool_ops behind a NewSegment, placed by finish()
+        self.pool_ops: OpStream = OpStream(self._op_refs, self.labels, self.offset_guard)
         # {address: the bits a `pad` aligned it to, 0 where only a segment starts} (the OffsetGuard's, or a caller's)
         self.pads: Optional[Dict[int, int]] = None if self.offset_guard is None else self.offset_guard.pads
         self._dollar_ops: Dict[int, Dict[int, bool]] = {}  # id(macro) -> its ops that name `$` (see dollar_ops)
@@ -206,7 +211,7 @@ class PreprocessorData:
         self._deferred = DeferredTables()
         self._moved_starts: List[Tuple[int, int]] = []  # each moved table's first (op, slot) in pool_ops
 
-        self.on_progress: Optional[Callable[[float], None]] = None  # told how far into the top level the expansion is
+        self.on_progress = on_progress
 
         self.max_recursion_depth = max_recursion_depth
         # set python's recursion-limit so the preprocessor's own depth-check (at max_recursion_depth)
@@ -326,7 +331,7 @@ class PreprocessorData:
         for _, at, segment in sorted(moved):
             self.last_new_segment = segment
             self.result_ops.extend_slice(self.pool_ops, *starts[at], *starts[at + 1])
-        self.pool_ops = OpStream(self._op_refs, self.labels)  # release them
+        self.pool_ops = OpStream(self._op_refs, self.labels, self.offset_guard)  # release them
 
     def end_relocation(self) -> None:
         """close the moved table (it holds exactly the ops _relocatable_table_ops counted), and resume the stream"""
@@ -811,10 +816,14 @@ def resolve_macros(
     @return: tuple of the queue of ops, and the labels' dictionary
     """
     preprocessor_data = PreprocessorData(
-        memory_width, macros, max_recursion_depth, save_debug_labels=save_debug_labels, table_pool=table_pool
+        memory_width,
+        macros,
+        max_recursion_depth,
+        save_debug_labels=save_debug_labels,
+        table_pool=table_pool,
+        consume_main=consume_main,
+        on_progress=on_progress,
     )
-    preprocessor_data.consume_main = consume_main
-    preprocessor_data.on_progress = on_progress
     resolve_macro_aux(preprocessor_data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
 
     preprocessor_data.finish(show_statistics)

@@ -592,8 +592,7 @@ def resolve_into(
             address = binary_data.first_address + len(binary_data.fj_words) * memory_width
             return f' of the op at {hex(address)} (after the label {guard.label_below(address)})'
 
-        guard.where = where
-        guard.emitting = None  # every table moved: an operand that reaches over one is refused
+        guard.resolving(where)
 
     insert_fj_op = binary_data.insert_fj_op
     insert_wflip_ops = binary_data.insert_wflip_ops

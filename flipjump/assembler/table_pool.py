@@ -171,7 +171,18 @@ class OffsetGuard:
     violation is refused (`refuse`), `where()` saying where the op is.
     """
 
-    def __init__(self, inline_end: int, labels: LabelsDict):
+    def __init__(
+        self,
+        inline_end: int,
+        labels: LabelsDict,
+        *,
+        where: Callable[[], str] = lambda: '',
+        emitting: Optional[Callable[[], int]] = None,
+    ):
+        """
+        @param where: says where the op being checked is, for a refusal
+        @param emitting: the next inline address the preprocessor emits at (None once every table moved)
+        """
         self.inline_end = inline_end  # the inline stream lies below it, the moved tables above (the pool's start)
         self.labels = labels  # the preprocessor's (a moved table's are there once it is placed)
         self.anchors: List[int] = []  # the cuts of the inline stream, ascending
@@ -183,10 +194,15 @@ class OffsetGuard:
         self.falls_to = -1  # where the last op that falls through to the next op falls to
         self._pending: List[Tuple[int, int, str]] = []  # (label address, target, label) reaching past the code
         self.tables: List[Tuple[int, int, str]] = []  # the placed tables' (start, end, start label), by start
-        self.where: Callable[[], str] = lambda: ''
-        self.emitting: Optional[Callable[[], int]] = None  # the next inline address the preprocessor emits at
+        self.where = where
+        self.emitting = emitting
         self.pads: Dict[int, int] = {}  # inline address -> the bits a `pad` aligned it to (0: a segment starts)
         self.reach = 0  # the highest address an operand checked so far lands at
+
+    def resolving(self, where: Callable[[], str]) -> None:
+        """the labels-resolve phase: every table moved, so an operand that reaches over one is refused"""
+        self.where = where
+        self.emitting = None
 
     def may_move(self, anchor: int) -> Optional[str]:
         """why the table about to move out of `anchor` must stay inline, or None"""

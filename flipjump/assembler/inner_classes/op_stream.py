@@ -149,19 +149,20 @@ class OpStream:
 
     __slots__ = ('kinds', 'vals', 'refs', 'labels', 'keep_label_values', 'guard')
 
-    def __init__(self, refs: List[Any], labels: Dict[str, int]):
+    def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Any = None):
         """
         @param refs: the reference list, shared by every stream of one preprocessor
         @param labels: the preprocessor's labels: a declared label is folded into a literal
+        @param guard: a table pool's OffsetGuard, told of every operand folded here that names a label (None: no
+            pool). With a guard, a wflip's value that names a label stays an expression (BlockPool tells an address
+            from a number)
         """
         self.kinds = bytearray()
         self.vals = array('q')
         self.refs = refs
         self.labels = labels
-        # a wflip's value that names a label stays an expression (BlockPool tells an address from a number)
-        self.keep_label_values = False
-        # a table pool's OffsetGuard: told of every operand folded here that names a label (None: no pool)
-        self.guard: Any = None
+        self.guard = guard
+        self.keep_label_values = guard is not None
 
     def __len__(self) -> int:
         return len(self.kinds)
