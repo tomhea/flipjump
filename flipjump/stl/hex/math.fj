@@ -106,9 +106,9 @@ ns hex {
         //   x[:n] += y[:n]
         //   carry = 0. jump to c0 if it was 0, and to c1 otherwise.
         //
-        // x,y are hex[:n] (named so, as .dst is the table's jumper).
+        // x,y are hex[:n] (not named dst,src, because .dst already names the add table's jumper).
         // @Assumes: n >= 1.
-        // The two clear_carry dances and the n add dances are one chain of table jumps (see hex.tables.chained_jump).
+        // The two carry clears and the n hex adds run as one chain of table jumps (see hex.tables.chained_jump).
         // @requires hex.add.init (or hex.init)
         def chain n, x, y, c0, c1 @ head, tail, return < ..tables.ret, ..tables.res, .dst {
             ..tables.chained_jump .dst, 0
@@ -283,9 +283,9 @@ ns hex {
         //   x[:n] -= y[:n]
         //   carry = 0. jump to c0 if it was 0, and to c1 otherwise.
         //
-        // x,y are hex[:n] (named so, as .dst is the table's jumper).
+        // x,y are hex[:n] (not named dst,src, because .dst already names the sub table's jumper).
         // @Assumes: n >= 1.
-        // The two clear_carry dances and the n sub dances are one chain of table jumps (see hex.tables.chained_jump).
+        // The two carry clears and the n hex subtracts run as one chain of table jumps (see hex.tables.chained_jump).
         // @requires hex.sub.init (or hex.init)
         def chain n, x, y, c0, c1 @ head, cleared, tail, return < ..tables.ret, ..tables.res, .dst {
             ..tables.chained_jump .dst, 0

@@ -68,7 +68,8 @@ ns hex {
     // Space Complexity: 8.5@-18
     //   jump to t<x>    (a 16-way jump on the value of the hex x)
     //
-    // if_flags' trick: x's jump word is armed with switch, each entry disarms it and jumps on, so x is unchanged.
+    // How: x's jump word is pointed at the table (as if_flags does), and the entry it lands on undoes that before
+    // jumping to t<x>, so x is unchanged.
     // x is a hex; t0..t15 are addresses.
     def switch x, t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15 \
             @ switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 {
@@ -94,7 +95,9 @@ ns hex {
     }
     ns switch {
         ns __relocatable__ {
-            // switch's table, which a table pool may move (see table_pool.py)
+            // switch's 16-entry table: entry i jumps to r<i>, which takes the table's address out of x's jump word and
+            //   jumps to t<i>.
+            // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
             def table switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 {
               switch:
                 ;r0

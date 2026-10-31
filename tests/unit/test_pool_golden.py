@@ -68,12 +68,13 @@ v: hex.hex
 p: hex.vec w/4, d
 """
 
-# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9, whose stl comment trims
-# moved the call-site line numbers the labels carry - the .fjm and census digests did not move)
+# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9 and on the plain-comments
+# stl rewrite, whose comment lines moved the call-site line numbers the labels carry - the .fjm and census digests
+# did not move)
 GOLDEN: Dict[str, Dict[str, Any]] = {
     'shipped': {
         'fjm': 'dca7d91cc81896ec582654f2f52571dafb5782279fa640f0b98808c708cbc2c4',
-        'labels': 'a7a8f67f9419c2063e6705d1faf55392f88d32de7cdf2c0005844a697eefa1a6',
+        'labels': '4a5746628d89dc68d538ef99a1085e25024a66e7c496ef9d74ef2b7c500f3592',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 416,
@@ -96,7 +97,7 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
     },
     'narrow': {
         'fjm': 'd56c6e1dc5e83425177b7fcf05285b46ce979e79a81f368b671aa7a0cc38d40b',
-        'labels': '9a178b30a0ac750cb388b85195ee778b867bd301591e7f836f34c50c8a7cfedc',
+        'labels': 'c3e0b5baab6db53b754e818db0311d059a36b0ecb5d878a145c0827352663058',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 289,
@@ -215,7 +216,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(W, pin_all_but=ALL_BUT_D),
         {
             'fjm': 'bdc8e5dd8aa7a0d2923237d7e5c27793e5a67316598999733b739a8c57704a75',
-            'labels': '1646034a149d1a3e3a67d67d4a826df8ff0e43c5bffbc3bc35eb1b581dc09fad',
+            'labels': '3e2e2a89e5d6e2c596b91f35fdcd22dc807465ef73b9bea5fdaff624650311db',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 400,
@@ -243,7 +244,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(W),
         {
             'fjm': 'd414bcbf643c069c887c278547824d353cd787defd3bee951e78491c52bad437',
-            'labels': '967d5453523f79aff2e00bc4b46035fa33f5dcd1646b727d3cb873379ddc8d73',
+            'labels': 'fb68c325e0ef5d43e94f4fc64c452008b5366694461673bdcbfb9a0f3c461f21',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 416,
@@ -271,7 +272,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: _pool(pin_all_but=None),
         {
             'fjm': '328751a21ccf58e62e271b8ec042109246127146b5a6a7a85d9d290b6788973a',
-            'labels': '44ac4ace5c33a058b4ad637b5f5e9b308612fbf533596695944865bc51d78a62',
+            'labels': '6d78accff3ac77b543e9dd7245aecde759df87a18d9ce70c68686f63d029c094',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 416,
@@ -308,7 +309,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         ),
         {
             'fjm': '4c0d3ce9fcd2d1655d70b939c1fa92b0118df4e9837e07df2fda32cc9c78967f',
-            'labels': '08fc67ca5ffa1e60561c0e19ab8b3ce45935a06e5a22dd5d2ca227d7044c41dd',
+            'labels': '317b12ac6b0d602dfe35d3dbcaed194b510f450d20dc66885379d556c57ea1b5',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 306,
@@ -336,7 +337,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(W, POOL_BASE, pin_all_but=ALL_BUT_D),
         {
             'fjm': '0e4a821802c1075e2eba8f89641f74b48bcea5d862befaab9ddfb3b1ab1a54ed',
-            'labels': 'd18b90a2a771ce9a098d737caccb050abd3788bb81a6dbc659a20e4dbce2f632',
+            'labels': 'db3021eaefd1bc8a7bffa29fde2282d5edfd61b624bd4d51d96ca196a8257a8b',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 400,

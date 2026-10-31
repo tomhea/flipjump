@@ -6,7 +6,8 @@ ns hex {
     // Space Complexity: w( 0.5@+22) + 5@+64
     //   like:  dst = *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
-    // *ptr must be a cell: a value below 2^PTR_CELL_BITS, times dw (else the read jumps outside the table).
+    // The pointed op must hold a cell's value v as v*dw, with v below 2^PTR_CELL_BITS (else the read jumps outside
+    //   the table).
     // dst must not overlap ptr.
     // @requires stl.ptr_init (or stl.startup_and_init_all).
     def read_hex dst, ptr {
@@ -143,10 +144,12 @@ ns hex {
     //  Time Complexity: 7@+25
     // Space Complexity: 7@+88
     //   dst[:2] = *armed    (hex.read_byte without its arm)
-    // armed is the address the last pointer operation used: before an _and_inc's inc, the last cell of an n-cell
-    //   op, ptr+index of an _nth_ op; 0 before any.
-    // @Assumes: on every path here, no pointer operation (push / pop and stl.call / stl.return included) ran since.
-    // @Assumes: armed is dw-aligned (not the ptr+w of ptr_wflip_2nd_word, and so of stl.call / stl.return).
+    // armed is the address the last pointer operation used (0 before any): for an _and_inc op, ptr before the inc;
+    //   for an n-cell op, its last cell; for an _nth_ op, the index-th cell past ptr.
+    // @Assumes: on every path to here, no other pointer operation ran since that one (push, pop, stl.call and
+    //   stl.return count too).
+    // @Assumes: armed is dw-aligned. So not after ptr_wflip_2nd_word (it arms ptr+w), nor after stl.call /
+    //   stl.return (they end with it).
     // @Assumes: the armed cell is a narrow one (not after read_cell / write_cell / zero_cell with a wide table).
     // dst is a hex[:2].
     // @requires stl.ptr_init (or stl.startup_and_init_all).
@@ -163,12 +166,12 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: n(4@+28) + w(0.75@+5) + sw(7@+23)                  (sw: entry_address's)
+    //  Time Complexity: n(4@+28) + w(0.75@+5) + sw(7@+23)                  (sw as in hex.pointers.entry_address)
     // Space Complexity: n((w-#w)(@+18) + 2@+49)
     //   dst[:n] = table[idx]    (the idx-th entry of a constant array of hex[:n] entries)
     //
     // table is a constant address; entry k is the n hex data-ops at table + k*n*dw (a hex.vec n value).
-    // idx is an unsigned hex[:idx_n] (idx_n <= w/4); dst may alias idx. entry_address: see hex.pointers.
+    // idx is an unsigned hex[:idx_n] (idx_n <= w/4); dst may alias idx.
     // @requires hex.init & stl.ptr_init
     def read_entry n, dst, table, idx_n, idx @ ptr, end {
         .pointers.entry_address ptr, table, n, idx_n, idx
@@ -193,7 +196,7 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: nb(6@+32) + w(0.75@+5) + sw(7@+23)                 (sw: entry_address's)
+    //  Time Complexity: nb(6@+32) + w(0.75@+5) + sw(7@+23)                 (sw as in hex.pointers.entry_address)
     // Space Complexity: nb((w-#w)(@+18) + 4@+89)
     //   dst[:2nb] = table[idx]    (the idx-th entry of a constant array of nb-byte entries)
     //
@@ -210,13 +213,13 @@ ns hex {
     }
 
     ns pointers {
-        //  Time Complexity: sw(7@+23)     (size*2w a power of 2; else hex.mul_const's for sw(3@+9))
+        //  Time Complexity: sw(7@+23)     (a power-of-2 size*2w; else mul_const's time replaces the shifts' sw(3@+9))
         // Space Complexity: sw(5.5@+137) + w(0.625@+7.25)
         //   dst[:w/4] = table + idx*size*2w    (the address of the idx-th size-ops entry of the array at table)
         //
         // table is a constant address; size is a constant (> 0); idx is an unsigned hex[:idx_n] (idx_n <= w/4).
-        // The index is scaled in the sw = min(w/4, idx_n + ceil(#(size*2w)/4)) hexes it needs - a power-of-2
-        //   size*2w by shifts (as in hex.ptr_index n), any other by hex.mul_const - then added into dst = table.
+        // idx is scaled in the sw = min(w/4, idx_n + ceil(#(size*2w)/4)) hexes it needs: by shifts if size*2w is a
+        //   power of 2 (as in hex.ptr_index n), else by hex.mul_const. Then dst = table + the scaled idx.
         // @requires hex.add.init (or hex.init)
         def entry_address dst, table, size, idx_n, idx {
             .entry_address dst, table, size*dw, idx_n, idx, (idx_n+((#(size*dw))+3)/4 < w/4) ? idx_n+((#(size*dw))+3)/4 : w/4

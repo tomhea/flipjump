@@ -35,7 +35,8 @@ ns hex {
     }
     ns exact_xor {
         ns __relocatable__ {
-            // exact_xor's switch table, which a table pool may move (see table_pool.py)
+            // exact_xor's 16-entry table: entry i flips the set bits of i into {d3,d2,d1,d0}, then jumps to end.
+            // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
             def table switch, end, d3, d2, d1, d0 {
               switch:
                   ;end          //  0
@@ -117,7 +118,9 @@ ns hex {
     }
     ns double_exact_xor {
         ns __relocatable__ {
-            // double_exact_xor's two tables, which a table pool may move (see table_pool.py)
+            // double_exact_xor's two tables: entering first_flip at entry i flips the set bits of i into both
+            //   {d3,d2,d1,d0} and {t3,t2,t1,t0}, then jumps to end.
+            // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
             def table first_flip, second_flip, end, t3, t2, t1, t0, d3, d2, d1, d0 {
               first_flip:
                   ;end                  //  0
@@ -175,7 +178,9 @@ ns hex {
     }
     ns triple_exact_xor {
         ns __relocatable__ {
-            // triple_exact_xor's three tables, which a table pool may move (see table_pool.py)
+            // triple_exact_xor's three tables: entering first_flip at entry i flips the set bits of i into
+            //   {q3,q2,q1,q0}, {t3,t2,t1,t0} and {d3,d2,d1,d0}, then jumps to end.
+            // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
             def table first_flip, second_flip, third_flip, end, q3, q2, q1, q0, t3, t2, t1, t0, d3, d2, d1, d0 {
               first_flip:
                   ;end                  //  0
@@ -283,7 +288,9 @@ ns hex {
     }
     ns quadrupled_exact_xor {
         ns __relocatable__ {
-            // quadrupled_exact_xor's four tables, which a table pool may move (see table_pool.py)
+            // quadrupled_exact_xor's four tables: entering first_flip at entry i flips the set bits of i into
+            //   {r3,r2,r1,r0}, {q3,q2,q1,q0}, {t3,t2,t1,t0} and {d3,d2,d1,d0}, then jumps to end.
+            // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
             def table first_flip, second_flip, third_flip, fourth_flip, end, r3, r2, r1, r0, q3, q2, q1, q0, t3, \
                     t2, t1, t0, d3, d2, d1, d0 {
               first_flip:
@@ -479,9 +486,9 @@ ns hex {
         }
     }
 
-    // sparse_* -- the xor/zero/mov family with the switch table's pad passed in as PAD, so one
-    // hot call site can buy alignment without every cold expansion paying for it in image size.
-    // Value-identical to the pad-16 macros above. PAD is a constant power of two, >= 16.
+    // The sparse_* macros are xor / zero / mov with their table padded to PAD ops instead of 16. A hot call site can
+    // align its table more (a cheaper wflip), and only that site pays the bigger program size.
+    // They compute the same values as the macros above. PAD is a constant power of two, at least 16.
 
 
     //  Time Complexity: @
@@ -515,7 +522,8 @@ ns hex {
     }
     ns sparse_exact_xor {
         ns __relocatable__ {
-            // sparse_exact_xor's switch table, which a table pool may move (see table_pool.py)
+            // sparse_exact_xor's 16-entry table: entry i flips the set bits of i into {d3,d2,d1,d0}, then jumps to end.
+            // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
             def table switch, end, d3, d2, d1, d0 {
               switch:
                   ;end          //  0

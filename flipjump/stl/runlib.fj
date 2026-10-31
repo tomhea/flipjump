@@ -4,12 +4,14 @@ dbit = w + #w   // the bit-distance from the variable's start, to the bit/hex va
 
 ns hex {
     ns pointers {
-        // The bits one pointed-to cell holds: ptr_init lays a 2^PTR_CELL_BITS-entry decoder table at op 2^PTR_CELL_BITS.
-        // A multiple of 4, at least 8, and dbit+PTR_CELL_BITS < dw. Override per build: fj ... -D hex.pointers.PTR_CELL_BITS=16
+        // The bits a pointed-to cell holds. ptr_init lays a 2^PTR_CELL_BITS-entry decoder table at op 2^PTR_CELL_BITS.
+        // It must be a multiple of 4, at least 8, and keep dbit+PTR_CELL_BITS below dw.
+        // Set it per build with:  fj ... -D hex.pointers.PTR_CELL_BITS=16
         PTR_CELL_BITS = 8
 
-        // A second, WIDE decoder table (0: none) at op 2^PTR_WIDE_BITS, for hex.read_cell / hex.write_cell only;
-        //   the other pointer macros keep the narrow table's cost. Same rules, and wider than PTR_CELL_BITS.
+        // The bits hex.read_cell / hex.write_cell move, through a second, wider decoder table at op 2^PTR_WIDE_BITS.
+        // 0 means no second table. The other pointer macros keep the narrow table (and its lower cost).
+        // The same rules as PTR_CELL_BITS, and larger than it.
         PTR_WIDE_BITS = 0
 
         // The width hex.read_cell / hex.write_cell move.

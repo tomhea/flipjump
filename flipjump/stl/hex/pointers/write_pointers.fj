@@ -14,7 +14,8 @@ ns hex {
         .pointers.xor_hex_to_flip_ptr hex.pointers.read_byte
     }
 
-    //  Time Complexity: w( 0.5@+4) + (1+6*PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + PTR_CELL_BITS/2 + 21   (at w=64; 13@+49 at the default 8)
+    //  Time Complexity: w( 0.5@+4) + (1+6*PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + PTR_CELL_BITS/2 + 21   (for w=64;
+    //       that is 13@+49 for the default PTR_CELL_BITS=8)
     // Space Complexity: w( 0.5@+22) + (1+6*PTR_CELL_BITS/4)@ + 88(PTR_CELL_BITS/4) + 16
     //   like:  *ptr = 0
     //   Zeroes the whole narrow cell (all PTR_CELL_BITS bits).
@@ -190,8 +191,9 @@ ns hex {
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
         //   does:       *(ptr+i*2w) = src[i*h:(i+1)*h]      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
         //
-        // .ret_after_read_byte is set once for the n read dances (each still sets and clears to_flip+w, which
-        //   xor_hex_to_flip_ptr uses too), and the armed fields advance by 2w between the cells instead of being re-armed.
+        // .ret_after_read_byte is set once for all n reads (each read still sets and clears to_flip+w, because
+        //   xor_hex_to_flip_ptr uses it too). Between the cells, the armed fields advance by 2w instead of being
+        //   set again.
         // src is a hex[:n*h]; h (1 or 2) is the hexes written to each cell.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def write_cells n, h, src < .ret_after_read_byte, .to_flip {
