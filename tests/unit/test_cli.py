@@ -395,7 +395,7 @@ def _cli_assemble(tmp_path: Path, name: str, files: List[Path], *options: str) -
 
 def _output_and_ops(fjm_path: Path) -> Tuple[bytes, int]:
     io_device = FixedIO(b'')
-    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=io_device, show_progress=False)
     return io_device.get_output(allow_incomplete_output=True), statistics.op_counter
 
 

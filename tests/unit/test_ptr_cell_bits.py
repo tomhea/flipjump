@@ -85,7 +85,7 @@ def test_pointer_program_is_correct_at_every_cell_width(
     # a wider cell changes how many bits one dereference carries, not what a program prints:
     # read_byte / read_hex keep taking the low 2 / 1 hexes of a wider read_byte register
     fjm = _assemble_at(tmp_path, program, cell_bits)
-    assert run_test_output(fjm, b'', (REPO / expected).read_bytes(), print_time=False, print_termination=False)
+    assert run_test_output(fjm, b'', (REPO / expected).read_bytes(), show_progress=False, print_termination=False)
 
 
 @pytest.mark.parametrize('name, program, expected', POINTER_PARAMS)
@@ -93,7 +93,7 @@ def test_pointer_program_is_unperturbed_by_a_wide_table(tmp_path: Path, name: st
     # a program that never uses read_cell runs the same with a wide table laid: a narrow dereference arms the slot
     # at dbit+PTR_CELL_BITS and never lands in the table at op 2^PTR_WIDE_BITS
     fjm = _assemble_at(tmp_path, program, 8, wide_bits=16)
-    assert run_test_output(fjm, b'', (REPO / expected).read_bytes(), print_time=False, print_termination=False)
+    assert run_test_output(fjm, b'', (REPO / expected).read_bytes(), show_progress=False, print_termination=False)
 
 
 def test_ptr_cell_bits_actually_reaches_the_decoder_table(tmp_path: Path) -> None:
@@ -145,7 +145,7 @@ def test_a_whole_cell_round_trips_at_every_width(tmp_path: Path, cell_bits: int,
     # pair; zero_byte covering less than the whole narrow cell fails the (16, 0) row
     fjm = _assemble_at(tmp_path, 'programs/hexlib_tests/basics2/wide_cells.fj', cell_bits, wide_bits)
     assert run_test_output(
-        fjm, b'', _expected_wide_cells(cell_bits, wide_bits), print_time=False, print_termination=False
+        fjm, b'', _expected_wide_cells(cell_bits, wide_bits), show_progress=False, print_termination=False
     )
 
 
@@ -175,16 +175,16 @@ def test_the_api_defines_actually_reach_the_parse(tmp_path: Path) -> None:
     prog.write_text('ns a {\n  GREET = 0x5\n}\nstl.startup\nhex.print_as_digit g, 0\nstl.loop\n  g: hex.hex a.GREET\n')
 
     plain, overridden = tmp_path / 'plain.fjm', tmp_path / 'ov.fjm'
-    assemble([prog], plain, memory_width=32, print_time=False)
-    assemble([prog], overridden, memory_width=32, print_time=False, defines={'a.GREET': 0x8})
+    assemble([prog], plain, memory_width=32, show_progress=False)
+    assemble([prog], overridden, memory_width=32, show_progress=False, defines={'a.GREET': 0x8})
     assert plain.read_bytes() != overridden.read_bytes(), 'defines was ignored'
 
     prog.write_text(prog.read_text().replace('0x5', '0x8'))
     written = tmp_path / 'written.fjm'
-    assemble([prog], written, memory_width=32, print_time=False)
+    assemble([prog], written, memory_width=32, show_progress=False)
     assert overridden.read_bytes() == written.read_bytes(), 'the override is not the written value'
     expression = tmp_path / 'expression.fjm'
-    assemble([prog], expression, memory_width=32, print_time=False, defines={'a.GREET': 'w / 4'})
+    assemble([prog], expression, memory_width=32, show_progress=False, defines={'a.GREET': 'w / 4'})
     assert expression.read_bytes() == written.read_bytes(), 'a string value is not an fj expression'
 
 
@@ -193,5 +193,5 @@ def test_the_api_refuses_a_malformed_define(tmp_path: Path, defines: Dict[str, U
     prog = tmp_path / 'prog.fj'
     prog.write_text('GREET = 0x5\nstl.startup\nstl.loop\n')
     with pytest.raises(ValueError, match='define'):
-        assemble([prog], tmp_path / 'o.fjm', memory_width=32, print_time=False, defines=defines)
-    assemble([prog], tmp_path / 'o.fjm', memory_width=32, print_time=False, defines={'GREET': 1})  # the control
+        assemble([prog], tmp_path / 'o.fjm', memory_width=32, show_progress=False, defines=defines)
+    assemble([prog], tmp_path / 'o.fjm', memory_width=32, show_progress=False, defines={'GREET': 1})  # the control

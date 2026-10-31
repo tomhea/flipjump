@@ -144,7 +144,7 @@ def test_the_api_takes_the_io_mode_by_name_or_number(tmp_path: Path, io_mode: An
     assert read_fjm_header(_write_simple(tmp_path / 'w.fjm', io_mode=io_mode)).io_mode == expected
     fj_path = tmp_path / 'p.fj'
     fj_path.write_text(_looping_source())
-    flipjump_quickstart.assemble([fj_path], tmp_path / 'q.fjm', use_stl=False, print_time=False, io_mode=io_mode)
+    flipjump_quickstart.assemble([fj_path], tmp_path / 'q.fjm', use_stl=False, show_progress=False, io_mode=io_mode)
     assert read_fjm_header(tmp_path / 'q.fjm').io_mode == expected
 
 
@@ -261,7 +261,7 @@ def test_an_unforced_flat_window_still_falls_back_to_paged(
 
 
 def _lean_load(fjm_path: Path, flat_max_words: Optional[int] = None) -> Any:
-    with ProgressBar('', print_time=False) as progress:
+    with ProgressBar('', show_progress=False) as progress:
         return fjm_run._load_native(fjm_path, read_fjm_header(fjm_path), flat_max_words, False, progress)
 
 

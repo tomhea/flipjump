@@ -14,6 +14,7 @@ import pytest
 from flipjump import assemble_and_run, assemble_and_run_test_output, flipjump_quickstart, run_test_output
 from flipjump.assembler import assembler
 from flipjump.fjm.fjm_writer import Writer
+from flipjump.utils.exceptions import FlipJumpAssemblerException
 from flipjump.utils.functions import load_debugging_labels
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.utils.classes import TerminationCause
@@ -31,7 +32,7 @@ def test_assemble_and_run_hello(fjm_version: FJMVersion, memory_width: int) -> N
         use_stl=False,
         fjm_version=fjm_version,
         should_raise_assertion_error=True,
-        print_time=False,
+        show_progress=False,
         print_termination=False,
     )
 
@@ -43,7 +44,7 @@ def test_run_test_output_failure_returns_false(tmp_path: Path) -> None:
         b'',
         b'WRONG OUTPUT',
         should_raise_assertion_error=False,
-        print_time=False,
+        show_progress=False,
         print_termination=False,
     )
 
@@ -56,7 +57,7 @@ def test_run_test_output_failure_raises(tmp_path: Path) -> None:
             b'',
             b'WRONG OUTPUT',
             should_raise_assertion_error=True,
-            print_time=False,
+            show_progress=False,
             print_termination=False,
         )
 
@@ -64,20 +65,36 @@ def test_run_test_output_failure_raises(tmp_path: Path) -> None:
 def test_assemble_returns_the_labels(tmp_path: Path) -> None:
     source = tmp_path / 'p.fj'
     source.write_text('a: ;a\nb: a+3;b\nns n {\n  c: ;a\n}\n')
-    labels = flipjump_quickstart.assemble([source], tmp_path / 'p.fjm', use_stl=False, print_time=False)
+    labels = flipjump_quickstart.assemble([source], tmp_path / 'p.fjm', use_stl=False, show_progress=False)
     assert {name: labels[name] for name in ('a', 'b', 'n.c')} == {'a': 0, 'b': 2 * 64, 'n.c': 4 * 64}
     writer = Writer(tmp_path / 'q.fjm', 32, FJMVersion.NormalVersion)
-    labels = assembler.assemble([('f1', source)], 32, writer, print_time=False)
+    labels = assembler.assemble([('f1', source)], 32, writer, show_progress=False)
     assert {name: labels[name] for name in ('a', 'b', 'n.c')} == {'a': 0, 'b': 2 * 32, 'n.c': 4 * 32}
+
+
+def test_the_assembler_takes_the_memory_width_from_the_writer(tmp_path: Path) -> None:
+    source = tmp_path / 'p.fj'
+    source.write_text('a: ;a\nb: a+3;b\n')
+    for width in (16, 32):
+        labels = assembler.assemble(
+            [('f1', source)],
+            fjm_writer=Writer(tmp_path / 'w.fjm', width, FJMVersion.NormalVersion),
+            show_progress=False,
+        )
+        assert labels['b'] == 2 * width
+    with pytest.raises(FlipJumpAssemblerException, match="differs from the writer's memory-width 16"):
+        assembler.assemble([('f1', source)], 32, Writer(tmp_path / 'x.fjm', 16, FJMVersion.NormalVersion))
+    with pytest.raises(TypeError, match='needs fjm_writer'):
+        assembler.assemble([('f1', source)], 32)
 
 
 def test_assemble_returns_the_debugging_labels_with_a_debugging_file(tmp_path: Path) -> None:
     source = tmp_path / 'p.fj'
     source.write_text('stl.startup\nloop: ;loop\n')
     debugging_file = tmp_path / 'p.fjd'
-    plain = flipjump_quickstart.assemble([source], tmp_path / 'a.fjm', print_time=False)
+    plain = flipjump_quickstart.assemble([source], tmp_path / 'a.fjm', show_progress=False)
     debugged = flipjump_quickstart.assemble(
-        [source], tmp_path / 'b.fjm', print_time=False, debugging_file_path=debugging_file
+        [source], tmp_path / 'b.fjm', show_progress=False, debugging_file_path=debugging_file
     )
     assert debugged == load_debugging_labels(debugging_file)
     assert plain.items() <= debugged.items() and 'loop' in plain
@@ -86,7 +103,7 @@ def test_assemble_returns_the_debugging_labels_with_a_debugging_file(tmp_path: P
 
 
 def test_assemble_and_run_returns_looping() -> None:
-    statistics = assemble_and_run([HELLO_NO_STL], use_stl=False, print_time=False, print_termination=False)
+    statistics = assemble_and_run([HELLO_NO_STL], use_stl=False, show_progress=False, print_termination=False)
     assert statistics.termination_cause == TerminationCause.Looping
 
 

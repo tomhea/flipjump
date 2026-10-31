@@ -367,7 +367,7 @@ def test_closing_the_window_raises_keyboard_interrupt() -> None:
 def test_fj_program_presents_into_the_window(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(SCREEN_PROGRAM, tmp_path, use_stl=True)
     device = InteractiveScreen()
-    statistics = fjm_run.run(fjm_path, io_device=device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=device, show_progress=False)
     assert statistics.termination_cause == TerminationCause.Looping
     assert device.frame_count == 1
     assert device.frame_hashes[0][1] == EXPECTED_FRAME_HASH
@@ -424,7 +424,7 @@ def test_closing_the_window_terminates_a_real_run(tmp_path: Path, engine: str) -
     device.window.ensure_open(4, 2)  # open early so the QUIT event can be posted
     pygame.event.post(pygame.event.Event(pygame.QUIT))
 
-    statistics = fjm_run.run(fjm_path, io_device=device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=device, show_progress=False)
     assert statistics.termination_cause == TerminationCause.KeyboardInterrupt
     assert device.window.closed
     # storage_mode is set only by the native engine - prove the right engine actually ran

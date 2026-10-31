@@ -24,7 +24,7 @@ CALLS = [
 def _assemble_call(tmp_path: Path, call: str, n: int) -> None:
     program = tmp_path / 'program.fj'
     program.write_text(f'stl.startup_and_init_all\n{call.format(n=n)}\nstl.loop\np: hex.vec w/4\nd: hex.vec 4\n')
-    assemble([program], tmp_path / 'program.fjm', memory_width=64, print_time=False)
+    assemble([program], tmp_path / 'program.fjm', memory_width=64, show_progress=False)
 
 
 @pytest.mark.parametrize('call', CALLS)

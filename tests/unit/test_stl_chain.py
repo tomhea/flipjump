@@ -24,7 +24,7 @@ def _return_label_ops(tmp_path: Path, call: str, macro: str) -> List[int]:
     program = tmp_path / 'program.fj'
     program.write_text(f'stl.startup\n{call}\nstl.loop\nhex.init\nx: hex.vec 8\ny: hex.vec 8\nb: hex.hex\n')
     debug = tmp_path / 'program.fjd'
-    assemble([program], tmp_path / 'program.fjm', memory_width=WIDTH, print_time=False, debugging_file_path=debug)
+    assemble([program], tmp_path / 'program.fjm', memory_width=WIDTH, show_progress=False, debugging_file_path=debug)
     labels = load_debugging_labels(debug)
     return sorted(address // OP for name, address in labels.items() if f'{macro}(' in name and name.endswith('return'))
 

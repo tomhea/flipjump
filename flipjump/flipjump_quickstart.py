@@ -41,13 +41,14 @@ def assemble(
     warning_as_errors: bool = True,
     debugging_file_path: Optional[Path] = None,
     show_statistics: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     flat_memory: bool = False,
     io_mode: Union[int, str] = 0,
+    print_time: Optional[bool] = None,
 ) -> Dict[str, int]:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -59,7 +60,8 @@ def assemble(
     :param warning_as_errors: treat warnings as errors (stop execution on warnings)
     :param debugging_file_path:[out]: is specified, save debug information in this file
     :param show_statistics: if true shows macro-usage statistics
-    :param print_time: if true prints the times of each assemble-stage
+    :param show_progress: if true, show each assemble stage's time (and on a terminal, its progress bar)
+    :param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
     :param lzma_preset: the preset used to compress a version-3 or version-4 .fjm (0-9, faster->smaller).
@@ -78,6 +80,7 @@ def assemble(
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
+    show_progress = show_progress if print_time is None else print_time
     file_tuples = get_file_tuples([str(fj_file.absolute()) for fj_file in fj_file_paths], no_stl=not use_stl)
     fjm_writer = Writer(
         output_fjm_path,
@@ -89,12 +92,11 @@ def assemble(
     )
     return assembler.assemble(
         file_tuples,
-        memory_width,
-        fjm_writer,
+        fjm_writer=fjm_writer,
         debugging_file_path=debugging_file_path,
         warning_as_errors=warning_as_errors,
         show_statistics=show_statistics,
-        print_time=print_time,
+        show_progress=show_progress,
         max_recursion_depth=max_recursion_depth,
         defines=defines,
         table_pool=table_pool,
@@ -107,12 +109,13 @@ def run(
     debugging_file: Optional[Path] = None,
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
+    print_time: Optional[bool] = None,
 ) -> TerminationStatistics:
     """
     runs a .fjm file (with the FlipJump interpreter)
@@ -121,7 +124,8 @@ def run(
     @param io_device:[in,out]: the device handling input/output. if not specified: the io mode compiled into the
     .fjm (`fj --io-mode`; Standard IO unless it was set).
     @param show_trace: if true print every opcode executed
-    @param print_time: if true print running times
+    @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
+    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile: if true collect the full per-op statistics (uses the slower featured run-loop)
@@ -137,6 +141,7 @@ def run(
 
     :note: This is a wrapper function to the fjm_run.run() function.
     """
+    show_progress = show_progress if print_time is None else print_time
     return debug(
         fjm_path,
         debugging_file,
@@ -145,7 +150,7 @@ def run(
         breakpoints_contains=None,
         io_device=io_device,
         show_trace=show_trace,
-        print_time=print_time,
+        show_progress=show_progress,
         print_termination=print_termination,
         last_ops_debugging_list_length=last_ops_debugging_list_length,
         profile=profile,
@@ -163,12 +168,13 @@ def debug(
     breakpoints_contains: Optional[Set[str]] = None,
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
+    print_time: Optional[bool] = None,
 ) -> TerminationStatistics:
     """
     debugs a .fjm file (with the FlipJump interpreter+debugger)
@@ -182,7 +188,8 @@ def debug(
     @param io_device:[in,out]: the device handling input/output. if not specified: the io mode compiled into the
     .fjm (`fj --io-mode`; Standard IO unless it was set).
     @param show_trace: if true print every opcode executed
-    @param print_time: if true print running times
+    @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
+    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile, flat_memory, flat_max_words: as in run()
@@ -190,6 +197,7 @@ def debug(
 
     :note: This is a wrapper function to the fjm_run.run() function.
     """
+    show_progress = show_progress if print_time is None else print_time
     header = read_fjm_header(fjm_path)
     created_device = io_device is None
     if io_device is None:
@@ -205,7 +213,7 @@ def debug(
                 fjm_path,
                 io_device=io_device,
                 show_trace=show_trace,
-                print_time=print_time,
+                show_progress=show_progress,
                 breakpoint_handler=breakpoint_handler if breakpoint_handler.breakpoints else None,
                 last_ops_debugging_list_length=last_ops_debugging_list_length,
                 profile=profile,
@@ -237,12 +245,13 @@ def run_test_output(
     should_raise_assertion_error: bool = False,
     debugging_file: Optional[Path] = None,
     show_trace: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
+    print_time: Optional[bool] = None,
 ) -> bool:
     """
     runs a .fjm file (with the FlipJump interpreter) with the given input, and checks that it finished successfuly and
@@ -256,7 +265,8 @@ def run_test_output(
     - if True it raises the assertion error it failed on, if False it doesn't raise anything and just returns false.
     @param debugging_file:[in]: the path to the debugging file
     @param show_trace: if true print every opcode executed
-    @param print_time: if true print running times
+    @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
+    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile, flat_memory, flat_max_words: as in run()
@@ -272,13 +282,14 @@ def run_test_output(
                import pytest
                pytest.register_assert_rewrite("flipjump.flipjump_quickstart")
     """
+    show_progress = show_progress if print_time is None else print_time
     io_device = FixedIO(fixed_input)
     termination_statistics = run(
         fjm_path,
         debugging_file=debugging_file,
         io_device=io_device,
         show_trace=show_trace,
-        print_time=print_time,
+        show_progress=show_progress,
         print_termination=print_termination,
         last_ops_debugging_list_length=last_ops_debugging_list_length,
         profile=profile,
@@ -306,7 +317,7 @@ def assemble_and_run(
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     show_statistics: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
@@ -319,6 +330,7 @@ def assemble_and_run(
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
+    print_time: Optional[bool] = None,
 ) -> TerminationStatistics:
     """
     assembles the .fj files into a temporary .fjm file, then runs it.
@@ -327,6 +339,7 @@ def assemble_and_run(
 
     @return: the run's termination-statistics.
     """
+    show_progress = show_progress if print_time is None else print_time
     return assemble_and_debug(
         fj_file_paths,
         memory_width=memory_width,
@@ -334,7 +347,7 @@ def assemble_and_run(
         fjm_version=fjm_version,
         warning_as_errors=warning_as_errors,
         show_statistics=show_statistics,
-        print_time=print_time,
+        show_progress=show_progress,
         max_recursion_depth=max_recursion_depth,
         io_device=io_device,
         show_trace=show_trace,
@@ -358,7 +371,7 @@ def assemble_and_debug(
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     show_statistics: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     breakpoints_addresses: Optional[Set[int]] = None,
     breakpoints: Optional[Set[str]] = None,
@@ -374,6 +387,7 @@ def assemble_and_debug(
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
+    print_time: Optional[bool] = None,
 ) -> TerminationStatistics:
     """
     assembles the .fj files into a temporary .fjm file, then runs and debugs it.
@@ -382,6 +396,7 @@ def assemble_and_debug(
 
     @return: the run's termination-statistics.
     """
+    show_progress = show_progress if print_time is None else print_time
     with TemporaryDirectory(suffix=get_temp_directory_suffix(fj_file_paths)) as temp_dir_name:
         fjm_file = Path(temp_dir_name) / 'out.fjm'
         debug_file = Path(temp_dir_name) / 'debug.fjd'
@@ -395,7 +410,7 @@ def assemble_and_debug(
             warning_as_errors=warning_as_errors,
             debugging_file_path=debug_file,
             show_statistics=show_statistics,
-            print_time=print_time,
+            show_progress=show_progress,
             max_recursion_depth=max_recursion_depth,
             flat_memory=flat_memory,
             io_mode=io_mode,
@@ -412,7 +427,7 @@ def assemble_and_debug(
             breakpoints_contains=breakpoints_contains,
             io_device=io_device,
             show_trace=show_trace,
-            print_time=print_time,
+            show_progress=show_progress,
             print_termination=print_termination,
             last_ops_debugging_list_length=last_ops_debugging_list_length,
             profile=profile,
@@ -433,7 +448,7 @@ def assemble_and_run_test_output(
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
     show_statistics: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     expected_termination_cause: TerminationCause = TerminationCause.Looping,
     should_raise_assertion_error: bool = False,
@@ -447,6 +462,7 @@ def assemble_and_run_test_output(
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
+    print_time: Optional[bool] = None,
 ) -> bool:
     """
     assembles the .fj files into a temporary .fjm file, then runs it with the given input, and checks that
@@ -464,6 +480,7 @@ def assemble_and_run_test_output(
                import pytest
                pytest.register_assert_rewrite("flipjump.flipjump_quickstart")
     """
+    show_progress = show_progress if print_time is None else print_time
     with TemporaryDirectory(suffix=get_temp_directory_suffix(fj_file_paths)) as temp_dir_name:
         fjm_file = Path(temp_dir_name) / 'out.fjm'
         debug_file = Path(temp_dir_name) / 'debug.fjd'
@@ -477,7 +494,7 @@ def assemble_and_run_test_output(
             warning_as_errors=warning_as_errors,
             debugging_file_path=debug_file,
             show_statistics=show_statistics,
-            print_time=print_time,
+            show_progress=show_progress,
             max_recursion_depth=max_recursion_depth,
             flat_memory=flat_memory,
             io_mode=io_mode,
@@ -494,7 +511,7 @@ def assemble_and_run_test_output(
             should_raise_assertion_error=should_raise_assertion_error,
             debugging_file=debug_file,
             show_trace=show_trace,
-            print_time=print_time,
+            show_progress=show_progress,
             print_termination=print_termination,
             last_ops_debugging_list_length=last_ops_debugging_list_length,
             profile=profile,

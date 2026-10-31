@@ -51,7 +51,7 @@ def test_device_reads_and_writes_memory(tmp_path: Path, engine: str) -> None:
     # find the marker op addresses: scan for the known data pattern after the run once.
     # simpler: run once with a plain device and locate the written value via the spy reads.
     io_device = MemorySpyIO(read_word_address=1, write_word_address=3000, write_value=0x77)
-    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=io_device, show_progress=False)
     assert statistics.termination_cause == TerminationCause.RuntimeMemoryError or (
         statistics.termination_cause == TerminationCause.Looping
     )
@@ -68,7 +68,7 @@ def test_device_memory_width_and_data_byte_helpers(tmp_path: Path, engine: str) 
     fjm_path = assemble_to_path(MARKER_PROGRAM, tmp_path, memory_width=64, use_stl=True)
 
     io_device = MemorySpyIO(read_word_address=0, write_word_address=3000, write_value=1)
-    fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    fjm_run.run(fjm_path, io_device=io_device, show_progress=False)
     device_memory = io_device.device_memory
 
     assert device_memory.memory_width == 64
