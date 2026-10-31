@@ -1,8 +1,8 @@
 """
 unit-tests for what a .fjm carries about how to run it, and for loading it.
 
-the header's run flags and io mode (`fj --run-flags N` / `--io-mode N` compile them in; `--run-flags` and
-`--io` override them at run time), the flat window the CLI derives from them, the error a forced flat
+the header's run flags and io mode (`fj --flat-memory` / `--io-mode N` compile them in; `--[no-]flat-memory`
+and `--io` override them at run time), the flat window the CLI derives from them, the error a forced flat
 memory gives when it cannot be allocated, and the lean native load (the .fjm's bytes straight into the
 engine, no python object per word) - pinned against the Reader's memory, word for word.
 """
@@ -117,24 +117,27 @@ def test_cli_compiles_the_flags_into_the_fjm(tmp_path: Path) -> None:
     fj_path.write_text(_looping_source())
     out = tmp_path / 'out.fjm'
     assemble_run_according_to_cmd_line_args(
-        cmd_line_args=['--asm', '-s', '--no_stl', '-o', str(out), '--io-mode', '1', '--run-flags', '1', str(fj_path)]
+        cmd_line_args=['--asm', '-s', '--no_stl', '-o', str(out), '--io-mode', '1', '--flat-memory', str(fj_path)]
     )
     header = read_fjm_header(out)
     assert (header.run_flags, header.io_mode) == (RUN_FLAG_FLAT_MEMORY, IO_MODE_PC)
+    for off in ([], ['--no-flat-memory']):  # the control: without --flat-memory, nothing is compiled in
+        args = ['--asm', '-s', '--no_stl', '-o', str(out), *off, str(fj_path)]
+        assemble_run_according_to_cmd_line_args(cmd_line_args=args)
+        assert read_fjm_header(out).run_flags == 0
 
 
-@pytest.mark.parametrize(
-    'argument, value', [('--io-mode', '2'), ('--io-mode', '-1'), ('--run-flags', '2'), ('--run-flags', '6')]
-)
+@pytest.mark.parametrize('argument, value', [('--io-mode', '2'), ('--io-mode', '-1')])
 def test_cli_rejects_bad_flag_values(argument: str, value: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', argument, value, 'a.fj'])
     assert 'bad' in capsys.readouterr().err
 
 
-def test_there_is_no_flags_option() -> None:
+@pytest.mark.parametrize('option', ['--flags', '--run-flags'])
+def test_there_is_no_flags_option(option: str) -> None:
     with pytest.raises(SystemExit):
-        flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--flags', '1', 'a.fj'])
+        flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', option, '1', 'a.fj'])
 
 
 # --- the CLI: running by the compiled flags ---
@@ -182,29 +185,30 @@ def _run_and_spy(
 
 
 @native_engine_required
-def test_the_flat_memory_run_flag_runs_flat_and_run_flags_overrides_it(
+def test_the_compiled_flat_memory_runs_flat_and_the_flat_memory_flags_override_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # a span over the automatic limit: without the flag the engine's default window ('hybrid')
     fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
     span = _BIG_TOP + 4
     assert _run_and_spy(fjm_path, monkeypatch, []) == (None, False, 'hybrid')
-    assert _run_and_spy(fjm_path, monkeypatch, ['--run-flags', '1']) == (span, True, 'flat')
+    assert _run_and_spy(fjm_path, monkeypatch, ['--flat-memory']) == (span, True, 'flat')
+    assert _run_and_spy(fjm_path, monkeypatch, ['--no-flat-memory']) == (None, False, 'hybrid')
     patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (span, True, 'flat')
-    assert _run_and_spy(fjm_path, monkeypatch, ['--run-flags', '0']) == (None, False, 'hybrid')
+    assert _run_and_spy(fjm_path, monkeypatch, ['--flat-memory']) == (span, True, 'flat')
+    assert _run_and_spy(fjm_path, monkeypatch, ['--no-flat-memory']) == (None, False, 'hybrid')
     # the explicit window options still win over the compiled flag
     assert _run_and_spy(fjm_path, monkeypatch, ['--flat-max-words', '4']) == (4, False, 'hybrid')
 
 
 @native_engine_required
 @pytest.mark.parametrize(
-    'compiled, extra, advice',
+    'compiled, extra, cause',
     [
-        (RUN_FLAG_FLAT_MEMORY, [], 'Running it with --run-flags 0 might'),
-        (0, ['--run-flags', '1'], 'Running it with --run-flags 0 might'),
-        (0, ['--flat-memory'], 'Running it without --flat-memory might'),
-        (RUN_FLAG_FLAT_MEMORY, ['--flat-memory'], 'Running it without --flat-memory and with --run-flags 0 might'),
+        (RUN_FLAG_FLAT_MEMORY, [], 'this program asks for flat memory (compiled into the .fjm with --flat-memory)'),
+        (0, ['--flat-memory'], '--flat-memory was given'),
+        (RUN_FLAG_FLAT_MEMORY, ['--flat-memory'], '--flat-memory was given'),
     ],
 )
 def test_a_forced_flat_memory_that_cannot_be_allocated_says_how_to_run_anyway(
@@ -213,7 +217,7 @@ def test_a_forced_flat_memory_that_cannot_be_allocated_says_how_to_run_anyway(
     capsys: pytest.CaptureFixture[str],
     compiled: int,
     extra: List[str],
-    advice: str,
+    cause: str,
 ) -> None:
     fjm_path = assemble_to_path(high_segment_program(_BIG_TOP), tmp_path, memory_width=32)
     patch_run_header(fjm_path, run_flags=compiled)
@@ -221,8 +225,11 @@ def test_a_forced_flat_memory_that_cannot_be_allocated_says_how_to_run_anyway(
     with pytest.raises(SystemExit) as exit_info:
         assemble_run_according_to_cmd_line_args(cmd_line_args=['--run', '-s', *extra, str(fjm_path)])
     message = str(exit_info.value.code)
-    assert advice in message and 'at a cost of speed' in message
+    assert message.startswith(f'flipjump: {cause}: ')
+    assert 'Running it with --no-flat-memory might fix that, at a cost of speed.' in message
     assert f'{_BIG_TOP + 4:,} words' in message
+    # the control: the advice works - the same run with --no-flat-memory falls back to paged memory
+    assert _run_and_spy(fjm_path, monkeypatch, ['--no-flat-memory'])[1:] == (False, 'paged')
 
 
 @native_engine_required
@@ -468,7 +475,7 @@ def test_the_automatic_window_includes_a_span_of_exactly_2_24(tmp_path: Path, mo
 def test_version_0_with_flags_is_a_usage_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fj_path = tmp_path / 'p.fj'
     fj_path.write_text(_looping_source())
-    for flags in (['--io-mode', '1'], ['--run-flags', '1']):
+    for flags in (['--io-mode', '1'], ['--flat-memory']):
         with pytest.raises(SystemExit):
             assemble_run_according_to_cmd_line_args(
                 cmd_line_args=[
@@ -494,6 +501,23 @@ def test_assemble_and_run_in_one_command_uses_the_compiled_io_mode(
     modes = _spy_io_modes(monkeypatch)
     assemble_run_according_to_cmd_line_args(cmd_line_args=['-s', '--no_stl', '--io-mode', '1', str(fj_path)])
     assert modes == ['pc']
+
+
+@native_engine_required
+def test_assemble_and_run_in_one_command_compiles_and_runs_flat_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text(_looping_source())
+    out = tmp_path / 'o.fjm'
+    for extra, required in (([], False), (['--flat-memory'], True)):  # a small span runs flat either way
+        with monkeypatch.context() as patch:
+            seen = spy_engine_runs(patch)
+            assemble_run_according_to_cmd_line_args(
+                cmd_line_args=['-s', '--no_stl', '-o', str(out), *extra, str(fj_path)]
+            )
+        assert [required_ for _, required_, _ in seen] == [required]
+        assert read_fjm_header(out).run_flags == (RUN_FLAG_FLAT_MEMORY if required else 0)
 
 
 def test_a_non_number_flag_value_says_so(capsys: pytest.CaptureFixture[str]) -> None:
@@ -583,8 +607,8 @@ def test_an_env_window_the_engine_ignores_does_not_cancel_the_run_flag(
 
 
 def test_flag_values_with_leading_zeros_are_numbers() -> None:
-    args, _ = flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--run-flags', '01', 'a.fj'])
-    assert args.run_flags == 1
+    args, _ = flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--io-mode', '01', 'a.fj'])
+    assert args.io_mode == 1
 
 
 def test_the_decompression_buffer_grows_with_highly_compressible_data() -> None:

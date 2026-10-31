@@ -13,7 +13,7 @@ from typing import List, Mapping, Optional, Set, Union
 from flipjump.assembler import assembler
 from flipjump.assembler.table_pool import BlockPool
 from flipjump.interpreter.debugging.breakpoints import get_breakpoint_handler
-from flipjump.fjm.fjm_consts import IO_MODE_NAMES, FJMVersion
+from flipjump.fjm.fjm_consts import IO_MODE_NAMES, RUN_FLAG_FLAT_MEMORY, FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
@@ -46,7 +46,7 @@ def assemble(
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
-    run_flags: int = 0,
+    flat_memory: bool = False,
     io_mode: int = 0,
 ) -> None:
     """
@@ -70,14 +70,19 @@ def assemble(
     :param table_pool: if given, move the tables declared relocatable (the expansions of `__relocatable__`
     macros) to where they are cheap to arm, so every table dispatch runs fewer ops; the program runs the same.
     See flipjump/assembler/table_pool.py (`fj --pool-tables` makes BlockPool.for_flat(memory_width)).
-    :param run_flags: written into the .fjm: how it runs by default (fjm_consts.RUN_FLAG_*)
+    :param flat_memory: written into the .fjm: it runs in the native engine's flat memory by default (see run())
     :param io_mode: written into the .fjm: the io device it runs with by default (fjm_consts.IO_MODE_*)
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
     file_tuples = get_file_tuples([str(fj_file.absolute()) for fj_file in fj_file_paths], no_stl=not use_stl)
     fjm_writer = Writer(
-        output_fjm_path, memory_width, fjm_version, lzma_preset=lzma_preset, run_flags=run_flags, io_mode=io_mode
+        output_fjm_path,
+        memory_width,
+        fjm_version,
+        lzma_preset=lzma_preset,
+        run_flags=RUN_FLAG_FLAT_MEMORY if flat_memory else 0,
+        io_mode=io_mode,
     )
     assembler.assemble(
         file_tuples,
@@ -103,10 +108,8 @@ def run(
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
+    flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
-    flat_required: bool = False,
-    flat_memory: bool = False,
-    run_flags: Optional[int] = None,
 ) -> TerminationStatistics:
     """
     runs a .fjm file (with the FlipJump interpreter)
@@ -119,15 +122,14 @@ def run(
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile: if true collect the full per-op statistics (uses the slower featured run-loop)
-    @param flat_max_words: the native engine's flat-storage window, in words (None: see run_flags below).
-    only affects native-engine runs - ignored when a pure-python loop runs (e.g. when
+    @param flat_memory: run with the whole program in the native engine's fast flat array (`fj --flat-memory`); if
+    it cannot be allocated, raise FlipJumpFlatMemoryException. None: as the .fjm says (`assemble(flat_memory=)`);
+    False: not, whatever the .fjm says. The FLIPJUMP_FLAT_MAX_WORDS environment variable wins over the .fjm, not
+    over True. Without any of these, a program spanning at most 2^24 words runs flat (see run_defaults.flat_window)
+    @param flat_max_words: the native engine's flat-storage window, in words (`fj --flat-max-words`): memory below it
+    runs in the fast flat array, memory above it paged. Give it or flat_memory=True, not both.
+    flat_memory and flat_max_words only affect native-engine runs - not a pure-python loop (e.g. when
     breakpoints/tracing/profiling force the featured loop)
-    @param flat_required: the flat window must be allocated: if it cannot be, raise
-    FlipJumpFlatMemoryException instead of falling back to the slower paged memory
-    @param flat_memory: size the flat window to the whole program and require it (`fj --flat-memory`)
-    @param run_flags: the run flags (fjm_consts.RUN_FLAG_*) to run with, instead of the ones compiled into the .fjm.
-    With neither flat_max_words nor flat_memory, the window follows run_defaults.flat_window: the env var, then the
-    flat-memory run flag, then the program's span when it is at most 2^24 words, else the engine's default
     @return: the run's termination-statistics
 
     :note: This is a wrapper function to the fjm_run.run() function.
@@ -144,10 +146,8 @@ def run(
         print_termination=print_termination,
         last_ops_debugging_list_length=last_ops_debugging_list_length,
         profile=profile,
-        flat_max_words=flat_max_words,
-        flat_required=flat_required,
         flat_memory=flat_memory,
-        run_flags=run_flags,
+        flat_max_words=flat_max_words,
     )
 
 
@@ -164,10 +164,8 @@ def debug(
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
+    flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
-    flat_required: bool = False,
-    flat_memory: bool = False,
-    run_flags: Optional[int] = None,
 ) -> TerminationStatistics:
     """
     debugs a .fjm file (with the FlipJump interpreter+debugger)
@@ -184,7 +182,7 @@ def debug(
     @param print_time: if true print running times
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
-    @param profile, flat_max_words, flat_required, flat_memory, run_flags: as in run()
+    @param profile, flat_memory, flat_max_words: as in run()
     @return: the run's termination-statistics
 
     :note: This is a wrapper function to the fjm_run.run() function.
@@ -194,7 +192,7 @@ def debug(
     if io_device is None:
         io_device = make_io_device(IO_MODE_NAMES[header.io_mode])
     try:
-        window = flat_window(header, flat_max_words=flat_max_words, flat_memory=flat_memory, run_flags=run_flags)
+        window = flat_window(header, flat_memory=flat_memory, flat_max_words=flat_max_words)
 
         breakpoint_handler = get_breakpoint_handler(
             debugging_file, breakpoints_addresses, breakpoints, breakpoints_contains
@@ -209,7 +207,7 @@ def debug(
                 last_ops_debugging_list_length=last_ops_debugging_list_length,
                 profile=profile,
                 flat_max_words=window.words,
-                flat_required=flat_required or window.required,
+                flat_required=window.required,
             )
         except FlipJumpFlatMemoryException as flat_error:
             # the engine says what it could not allocate; this says why it was asked for and how to run anyway
@@ -240,10 +238,8 @@ def run_test_output(
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
+    flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
-    flat_required: bool = False,
-    flat_memory: bool = False,
-    run_flags: Optional[int] = None,
 ) -> bool:
     """
     runs a .fjm file (with the FlipJump interpreter) with the given input, and checks that it finished successfuly and
@@ -260,7 +256,7 @@ def run_test_output(
     @param print_time: if true print running times
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
-    @param profile, flat_max_words, flat_required, flat_memory, run_flags: as in run()
+    @param profile, flat_memory, flat_max_words: as in run()
     @return: True if the run finished successfully, and with the expected output.
     @raises AssertionError: if should_raise_assertion_error, and the run finished unexpectedly or with an
     unexpected output.
@@ -283,10 +279,8 @@ def run_test_output(
         print_termination=print_termination,
         last_ops_debugging_list_length=last_ops_debugging_list_length,
         profile=profile,
-        flat_max_words=flat_max_words,
-        flat_required=flat_required,
         flat_memory=flat_memory,
-        run_flags=run_flags,
+        flat_max_words=flat_max_words,
     )
 
     try:
@@ -315,15 +309,13 @@ def assemble_and_run(
     show_trace: bool = False,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
-    run_flags: int = 0,
+    flat_memory: bool = False,
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
-    flat_required: bool = False,
-    flat_memory: bool = False,
 ) -> TerminationStatistics:
     """
     assembles the .fj files into a temporary .fjm file, then runs it.
@@ -345,15 +337,13 @@ def assemble_and_run(
         show_trace=show_trace,
         print_termination=print_termination,
         last_ops_debugging_list_length=last_ops_debugging_list_length,
-        run_flags=run_flags,
+        flat_memory=flat_memory,
         io_mode=io_mode,
         lzma_preset=lzma_preset,
         defines=defines,
         table_pool=table_pool,
         profile=profile,
         flat_max_words=flat_max_words,
-        flat_required=flat_required,
-        flat_memory=flat_memory,
     )
 
 
@@ -374,15 +364,13 @@ def assemble_and_debug(
     show_trace: bool = False,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
-    run_flags: int = 0,
+    flat_memory: bool = False,
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
-    flat_required: bool = False,
-    flat_memory: bool = False,
 ) -> TerminationStatistics:
     """
     assembles the .fj files into a temporary .fjm file, then runs and debugs it.
@@ -406,7 +394,7 @@ def assemble_and_debug(
             show_statistics=show_statistics,
             print_time=print_time,
             max_recursion_depth=max_recursion_depth,
-            run_flags=run_flags,
+            flat_memory=flat_memory,
             io_mode=io_mode,
             lzma_preset=lzma_preset,
             defines=defines,
@@ -425,9 +413,8 @@ def assemble_and_debug(
             print_termination=print_termination,
             last_ops_debugging_list_length=last_ops_debugging_list_length,
             profile=profile,
-            flat_max_words=flat_max_words,
-            flat_required=flat_required,
             flat_memory=flat_memory,
+            flat_max_words=flat_max_words,
         )
 
         return termination_statistics
@@ -450,15 +437,13 @@ def assemble_and_run_test_output(
     show_trace: bool = False,
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
-    run_flags: int = 0,
+    flat_memory: bool = False,
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
-    flat_required: bool = False,
-    flat_memory: bool = False,
 ) -> bool:
     """
     assembles the .fj files into a temporary .fjm file, then runs it with the given input, and checks that
@@ -491,7 +476,7 @@ def assemble_and_run_test_output(
             show_statistics=show_statistics,
             print_time=print_time,
             max_recursion_depth=max_recursion_depth,
-            run_flags=run_flags,
+            flat_memory=flat_memory,
             io_mode=io_mode,
             lzma_preset=lzma_preset,
             defines=defines,
@@ -510,9 +495,8 @@ def assemble_and_run_test_output(
             print_termination=print_termination,
             last_ops_debugging_list_length=last_ops_debugging_list_length,
             profile=profile,
-            flat_max_words=flat_max_words,
-            flat_required=flat_required,
             flat_memory=flat_memory,
+            flat_max_words=flat_max_words,
         )
 
         return test_succeeded

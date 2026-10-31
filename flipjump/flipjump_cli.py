@@ -19,8 +19,8 @@ from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
     IO_MODE_NAMES,
+    RUN_FLAG_FLAT_MEMORY,
     bad_io_mode_message,
-    bad_run_flags_message,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.fjm.fjm_writer import Writer
@@ -125,10 +125,9 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
             print_termination=not args.silent,
             last_ops_debugging_list_length=args.debug_ops_list,
             profile=args.profile,
-            # the window: --flat-max-words, --flat-memory, --run-flags, else the program's own (run_defaults)
-            flat_max_words=args.flat_max_words,
+            # the window: --flat-max-words, --[no-]flat-memory, else the program's own (run_defaults)
             flat_memory=args.flat_memory,
-            run_flags=args.run_flags,
+            flat_max_words=args.flat_max_words,
         )
     except FlipJumpFlatMemoryException as flat_error:
         sys.exit(str(flat_error))  # what failed, and how to run it anyway (run_defaults.flat_memory_failure_message)
@@ -187,13 +186,13 @@ def assemble(
     defines = parse_defines(args.define, error_func)
 
     version = get_version(args.version, args.outfile is not None, error_func)
-    if version == FJMVersion.BaseVersion and (args.run_flags or args.io_mode):
-        error_func('fjm version 0 has no header room for --run-flags / --io-mode; use version 1 or above.')
+    if version == FJMVersion.BaseVersion and (args.flat_memory or args.io_mode):
+        error_func('fjm version 0 has no header room for --flat-memory / --io-mode; use version 1 or above.')
     fjm_writer = Writer(
         out_fjm_file,
         args.width,
         version,
-        run_flags=args.run_flags if args.run_flags is not None else 0,
+        run_flags=RUN_FLAG_FLAT_MEMORY if args.flat_memory else 0,
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
@@ -299,17 +298,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         help="collect the full per-op statistics (flips/jumps percentages). uses the slower featured run-loop",
         action='store_true',
     )
-    flat_window = run_arguments.add_mutually_exclusive_group()
-    flat_window.add_argument(
-        '--flat-memory',
-        help="put the whole program in the native engine's fast flat array: the window is sized to the "
-        "end of the .fjm's highest segment (read from its header). costs memory for that whole span "
-        "(up to 8 bytes per word, gaps included); if that allocation fails, the run stops (without the "
-        "flag it would fall back to the slower memory). without this flag or --flat-max-words, programs "
-        "spanning up to 2^24 words get this automatically, as do programs whose run flags ask for it",
-        action='store_true',
-    )
-    flat_window.add_argument(
+    run_arguments.add_argument(
         '--flat-max-words',
         metavar='N',
         type=_check_int_positive,
@@ -319,7 +308,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         "the window runs in the fast flat array; segments reaching above it keep the slower paged "
         "mode for that part (hybrid). raising it costs startup time and memory (4 or 8 bytes per word "
         "of window, w<=32 / w=64), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable "
-        "sets the same limit",
+        "sets the same limit. not with --flat-memory",
     )
 
     def _io_mode(value: str) -> str:
@@ -476,14 +465,13 @@ def add_universal_arguments(parser: argparse.ArgumentParser) -> None:
     @param parser: the parser
     """
     parser.add_argument(
-        '--run-flags',
-        metavar='NUMBER',
-        type=_checked_number(bad_run_flags_message),
+        '--flat-memory',
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="the run flags: 32 bits, all off by default. bit 0 (the value 1) = flat memory, as if "
-        "--flat-memory were given. when assembling, they are compiled into the .fjm (0 by default); "
-        "when running, they override the ones compiled into it. an explicit --flat-max-words (or the "
-        "FLIPJUMP_FLAT_MAX_WORDS environment variable) wins over the flat-memory flag",
+        help="run the whole program in the native engine's fast flat array, sized to the program's highest "
+        "segment (up to 8 bytes per word of it, gaps included); if it cannot be allocated, the run stops. "
+        "when assembling, it is compiled into the .fjm (off by default); when running, it overrides the .fjm. "
+        "without it, a program spanning up to 2^24 words runs flat anyway",
     )
     parser.add_argument('files', help="the .fj files to assemble (if run-only, the .fjm file to run)", nargs='+')
     parser.add_argument(
@@ -560,6 +548,8 @@ def parse_arguments(*, cmd_line_args: Optional[List[str]] = None) -> Tuple[argpa
     parser = get_argument_parser()
     add_arguments(parser)
     parsed_args = parser.parse_args(args=cmd_line_args)
+    if parsed_args.flat_memory and parsed_args.flat_max_words is not None:
+        parser.error('argument --flat-max-words: not allowed with argument --flat-memory')
 
     return parsed_args, parser.error
 

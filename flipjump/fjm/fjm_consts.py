@@ -16,7 +16,7 @@ struct {
     u64 version;
     u64 segment_num;
     { // for versions > 0
-        u32 run_flags;  // how to run it by default (RUN_FLAG_*); `fj --run-flags` overrides
+        u32 run_flags;  // how to run it by default (RUN_FLAG_*); `fj --[no-]flat-memory` overrides
         u32 io_mode;    // the default io device (IO_MODE_*); `fj --io` overrides
         u32 reserved;   // 0
     }

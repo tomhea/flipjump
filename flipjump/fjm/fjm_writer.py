@@ -75,7 +75,7 @@ class Writer:
         @param output_file: [in,out]: the path to the .fjm file
         @param memory_width: the memory-width
         @param version: the file's version
-        @param run_flags: how the program runs by default (fjm_consts.RUN_FLAG_*; `fj --run-flags` overrides it)
+        @param run_flags: how the program runs by default (fjm_consts.RUN_FLAG_*; `fj --[no-]flat-memory` overrides it)
         @param io_mode: the io device it runs with by default (fjm_consts.IO_MODE_*; `fj --io` overrides it)
         @param lzma_preset: the preset to be used when compressing the .fjm data
         """

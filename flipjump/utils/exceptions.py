@@ -44,7 +44,7 @@ class FlipJumpRuntimeMemoryException(FlipJumpRuntimeException):
 
 
 class FlipJumpFlatMemoryException(FlipJumpRuntimeException):
-    """the flat memory a run asked for (--flat-memory, or the program's run flags) could not be allocated"""
+    """the flat memory a run asked for (--flat-memory, given or compiled into the .fjm) could not be allocated"""
 
     def __init__(self, message: str, window_words: int):
         super().__init__(message)

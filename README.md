@@ -195,20 +195,18 @@ fj --run program.fjm --io pc
 A program can carry its own defaults in the `.fjm` header, so `fj --run program.fjm` is all it takes:
 
 ```bash
-fj --asm game.fj -o game.fjm --io-mode 1 --run-flags 1   # io mode 1 = pc; run flag 1 = flat memory
+fj --asm game.fj -o game.fjm --io-mode 1 --flat-memory   # io mode 1 = pc
 fj --run game.fjm                                        # runs with the pc window, in flat memory
 ```
 
 - **`--io-mode NUMBER`** (assembling): the default io device - `0` standard (the default), `1` pc.
   `--io MODE` still overrides it at run time.
-- **`--run-flags NUMBER`** (32 bits, all off by default): bit 0 (`1`) = **flat memory**, as if
-  `--flat-memory` were given - the whole program in the native engine's flat array (fastest; costs
-  memory for its whole span). Compiled in when assembling; `--run-flags` overrides them when running.
-  If the flat allocation fails, the run stops and says so (`--run-flags 0` runs it slower).
+- **`--flat-memory`**: the whole program in the native engine's flat array (fastest; costs memory for its
+  whole span). Compiled in when assembling; `--flat-memory` / `--no-flat-memory` override it when running.
+  If the flat allocation fails, the run stops and says so (`--no-flat-memory` runs it slower).
 
-Any other value of either is a bad-flags error, when assembling and when reading a `.fjm`.
-From python, `flipjump.assemble(..., io_mode=, run_flags=)` compiles them in and `flipjump.run` /
-`flipjump.debug` follow them the same way (`run_flags=` / `flat_memory=` / an `io_device` override them).
+From python, `flipjump.assemble(..., io_mode=, flat_memory=)` compiles them in and `flipjump.run` /
+`flipjump.debug` follow them the same way (`flat_memory=True / False` or an `io_device` override them).
 
 Each mode is one complete `IODevice` that owns all of its channels (and window, if any).
 Adding a new device (e.g. a windowed text console, or one that also

@@ -340,6 +340,11 @@ def test_cli_flat_memory_flag_parses_and_excludes_flat_max_words() -> None:
     assert args.flat_memory and args.flat_max_words is None
     with pytest.raises(SystemExit):
         parse_arguments(cmd_line_args=['--run', '--flat-memory', '--flat-max-words', '4', 'x.fjm'])
+    # the control: --no-flat-memory sets no window, so --flat-max-words may come with it
+    args, _ = parse_arguments(cmd_line_args=['--run', '--no-flat-memory', '--flat-max-words', '4', 'x.fjm'])
+    assert (args.flat_memory, args.flat_max_words) == (False, 4)
+    args, _ = parse_arguments(cmd_line_args=['--run', 'x.fjm'])
+    assert args.flat_memory is None  # neither: as the .fjm says
 
 
 def _run_modes(

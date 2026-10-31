@@ -2,20 +2,21 @@
 how a .fjm runs when its caller doesn't say: the io device and the flat-memory window the program's header
 asks for, shared by the `fj` command line and the python API (flipjump_quickstart.run / debug).
 
-The header carries `io_mode` (fjm_consts.IO_MODE_*) and `run_flags` (fjm_consts.RUN_FLAG_*), compiled in with
-`fj --asm --io-mode N --run-flags N` or `flipjump_quickstart.assemble(io_mode=, run_flags=)`. An explicit choice
-always wins over them: an io device / `--io`, a window / `--flat-max-words`, `--flat-memory`, run flags given now.
+The header carries `io_mode` (fjm_consts.IO_MODE_*) and whether to run in flat memory (fjm_consts.RUN_FLAG_FLAT_MEMORY
+in its run flags), compiled in with `fj --asm --io-mode MODE --flat-memory` or
+`flipjump_quickstart.assemble(io_mode=, flat_memory=)`. An explicit choice always wins over them: an io device /
+`--io`, a window / `--flat-max-words`, `--flat-memory` / `--no-flat-memory` given at run time.
 """
 
 import os
 import re
 from typing import NamedTuple, Optional
 
-from flipjump.fjm.fjm_consts import RUN_FLAG_FLAT_MEMORY, bad_run_flags_message
+from flipjump.fjm.fjm_consts import RUN_FLAG_FLAT_MEMORY
 from flipjump.fjm.fjm_reader import FjmHeader
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 
-# with no window option (and the flat-memory run flag off), a program spanning at most 2^24 words runs fully flat on
+# with no window option (and no flat memory asked for), a program spanning at most 2^24 words runs fully flat on
 # its own: the array costs at most 64 MB (4-byte cells, w<=32) or 128 MB (w=64), small enough to allocate unasked;
 # a larger span keeps the engine's default window
 FLAT_MEMORY_AUTO_MAX_WORDS = 1 << 24
@@ -26,8 +27,7 @@ class FlatWindow(NamedTuple):
 
     words: Optional[int]  # None: the engine's own default (FLIPJUMP_FLAT_MAX_WORDS, else 2^23)
     required: bool  # flat memory was asked for: failing to allocate it is an error, not a slow fallback
-    source: str  # 'flat_max_words', 'flat_memory', 'env', 'run flag', 'auto', 'default'
-    run_flag: str  # who turned the flat-memory run flag on: 'compiled', 'given', or '' (off)
+    source: str  # 'flat_max_words', 'flat_memory' (given at run time), 'env', 'fjm' (compiled in), 'auto', 'default'
 
 
 def env_flat_max_words() -> int:
@@ -41,54 +41,43 @@ def env_flat_max_words() -> int:
 def flat_window(
     header: FjmHeader,
     *,
+    flat_memory: Optional[bool] = None,
     flat_max_words: Optional[int] = None,
-    flat_memory: bool = False,
-    run_flags: Optional[int] = None,
 ) -> FlatWindow:
     """
     the native engine's flat window, in words. In this order of precedence:
       flat_max_words (--flat-max-words N)   - that window;
-      flat_memory (--flat-memory)            - the program's span (its highest segment end), required;
+      flat_memory=True (--flat-memory)       - the program's span (its highest segment end), required;
       FLIPJUMP_FLAT_MAX_WORDS                - the engine reads it (a window set by the environment);
-      the flat-memory run flag               - the span, required: `run_flags` if given (--run-flags), else the
-                                               run flags compiled into the .fjm;
+      the .fjm asks for flat memory          - the span, required; unless flat_memory=False (--no-flat-memory);
       otherwise                              - the span if it is at most FLAT_MEMORY_AUTO_MAX_WORDS, else the
                                                engine's default window.
+    @param flat_memory: None - as the .fjm says; True / False - run in flat memory, or not, whatever it says
+    @raises ValueError: both flat_memory=True and flat_max_words, two windows
     """
-    if run_flags is not None:
-        bad = bad_run_flags_message(run_flags)
-        if bad is not None:
-            raise ValueError(bad)  # the CLI and the writer reject these values too
-    flags = header.run_flags if run_flags is None else run_flags
-    run_flag = ''
-    if flags & RUN_FLAG_FLAT_MEMORY:
-        run_flag = 'compiled' if run_flags is None else 'given'
-
     if flat_max_words is not None:
-        return FlatWindow(int(flat_max_words), False, 'flat_max_words', run_flag)
+        if flat_memory:
+            raise ValueError('flat_memory=True and flat_max_words each choose the flat window: give one of them')
+        return FlatWindow(int(flat_max_words), False, 'flat_max_words')
     span = max(1, header.span_words)
     if flat_memory:
-        return FlatWindow(span, True, 'flat_memory', run_flag)
+        return FlatWindow(span, True, 'flat_memory')
     if env_flat_max_words():
-        return FlatWindow(None, False, 'env', run_flag)
-    if run_flag:
-        return FlatWindow(span, True, 'run flag', run_flag)
+        return FlatWindow(None, False, 'env')
+    if flat_memory is None and header.run_flags & RUN_FLAG_FLAT_MEMORY:
+        return FlatWindow(span, True, 'fjm')
     if span <= FLAT_MEMORY_AUTO_MAX_WORDS:
-        return FlatWindow(span, False, 'auto', run_flag)
-    return FlatWindow(None, False, 'default', run_flag)
+        return FlatWindow(span, False, 'auto')
+    return FlatWindow(None, False, 'default')
 
 
 def flat_memory_failure_message(flat_error: FlipJumpFlatMemoryException, window: FlatWindow) -> str:
     """what to tell the user when the flat memory a run asked for could not be allocated"""
-    asked = window.source == 'flat_memory'
-    causes = (['--flat-memory was given'] if asked else []) + {
-        'compiled': ["this program's run flags (compiled into the .fjm) turn on flat memory"],
-        'given': ['--run-flags turns on flat memory'],
-        '': [],
-    }[window.run_flag]
-    fixes = (['without --flat-memory'] if asked else []) + (['with --run-flags 0'] if window.run_flag else [])
-    cause = ', and '.join(causes) or 'flat memory was asked for'
-    fix = f"\nRunning it {' and '.join(fixes)} might fix that, at a cost of speed." if fixes else ''
+    cause = {
+        'flat_memory': '--flat-memory was given',
+        'fjm': 'this program asks for flat memory (compiled into the .fjm with --flat-memory)',
+    }.get(window.source, 'flat memory was asked for')
+    fix = '\nRunning it with --no-flat-memory might fix that, at a cost of speed.' if window.required else ''
     return (
         f"flipjump: {cause}: the whole program in one array of {flat_error.window_words:,} words, "
         f"and allocating it failed ({flat_error}).{fix}"
