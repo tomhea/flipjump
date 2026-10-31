@@ -12,6 +12,9 @@ from typing import Any, Dict, Set
 import pytest
 
 from flipjump import assemble_and_run, assemble_and_run_test_output, flipjump_quickstart, run_test_output
+from flipjump.assembler import assembler
+from flipjump.fjm.fjm_writer import Writer
+from flipjump.utils.functions import load_debugging_labels
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.utils.classes import TerminationCause
 from tests.unit.unit_utils import HELLO_NO_STL, HELLO_WORLD_OUTPUT, assemble_to_path
@@ -56,6 +59,30 @@ def test_run_test_output_failure_raises(tmp_path: Path) -> None:
             print_time=False,
             print_termination=False,
         )
+
+
+def test_assemble_returns_the_labels(tmp_path: Path) -> None:
+    source = tmp_path / 'p.fj'
+    source.write_text('a: ;a\nb: a+3;b\nns n {\n  c: ;a\n}\n')
+    labels = flipjump_quickstart.assemble([source], tmp_path / 'p.fjm', use_stl=False, print_time=False)
+    assert {name: labels[name] for name in ('a', 'b', 'n.c')} == {'a': 0, 'b': 2 * 64, 'n.c': 4 * 64}
+    writer = Writer(tmp_path / 'q.fjm', 32, FJMVersion.NormalVersion)
+    labels = assembler.assemble([('f1', source)], 32, writer, print_time=False)
+    assert {name: labels[name] for name in ('a', 'b', 'n.c')} == {'a': 0, 'b': 2 * 32, 'n.c': 4 * 32}
+
+
+def test_assemble_returns_the_debugging_labels_with_a_debugging_file(tmp_path: Path) -> None:
+    source = tmp_path / 'p.fj'
+    source.write_text('stl.startup\nloop: ;loop\n')
+    debugging_file = tmp_path / 'p.fjd'
+    plain = flipjump_quickstart.assemble([source], tmp_path / 'a.fjm', print_time=False)
+    debugged = flipjump_quickstart.assemble(
+        [source], tmp_path / 'b.fjm', print_time=False, debugging_file_path=debugging_file
+    )
+    assert debugged == load_debugging_labels(debugging_file)
+    assert plain.items() <= debugged.items() and 'loop' in plain
+    # the control: the debugging-only labels are there, and only with the debugging file
+    assert any(':start:' in name for name in debugged) and not any(':start:' in name for name in plain)
 
 
 def test_assemble_and_run_returns_looping() -> None:

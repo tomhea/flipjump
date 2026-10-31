@@ -8,7 +8,7 @@ assemble_and_run_test_output helpers.
 import lzma
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import List, Mapping, Optional, Set, Union
+from typing import Dict, List, Mapping, Optional, Set, Union
 
 from flipjump.assembler import assembler
 from flipjump.assembler.table_pool import BlockPool
@@ -48,7 +48,7 @@ def assemble(
     table_pool: Optional[BlockPool] = None,
     flat_memory: bool = False,
     io_mode: Union[int, str] = 0,
-) -> None:
+) -> Dict[str, int]:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
     :param fj_file_paths:[in]: the list of flipjump code files to compile.
@@ -73,6 +73,8 @@ def assemble(
     :param flat_memory: written into the .fjm: it runs in the native engine's flat memory by default (see run())
     :param io_mode: written into the .fjm: the io device it runs with by default (`fj --io-mode`): 'standard' or
     'pc', or its number (fjm_consts.IO_MODE_*)
+    :return: the labels: each one's full name to its address, in bits. With debugging_file_path, also the labels
+    only the debugging file needs (`...---:start:` at each macro use, `:wflips:N` at each wflip-chain op).
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
@@ -85,7 +87,7 @@ def assemble(
         run_flags=RUN_FLAG_FLAT_MEMORY if flat_memory else 0,
         io_mode=io_mode,
     )
-    assembler.assemble(
+    return assembler.assemble(
         file_tuples,
         memory_width,
         fjm_writer,

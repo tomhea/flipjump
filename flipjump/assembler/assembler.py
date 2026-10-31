@@ -639,7 +639,7 @@ def assemble(
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
-) -> None:
+) -> Dict[str, int]:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
     :param input_files:[in]: a list of (short_file_name, fj_file_path). The files will to be parsed in that given order.
@@ -655,6 +655,8 @@ def assemble(
     (`a.b.NAME` for a namespaced one) to its value, a number or an fj expression (which may use `w` and an earlier
     define). Overriding a constant that nothing declares is an error.
     :param table_pool: if given, move the lookup tables to addresses that are cheap to arm (see table_pool.py).
+    :return: the labels: each one's full name to its address, in bits. With debugging_file_path, also the labels
+    only the debugging file needs (`...---:start:` at each macro use, `:wflips:N` at each wflip-chain op).
     """
     defines_dir: Optional['TemporaryDirectory[str]'] = None
     defines_file: Optional[Path] = None
@@ -725,6 +727,7 @@ def assemble(
         with ProgressBar('  create binary:   ', print_time=print_time) as progress:
             fjm_writer.write_to_file(progress.update if progress.active else None)
             save_debugging_labels(debugging_file_path, labels)
+        return labels
 
     except FlipJumpException as fj_exception:
         raise fj_exception
