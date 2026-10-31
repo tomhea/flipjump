@@ -25,8 +25,8 @@ def _run_program(tmp_path: Path, text: str, device: IODevice) -> None:
     program = tmp_path / 'program.fj'
     program.write_text(text)
     fjm = tmp_path / 'program.fjm'
-    assemble([program], fjm, memory_width=64, print_time=False)
-    run(fjm, io_device=device, print_time=False, print_termination=False)
+    assemble([program], fjm, memory_width=64, show_progress=False)
+    run(fjm, io_device=device, show_progress=False, print_termination=False)
 
 
 def _output_bytes(tmp_path: Path, text: str) -> bytes:

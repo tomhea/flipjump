@@ -179,11 +179,12 @@ def run(
     breakpoint_handler: Optional[BreakpointHandler] = None,
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
-    print_time: bool = False,
+    show_progress: bool = False,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
     flat_required: bool = False,
+    print_time: Optional[bool] = None,
 ) -> TerminationStatistics:
     """
     run / debug a .fjm file (a FlipJump interpreter)
@@ -191,7 +192,8 @@ def run(
     @param breakpoint_handler:[in]: the breakpoint handler (if not None - debug, and break on its breakpoints)
     @param io_device:[in,out]: the device handling input/output
     @param show_trace: if true print every opcode executed
-    @param print_time: if true print running times
+    @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
+    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile: if true use the featured loop and collect the full per-op statistics
     (flip/jump counters). by default the fast loop is used (which skips them).
@@ -203,6 +205,7 @@ def run(
     FlipJumpFlatMemoryException instead of falling back to the slower paged memory (native engine only)
     @return: the run's termination-statistics
     """
+    show_progress = show_progress if print_time is None else print_time
     if io_device is None:
         io_device = BrokenIO()
 
@@ -217,7 +220,7 @@ def run(
     # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
     native = not use_featured_loop and is_native_engine_active()
     try:
-        with ProgressBar('  loading memory:  ', print_time=print_time) as progress:
+        with ProgressBar('  loading memory:  ', show_progress=show_progress) as progress:
             if native:
                 mem = _load_native(fjm_path, header, flat_max_words, flat_required, progress)
             else:

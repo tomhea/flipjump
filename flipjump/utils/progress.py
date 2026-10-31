@@ -22,10 +22,10 @@ def clear_progress_line() -> None:
 class ProgressBar:
     """`with ProgressBar('  stage:  ') as bar: ... bar.update(fraction) ...`; `active`: the bar is drawn (a terminal)"""
 
-    def __init__(self, init_message: str, *, print_time: bool = True):
+    def __init__(self, init_message: str, *, show_progress: bool = True):
         self.init_message = init_message
-        self.print_time = print_time
-        self.active = print_time and sys.stdout.isatty()
+        self.show_progress = show_progress
+        self.active = show_progress and sys.stdout.isatty()
         self._start_time = 0.0
         self._last_draw = 0.0
         self._drawn_width = 0
@@ -33,7 +33,7 @@ class ProgressBar:
     def __enter__(self) -> 'ProgressBar':
         global _shown_bar
         self._start_time = time()
-        if self.print_time:
+        if self.show_progress:
             print(self.init_message, end='', flush=True)
         if self.active:
             _shown_bar = self
@@ -41,7 +41,7 @@ class ProgressBar:
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         global _shown_bar
-        if not self.print_time:
+        if not self.show_progress:
             return
         elapsed = f'{time() - self._start_time:.3f}s'
         if self.active:

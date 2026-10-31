@@ -101,8 +101,7 @@ def test_compile(compile_args: CompileTestArgs) -> None:
 
     assembler.assemble(
         compile_args.fj_files_tuples,
-        compile_args.word_size,
-        fjm_writer,
+        fjm_writer=fjm_writer,
         warning_as_errors=compile_args.warning_as_errors,
         debugging_file_path=compile_args.debugging_file_path,
     )
@@ -192,6 +191,6 @@ def test_run(run_args: RunTestArgs) -> None:
         run_args.get_expected_output(),
         should_raise_assertion_error=True,
         debugging_file=run_args.debugging_file_path,
-        print_time=True,
+        show_progress=True,
         last_ops_debugging_list_length=run_args.debug_info_length,
     )

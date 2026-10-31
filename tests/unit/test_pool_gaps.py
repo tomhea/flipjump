@@ -418,17 +418,17 @@ def test_a_pool_lays_out_one_assembly(tmp_path: Path) -> None:
 
 
 def test_a_w64_pooled_program_runs_flat(tmp_path: Path) -> None:
-    # fj --pool-tables bases the pool right above the program, so a flat-memory run (the run flag,
+    # fj --pool-tables bases the pool right above the program, so a flat-memory run (--flat-memory,
     # compiled in: the window is required) of a w=64 program maps a small window, and prints what the plain one does
     for name, extra in (('plain', []), ('pooled', ['--pool-tables'])):
-        args = ['--asm', '-s', '-o', str(tmp_path / f'{name}.fjm'), '-w', '64', '--run-flags', '1', *extra]
+        args = ['--asm', '-s', '-o', str(tmp_path / f'{name}.fjm'), '-w', '64', '--flat-memory', *extra]
         assemble_run_according_to_cmd_line_args(cmd_line_args=[*args, str(_source(tmp_path))])
     plain, pooled = read_fjm_header(tmp_path / 'plain.fjm'), read_fjm_header(tmp_path / 'pooled.fjm')
     assert pooled.span_words <= 2 * plain.span_words <= FLAT_MEMORY_AUTO_MAX_WORDS
     outputs = []
     for name in ('plain', 'pooled'):
         io_device = FixedIO(b'')
-        flipjump_quickstart.run(tmp_path / f'{name}.fjm', io_device=io_device, print_time=False, flat_required=True)
+        flipjump_quickstart.run(tmp_path / f'{name}.fjm', io_device=io_device, print_time=False, flat_memory=True)
         outputs.append(io_device.get_output())
     assert outputs[0] == outputs[1] == b'6'
 

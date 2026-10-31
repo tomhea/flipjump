@@ -196,7 +196,7 @@ def test_reset_drops_the_buffered_input_bits(tmp_path: Path) -> None:
 
     fjm_path = assemble_to_path(ONE_BIT_PROGRAM, tmp_path, use_stl=True)
     header = fjm_reader.read_fjm_header(fjm_path)
-    with ProgressBar('', print_time=False) as progress:
+    with ProgressBar('', show_progress=False) as progress:
         core = fjm_run._load_native(fjm_path, header, None, False, progress)
     core.freeze()
     calls = []
@@ -219,7 +219,7 @@ def test_reinit_drops_the_buffered_input_bits(tmp_path: Path) -> None:
 
     fjm_path = assemble_to_path(ONE_BIT_PROGRAM, tmp_path, use_stl=True)
     header = fjm_reader.read_fjm_header(fjm_path)
-    with ProgressBar('', print_time=False) as progress:
+    with ProgressBar('', show_progress=False) as progress:
         core = fjm_run._load_native(fjm_path, header, None, False, progress)
     calls = []
     for do_reinit in (False, True):

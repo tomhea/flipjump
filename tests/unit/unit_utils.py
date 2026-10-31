@@ -92,7 +92,7 @@ def assemble_to_path(
         warning_as_errors=warning_as_errors,
         max_recursion_depth=max_recursion_depth,
         debugging_file_path=debug_path,
-        print_time=False,
+        show_progress=False,
     )
     return fjm_path
 
@@ -122,7 +122,7 @@ def run_source(
     """assemble the inline source, run it with a FixedIO, and return (statistics, io_device)."""
     fjm_path = assemble_to_path(source, tmp_path, memory_width=memory_width, use_stl=use_stl)
     io_device = FixedIO(fixed_input)
-    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=io_device, show_progress=False)
     return statistics, io_device
 
 
@@ -172,7 +172,7 @@ def run_recorded(
             patch.delenv('FLIPJUMP_NO_NATIVE', raising=False)
         else:
             patch.setattr(fjm_run, '_fjcore', None)
-        return fjm_run.run(fjm_path, io_device=io_device, print_time=False, **kwargs)
+        return fjm_run.run(fjm_path, io_device=io_device, show_progress=False, **kwargs)
 
 
 def relocatable(name: str, params: str, start: str, entries: str) -> str:
@@ -232,9 +232,9 @@ def build_and_run(
     fj_path = tmp_path / f'{name}.fj'
     fj_path.write_text(source)
     fjm_path = tmp_path / f'{name}.fjm'
-    assemble([fj_path], fjm_path, memory_width=memory_width, print_time=False, table_pool=pool)
+    assemble([fj_path], fjm_path, memory_width=memory_width, show_progress=False, table_pool=pool)
     io_device = FixedIO(fixed_input)
-    statistics = fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=io_device, show_progress=False)
     return io_device.get_output(allow_incomplete_output=True), statistics.op_counter, fjm_path
 
 

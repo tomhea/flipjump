@@ -39,7 +39,7 @@ def get_benchmark_fjm(program: str, memory_width: int) -> Path:
     fjm_path = COMPILED_DIR / f'{program}_w{memory_width}.fjm'
     if not fjm_path.exists() or fjm_path.stat().st_mtime < fj_path.stat().st_mtime:
         print(f'assembling {fj_path.name} at w={memory_width}...')
-        assemble([fj_path], fjm_path, memory_width=memory_width, print_time=False)
+        assemble([fj_path], fjm_path, memory_width=memory_width, show_progress=False)
     return fjm_path
 
 

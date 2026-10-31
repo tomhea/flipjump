@@ -52,10 +52,10 @@ def test_run_without_a_device_uses_the_compiled_io_mode(
         return StandardIO(False)
 
     monkeypatch.setattr(flipjump_quickstart, 'make_io_device', make)
-    flipjump_quickstart.run(fjm_path, print_time=False, print_termination=False)
+    flipjump_quickstart.run(fjm_path, show_progress=False, print_termination=False)
     assert modes == [expected]
     # an explicit device always wins: the compiled mode is not even looked at
-    flipjump_quickstart.run(fjm_path, io_device=StandardIO(False), print_time=False, print_termination=False)
+    flipjump_quickstart.run(fjm_path, io_device=StandardIO(False), show_progress=False, print_termination=False)
     assert modes == [expected]
 
 
@@ -70,24 +70,26 @@ def test_run_follows_the_compiled_flat_memory_flag_and_the_overrides(
 
     def run(**kwargs: Any) -> Tuple[Optional[int], bool, Optional[str]]:
         flipjump_quickstart.run(
-            fjm_path, io_device=StandardIO(False), print_time=False, print_termination=False, **kwargs
+            fjm_path, io_device=StandardIO(False), show_progress=False, print_termination=False, **kwargs
         )
         return seen[-1]
 
     assert run() == (None, False, 'hybrid')
     assert run(flat_memory=True) == (span, True, 'flat')
-    assert run(run_flags=RUN_FLAG_FLAT_MEMORY) == (span, True, 'flat')
+    assert run(flat_memory=False) == (None, False, 'hybrid')
     patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     assert run() == (span, True, 'flat')
-    assert run(run_flags=0) == (None, False, 'hybrid')
+    assert run(flat_memory=True) == (span, True, 'flat')
+    assert run(flat_memory=False) == (None, False, 'hybrid')
     assert run(flat_max_words=4) == (4, False, 'hybrid')
+    assert run(flat_memory=False, flat_max_words=4) == (4, False, 'hybrid')
 
 
 @native_engine_required
 def test_a_small_program_runs_flat_from_the_api_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fjm_path = assemble_to_path(high_segment_program(1 << 10), tmp_path, memory_width=32)
     seen = spy_engine_runs(monkeypatch)
-    flipjump_quickstart.run(fjm_path, io_device=StandardIO(False), print_time=False, print_termination=False)
+    flipjump_quickstart.run(fjm_path, io_device=StandardIO(False), show_progress=False, print_termination=False)
     assert seen == [((1 << 10) + 4, False, 'flat')]
 
 
@@ -99,35 +101,40 @@ def test_a_failed_compiled_flat_memory_says_how_to_run_it_from_the_api(
     patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     monkeypatch.setenv('FLIPJUMP_TEST_FLAT_ALLOC_FAIL', '1')
     with pytest.raises(
-        FlipJumpFlatMemoryException, match=r'(?s)compiled into the \.fjm.*Running it with --run-flags 0 might fix that'
+        FlipJumpFlatMemoryException,
+        match=r'(?s)compiled into the \.fjm with --flat-memory.*Running it with --no-flat-memory might fix that',
     ):
-        flipjump_quickstart.run(fjm_path, io_device=StandardIO(False), print_time=False, print_termination=False)
-    patch_run_header(fjm_path, run_flags=0)
+        flipjump_quickstart.run(fjm_path, io_device=StandardIO(False), show_progress=False, print_termination=False)
     with pytest.raises(
-        FlipJumpFlatMemoryException, match=r'(?s)--run-flags turns on flat memory.*Running it with --run-flags 0'
+        FlipJumpFlatMemoryException, match=r'(?s)--flat-memory was given.*Running it with --no-flat-memory might'
     ):
         flipjump_quickstart.run(
-            fjm_path, io_device=StandardIO(False), print_time=False, print_termination=False, run_flags=1
+            fjm_path, io_device=StandardIO(False), show_progress=False, print_termination=False, flat_memory=True
         )
-    with pytest.raises(FlipJumpFlatMemoryException) as no_advice:  # asked for directly: no flag to drop
-        flipjump_quickstart.run(
-            fjm_path,
-            io_device=StandardIO(False),
-            print_time=False,
-            print_termination=False,
-            flat_max_words=FLAT_MEMORY_AUTO_MAX_WORDS + 4,
-            flat_required=True,
-        )
-    assert not str(no_advice.value).endswith('\n') and 'might fix' not in str(no_advice.value)
+    # the control: the advice works - flat_memory=False runs it (paged), whatever the .fjm says
+    statistics = flipjump_quickstart.run(
+        fjm_path, io_device=StandardIO(False), show_progress=False, print_termination=False, flat_memory=False
+    )
+    assert statistics.storage_mode == 'paged'
 
 
-@pytest.mark.parametrize('run_flags', [-1, 2, 1 << 32])
-def test_the_api_rejects_bad_run_flags(tmp_path: Path, run_flags: int) -> None:
+def test_the_api_rejects_two_flat_windows(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(high_segment_program(1 << 10), tmp_path, memory_width=32)
-    with pytest.raises(ValueError, match='bad run flags'):
-        flipjump_quickstart.run(
-            fjm_path, io_device=StandardIO(False), print_time=False, print_termination=False, run_flags=run_flags
-        )
+    run_kwargs: Dict[str, Any] = {'io_device': StandardIO(False), 'show_progress': False, 'print_termination': False}
+    with pytest.raises(ValueError, match='give one of them'):
+        flipjump_quickstart.run(fjm_path, flat_memory=True, flat_max_words=4, **run_kwargs)
+    flipjump_quickstart.run(fjm_path, flat_memory=False, flat_max_words=4, **run_kwargs)  # the control
+
+
+@pytest.mark.parametrize('flat_memory', [False, True])
+def test_assemble_compiles_flat_memory_in(tmp_path: Path, flat_memory: bool) -> None:
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text(MINIMAL_STARTUP + '\nstartup\nloop: ;loop\n')
+    fjm_path = tmp_path / 'p.fjm'
+    flipjump_quickstart.assemble(
+        [fj_path], fjm_path, use_stl=False, memory_width=32, show_progress=False, flat_memory=flat_memory
+    )
+    assert read_fjm_header(fjm_path).run_flags == (RUN_FLAG_FLAT_MEMORY if flat_memory else 0)
 
 
 def test_a_device_the_api_created_is_closed_and_a_given_one_is_not(
@@ -145,17 +152,15 @@ def test_a_device_the_api_created_is_closed_and_a_given_one_is_not(
             closed.append(self.name)
 
     monkeypatch.setattr(flipjump_quickstart, 'make_io_device', lambda mode: Device('created'))
-    flipjump_quickstart.run(fjm_path, print_time=False, print_termination=False)
-    flipjump_quickstart.run(fjm_path, io_device=Device('given'), print_time=False, print_termination=False)
+    flipjump_quickstart.run(fjm_path, show_progress=False, print_termination=False)
+    flipjump_quickstart.run(fjm_path, io_device=Device('given'), show_progress=False, print_termination=False)
     assert closed == ['created']
 
 
-@pytest.mark.parametrize(
-    'run_flags, io_mode', [(RUN_FLAG_FLAT_MEMORY, 0), (0, IO_MODE_PC), (RUN_FLAG_FLAT_MEMORY, IO_MODE_PC)]
-)
+@pytest.mark.parametrize('flat_memory, io_mode', [(True, 0), (False, IO_MODE_PC), (True, IO_MODE_PC)])
 @pytest.mark.parametrize('helper', ['assemble_and_run', 'assemble_and_debug', 'assemble_and_run_test_output'])
 def test_the_assemble_and_helpers_compile_the_flags_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, helper: str, run_flags: int, io_mode: int
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, helper: str, flat_memory: bool, io_mode: int
 ) -> None:
     fj_path = tmp_path / 'p.fj'
     fj_path.write_text(MINIMAL_STARTUP + '\nstartup\nloop: ;loop\n')
@@ -169,20 +174,20 @@ def test_the_assemble_and_helpers_compile_the_flags_in(
 
     monkeypatch.setattr(flipjump_quickstart, 'debug', debug)
     monkeypatch.setattr(flipjump_quickstart, 'run_test_output', _run_test_output_through(debug))
-    flags = {'run_flags': run_flags, 'io_mode': io_mode}  # unequal pairs: a swap of the two is caught
-    kwargs: Dict[str, Any] = {'use_stl': False, 'memory_width': 32, 'print_time': False, 'print_termination': False}
+    flags = {'flat_memory': flat_memory, 'io_mode': io_mode}  # unequal pairs: a swap of the two is caught
+    kwargs: Dict[str, Any] = {'use_stl': False, 'memory_width': 32, 'show_progress': False, 'print_termination': False}
     if helper == 'assemble_and_run_test_output':
         getattr(flipjump_quickstart, helper)([fj_path], b'', b'', **kwargs, **flags)
     else:
         getattr(flipjump_quickstart, helper)([fj_path], **kwargs, **flags)
-    assert [(h.run_flags, h.io_mode) for h in headers] == [(run_flags, io_mode)]
+    assert [(h.run_flags, h.io_mode) for h in headers] == [(RUN_FLAG_FLAT_MEMORY if flat_memory else 0, io_mode)]
 
 
 def _run_test_output_through(debug: Any) -> Any:
     """run_test_output, routed through the spying debug (it calls fjm_run directly otherwise)"""
 
     def run_test_output(fjm_path: Path, fixed_input: bytes, expected_output: bytes, **kwargs: Any) -> bool:
-        debug(fjm_path, None, print_time=False, print_termination=False)
+        debug(fjm_path, None, show_progress=False, print_termination=False)
         return True
 
     return run_test_output

@@ -54,7 +54,7 @@ def benchmark(name: str, fj_path: Path, runs: int, profile: bool) -> None:
             if profile:
                 profiler = cProfile.Profile()
                 profiler.enable()
-            assemble([fj_path], fjm_path, memory_width=64, print_time=runs == 1)
+            assemble([fj_path], fjm_path, memory_width=64, show_progress=runs == 1)
             if profile:
                 profiler.disable()
             durations.append(time() - start_time)

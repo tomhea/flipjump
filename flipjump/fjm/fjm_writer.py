@@ -11,7 +11,7 @@ import lzma
 import sys
 from pathlib import Path
 from struct import pack
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -19,6 +19,7 @@ from flipjump.fjm.fjm_consts import (
     _header_extension_format,
     _segment_format,
     _segments_size_format,
+    IO_MODE_NUMBERS,
     SUPPORTED_VERSIONS_NAMES,
     SUPPORTED_MEMORY_WIDTHS,
     _LZMA_FORMAT,
@@ -67,7 +68,7 @@ class Writer:
         version: FJMVersion,
         *,
         run_flags: int = 0,
-        io_mode: int = 0,
+        io_mode: Union[int, str] = 0,
         lzma_preset: int = lzma.PRESET_DEFAULT,
     ):
         """
@@ -75,8 +76,9 @@ class Writer:
         @param output_file: [in,out]: the path to the .fjm file
         @param memory_width: the memory-width
         @param version: the file's version
-        @param run_flags: how the program runs by default (fjm_consts.RUN_FLAG_*; `fj --run-flags` overrides it)
-        @param io_mode: the io device it runs with by default (fjm_consts.IO_MODE_*; `fj --io` overrides it)
+        @param run_flags: how the program runs by default (fjm_consts.RUN_FLAG_*; `fj --[no-]flat-memory` overrides it)
+        @param io_mode: the io device it runs with by default: 'standard' or 'pc', or its number
+        (fjm_consts.IO_MODE_*); `fj --io` overrides it
         @param lzma_preset: the preset to be used when compressing the .fjm data
         """
         if memory_width not in SUPPORTED_MEMORY_WIDTHS:
@@ -88,6 +90,7 @@ class Writer:
         for bad_flags in (bad_run_flags_message(run_flags), bad_io_mode_message(io_mode)):
             if bad_flags is not None:
                 raise FlipJumpWriteFjmException(bad_flags)
+        io_mode = IO_MODE_NUMBERS[io_mode] if isinstance(io_mode, str) else io_mode
         if FJMVersion.BaseVersion == version and (run_flags != 0 or io_mode != 0):
             raise FlipJumpWriteFjmException("version 0 does not support the run flags and io mode options")
         if version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):

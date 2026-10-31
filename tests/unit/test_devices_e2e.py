@@ -93,7 +93,7 @@ def test_fj_program_drives_the_screen(tmp_path: Path, engine: str) -> None:
     frames_dir = tmp_path / 'frames'
     screen = InMemoryScreen(frames_dir=frames_dir)
 
-    statistics = fjm_run.run(fjm_path, io_device=screen, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=screen, show_progress=False)
 
     assert statistics.termination_cause == TerminationCause.Looping
     assert screen.frame_count == 1
@@ -107,7 +107,7 @@ def test_fj_program_drives_the_screen(tmp_path: Path, engine: str) -> None:
 def test_fj_program_packs_3_bit_colours(tmp_path: Path, engine: str) -> None:
     fjm_path = assemble_to_path(PACKED_PROGRAM, tmp_path, use_stl=True)
     screen = InMemoryScreen()
-    statistics = fjm_run.run(fjm_path, io_device=screen, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=screen, show_progress=False)
     assert statistics.termination_cause == TerminationCause.Looping
     assert screen.frame_count == 1
     assert screen.pixel_indices == [1, 2, 3, 4, 5, 6, 7, 0]
@@ -117,7 +117,7 @@ def test_control_a_bad_stream_stops_the_run(tmp_path: Path, engine: str) -> None
     fjm_path = assemble_to_path(BAD_SCREEN_PROGRAM, tmp_path, use_stl=True)
     screen = InMemoryScreen()
     with pytest.raises(IODeviceException) as failure:  # every engine raises the device's own error
-        fjm_run.run(fjm_path, io_device=screen, print_time=False)
+        fjm_run.run(fjm_path, io_device=screen, show_progress=False)
     assert str(failure.value) == (
         'ScreenIO: reserved (0x00) at output byte 25, frame 0: opcode 0x00 is reserved (a stray zero byte?)'
     )
@@ -130,7 +130,7 @@ def test_scripted_keyboard_replay_is_deterministic(tmp_path: Path, engine: str) 
     for _ in range(2):  # the replay is deterministic - two runs, identical output
         source = ScriptedKeyEventSource.from_text('0, down, 72\n2, up, 75\n')
         keyboard = KeyboardIO(source)
-        statistics = fjm_run.run(fjm_path, io_device=keyboard, print_time=False)
+        statistics = fjm_run.run(fjm_path, io_device=keyboard, show_progress=False)
         assert statistics.termination_cause == TerminationCause.Looping
         assert keyboard.get_output() == b'DH.UK..!'
 
@@ -140,7 +140,7 @@ def test_pc_device_combines_keyboard_and_screen(tmp_path: Path, engine: str) -> 
     fjm_path = assemble_to_path(SCREEN_PROGRAM, tmp_path, use_stl=True)
     screen = InMemoryScreen(frames_dir=tmp_path / 'frames')
     keyboard = KeyboardIO(ScriptedKeyEventSource.from_text(''))
-    statistics = fjm_run.run(fjm_path, io_device=PcIO(screen, keyboard), print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=PcIO(screen, keyboard), show_progress=False)
     assert statistics.termination_cause == TerminationCause.Looping
     assert screen.frame_count == 1
 
@@ -152,7 +152,7 @@ def test_pc_headless_runs_a_program(tmp_path: Path) -> None:
     events_path.write_text('0, down, 72\n')
     frames_dir = tmp_path / 'frames'
 
-    statistics = fjm_run.run(fjm_path, io_device=PcIO.headless(events_path, frames_dir), print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=PcIO.headless(events_path, frames_dir), show_progress=False)
     assert statistics.termination_cause == TerminationCause.Looping
     assert (frames_dir / 'frame_000000.png').exists()
 
@@ -180,14 +180,14 @@ def cut_program(ending: str) -> str:
 def test_a_run_whose_output_ends_inside_a_command_raises(tmp_path: Path, engine: str, ending: str) -> None:
     fjm_path = assemble_to_path(cut_program(ending), tmp_path, use_stl=True)
     with pytest.raises(IODeviceException) as failure:
-        fjm_run.run(fjm_path, io_device=InMemoryScreen(), print_time=False)
+        fjm_run.run(fjm_path, io_device=InMemoryScreen(), show_progress=False)
     assert str(failure.value) == CUT_MESSAGE
 
 
 def test_the_cut_program_raises_through_flipjump_run(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(cut_program('looping'), tmp_path, use_stl=True)
     with pytest.raises(IODeviceException) as failure:
-        flipjump.run(fjm_path, io_device=InMemoryScreen(), print_time=False, print_termination=False)
+        flipjump.run(fjm_path, io_device=InMemoryScreen(), show_progress=False, print_termination=False)
     assert str(failure.value) == CUT_MESSAGE
 
 
@@ -236,7 +236,7 @@ def test_the_cli_closes_the_device_it_created(
 def test_control_a_complete_program_does_not_raise(tmp_path: Path, engine: str) -> None:
     fjm_path = assemble_to_path(SCREEN_PROGRAM, tmp_path, use_stl=True)
     screen = InMemoryScreen()
-    flipjump.run(fjm_path, io_device=screen, print_time=False, print_termination=False)
+    flipjump.run(fjm_path, io_device=screen, show_progress=False, print_termination=False)
     assert screen.frame_count == 1
 
 
@@ -263,7 +263,7 @@ def test_end_of_run_is_called_exactly_once(
 ) -> None:
     fjm_path = assemble_to_path(source, tmp_path, use_stl=True)
     device = EndCountingIO(b'')
-    statistics = fjm_run.run(fjm_path, io_device=device, print_time=False, profile=profile)
+    statistics = fjm_run.run(fjm_path, io_device=device, show_progress=False, profile=profile)
     assert statistics.termination_cause == cause
     assert device.ends == 1
 
@@ -271,6 +271,6 @@ def test_end_of_run_is_called_exactly_once(
 def test_end_of_run_is_not_called_after_a_memory_error(tmp_path: Path, engine: str) -> None:
     fjm_path = assemble_to_path('stl.startup\n;0x4000 << 40\n', tmp_path, use_stl=True)
     device = EndCountingIO(b'')
-    statistics = fjm_run.run(fjm_path, io_device=device, print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=device, show_progress=False)
     assert statistics.termination_cause == TerminationCause.RuntimeMemoryError
     assert device.ends == 0

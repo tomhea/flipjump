@@ -5,13 +5,13 @@ assemble and/or run flows according to the chosen --asm / --run options.
 """
 
 import argparse
+import copy
 import lzma
 import os
-import re
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Tuple, List, Callable, Optional
+from typing import Dict, Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
@@ -20,8 +20,9 @@ from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
     IO_MODE_NAMES,
-    bad_io_mode_message,
-    bad_run_flags_message,
+    IO_MODE_NUMBERS,
+    IO_MODE_STANDARD,
+    RUN_FLAG_FLAT_MEMORY,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.fjm.fjm_writer import Writer
@@ -32,9 +33,26 @@ from flipjump.utils.constants import (
     FLIPJUMP_VERSION,
 )
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException, FlipJumpReadFjmException, IODeviceException
-from flipjump.utils.functions import get_file_tuples, get_temp_directory_suffix
+from flipjump.utils.functions import bad_define_message, get_file_tuples, get_temp_directory_suffix
 
 ErrorFunc = Callable[[str], None]
+
+# option spellings that parse but are not listed in the help: the underscore spellings of the hyphenated options,
+# and --version, which names the fjm version (-v / --fjm-version), not the tool's (-V)
+HIDDEN_ALIASES = frozenset(
+    {'--breakpoint_contains', '--lzma_preset', '--max_recursion_depth', '--no_stl', '--flipjump_version', '--version'}
+)
+
+
+class HelpFormatter(argparse.HelpFormatter):
+    """argparse's help, without the HIDDEN_ALIASES spellings"""
+
+    def _format_action_invocation(self, action: argparse.Action) -> str:
+        if not HIDDEN_ALIASES.intersection(action.option_strings):
+            return super()._format_action_invocation(action)
+        shown = copy.copy(action)
+        shown.option_strings = [option for option in action.option_strings if option not in HIDDEN_ALIASES]
+        return super()._format_action_invocation(shown)
 
 
 def verify_file_exists(error_func: ErrorFunc, path: Path) -> None:
@@ -122,14 +140,13 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
             breakpoints_contains=set(args.breakpoint_contains),
             io_device=io_device,
             show_trace=args.trace,
-            print_time=not args.silent,
+            show_progress=not args.silent,
             print_termination=not args.silent,
             last_ops_debugging_list_length=args.debug_ops_list,
             profile=args.profile,
-            # the window: --flat-max-words, --flat-memory, --run-flags, else the program's own (run_defaults)
-            flat_max_words=args.flat_max_words,
+            # the window: --flat-max-words, --[no-]flat-memory, else the program's own (run_defaults)
             flat_memory=args.flat_memory,
-            run_flags=args.run_flags,
+            flat_max_words=args.flat_max_words,
         )
     except FlipJumpFlatMemoryException as flat_error:
         sys.exit(str(flat_error))  # what failed, and how to run it anyway (run_defaults.flat_memory_failure_message)
@@ -205,7 +222,6 @@ def assemble(
     debug_file: Optional[Path],
     args: argparse.Namespace,
     error_func: ErrorFunc,
-    defines_file: Optional[Path] = None,
 ) -> None:
     """
     prepare and verify arguments, and assemble the .fj files.
@@ -215,32 +231,30 @@ def assemble(
     @param error_func: the parser's error function
     """
     file_tuples = get_file_tuples(args.files, no_stl=args.no_stl)
-    if defines_file is not None:
-        file_tuples.insert(0, ('d1', defines_file))  # before the stl: see add_defines_file
     verify_fj_files(error_func, file_tuples)
+    defines = parse_defines(args.define, error_func)
 
-    version = get_version(args.version, args.outfile is not None, error_func)
-    if version == FJMVersion.BaseVersion and (args.run_flags or args.io_mode):
-        error_func('fjm version 0 has no header room for --run-flags / --io-mode; use version 1 or above.')
+    version = get_version(args.fjm_version, args.outfile is not None, error_func)
+    if version == FJMVersion.BaseVersion and (args.flat_memory or IO_MODE_NUMBERS[args.io_mode] != IO_MODE_STANDARD):
+        error_func('fjm version 0 has no header room for --flat-memory / --io-mode; use version 1 or above.')
     fjm_writer = Writer(
         out_fjm_file,
         args.width,
         version,
-        run_flags=args.run_flags if args.run_flags is not None else 0,
+        run_flags=RUN_FLAG_FLAT_MEMORY if args.flat_memory else 0,
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
     table_pool = make_table_pool(args, error_func)
     assembler.assemble(
         file_tuples,
-        args.width,
-        fjm_writer,
+        fjm_writer=fjm_writer,
         warning_as_errors=args.werror,
         debugging_file_path=debug_file,
         show_statistics=args.stats,
-        print_time=not args.silent,
+        show_progress=not args.silent,
         max_recursion_depth=args.max_recursion_depth,
-        defines_file=defines_file,
+        defines=defines,
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
@@ -332,17 +346,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         help="collect the full per-op statistics (flips/jumps percentages). uses the slower featured run-loop",
         action='store_true',
     )
-    flat_window = run_arguments.add_mutually_exclusive_group()
-    flat_window.add_argument(
-        '--flat-memory',
-        help="put the whole program in the native engine's fast flat array: the window is sized to the "
-        "end of the .fjm's highest segment (read from its header). costs memory for that whole span "
-        "(up to 8 bytes per word, gaps included); if that allocation fails, the run stops (without the "
-        "flag it would fall back to the slower memory). without this flag or --flat-max-words, programs "
-        "spanning up to 2^24 words get this automatically, as do programs whose run flags ask for it",
-        action='store_true',
-    )
-    flat_window.add_argument(
+    run_arguments.add_argument(
         '--flat-max-words',
         metavar='N',
         type=_check_int_positive,
@@ -352,7 +356,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
         "the window runs in the fast flat array; segments reaching above it keep the slower paged "
         "mode for that part (hybrid). raising it costs startup time and memory (4 or 8 bytes per word "
         "of window, w<=32 / w=64), never per-op speed. the FLIPJUMP_FLAT_MAX_WORDS environment variable "
-        "sets the same limit",
+        "sets the same limit. not with --flat-memory",
     )
 
     def _io_mode(value: str) -> str:
@@ -380,6 +384,7 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
     )
     run_arguments.add_argument(
         '-B',
+        '--breakpoint-contains',
         '--breakpoint_contains',
         metavar='NAME',
         default=[],
@@ -410,6 +415,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     supported_versions = ', '.join(f"{version}: {name}" for version, name in SUPPORTED_VERSIONS_NAMES.items())
     asm_arguments.add_argument(
         '-v',
+        '--fjm-version',
         '--version',
         metavar='VERSION',
         type=int,
@@ -421,15 +427,15 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
 
     asm_arguments.add_argument(
         '--io-mode',
-        metavar='NUMBER',
-        type=_checked_number(bad_io_mode_message),
-        default=0,
-        help="compile the default io device into the .fjm: "
-        + ", ".join(f"{number} = {name}" for number, name in IO_MODE_NAMES.items())
-        + ". 0 by default. `fj --run --io MODE` still overrides it",
+        metavar='MODE',
+        choices=list(IO_MODE_NUMBERS),
+        default=IO_MODE_NAMES[IO_MODE_STANDARD],
+        help=f"compile the default io device into the .fjm: {' or '.join(IO_MODE_NUMBERS)} "
+        f"({IO_MODE_NAMES[IO_MODE_STANDARD]} by default). `fj --run --io MODE` overrides it",
     )
 
     asm_arguments.add_argument(
+        '--lzma-preset',
         '--lzma_preset',
         type=int,
         default=lzma.PRESET_DEFAULT,
@@ -488,20 +494,22 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument(
         '--pin-all-but',
         metavar='LABEL[:OPS],...',
-        help="with --pool-tables: pin every dispatch word (fewer ops) but the words of these cells - the cells the "
-        "program reads or writes raw, through a pointer. Each is a LABEL (the cell runs to the next label) or "
-        "LABEL:OPS. Leaving such a cell out makes the program run wrong. Without this flag, a program that uses "
-        "pointers pins nothing",
+        help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
+        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong. "
+        "Without it, a program that uses pointers pins nothing",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')
     asm_arguments.add_argument(
+        '--max-recursion-depth',
         '--max_recursion_depth',
         type=int,
         default=DEFAULT_MAX_MACRO_RECURSION_DEPTH,
         help='The compiler supports macros that recursively uses other macros, ' 'up to the this specified depth',
     )
-    asm_arguments.add_argument('--no_stl', help="don't assemble/link the standard library files", action='store_true')
+    asm_arguments.add_argument(
+        '--no-stl', '--no_stl', help="don't assemble/link the standard library files", action='store_true'
+    )
 
     asm_arguments.add_argument(
         '-D',
@@ -517,49 +525,22 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument('--stats', help="show macro code-size statistics", action='store_true')
 
 
-def _parse_number(value: str) -> int:
-    """an int in python syntax (decimal, 0x.., 0b..), or argparse's error naming what is wrong"""
-    try:
-        return int(value, 0)
-    except ValueError:
-        pass
-    try:
-        return int(value, 10)  # e.g. '01', which int(x, 0) refuses
-    except ValueError:
-        raise argparse.ArgumentTypeError(f'{value!r} is not a number') from None
-
-
-def _checked_number(bad_message: Callable[[int], Optional[str]]) -> Callable[[str], int]:
-    """an argparse type: a number (_parse_number) that bad_message (fjm_consts.bad_*_message) accepts"""
-
-    def checked_number(value: str) -> int:
-        number = _parse_number(value)
-        bad = bad_message(number)
-        if bad is not None:
-            raise argparse.ArgumentTypeError(bad)
-        return number
-
-    return checked_number
-
-
 def add_universal_arguments(parser: argparse.ArgumentParser) -> None:
     """
     add the arguments that are usable in both --asm and --run options.
     @param parser: the parser
     """
     parser.add_argument(
-        '--run-flags',
-        metavar='NUMBER',
-        type=_checked_number(bad_run_flags_message),
+        '--flat-memory',
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="the run flags: 32 bits, all off by default. bit 0 (the value 1) = flat memory, as if "
-        "--flat-memory were given. when assembling, they are compiled into the .fjm (0 by default); "
-        "when running, they override the ones compiled into it. an explicit --flat-max-words (or the "
-        "FLIPJUMP_FLAT_MAX_WORDS environment variable) wins over the flat-memory flag",
+        help="run in the native engine's fast flat memory (up to 8 bytes per word of the program's span; the run "
+        "stops if it cannot be allocated). assembling: the .fjm's default. running: overrides the .fjm's",
     )
     parser.add_argument('files', help="the .fj files to assemble (if run-only, the .fjm file to run)", nargs='+')
     parser.add_argument(
         '-V',
+        '--flipjump-version',
         '--flipjump_version',
         action='version',
         version=f'flipjump {FLIPJUMP_VERSION}',
@@ -607,6 +588,7 @@ def get_argument_parser() -> argparse.ArgumentParser:
     @return: the argument parser
     """
     return argparse.ArgumentParser(
+        formatter_class=HelpFormatter,
         description='Assemble and Run FlipJump programs.',
         usage='fj [--asm | --run] [arguments] files [files ...]\n'
         'example usage:\n'
@@ -614,7 +596,7 @@ def get_argument_parser() -> argparse.ArgumentParser:
         '  fj  a.fj b.fj  -o out.fjm                          // assemble save and run\n'
         '  fj  code.fj  -d  -B swap_start exit_label          // assemble and debug\n\n'
         '  fj --asm  -o o.fjm a.fj  -d dir/debug.fjd          // assemble and save debug info\n'
-        '  fj --asm  -o out.fjm  a.fj b.fj  --no_stl  -w 32   '
+        '  fj --asm  -o out.fjm  a.fj b.fj  --no-stl  -w 32   '
         '// assemble without the standard library, 32 bit memory\n\n'
         '  fj --run  prog.fjm                                 // just run\n'
         '  fj --run  o.fjm  -d dir/debug.fjd  -B label        // run and debug\n ',
@@ -632,41 +614,29 @@ def parse_arguments(*, cmd_line_args: Optional[List[str]] = None) -> Tuple[argpa
     parser = get_argument_parser()
     add_arguments(parser)
     parsed_args = parser.parse_args(args=cmd_line_args)
+    if parsed_args.flat_memory and parsed_args.flat_max_words is not None:
+        parser.error('argument --flat-max-words: not allowed with argument --flat-memory')
 
     return parsed_args, parser.error
 
 
-_DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*$')
-
-
-def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> Optional[Path]:
+def parse_defines(define_args: List[str], error_func: ErrorFunc) -> Dict[str, str]:
     """
-    write the --define overrides into a temporary .fj file, parsed before the stl so a constant the stl uses is
-    overridden too (a define's value may use `w` and an earlier define, not an stl constant). The parser treats its
-    constants as overrides (see FJParser.statement). A dotted NAME is wrapped in its namespaces:
-    `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`.
-    @param args: the parsed arguments
-    @param temp_dir_name: the temp directory to write the defines file into
+    `-D NAME=VALUE ...` -> {NAME: VALUE}, the defines of assembler.assemble (a NAME given again takes the later VALUE).
+    @param define_args: the -D arguments, in order
     @param error_func: parser's error function
-    @return: the path of the defines file, or None when there are no defines
+    @return: the defines
     """
-    if not args.define:
-        return None
-    lines = []
-    for define in args.define:
+    defines: Dict[str, str] = {}
+    for define in define_args:
         if '=' not in define:
             error_func(f"-D expects NAME=VALUE, got {define!r}")
-        name, _, value = define.partition('=')
-        name = name.strip()
-        if not _DEFINE_NAME_RE.match(name):
-            error_func(f"-D expects NAME=VALUE with a (possibly dotted) NAME, got {define!r}")
-        *namespaces, base_name = name.split('.')
-        opening = "".join(f"ns {namespace} {{\n" for namespace in namespaces)
-        closing = "\n}" * len(namespaces)
-        lines.append(f"{opening}{base_name} ={value}{closing}\n")
-    defines_path = Path(temp_dir_name) / '_defines.fj'
-    defines_path.write_text(''.join(lines), encoding='utf-8')
-    return defines_path
+        name, _, value = (part.strip() for part in define.partition('='))
+        bad = bad_define_message(name, value)
+        if bad is not None:
+            error_func(f"-D expects NAME=VALUE: {bad}")
+        defines[name] = value
+    return defines
 
 
 def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> None:
@@ -679,8 +649,7 @@ def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> Non
         debug_path, in_fjm_path, out_fjm_path = get_files_paths(args, error_func, temp_dir_name)
 
         if not args.run:
-            defines_path = add_defines_file(args, temp_dir_name, error_func)
-            assemble(out_fjm_path, debug_path, args, error_func, defines_path)
+            assemble(out_fjm_path, debug_path, args, error_func)
 
         if not args.asm:
             run(in_fjm_path, debug_path, args, error_func)

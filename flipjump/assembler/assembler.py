@@ -10,11 +10,12 @@ import gc
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import AbstractSet, Callable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional
+from tempfile import TemporaryDirectory
+from typing import AbstractSet, Callable, List, Dict, Mapping, MutableSequence, Sequence, Set, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
-from flipjump.utils.functions import save_debugging_labels
+from flipjump.utils.functions import save_debugging_labels, write_defines_file
 from flipjump.utils.progress import ProgressBar, clear_progress_line
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.utils.exceptions import (
@@ -674,40 +675,68 @@ def assert_first_op_assembled(fjm_writer: Writer) -> None:
 
 def assemble(
     input_files: List[Tuple[str, Path]],
-    memory_width: int,
-    fjm_writer: Writer,
+    memory_width: Optional[int] = None,
+    fjm_writer: Optional[Writer] = None,
     *,
     warning_as_errors: bool = True,
     debugging_file_path: Optional[Path] = None,
     show_statistics: bool = False,
-    print_time: bool = True,
+    show_progress: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
-    defines_file: Optional[Path] = None,
+    defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
-) -> None:
+    print_time: Optional[bool] = None,
+) -> Dict[str, int]:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
     :param input_files:[in]: a list of (short_file_name, fj_file_path). The files will to be parsed in that given order.
-    :param memory_width: the memory-width
-    :param fjm_writer:[out]: the .fjm file writer
+    :param memory_width: the memory-width: the writer's (None: take it from the writer; else it must equal it)
+    :param fjm_writer:[out]: the .fjm file writer (required)
     :param warning_as_errors: treat warnings as errors (stop execution on warnings)
     :param debugging_file_path:[out]: is specified, save debug information in this file
     :param show_statistics: if true shows macro-usage statistics
-    :param print_time: if true prints the times of each assemble-stage
+    :param show_progress: if true, show each assemble stage's time (and on a terminal, its progress bar)
+    :param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param defines: constants that OVERRIDE the program's declarations of them (`fj -D NAME=VALUE`): each full name
+    (`a.b.NAME` for a namespaced one) to its value, a number or an fj expression (which may use `w` and an earlier
+    define). Overriding a constant that nothing declares is an error.
     :param table_pool: if given, move the lookup tables to addresses that are cheap to arm (see table_pool.py).
+    :return: the labels: each one's full name to its address, in bits. With debugging_file_path, also the labels
+    only the debugging file needs (`...---:start:` at each macro use, `:wflips:N` at each wflip-chain op).
     """
+    show_progress = show_progress if print_time is None else print_time
+    if fjm_writer is None:
+        raise TypeError('assemble() needs fjm_writer, the .fjm writer to assemble into')
+    if memory_width is not None and memory_width != fjm_writer.word_size:
+        raise FlipJumpAssemblerException(
+            f"memory_width {memory_width} differs from the writer's memory-width {fjm_writer.word_size}: "
+            "give one of them (the writer's is enough)"
+        )
+    memory_width = fjm_writer.word_size
+    defines_dir: Optional['TemporaryDirectory[str]'] = None
+    defines_file: Optional[Path] = None
+    if defines:
+        # a .fj file parsed before the stl (so a constant the stl uses is overridden too), deleted when done
+        defines_dir = TemporaryDirectory(suffix='__defines')
+        defines_file = Path(defines_dir.name) / '_defines.fj'
+        try:
+            write_defines_file(defines, defines_file)
+        except ValueError:
+            defines_dir.cleanup()
+            raise
+        input_files = [('d1', defines_file), *input_files]
     # the pipeline allocates a large acyclic graph: the cyclic gc only re-walks it (restored in finally)
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        with ProgressBar('  parsing:         ', print_time=print_time) as progress:
+        with ProgressBar('  parsing:         ', show_progress=show_progress) as progress:
             macros = parse_macro_tree(
                 input_files, memory_width, warning_as_errors, defines_file, progress.update if progress.active else None
             )
 
-        with ProgressBar('  macro resolve:   ', print_time=print_time) as progress:
+        with ProgressBar('  macro resolve:   ', show_progress=show_progress) as progress:
             ops, labels = resolve_macros(
                 memory_width,
                 macros,
@@ -725,7 +754,7 @@ def assemble(
         # BlockPool's pinned words are expressions, resolved now that every label is known
         pinned = {} if table_pool is None else pins(ops, labels, memory_width, table_pool, warning_as_errors)
 
-        with ProgressBar('  labels resolve:  ', print_time=print_time) as progress:
+        with ProgressBar('  labels resolve:  ', show_progress=show_progress) as progress:
             # the `:wflips:N` labels are read only by the debugging file
             labels_resolve(
                 ops,
@@ -745,9 +774,10 @@ def assemble(
 
         assert_first_op_assembled(fjm_writer)
 
-        with ProgressBar('  create binary:   ', print_time=print_time) as progress:
+        with ProgressBar('  create binary:   ', show_progress=show_progress) as progress:
             fjm_writer.write_to_file(progress.update if progress.active else None)
             save_debugging_labels(debugging_file_path, labels)
+        return labels
 
     except FlipJumpException as fj_exception:
         raise fj_exception
@@ -758,3 +788,5 @@ def assemble(
     finally:
         if gc_was_enabled:
             gc.enable()
+        if defines_dir is not None:
+            defines_dir.cleanup()
