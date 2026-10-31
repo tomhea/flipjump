@@ -258,9 +258,7 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        report = table_pool.report
-        assert report is not None
-        moved, base, pinned = report.moved, hex(report.pool_base), len(report.pinned)
+        moved, base, pinned = table_pool.deferred, hex(table_pool.pool_base), len(table_pool.pinned)
         print(f'  table pool:      {moved} tables moved, from {base}; {pinned} words pinned')
 
 

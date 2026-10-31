@@ -176,12 +176,11 @@ class PreprocessorData:
         self.table_pool = table_pool
         self.offset_guard: Optional[OffsetGuard] = None
         if table_pool is not None:
-            if table_pool.laid_out:
+            if table_pool.offset_guard is not None:
                 raise FlipJumpPreprocessorException(
                     'table-placement: this pool already laid out an assembly; construct a fresh one for every '
                     'assemble()'
                 )
-            table_pool.laid_out = True
             self.offset_guard = table_pool.offset_guard = OffsetGuard(
                 table_pool.pool_start(),
                 self.labels,
@@ -237,7 +236,6 @@ class PreprocessorData:
             pool.unsafe_declines[unsafe] = pool.unsafe_declines.get(unsafe, 0) + 1
             return False  # it stays inline: see OffsetGuard
         if group_expr is not None and self._is_runtime_word(group_expr):
-            pool.reserved_words += 1
             return False
         group = None if group_expr is None else str(group_expr)
         verdict = pool._defer(ops_alignment, table_ops, group_expr)

@@ -78,36 +78,13 @@ class HotSite(NamedTuple):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class TableSite:
-    """a table the pool met (PoolReport.table_sites): a profile of its address makes a heat list's HotSite"""
+    """a table the pool met (BlockPool.table_sites): a profile of its address makes a heat list's HotSite"""
 
     group: str  # its group: the word it is dispatched through
     site: str  # the macro path that emitted it (heat_key)
     occurrence: int  # the tables of its group from the same site before it
     slot_ops: int  # the slot width it takes
     address: int  # where it went (0: it stayed in place)
-
-
-@dataclasses.dataclass(frozen=True)
-class PoolReport:
-    """what a BlockPool did in its assembly (BlockPool.report, set when the assembly ends)"""
-
-    pool_base: int  # the address of the pool's first block
-    end: int  # the end of the last table placed (0: none)
-    pinned: Dict[int, int]  # the pinned words: {jump-word address: block base}
-    moved: int  # tables taken out of the program...
-    in_blocks: int  # ...of them placed in a block (the others: in the overflow region)
-    overflowed: int
-    too_wide: int  # tables kept in place: wider than any slot
-    ungrouped: int  # ...dispatched through no word the pool can name
-    runtime_words: int  # ...dispatched through the runtime's words
-    unsafe_declines: Dict[str, int]  # ...whose move would change an operand, by why
-    unpins: Dict[str, int]  # pinnable words left unpinned, by why
-    pin_conflicts: int  # words two groups pin with two bases (left unpinned)
-    pin_all_but_missing: List[str]  # pin_all_but's labels the program does not define
-    alias_unresolved: int  # group words that name a moved table's label (their groups are not merged)
-    heat: Dict[str, int]  # what the heat list found (BlockPool.heat_report)
-    census: BlockCensus  # the tables met, by group
-    table_sites: List[TableSite]  # every table met, in expansion order
 
 
 # BlockPool.defer's verdicts on a table the expansion reached
@@ -445,7 +422,7 @@ class BlockPool:
         @param spread_factor: a group of >= `spread_min_tables` tables gets this many times the slots, and uses the
             cheapest indices
         @param pin_incomplete_groups: pin a group's word even when some of its tables got no slot (see pinned_words)
-        @param heat: {group: [HotSite, ...]}, each group's hottest site first (from a profile of report.table_sites;
+        @param heat: {group: [HotSite, ...]}, each group's hottest site first (from a profile of table_sites;
             groups and sites are matched by heat_key): those tables take their group's cheapest indices
         @param pin_all_but: pin every word but the words of these cells: each cell the program reads or writes RAW
             (through a pointer, or by jumping through its word), as a label (the cell runs to the next label) or
@@ -468,18 +445,18 @@ class BlockPool:
         self.heat = heat
         self.pin_all_but = None if pin_all_but is None else tuple(pin_all_but)
         self.pin_all_but_missing: List[str] = []  # the labels of pin_all_but the program does not define
-        self.pin_conflicts = 0
         self.reads_words_raw = False  # set by the preprocessor when a macro naming POINTER_RUNTIME_LABELS expands
-        self.laid_out = False  # set by the preprocessor that lays this pool out
-        self.offset_guard: Optional[OffsetGuard] = None
+        self.offset_guard: Optional[OffsetGuard] = None  # set by the preprocessor that lays this pool out
         self.unsafe_declines: Dict[str, int] = {}  # tables kept inline: moving them would change an operand
         self.unpins: Dict[str, int] = {}  # words left unpinned: a pin could not hold (assembler.unpin)
-        # tables: through the runtime's words (never moved), taken out of the op stream, placed in a block, placed in
-        # the overflow region, kept inline as too wide for any slot, kept inline with no group
-        self.reserved_words = self.deferred = self.allocated = self.overflowed = self.declined = self.ungrouped = 0
+        self.pinned: Dict[int, int] = {}  # the words the assembly pinned: {jump-word address: block base}
+        # tables: taken out of the op stream, placed in a block, placed in the overflow region, kept inline as too
+        # wide for any slot, kept inline with no group
+        self.deferred = self.allocated = self.overflowed = self.declined = self.ungrouped = 0
         self.alias_unresolved = 0  # group words that name a deferred table's label: unknown when the pool is sized
         self.end = 0  # the end of the last table placed
-        # the census, by group: RAW while the expansion runs, merged by `alias` once it is placed
+        # the census, by group: the widths' histogram RAW while the expansion runs, merged by `alias` (and counted
+        # into `counts`) once it is placed
         self.counts: Dict[str, int] = {}
         self.width_hist: Dict[str, Dict[int, int]] = {}
         self.exprs: Dict[str, Expr] = {}  # raw group -> its source-word Expr
@@ -496,19 +473,16 @@ class BlockPool:
         self.hot_missing: List[str] = []  # listed groups this program does not have
         self.hot_ambiguous: List[str] = []  # listed keys that name two of its groups
         self.hot_sites_matched = self.hot_sites_width_changed = 0
-        self.report: Optional[PoolReport] = None  # what this pool did (set when the assembly ends)
-        self.table_sites: List[TableSite] = []
+        self.table_sites: List[TableSite] = []  # every table met, in expansion order
 
     def _defer(self, ops_alignment: int, table_ops: int, group_expr: Optional[Expr]) -> str:
         """what becomes of a table the expansion reached, at its pad (DEFER_*), counted in the census first"""
-        group = None if group_expr is None else str(group_expr)
         width = max(table_ops, ops_alignment)
-        if group is not None:
-            self.counts[group] = self.counts.get(group, 0) + 1
+        if group_expr is not None:
+            group = str(group_expr)
             hist = self.width_hist.setdefault(group, {})
             hist[width] = hist.get(width, 0) + 1
-            if group_expr is not None:
-                self.exprs.setdefault(group, group_expr)
+            self.exprs.setdefault(group, group_expr)
         elif not self._raw():  # (a raw program's tables need no group: see _place_cheapest)
             self.ungrouped += 1
             return DEFER_INLINE
@@ -538,7 +512,7 @@ class BlockPool:
         width_hist: Dict[str, Dict[int, int]] = {}
         for group, hist in self.width_hist.items():
             canonical = self.alias.get(group, group)
-            counts[canonical] = counts.get(canonical, 0) + self.counts[group]
+            counts[canonical] = counts.get(canonical, 0) + sum(hist.values())
             into = width_hist.setdefault(canonical, {})
             for width, count in hist.items():
                 into[width] = into.get(width, 0) + count
@@ -692,32 +666,10 @@ class BlockPool:
 
     def census(self) -> BlockCensus:
         return BlockCensus(
-            dict(self.counts),
+            {group: sum(hist.values()) for group, hist in self.width_hist.items()},
             {group: max(hist) for group, hist in self.width_hist.items()},
             {group: dict(hist) for group, hist in self.width_hist.items()},
             dict(self.alias),
-        )
-
-    def make_report(self, pinned: Dict[int, int]) -> PoolReport:
-        """the report of this pool's assembly, given the words it pinned (assembler.pins)"""
-        return PoolReport(
-            pool_base=self.pool_base,
-            end=self.end,
-            pinned=dict(pinned),
-            moved=self.deferred,
-            in_blocks=self.allocated,
-            overflowed=self.overflowed,
-            too_wide=self.declined,
-            ungrouped=self.ungrouped,
-            runtime_words=self.reserved_words,
-            unsafe_declines=dict(self.unsafe_declines),
-            unpins=dict(self.unpins),
-            pin_conflicts=self.pin_conflicts,
-            pin_all_but_missing=list(self.pin_all_but_missing),
-            alias_unresolved=self.alias_unresolved,
-            heat=self.heat_report(),
-            census=self.census(),
-            table_sites=list(self.table_sites),
         )
 
     def heat_report(self) -> Dict[str, int]:

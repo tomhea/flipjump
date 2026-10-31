@@ -163,9 +163,8 @@ def _heat(tmp_path: Path) -> Heat:
     """a heat list over the three biggest groups: each one's last three sites, hottest first"""
     recorder = _pool()
     _assemble(tmp_path, 'record', recorder)
-    assert recorder.report is not None
     sites: Heat = {}
-    for table in recorder.report.table_sites:
+    for table in recorder.table_sites:
         sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, _slot_ops(table.slot_ops)))
     biggest = sorted(sites, key=lambda group: (-len(sites[group]), group))[:3]
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}

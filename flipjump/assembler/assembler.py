@@ -338,9 +338,10 @@ def pins(
     unpinned_words = pool.unpinned_words(labels)
     if pool.pin_all_but_missing:
         pin_all_but_warning(pool.pin_all_but_missing, warning_as_errors)
-    pinned, pool.pin_conflicts = resolve_pinned(pool.pinned_words(), labels, unpinned_words)
+    pinned, _ = resolve_pinned(pool.pinned_words(), labels, unpinned_words)
     if pinned:
         unpin(ops, labels, memory_width, pinned, pool)
+    pool.pinned = pinned
     return pinned
 
 
@@ -771,8 +772,6 @@ def assemble(
                 table_pool=table_pool,
                 pinned=pinned,
             )
-        if table_pool is not None:
-            table_pool.report = table_pool.make_report(pinned)
         # MEMORY: every op is in the writer now; the stream (which labels-resolve reads, not consumes)
         # would otherwise live on through the binary's packing and compression
         del ops
