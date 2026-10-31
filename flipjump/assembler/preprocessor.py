@@ -235,10 +235,10 @@ class PreprocessorData:
             pool.reserved_words += 1
             return False
         group = None if group_expr is None else str(group_expr)
-        verdict = pool.defer(ops_alignment, table_ops, group, group_expr, labels_prefix)
+        verdict = pool._defer(ops_alignment, table_ops, group_expr)
         if verdict == DEFER_INLINE:
             return False
-        site = sys.intern(heat_key(labels_prefix)) if pool.heat else None
+        site = sys.intern(heat_key(labels_prefix))
         # (a raw program's table may have no group: BlockPool._place_cheapest)
         segment = None if verdict == DEFER_TOO_WIDE else NewSegment(0)  # its address is decided once all are queued
         self._deferred.add(group or '', ops_alignment, table_ops, site, segment)

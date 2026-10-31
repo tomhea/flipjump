@@ -12,7 +12,21 @@ import functools
 import re
 import sys
 from array import array
-from typing import Callable, Dict, Iterable, Iterator, List, Mapping, NoReturn, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    NamedTuple,
+    NoReturn,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException, FlipJumpPreprocessorException
 from flipjump.assembler.inner_classes.expr import Expr
@@ -53,6 +67,26 @@ class BlockCensus:
     alias: Dict[str, str]
 
 
+class HotSite(NamedTuple):
+    """a hot table in a BlockPool's heat list: the occurrence-th table its group gets from `site` (a macro path),
+    `slot_ops` wide (TableSite has the same three)"""
+
+    site: str
+    occurrence: int
+    slot_ops: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TableSite:
+    """a table the pool met (PoolReport.table_sites): a profile of its address makes a heat list's HotSite"""
+
+    group: str  # its group: the word it is dispatched through
+    site: str  # the macro path that emitted it (heat_key)
+    occurrence: int  # the tables of its group from the same site before it
+    slot_ops: int  # the slot width it takes
+    address: int  # where it went (0: it stayed in place)
+
+
 @dataclasses.dataclass(frozen=True)
 class PoolReport:
     """what a BlockPool did in its assembly (BlockPool.report, set when the assembly ends)"""
@@ -73,6 +107,7 @@ class PoolReport:
     alias_unresolved: int  # group words that name a moved table's label (their groups are not merged)
     heat: Dict[str, int]  # what the heat list found (BlockPool.heat_report)
     census: BlockCensus  # the tables met, by group
+    table_sites: List[TableSite]  # every table met, in expansion order
 
 
 # BlockPool.defer's verdicts on a table the expansion reached
@@ -90,20 +125,17 @@ class DeferredTables:
         self.aligns = array('I')
         self.sizes = array('I')
         self.segments: List[Optional[NewSegment]] = []  # None for a table that stayed inline
-        self.sites: List[str] = []  # each one's heat key (kept only for a pool with a heat list)
+        self.sites: List[str] = []  # each one's heat key
         self.label_names: List[str] = []
         self.label_offsets = array('I')
         self.label_ends = array('I')  # table i's labels are label_names[label_ends[i-1]:label_ends[i]]
 
-    def add(
-        self, group: str, ops_alignment: int, table_ops: int, site: Optional[str], segment: Optional[NewSegment]
-    ) -> None:
+    def add(self, group: str, ops_alignment: int, table_ops: int, site: str, segment: Optional[NewSegment]) -> None:
         self.groups.append(sys.intern(group))
         self.aligns.append(ops_alignment)
         self.sizes.append(table_ops)
         self.segments.append(segment)
-        if site is not None:
-            self.sites.append(site)
+        self.sites.append(site)
         self.label_ends.append(len(self.label_names))
 
     def add_label(self, label: str, offset: int) -> None:
@@ -378,7 +410,7 @@ class BlockPool:
         spread_factor: int = 1,
         spread_min_tables: int = 256,
         pin_incomplete_groups: bool = False,
-        heat: Optional[Mapping[str, Sequence[Tuple[str, int, int]]]] = None,
+        heat: Optional[Mapping[str, Sequence[HotSite]]] = None,
         pin_all_but: Optional[Iterable[UnpinnedCell]] = None,
     ):
         """
@@ -389,7 +421,8 @@ class BlockPool:
         @param spread_factor: a group of >= `spread_min_tables` tables gets this many times the slots, and uses the
             cheapest indices
         @param pin_incomplete_groups: pin a group's word even when some of its tables got no slot (see pinned_words)
-        @param heat: {heat_key(group): [(heat_key(site path), occurrence, slot_ops), ...]}, hottest site first
+        @param heat: {group: [HotSite, ...]}, each group's hottest site first (from a profile of report.table_sites;
+            groups and sites are matched by heat_key): those tables take their group's cheapest indices
         @param pin_all_but: pin every word but the words of these cells: each cell the program reads or writes RAW
             (through a pointer, or by jumping through its word), as a label (the cell runs to the next label) or
             (label, length in ops). Leaving such a cell out makes the program run WRONG, not slower. [] pins every
@@ -440,11 +473,11 @@ class BlockPool:
         self.hot_ambiguous: List[str] = []  # listed keys that name two of its groups
         self.hot_sites_matched = self.hot_sites_width_changed = 0
         self.report: Optional[PoolReport] = None  # what this pool did (set when the assembly ends)
+        self.table_sites: List[TableSite] = []
 
-    def defer(
-        self, ops_alignment: int, table_ops: int, group: Optional[str], group_expr: Optional[Expr], labels_prefix: str
-    ) -> str:
+    def _defer(self, ops_alignment: int, table_ops: int, group_expr: Optional[Expr]) -> str:
         """what becomes of a table the expansion reached, at its pad (DEFER_*), counted in the census first"""
+        group = None if group_expr is None else str(group_expr)
         width = max(table_ops, ops_alignment)
         if group is not None:
             self.counts[group] = self.counts.get(group, 0) + 1
@@ -492,8 +525,7 @@ class BlockPool:
         addresses = array('Q', bytes(8 * len(tables.sizes)))  # 0: it stayed inline (too wide, declined in its turn)
         overflow = []  # (slot bits, index) of the tables whose group got no block
         for index, group in enumerate(tables.groups):
-            site = tables.sites[index] if self.heat else ''
-            address = self.reserve(tables.aligns[index], tables.sizes[index], group, self.exprs.get(group), site)
+            address = self._reserve(tables.aligns[index], tables.sizes[index], group, tables.sites[index])
             if address is not None:
                 addresses[index] = address
             elif tables.segments[index] is not None:
@@ -506,9 +538,15 @@ class BlockPool:
         return self._ended(tables, addresses)
 
     def _ended(self, tables: DeferredTables, addresses: Sequence[int]) -> Sequence[int]:
+        occurrences: Dict[Tuple[str, str], int] = {}
         for index, address in enumerate(addresses):
             if address:
                 self.end = max(self.end, address + tables.sizes[index] * self.op_bits)
+            group, site = self.alias.get(tables.groups[index], tables.groups[index]), tables.sites[index]
+            occurrence = occurrences.get((group, site), 0)
+            occurrences[(group, site)] = occurrence + 1
+            slot_ops = 1 << (max(tables.sizes[index], tables.aligns[index], 1) - 1).bit_length()
+            self.table_sites.append(TableSite(group, site, occurrence, slot_ops, address))
         return addresses
 
     def _raw(self) -> bool:
@@ -596,14 +634,14 @@ class BlockPool:
             self.groups[order[k]] = (ends[k + 1] - bits[order[k]], None)
         self._used = ends[blocked] - self.pool_base
 
-    def reserve(
-        self, ops_alignment: int, table_ops: int, group: str, group_expr: Optional[Expr], labels_prefix: str
-    ) -> Optional[int]:
-        """the table's address in its group's block, or None: no block, or too wide (its group breaks)"""
+    def _reserve(self, ops_alignment: int, table_ops: int, group: str, site: str) -> Optional[int]:
+        """the table's address in its group's block, or None: no block, or too wide (its group breaks); `site`: the
+        macro path that emitted it"""
+        group_expr = self.exprs.get(group)
         group = self.alias.get(group, group)
         hot_site = None
         if group in self.hot_sites:  # (its site key, occurrence): counted whether it is placed or not
-            site = heat_key(labels_prefix)
+            site = heat_key(site)
             hot_site = site, self._hot_seen.get((group, site), 0)
             self._hot_seen[(group, site)] = hot_site[1] + 1
         if group not in self.groups:
@@ -655,6 +693,7 @@ class BlockPool:
             alias_unresolved=self.alias_unresolved,
             heat=self.heat_report(),
             census=self.census(),
+            table_sites=list(self.table_sites),
         )
 
     def heat_report(self) -> Dict[str, int]:
@@ -668,18 +707,20 @@ class BlockPool:
             'hot_sites_width_changed': self.hot_sites_width_changed,
         }
 
-    def _resolve_heat(self, heat: Mapping[str, Sequence[Tuple[str, int, int]]]) -> None:
+    def _resolve_heat(self, heat: Mapping[str, Sequence[HotSite]]) -> None:
         """match the heat list's groups to this program's, and rank each group's sites per width"""
         by_key: Dict[str, List[str]] = {}
         for group in self.counts:
             by_key.setdefault(heat_key(group), []).append(group)
-        for key, sites in heat.items():
+        for listed_key, sites in heat.items():
+            key = heat_key(listed_key)
             groups = by_key.get(key, [])
             if len(groups) != 1:
                 (self.hot_ambiguous if groups else self.hot_missing).append(key)
                 continue
             ranked: Dict[Tuple[str, int], Tuple[int, int]] = {}
-            for site, occurrence, slot_ops in sites:
+            for listed_site, occurrence, slot_ops in sites:
+                site = heat_key(listed_site)
                 if (site, occurrence) in ranked:
                     raise FlipJumpPreprocessorException(
                         f'pin protection: the heat list names {site!r} #{occurrence} of {key} twice'

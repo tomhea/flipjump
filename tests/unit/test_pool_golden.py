@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pytest
 
 from flipjump import assemble
-from flipjump.assembler.table_pool import BlockPool, heat_key
+from flipjump.assembler.table_pool import BlockPool, HotSite, heat_key
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.functions import load_debugging_labels
@@ -119,24 +119,11 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
     },
 }
 
-Heat = Dict[str, List[Tuple[str, int, int]]]
+Heat = Dict[str, List[HotSite]]
 
 
 def _slot_ops(width: int) -> int:
     return 1 << (min(max(width, 1), MAX_SLOT_OPS) - 1).bit_length()
-
-
-class _Recorder(BlockPool):
-    """a pool that records each table's (group, site path, width) as the expansion reaches it"""
-
-    seen: List[Tuple[str, str, int]]
-
-    def defer(  # type: ignore[no-untyped-def]
-        self, ops_alignment: int, table_ops: int, group: Optional[str], group_expr, labels_prefix: str = ''
-    ) -> str:
-        if group is not None:
-            self.seen.append((group, labels_prefix, max(table_ops, ops_alignment)))
-        return super().defer(ops_alignment, table_ops, group, group_expr, labels_prefix)
 
 
 # fjdoom's shipped knobs, and a narrow variant whose 32-op tables are too wide (declined, their groups broken)
@@ -174,18 +161,12 @@ def _assemble(tmp_path: Path, name: str, pool: Optional[BlockPool]) -> Tuple[byt
 
 def _heat(tmp_path: Path) -> Heat:
     """a heat list over the three biggest groups: each one's last three sites, hottest first"""
-    recorder = _pool(cls=_Recorder)
-    assert isinstance(recorder, _Recorder)
-    recorder.seen = []
+    recorder = _pool()
     _assemble(tmp_path, 'record', recorder)
-    occurrences: Dict[Tuple[str, str], int] = {}
+    assert recorder.report is not None
     sites: Heat = {}
-    for group, path, width in recorder.seen:
-        canonical = recorder.alias.get(group, group)
-        site = heat_key(path)
-        occurrence = occurrences.get((canonical, site), 0)
-        occurrences[(canonical, site)] = occurrence + 1
-        sites.setdefault(canonical, []).append((site, occurrence, _slot_ops(width)))
+    for table in recorder.report.table_sites:
+        sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, _slot_ops(table.slot_ops)))
     biggest = sorted(sites, key=lambda group: (-len(sites[group]), group))[:3]
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}
 

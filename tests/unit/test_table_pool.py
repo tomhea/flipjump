@@ -10,7 +10,7 @@ is reached only by jump, so its address is free to choose.
 import re
 import tracemalloc
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 import pytest
 
@@ -22,7 +22,7 @@ from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import MacroName, NewSegment
 from flipjump.assembler.preprocessor import PreprocessorData, is_relocatable, resolve_macros
-from flipjump.assembler.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, heat_key
+from flipjump.assembler.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, HotSite, heat_key
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
@@ -204,7 +204,8 @@ def _uniform(counts: Dict[str, int], **kwargs: Any) -> BlockPool:
 
 
 def _reserve(pool: BlockPool, width: int = 16, group: str = 'g', site: str = '') -> Optional[int]:
-    return pool.reserve(16, width, group, Expr(group), site)
+    pool.exprs.setdefault(group, Expr(group))  # the group's source word, as the expansion records it
+    return pool._reserve(16, width, group, site)
 
 
 def _place(pool: BlockPool, sites: List[str], width: int = 16) -> Dict[str, int]:
@@ -385,9 +386,9 @@ def test_unpinned_words_are_every_word_of_each_cell() -> None:
 
 def test_defer_counts_the_census_and_keeps_a_too_wide_table_inline() -> None:
     pool = BlockPool(W, POOL_BASE)
-    assert [pool.defer(16, width, 'g', Expr('g'), '') for width in (16, 16, 31)] == [table_pool.DEFER_OUT] * 3
-    assert pool.defer(16, 40, 'g', Expr('g'), '') == table_pool.DEFER_TOO_WIDE  # wider than max_slot_ops (32)
-    assert pool.defer(16, 16, None, None, '') == table_pool.DEFER_INLINE and pool.ungrouped == 1
+    assert [pool._defer(16, width, Expr('g')) for width in (16, 16, 31)] == [table_pool.DEFER_OUT] * 3
+    assert pool._defer(16, 40, Expr('g')) == table_pool.DEFER_TOO_WIDE  # wider than max_slot_ops (32)
+    assert pool._defer(16, 16, None) == table_pool.DEFER_INLINE and pool.ungrouped == 1
     assert pool.counts == {'g': 4} and pool.width_hist == {'g': {16: 2, 31: 1, 40: 1}} and pool.deferred == 3
     assert pool.census().widths == {'g': 40}
 
@@ -597,29 +598,15 @@ def test_no_heat_and_an_empty_heat_list_change_nothing() -> None:
     assert results[0] == results[1] == results[2]
 
 
-class _SiteRecorder(BlockPool):
-    """a pool that records each table's group and site path at its pad, in encounter order"""
-
-    sites: List[Tuple[str, str]]
-
-    def defer(  # type: ignore[no-untyped-def]
-        self, ops_alignment: int, table_ops: int, group: Optional[str], group_expr, labels_prefix: str
-    ) -> str:
-        if group is not None:
-            self.sites.append((group, labels_prefix))
-        return super().defer(ops_alignment, table_ops, group, group_expr, labels_prefix)
-
-
 def test_a_heat_ordered_program_is_the_same_program_in_fewer_ops(tmp_path: Path) -> None:
-    recorder = _SiteRecorder(W, POOL_BASE)
-    recorder.sites = []
+    recorder = BlockPool(W, POOL_BASE)
     reference, plain_ops, _ = build_and_run(XOR_PROGRAM, tmp_path, recorder, name='plain')
+    assert recorder.report is not None
     # the busiest group's LAST table, which encounter order hands its dearest index
     group = max(recorder.counts, key=lambda g: (recorder.counts[g], g))
-    last_site = heat_key([site for g, site in recorder.sites if g == group][-1])
-    assert last_site.endswith('hex.exact_xor(5)')  # a real table's path, not an empty one
-    occurrence = sum(1 for g, site in recorder.sites if g == group and heat_key(site) == last_site) - 1
-    placing = BlockPool(W, POOL_BASE, heat={heat_key(group): [(last_site, occurrence, 16)]})
+    last = [table for table in recorder.report.table_sites if table.group == group][-1]
+    assert last.site.endswith('hex.exact_xor(5)') and last.address  # a real table's path, and where it went
+    placing = BlockPool(W, POOL_BASE, heat={group: [HotSite(last.site, last.occurrence, 16)]})
     output, ops, _ = build_and_run(XOR_PROGRAM, tmp_path, placing, name='heat')
     assert output == reference
     assert placing.hot_sites_matched == 1 and placing.pinned_words()
@@ -838,12 +825,12 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
     names = [f'f13:l2210:sim.pass(3)---s2:l40:rep{i}:hex.exact_xor(5)---switch' for i in range(count)]
     sites = [name.rpartition('---')[0] for name in names]
 
-    def per_table(labels_per_table: int, keep_sites: bool) -> float:
+    def per_table(labels_per_table: int) -> float:
         tracemalloc.start()
         before = tracemalloc.get_traced_memory()[0]
         tables = DeferredTables()
         for i in range(count):
-            tables.add(groups[i], 16, 16, sites[i] if keep_sites else None, segments[i])
+            tables.add(groups[i], 16, 16, sites[i], segments[i])
             for label in range(labels_per_table):
                 tables.add_label(names[i], label * 448)
         cost = (tracemalloc.get_traced_memory()[0] - before) / count
@@ -851,10 +838,10 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
         assert len(tables.sizes) == count
         return cost
 
-    one_label, two_labels, with_site = per_table(1, False), per_table(2, False), per_table(1, True)
-    extra_label, site = two_labels - one_label, with_site - one_label
-    print(f'deferred table: {one_label:.1f} B, a 2nd label +{extra_label:.1f} B, a site +{site:.1f} B')
-    assert one_label < 64 and extra_label < 24 and site < 16
+    one_label, two_labels = per_table(1), per_table(2)
+    extra_label = two_labels - one_label
+    print(f'deferred table: {one_label:.1f} B, a 2nd label +{extra_label:.1f} B')
+    assert one_label < 80 and extra_label < 24
 
 
 def test_the_pool_is_importable_from_the_preprocessor_too() -> None:
