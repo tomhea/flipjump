@@ -15,6 +15,7 @@ a defines file read after the stl reaches nothing).
 import subprocess  # nosec B404 - the test drives the fj CLI
 import sys
 from pathlib import Path
+from typing import Dict, Union
 
 import pytest
 
@@ -167,20 +168,30 @@ def test_a_bad_ptr_wide_bits_is_refused_at_assemble_time(tmp_path: Path, cell_bi
         _assemble_at(tmp_path, 'programs/hexlib_tests/basics2/wide_cells.fj', cell_bits, bad_wide_bits)
 
 
-def test_the_api_defines_file_actually_reaches_the_parse(tmp_path: Path) -> None:
-    # flipjump.assemble() takes defines_file too, not only the CLI: a parameter that was accepted and ignored would
+def test_the_api_defines_actually_reach_the_parse(tmp_path: Path) -> None:
+    # flipjump.assemble() takes defines too, not only the CLI: a parameter that was accepted and ignored would
     # build fine, just not overridden
     prog = tmp_path / 'prog.fj'
-    prog.write_text('GREET = 0x5\nstl.startup\nhex.print_as_digit g, 0\nstl.loop\n  g: hex.hex GREET\n')
-    defines = tmp_path / '_defines.fj'
-    defines.write_text('GREET = 0x8\n')
+    prog.write_text('ns a {\n  GREET = 0x5\n}\nstl.startup\nhex.print_as_digit g, 0\nstl.loop\n  g: hex.hex a.GREET\n')
 
     plain, overridden = tmp_path / 'plain.fjm', tmp_path / 'ov.fjm'
     assemble([prog], plain, memory_width=32, print_time=False)
-    assemble([prog], overridden, memory_width=32, print_time=False, defines_file=defines)
-    assert plain.read_bytes() != overridden.read_bytes(), 'defines_file was ignored'
+    assemble([prog], overridden, memory_width=32, print_time=False, defines={'a.GREET': 0x8})
+    assert plain.read_bytes() != overridden.read_bytes(), 'defines was ignored'
 
     prog.write_text(prog.read_text().replace('0x5', '0x8'))
     written = tmp_path / 'written.fjm'
     assemble([prog], written, memory_width=32, print_time=False)
     assert overridden.read_bytes() == written.read_bytes(), 'the override is not the written value'
+    expression = tmp_path / 'expression.fjm'
+    assemble([prog], expression, memory_width=32, print_time=False, defines={'a.GREET': 'w / 4'})
+    assert expression.read_bytes() == written.read_bytes(), 'a string value is not an fj expression'
+
+
+@pytest.mark.parametrize('defines', [{'2GREET': 1}, {'a..b': 1}, {'GREET GREET': 1}, {'GREET': ''}, {'GREET': '1\n2'}])
+def test_the_api_refuses_a_malformed_define(tmp_path: Path, defines: Dict[str, Union[int, str]]) -> None:
+    prog = tmp_path / 'prog.fj'
+    prog.write_text('GREET = 0x5\nstl.startup\nstl.loop\n')
+    with pytest.raises(ValueError, match='define'):
+        assemble([prog], tmp_path / 'o.fjm', memory_width=32, print_time=False, defines=defines)
+    assemble([prog], tmp_path / 'o.fjm', memory_width=32, print_time=False, defines={'GREET': 1})  # the control

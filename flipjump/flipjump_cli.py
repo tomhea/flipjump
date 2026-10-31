@@ -7,11 +7,10 @@ assemble and/or run flows according to the chosen --asm / --run options.
 import argparse
 import lzma
 import os
-import re
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Tuple, List, Callable, Optional
+from typing import Dict, Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
@@ -32,7 +31,7 @@ from flipjump.utils.constants import (
     FLIPJUMP_VERSION,
 )
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException, FlipJumpReadFjmException, IODeviceException
-from flipjump.utils.functions import get_file_tuples, get_temp_directory_suffix
+from flipjump.utils.functions import bad_define_message, get_file_tuples, get_temp_directory_suffix
 
 ErrorFunc = Callable[[str], None]
 
@@ -175,7 +174,6 @@ def assemble(
     debug_file: Optional[Path],
     args: argparse.Namespace,
     error_func: ErrorFunc,
-    defines_file: Optional[Path] = None,
 ) -> None:
     """
     prepare and verify arguments, and assemble the .fj files.
@@ -185,9 +183,8 @@ def assemble(
     @param error_func: the parser's error function
     """
     file_tuples = get_file_tuples(args.files, no_stl=args.no_stl)
-    if defines_file is not None:
-        file_tuples.insert(0, ('d1', defines_file))  # before the stl: see add_defines_file
     verify_fj_files(error_func, file_tuples)
+    defines = parse_defines(args.define, error_func)
 
     version = get_version(args.version, args.outfile is not None, error_func)
     if version == FJMVersion.BaseVersion and (args.run_flags or args.io_mode):
@@ -213,7 +210,7 @@ def assemble(
         show_statistics=args.stats,
         print_time=not args.silent,
         max_recursion_depth=args.max_recursion_depth,
-        defines_file=defines_file,
+        defines=defines,
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
@@ -567,37 +564,23 @@ def parse_arguments(*, cmd_line_args: Optional[List[str]] = None) -> Tuple[argpa
     return parsed_args, parser.error
 
 
-_DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*$')
-
-
-def add_defines_file(args: argparse.Namespace, temp_dir_name: str, error_func: ErrorFunc) -> Optional[Path]:
+def parse_defines(define_args: List[str], error_func: ErrorFunc) -> Dict[str, str]:
     """
-    write the --define overrides into a temporary .fj file, parsed before the stl so a constant the stl uses is
-    overridden too (a define's value may use `w` and an earlier define, not an stl constant). The parser treats its
-    constants as overrides (see FJParser.statement). A dotted NAME is wrapped in its namespaces:
-    `-D hex.pointers.PTRSIZE=12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`.
-    @param args: the parsed arguments
-    @param temp_dir_name: the temp directory to write the defines file into
+    `-D NAME=VALUE ...` -> {NAME: VALUE}, the defines of assembler.assemble (a NAME given again takes the later VALUE).
+    @param define_args: the -D arguments, in order
     @param error_func: parser's error function
-    @return: the path of the defines file, or None when there are no defines
+    @return: the defines
     """
-    if not args.define:
-        return None
-    lines = []
-    for define in args.define:
+    defines: Dict[str, str] = {}
+    for define in define_args:
         if '=' not in define:
             error_func(f"-D expects NAME=VALUE, got {define!r}")
-        name, _, value = define.partition('=')
-        name = name.strip()
-        if not _DEFINE_NAME_RE.match(name):
-            error_func(f"-D expects NAME=VALUE with a (possibly dotted) NAME, got {define!r}")
-        *namespaces, base_name = name.split('.')
-        opening = "".join(f"ns {namespace} {{\n" for namespace in namespaces)
-        closing = "\n}" * len(namespaces)
-        lines.append(f"{opening}{base_name} ={value}{closing}\n")
-    defines_path = Path(temp_dir_name) / '_defines.fj'
-    defines_path.write_text(''.join(lines), encoding='utf-8')
-    return defines_path
+        name, _, value = (part.strip() for part in define.partition('='))
+        bad = bad_define_message(name, value)
+        if bad is not None:
+            error_func(f"-D expects NAME=VALUE: {bad}")
+        defines[name] = value
+    return defines
 
 
 def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> None:
@@ -610,8 +593,7 @@ def execute_assemble_run(args: argparse.Namespace, error_func: ErrorFunc) -> Non
         debug_path, in_fjm_path, out_fjm_path = get_files_paths(args, error_func, temp_dir_name)
 
         if not args.run:
-            defines_path = add_defines_file(args, temp_dir_name, error_func)
-            assemble(out_fjm_path, debug_path, args, error_func, defines_path)
+            assemble(out_fjm_path, debug_path, args, error_func)
 
         if not args.asm:
             run(in_fjm_path, debug_path, args, error_func)

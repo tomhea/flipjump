@@ -10,11 +10,12 @@ import gc
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import AbstractSet, Callable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional
+from tempfile import TemporaryDirectory
+from typing import AbstractSet, Callable, List, Dict, Mapping, MutableSequence, Sequence, Set, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
-from flipjump.utils.functions import save_debugging_labels
+from flipjump.utils.functions import save_debugging_labels, write_defines_file
 from flipjump.utils.progress import ProgressBar
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.utils.exceptions import (
@@ -636,7 +637,7 @@ def assemble(
     show_statistics: bool = False,
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
-    defines_file: Optional[Path] = None,
+    defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
 ) -> None:
     """
@@ -650,8 +651,23 @@ def assemble(
     :param print_time: if true prints the times of each assemble-stage
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    :param defines: constants that OVERRIDE the program's declarations of them (`fj -D NAME=VALUE`): each full name
+    (`a.b.NAME` for a namespaced one) to its value, a number or an fj expression (which may use `w` and an earlier
+    define). Overriding a constant that nothing declares is an error.
     :param table_pool: if given, move the lookup tables to addresses that are cheap to arm (see table_pool.py).
     """
+    defines_dir: Optional['TemporaryDirectory[str]'] = None
+    defines_file: Optional[Path] = None
+    if defines:
+        # a .fj file parsed before the stl (so a constant the stl uses is overridden too), deleted when done
+        defines_dir = TemporaryDirectory(suffix='__defines')
+        defines_file = Path(defines_dir.name) / '_defines.fj'
+        try:
+            write_defines_file(defines, defines_file)
+        except ValueError:
+            defines_dir.cleanup()
+            raise
+        input_files = [('d1', defines_file), *input_files]
     # the pipeline allocates a large acyclic graph: the cyclic gc only re-walks it (restored in finally)
     gc_was_enabled = gc.isenabled()
     gc.disable()
@@ -719,3 +735,5 @@ def assemble(
     finally:
         if gc_was_enabled:
             gc.enable()
+        if defines_dir is not None:
+            defines_dir.cleanup()

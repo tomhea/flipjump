@@ -8,7 +8,7 @@ assemble_and_run_test_output helpers.
 import lzma
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import List, Optional, Set
+from typing import List, Mapping, Optional, Set, Union
 
 from flipjump.assembler import assembler
 from flipjump.assembler.table_pool import BlockPool
@@ -44,7 +44,7 @@ def assemble(
     print_time: bool = True,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     lzma_preset: int = lzma.PRESET_DEFAULT,
-    defines_file: Optional[Path] = None,
+    defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     run_flags: int = 0,
     io_mode: int = 0,
@@ -63,8 +63,9 @@ def assemble(
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
     :param lzma_preset: the preset used to compress a version-3 or version-4 .fjm (0-9, faster->smaller).
-    :param defines_file: a .fj file whose constants OVERRIDE the declarations in fj_file_paths
-    (the API form of the CLI's -D). It is parsed before the stl.
+    :param defines: constants that OVERRIDE the program's declarations of them (`fj -D NAME=VALUE`): each full name
+    (`a.b.NAME` for a namespaced one) to its value, a number or an fj expression (which may use `w` and an earlier
+    define). Overriding a constant that nothing declares is an error.
 
     :param table_pool: if given, move the tables declared relocatable (the expansions of `__relocatable__`
     macros) to where they are cheap to arm, so every table dispatch runs fewer ops; the program runs the same.
@@ -75,8 +76,6 @@ def assemble(
     :note: This is a wrapper function to the assembler.assemble() function.
     """
     file_tuples = get_file_tuples([str(fj_file.absolute()) for fj_file in fj_file_paths], no_stl=not use_stl)
-    if defines_file is not None:
-        file_tuples.insert(0, ('d1', defines_file))  # before the stl: see flipjump_cli.add_defines_file
     fjm_writer = Writer(
         output_fjm_path, memory_width, fjm_version, lzma_preset=lzma_preset, run_flags=run_flags, io_mode=io_mode
     )
@@ -89,7 +88,7 @@ def assemble(
         show_statistics=show_statistics,
         print_time=print_time,
         max_recursion_depth=max_recursion_depth,
-        defines_file=defines_file,
+        defines=defines,
         table_pool=table_pool,
     )
 
@@ -319,7 +318,7 @@ def assemble_and_run(
     run_flags: int = 0,
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
-    defines_file: Optional[Path] = None,
+    defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
@@ -349,7 +348,7 @@ def assemble_and_run(
         run_flags=run_flags,
         io_mode=io_mode,
         lzma_preset=lzma_preset,
-        defines_file=defines_file,
+        defines=defines,
         table_pool=table_pool,
         profile=profile,
         flat_max_words=flat_max_words,
@@ -378,7 +377,7 @@ def assemble_and_debug(
     run_flags: int = 0,
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
-    defines_file: Optional[Path] = None,
+    defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
@@ -410,7 +409,7 @@ def assemble_and_debug(
             run_flags=run_flags,
             io_mode=io_mode,
             lzma_preset=lzma_preset,
-            defines_file=defines_file,
+            defines=defines,
             table_pool=table_pool,
         )
 
@@ -454,7 +453,7 @@ def assemble_and_run_test_output(
     run_flags: int = 0,
     io_mode: int = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
-    defines_file: Optional[Path] = None,
+    defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
@@ -495,7 +494,7 @@ def assemble_and_run_test_output(
             run_flags=run_flags,
             io_mode=io_mode,
             lzma_preset=lzma_preset,
-            defines_file=defines_file,
+            defines=defines,
             table_pool=table_pool,
         )
 
