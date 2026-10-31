@@ -45,7 +45,7 @@ HIDDEN_ALIASES: FrozenSet[str] = frozenset(
 
 
 class HelpFormatter(argparse.HelpFormatter):
-    """argparse's help, without the HIDDEN_ALIASES spellings"""
+    """An argparse help formatter that hides the HIDDEN_ALIASES spellings."""
 
     def _format_action_invocation(self, action: argparse.Action) -> str:
         if not HIDDEN_ALIASES.intersection(action.option_strings):
@@ -144,18 +144,18 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
             print_termination=not args.silent,
             last_ops_debugging_list_length=args.debug_ops_list,
             profile=args.profile,
-            # the window: --flat-max-words, --[no-]flat-memory, else the program's own (run_defaults)
+            # the flat window: --flat-max-words, --[no-]flat-memory, else what the program asks for (see run_defaults)
             flat_memory=args.flat_memory,
             flat_max_words=args.flat_max_words,
         )
     except FlipJumpFlatMemoryException as flat_error:
         sys.exit(str(flat_error))  # what failed, and how to run it anyway (run_defaults.flat_memory_failure_message)
     finally:
-        io_device.close()  # the device this run created (e.g. the pc window), also when the run raised
+        io_device.close()  # release the device this run created (e.g. the pc window), also when the run raised
 
 
 def parse_unpinned_cells(text: str, error_func: ErrorFunc) -> List[UnpinnedCell]:
-    """`--pin-all-but a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but)"""
+    """Parse --pin-all-but's value: `a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but)."""
     cells: List[UnpinnedCell] = []
     for item in filter(None, (part.strip() for part in text.split(','))):
         label, colon, ops = item.partition(':')
@@ -178,7 +178,7 @@ POOL_OPTIONS = {
 
 
 def make_table_pool(args: argparse.Namespace, error_func: ErrorFunc) -> Optional[BlockPool]:
-    """the BlockPool of --pool-tables and its flags (None without --pool-tables)"""
+    """Return the BlockPool that --pool-tables and its flags ask for, or None without --pool-tables."""
     given = [dest for dest in ('pool_base', 'pin_all_but', *POOL_OPTIONS) if getattr(args, dest) is not None]
     if args.pool_pin_incomplete_groups:
         given.append('pool_pin_incomplete_groups')
@@ -620,7 +620,8 @@ def parse_arguments(*, cmd_line_args: Optional[List[str]] = None) -> Tuple[argpa
 
 def parse_defines(define_args: List[str], error_func: ErrorFunc) -> Dict[str, str]:
     """
-    `-D NAME=VALUE ...` -> {NAME: VALUE}, the defines of assembler.assemble (a NAME given again takes the later VALUE).
+    Parse the -D NAME=VALUE arguments into assembler.assemble's defines, {NAME: VALUE}. A NAME given twice takes the
+    later VALUE.
     @param define_args: the -D arguments, in order
     @param error_func: parser's error function
     @return: the defines

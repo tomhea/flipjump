@@ -74,7 +74,7 @@ def get_position(lineno: int) -> CodePosition:
 
 
 def _leaf(value: Union[int, str]) -> Expr:
-    """the parse's shared Expr for the number / name `value`"""
+    """Return the parse's shared Expr for the number or name `value`."""
     expr = _leaf_exprs.get(value)
     if expr is None or expr.value.__class__ is not value.__class__:
         expr = Expr(value)
@@ -83,14 +83,14 @@ def _leaf(value: Union[int, str]) -> Expr:
 
 
 def _reset_parse_sharing() -> None:
-    """forget the shared leaves and positions (the tree keeps the ones it uses)"""
+    """Forget the shared leaves and positions (the parsed tree keeps the ones it uses)."""
     global _position_file, _position_file_str, _last_position
     _position_file, _position_file_str, _last_position = None, '', None
     _leaf_exprs.clear()
 
 
 def get_minimized_expr(op: str, params: Tuple[Expr, ...]) -> Expr:
-    """expr.get_minimized_expr, with a folded constant shared like any other number leaf"""
+    """Like expr.get_minimized_expr, but a folded constant is shared like any other number leaf."""
     expr = _get_minimized_expr(op, params)
     if expr.value.__class__ is int:
         return _leaf(expr.value)
@@ -329,8 +329,9 @@ _ID_OF_NONE = id(None)
 
 
 class _NoneOnlyPositions(Dict[int, Any]):
-    """sly's per-production position record, keeping only the entry FJParser reads: sly records a position
-    per reduction for the parser's whole life, and FJParser.error reads only `line_position(None)`."""
+    """A stand-in for sly's per-production position record that keeps only what FJParser reads. sly records a
+    position for every reduction for the parser's whole life, but FJParser.error reads only
+    `line_position(None)`."""
 
     def __setitem__(self, key: int, value: Any) -> None:
         if key == _ID_OF_NONE:
@@ -377,17 +378,16 @@ class FJParser(sly.Parser):
         self.macros: Dict[MacroName, Macro] = {
             INITIAL_MACRO_NAME: Macro([], [], [], '', _get_main_macro_code_position(first_file))
         }
-        # -D overrides. The defines file is a real .fj file, so a define keeps the whole expression
-        # language (`w + 33`, an earlier define, an stl constant); what makes it an OVERRIDE rather
-        # than a declaration is that its constants land here instead of in self.consts.
-        # see _NoneOnlyPositions: sly.Parser.parse uses these instead of creating its own ever-growing dicts
+        # -D overrides. The defines file is a real .fj file, so a define can use fj expressions (`w + 33`, an earlier
+        # define). It overrides instead of declaring because its constants land here, not in self.consts.
+        # (see _NoneOnlyPositions: sly.Parser.parse uses these instead of its own ever-growing dicts)
         self._line_positions = _NoneOnlyPositions()
         self._index_positions = _NoneOnlyPositions()
         self.defines_file: Optional[Path] = defines_file.resolve() if defines_file else None
         self.defines: Dict[str, int] = {}
         self.defines_lineno: Dict[str, int] = {}
         self.used_defines: Set[str] = set()
-        self.parsing_defines = False  # is the file being parsed the defines file (set once per file)
+        self.parsing_defines = False  # True while the defines file is being parsed (set for each file)
 
     def _parsing_the_defines_file(self) -> bool:
         try:
@@ -810,8 +810,8 @@ class FJParser(sly.Parser):
                 syntax_error(p.lineno, f'Can\'t evaluate expression:  {str(evaluated)}.')
                 return
             self.defines_lineno[name] = p.lineno
-            # no "already declared?" check: only the DECLARATION it suppresses satisfies an override.
-            # The value is visible from here on, so a later define may use an earlier one.
+            # No "already declared?" check: an override is satisfied only by the declaration it replaces.
+            # The value is visible from here on, so a later define can use an earlier one.
             self.consts[name] = Expr(self.defines[name])
             return
 
@@ -1137,8 +1137,8 @@ def parse_macro_tree(
     @param input_files:[in]: a list of (short_file_name, fj_file_path). The files will to be parsed in that given order.
     @param memory_width:[in]: the memory-width
     @param warning_as_errors:[in]: treat warnings as errors (stop execution on warnings)
-    @param defines_file:[in]: the -D file among input_files, if any. Constants declared in it
-    OVERRIDE the declaration elsewhere instead of adding one - see FJParser.statement.
+    @param defines_file:[in]: the -D file among input_files, if any. Its constants override the declarations
+    elsewhere instead of adding new ones (see FJParser.statement).
     @param on_progress:[in]: if given, called before each file with the fraction of the source parsed so far.
     @return: the macro-dictionary.
     """
@@ -1157,8 +1157,8 @@ def parse_macro_tree(
     finally:
         _reset_parse_sharing()
 
-    # -D may only OVERRIDE: a define that never met a declaration is a typo. syntax_error() names
-    # curr_file (by now the LAST file parsed), so it is pointed back at the defines file.
+    # -D may only override, so a define that never met a declaration is a typo. syntax_error() names curr_file
+    # (now the last file parsed), so point it back at the defines file.
     unmatched = sorted(set(parser.defines) - parser.used_defines)
     if unmatched:
         assert parser.defines_file is not None  # a define exists only if a defines file was parsed

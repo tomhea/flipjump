@@ -1,16 +1,19 @@
 """
-the compact op stream: what the preprocessor (macro resolve) emits and labels-resolve consumes, ~17-60 bytes an op
-instead of ~250 for an op object and its Expr trees:
+The compact op stream: the ops the preprocessor (macro resolve) emits and labels-resolve reads, in ~17-60 bytes an
+op instead of ~250 for an op object and its Expr trees.
 
-    kinds: bytearray        - one byte per op (FJ, FJ_POS, WFLIP, PAD, OBJ, FJ_PACKED below)
-    vals:  array('q')       - the op's slots, in order (see each kind)
+    kinds: bytearray        - one byte per op: its kind (FJ, FJ_POS, WFLIP, PAD, OBJ, FJ_PACKED below)
+    vals:  array('q')       - the ops' slots, in order (each kind below lists its slots)
     refs:  list             - what a slot cannot hold as a number: a label name, an Expr, a CodePosition, a
-                              NewSegment / ReserveBits. Shared by every stream of one preprocessor.
+                              NewSegment / ReserveBits. All the streams of one preprocessor share it.
 
-An OPERAND slot is a literal (0 <= v < 2**63), or ~((r << 2) | tag) naming refs[r]: TAG_LABEL (labels[name]),
-TAG_LABEL_PLUS (labels[name] + the next slot) or TAG_EXPR (expr.exact_eval(labels)). An operand is folded into a
-literal only when its value is final - an int, or one declared label (+1) plus integer constants - so every value is
-the one its Expr evaluates to. An op with a deferred operand keeps its CodePosition, for labels-resolve's errors.
+An operand slot is either a literal (0 <= v < 2**63) or ~((r << 2) | tag), which points at refs[r]. The tag says how
+to evaluate it: TAG_LABEL is labels[name], TAG_LABEL_PLUS is labels[name] plus the next slot, and TAG_EXPR is
+expr.exact_eval(labels).
+
+An operand is folded into a literal only when its value is final: an int, or one declared label plus integer
+constants. So a folded value is always the one its Expr would evaluate to. An op with a deferred (not yet literal)
+operand keeps its CodePosition, for labels-resolve's error messages.
 """
 
 from __future__ import annotations
@@ -22,15 +25,16 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, NewSegment, Padding, ReserveBits, WordFlip
 
 if TYPE_CHECKING:
-    from flipjump.assembler.inner_classes.table_pool import OffsetGuard  # (it imports this module)
+    from flipjump.assembler.inner_classes.table_pool import OffsetGuard  # for types only: it imports us
 
 # op kinds. Slots per kind:
 FJ = 0  # flip, jump - both literal
-FJ_POS = 1  # flip, jump (operands; at least one deferred), position-ref
-WFLIP = 2  # word_address, flip_value, return_address (operands), position-ref
+FJ_POS = 1  # flip, jump (operands, at least one deferred), the ref of the op's CodePosition
+WFLIP = 2  # word_address, flip_value, return_address (operands), the ref of the op's CodePosition
 PAD = 3  # ops_count
 OBJ = 4  # ref to a NewSegment / ReserveBits (mutable: NewSegment's wflip address is patched later)
-FJ_PACKED = 5  # flip << 32 | jump - both literal, flip < 2**31 and jump < 2**32 (the common op: one slot, not two)
+# flip << 32 | jump, both literal: the common op, in one slot instead of two. Needs flip < 2**31 and jump < 2**32.
+FJ_PACKED = 5
 
 PACKED_FLIP_MAX = (1 << 31) - 1
 PACKED_JUMP_MAX = (1 << 32) - 1
@@ -50,13 +54,14 @@ _NO_PARAMS: Dict[str, Expr] = {}
 
 
 def linear_sum(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
-    """(label, constant) if expr is a +/- tree of at most one label (coefficient +1) and ints, else None"""
+    """Return `(label, constant)` if `expr` is one label plus integer constants (using only + and -), else None.
+    The label is None when `expr` names no label."""
     return _linear_in(expr, _NO_PARAMS)
 
 
 def _linear_in(expr: Expr, params: Dict[str, Expr]) -> Optional[Tuple[Optional[str], int]]:
-    """linear_sum(expr.eval_new(params)) without building the substituted tree; None also where eval_new would fold
-    something else (the caller then takes the eval_new path, its errors and all)"""
+    """Return linear_sum(expr.eval_new(params)), without building the substituted tree.
+    It may return None where linear_sum would not; the caller then falls back to eval_new (and gets its errors)."""
     value: Any = expr.value
     if value.__class__ is int:
         return None, value
@@ -87,9 +92,10 @@ LinearPart = Tuple[Dict[str, int], int]
 
 
 def linear_parts(expr: Expr) -> List[LinearPart]:
-    """every maximal sum of `expr` - +, - and * by a number - that names a label, as ({label: coefficient},
-    constant): one part for a linear `expr` (`b - a`), else its linear sub-sums (`L + 15*dw` of `(L + 15*dw) | 0`).
-    A label whose coefficients cancel (`a - a`) is left out; a number is no part."""
+    """Return every maximal linear sum in `expr` (+, - and * by a number) that names a label.
+    A linear `expr` like `b - a` is one part; otherwise its linear sub-sums are the parts, like `L + 15*dw` in
+    `(L + 15*dw) | 0`. A label whose coefficients cancel (`a - a`) is left out.
+    Returns: `[({label: coefficient}, constant), ...]`"""
     parts: List[LinearPart] = []
 
     def collect(side: Optional[LinearPart]) -> None:
@@ -126,8 +132,8 @@ def linear_parts(expr: Expr) -> List[LinearPart]:
     return parts
 
 
-# the linear sums of the macro arguments (`va + 2*dw` is named by many ops of its expansion), by Expr (identity
-# hashed, kept alive by the key); bounded by clearing
+# A cache of linear sums for macro arguments: an argument like `va + 2*dw` is named by many ops of its expansion.
+# Keyed by the Expr object (hashed by identity; the key keeps it alive). Cleared when it gets too big.
 _LINEAR_MEMO: Dict[Expr, Optional[Tuple[Optional[str], int]]] = {}
 _LINEAR_MEMO_LIMIT = 1 << 16
 _MISSING: Any = object()
@@ -155,10 +161,10 @@ class OpStream:
     def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Optional[OffsetGuard] = None):
         """
         @param refs: the reference list, shared by every stream of one preprocessor
-        @param labels: the preprocessor's labels: a declared label is folded into a literal
-        @param guard: a table pool's OffsetGuard, told of every operand folded here that names a label (None: no
-            pool). With a guard, a wflip's value that names a label stays an expression (BlockPool tells an address
-            from a number)
+        @param labels: the preprocessor's labels. An operand that names a declared label is folded into a literal.
+        @param guard: the table pool's OffsetGuard, or None if there is no pool. It checks every operand folded here
+            that names a label. With a guard, a wflip value that names a label is never folded, so the pool can still
+            tell an address from a number.
         """
         self.kinds = bytearray()
         self.vals = array('q')
@@ -173,7 +179,8 @@ class OpStream:
     # ---- writing ----
 
     def _operand(self, expr: Expr, is_address: bool = True) -> bool:
-        """append expr's slot(s); True if it is deferred (not a literal). `is_address`: not a wflip's value"""
+        """Append `expr`'s slots. Return True if it is deferred (not a literal). `is_address` is False for a wflip's
+        value."""
         value: Any = expr.value
         vals = self.vals
         if value.__class__ is int:
@@ -205,7 +212,7 @@ class OpStream:
         return True
 
     def _label_plus(self, name: str, const: int) -> bool:
-        """append the slot(s) of `labels[name] + const`; False (nothing appended) if it does not fit"""
+        """Append the slots of `labels[name] + const`. Return False, appending nothing, if it does not fit in a slot."""
         vals = self.vals
         if self.guard is not None and (const or name in self.guard.watched):
             self.guard.check_label(name, const)
@@ -227,8 +234,8 @@ class OpStream:
         return False
 
     def _operand_in(self, expr: Expr, params: Dict[str, Expr], is_address: bool = True) -> bool:
-        """_operand(expr.eval_new(params), is_address) - the same slots - building no Expr for a +/- operand.
-        (The hot path of the expansion: the common shapes are spelled out.)"""
+        """Like `_operand(expr.eval_new(params), is_address)`, but faster: a +/- operand builds no Expr.
+        This is the expansion's hot path, so the common shapes are handled one by one."""
         value: Any = expr.value
         if value.__class__ is str:
             substitute = params.get(value)
@@ -287,13 +294,15 @@ class OpStream:
         return self._operand(expr.eval_new(params), is_address)
 
     def add_flip_jump_in(self, flip: Expr, jump: Expr, params: Dict[str, Expr], code_position: CodePosition) -> None:
-        """add_flip_jump(flip.eval_new(params), jump.eval_new(params), code_position), the same slots"""
+        """Like `add_flip_jump(flip.eval_new(params), jump.eval_new(params))`, but faster: it doesn't build the
+        substituted expressions."""
         deferred = self._operand_in(flip, params)
         deferred = self._operand_in(jump, params) or deferred
         self._end_flip_jump(deferred, code_position)
 
     def _end_flip_jump(self, deferred: bool, code_position: CodePosition) -> None:
-        """the op's operand slots were just appended: end it as FJ_POS (with its position) or as a literal"""
+        """End the flip-jump op whose operand slots were just appended: as FJ_POS (with its position) if an operand is
+        deferred, else as a literal op."""
         if deferred:
             self.kinds.append(FJ_POS)
             self.vals.append(len(self.refs))
@@ -302,13 +311,14 @@ class OpStream:
             self._literal_flip_jump()
 
     def _end_word_flip(self, code_position: CodePosition) -> None:
-        """the op's three operands were just appended: end it with its position"""
+        """End the wflip op whose three operands were just appended, with its position."""
         self.kinds.append(WFLIP)
         self.vals.append(len(self.refs))
         self.refs.append(code_position)
 
     def _literal_flip_jump(self) -> None:
-        """the op's two literal slots were just appended: one FJ_PACKED slot instead, where they fit"""
+        """End the flip-jump op whose two literal slots were just appended. Pack them into one FJ_PACKED slot if they
+        fit."""
         vals = self.vals
         jump = vals[-1]
         flip = vals[-2]
@@ -327,7 +337,8 @@ class OpStream:
         params: Dict[str, Expr],
         code_position: CodePosition,
     ) -> None:
-        """add_word_flip of the three operands' eval_new(params), the same slots"""
+        """Like `add_word_flip` with each operand's `eval_new(params)`, but faster: it mostly skips building the
+        substituted expressions."""
         self._operand_in(word_address, params)
         if self.keep_label_values:
             self._value(flip_value.eval_new(params))
@@ -337,7 +348,8 @@ class OpStream:
         self._end_word_flip(code_position)
 
     def _value(self, expr: Expr) -> None:
-        """a wflip value's slot(s), keep_label_values: one that names a label is never folded"""
+        """Append a wflip value's slots when keep_label_values is set: a value that names a label is never folded into a
+        literal."""
         if not expr.all_unknown_labels():
             self._operand(expr)
             return
@@ -382,7 +394,8 @@ class OpStream:
             raise TypeError(f"not a last-phase op: {op!r}")
 
     def extend_slice(self, other: OpStream, op_start: int, val_start: int, op_end: int, val_end: int) -> None:
-        """append other's ops [op_start, op_end), whose slots are other.vals[val_start:val_end] (both share `refs`)"""
+        """Append `other`'s ops [op_start, op_end), whose slots are other.vals[val_start:val_end]. Both streams must
+        share `refs`."""
         assert other.refs is self.refs
         self.kinds += other.kinds[op_start:op_end]
         self.vals += other.vals[val_start:val_end]
@@ -396,7 +409,7 @@ class OpStream:
         return self.refs[self.vals[0]]
 
     def rebuild_operand(self, slots: Iterator[int]) -> Expr:
-        """the Expr of the operand whose slots come next in `slots` (for messages and iteration)"""
+        """Read the next operand's slots from `slots` and return its Expr (for messages and iteration)."""
         slot = next(slots)
         if slot >= 0:
             return Expr(slot)

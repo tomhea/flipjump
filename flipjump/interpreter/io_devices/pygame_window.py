@@ -1,11 +1,13 @@
 """
-the pygame-ce window of the interactive io-devices, and the devices that use it.
+The pygame-ce window of the interactive io-devices, and the devices that use it.
 
-PygameWindow owns the one SDL window: it queues key events (io_devices/README.md's keycodes), presents frames,
-toggles fullscreen on F11, and raises KeyboardInterrupt when closed (a clean end of the run). PcIO.interactive()
-puts the screen and the keyboard on one window. SDL delivers keys only to an open window: the screen opens it on
-init_screen, ensure_open_for_input a small one for a keyboard alone. Drive it from the main thread (macOS/SDL).
-pygame-ce only (`pip install flipjump[io]`): upstream pygame shares its module name, so `_import_pygame` checks IS_CE.
+PygameWindow owns the one SDL window. It queues key events (io_devices/README.md's keycodes), presents frames,
+toggles fullscreen on F11, and raises KeyboardInterrupt when closed (a clean end of the run).
+PcIO.interactive() puts the screen and the keyboard on one window. SDL sends keys only to an open window: the
+screen opens it on init_screen, and ensure_open_for_input opens a small one for a keyboard with no screen.
+Use it from the main thread (macOS/SDL need that).
+It needs pygame-ce (`pip install flipjump[io]`). Upstream pygame has the same module name, so `_import_pygame`
+checks IS_CE.
 """
 
 import os
@@ -44,8 +46,9 @@ KEYCODES: Dict[int, int] = {
 }
 
 INPUT_WINDOW_SIZE = (320, 240)  # the window `ensure_open_for_input` opens for a keyboard with no screen
-# how tall a program's window opens (the width follows its aspect): SCALED alone picks the largest integer scale
-# that fits the desktop, near-fullscreen for a small surface. The user can still drag-resize, or F11.
+# the height a program's window opens at (its width keeps the program's aspect). Without it, SCALED alone picks the
+# largest integer scale that fits the desktop: near-fullscreen for a small surface. The user can still drag-resize,
+# or press F11.
 WINDOW_HEIGHT = 480
 
 
@@ -91,8 +94,8 @@ class PygameWindow:
         pg = self._pygame
         fullscreen = False
         if self._screen_surface is not None:
-            # a new size: a new window. A second SCALED set_mode crashes pygame-ce 2.5 (an access violation), so
-            # the display is closed first - after taking its events; the title, icon and fullscreen carry over.
+            # a new size needs a new window. A second SCALED set_mode crashes pygame-ce 2.5 (an access violation),
+            # so close the display first, after taking its pending events. The title, icon and fullscreen carry over.
             self.pump_events()
             fullscreen = bool(pg.display.is_fullscreen())
             pg.display.quit()
@@ -100,7 +103,7 @@ class PygameWindow:
             pg.display.quit()  # another PygameWindow's display is still up: the same SCALED re-create crash
         pg.display.init()
         pg.display.set_caption(self._title)
-        # SCALED scales the small logical surface up to the window (also fullscreen); RESIZABLE: drag-resize
+        # SCALED scales the small logical surface up to the window (also fullscreen); RESIZABLE lets the user resize it
         mode_flags = pg.SCALED | (pg.FULLSCREEN if fullscreen else pg.RESIZABLE)
         self._screen_surface = pg.display.set_mode((width, height), mode_flags)
         if self._icon is not None:
@@ -112,8 +115,8 @@ class PygameWindow:
                 pass
 
     def _os_window(self) -> Any:
-        """the OS window of the display surface: `from_display_module` is pygame-ce's only handle to it (its
-        deprecation, in favour of building on `pygame.Window`, is silenced)."""
+        """Return the OS window of the display surface. `from_display_module` is pygame-ce's only way to get it; its
+        deprecation warning (build on `pygame.Window` instead) is silenced."""
         with warnings.catch_warnings(record=False, action='ignore', category=DeprecationWarning):
             return self._pygame.window.Window.from_display_module()
 
@@ -143,8 +146,8 @@ class PygameWindow:
             self.ensure_open(*INPUT_WINDOW_SIZE)
 
     def pump_events(self) -> None:
-        """take the pending window events: queue key transitions, F11 toggles fullscreen, a close raises
-        KeyboardInterrupt (a clean end of the run)."""
+        """Handle the pending window events: queue key presses and releases, toggle fullscreen on F11, and raise
+        KeyboardInterrupt (a clean end of the run) when the window is closed."""
         if self.closed or self._screen_surface is None:
             return
         pg = self._pygame
@@ -204,14 +207,14 @@ class WindowKeyEventSource(KeyEventSource):
 
 
 class InteractiveScreen(InMemoryScreen):
-    """the InMemoryScreen command stream, presented into a PygameWindow (its own unless given a shared one).
-    it takes no input: a live keyboard reads the same window through a WindowKeyEventSource."""
+    """An InMemoryScreen that also shows its frames in a PygameWindow (its own, unless given a shared one).
+    It reads no input: a live keyboard reads the same window through a WindowKeyEventSource."""
 
     def __init__(self, *, frames_dir: Optional[Path] = None, window: Optional[PygameWindow] = None):
         super().__init__(frames_dir=frames_dir)
         self.window = window if window is not None else PygameWindow()
-        # perf_counter() at the previous present, for the max-fps cap; -inf: the first present never waits (the
-        # clock's starting point is undefined, so 0.0 could hold the first frame)
+        # perf_counter() at the previous present, for the max-fps cap. -inf means the first present never waits
+        # (perf_counter's zero point is undefined, so 0.0 could delay the first frame).
         self._last_flush = float('-inf')
 
     def _init_screen(self, width: int, height: int, bpp: int) -> None:
@@ -228,8 +231,8 @@ class InteractiveScreen(InMemoryScreen):
         self.window.set_icon(width, height, colours)
 
     def _present(self) -> None:
-        # the set_max_fps cap first, so the frame is recorded (its frame_hashes time) when it is shown; the window
-        # is pumped meanwhile (keys still queue, and closing it still ends the run)
+        # wait for the set_max_fps cap first, so the frame's frame_hashes time is when it is shown. Pump the window
+        # while waiting, so keys still queue and closing it still ends the run.
         if self.max_fps:
             due = self._last_flush + 1.0 / self.max_fps
             while (remaining := due - time.perf_counter()) > 0:
@@ -245,8 +248,8 @@ class InteractiveScreen(InMemoryScreen):
 
 
 class PcIO(IODevice):
-    """the 'pc' io-device: read_bit from the keyboard, write_bit to the screen. interactive() puts both on one
-    real window; headless() (or __init__) builds it from explicit components, e.g. scripted keys + PNG frames."""
+    """The 'pc' io-device: input from a keyboard, output to a screen. interactive() puts both on one real window;
+    headless() (or __init__) builds it from given parts, e.g. scripted keys and PNG frames."""
 
     def __init__(self, screen: InMemoryScreen, keyboard: KeyboardIO):
         self._screen = screen
@@ -258,8 +261,8 @@ class PcIO(IODevice):
 
     @classmethod
     def interactive(cls) -> 'PcIO':
-        """a real window: live keys in, a scaled screen out. The screen opens it on init_screen (live keys from
-        then on: a pc program initializes its screen up front)."""
+        """Return a PcIO on a real window: live keys in, a scaled screen out. The window opens on init_screen, and keys
+        arrive from then on (a pc program inits its screen first)."""
         window = PygameWindow()
         return cls(InteractiveScreen(window=window), KeyboardIO(WindowKeyEventSource(window)))
 

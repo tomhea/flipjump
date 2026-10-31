@@ -45,8 +45,8 @@ _header_base_size = 2 + 2 + 8 + 8
 _header_extension_format = '<LLL'
 _header_extension_size = 4 + 4 + 4
 
-# the header's io_mode: the io device a program runs with when `fj --run` is not given --io.
-# (a u64 'flags' before; old files wrote 0 there, so they read as io mode 0 and no run flags)
+# the header's io_mode: the io device a program runs with, unless `fj --run` is given --io.
+# Older files have a u64 'flags' here, always 0, so they read as io mode 0 (standard) with no run flags.
 IO_MODE_STANDARD = 0
 IO_MODE_PC = 1
 IO_MODE_NAMES: Dict[int, str] = {IO_MODE_STANDARD: 'standard', IO_MODE_PC: 'pc'}
@@ -106,8 +106,8 @@ SUPPORTED_MEMORY_WIDTHS: frozenset[int] = frozenset({8, 16, 32, 64})
 
 _LZMA_FORMAT = lzma.FORMAT_RAW
 _LZMA_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [{"id": lzma.FILTER_LZMA2}]
-# preset 9's dictionary, the largest any preset writes with: a decoder this large reads every preset. The reader
-# allocates it only for a stream that the default (8 MiB) decoder cannot read: presets 7-9 can match farther back.
+# preset 9's dictionary size, the largest any preset uses, so a decoder this large reads every preset. The reader
+# uses it only when the default (8 MiB) decoder fails: presets 7-9 can match farther back than that.
 _LZMA_MAX_DICT_SIZE = 1 << 26
 _LZMA_MAX_DICT_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [
     {"id": lzma.FILTER_LZMA2, "dict_size": _LZMA_MAX_DICT_SIZE}

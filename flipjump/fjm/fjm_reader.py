@@ -110,8 +110,8 @@ class Reader:
             )
 
     def _init_segments(self, fjm_file: BinaryIO) -> List[Tuple[int, int, int, int]]:
-        # one read for the whole table (a read per segment is slow on some file systems)
-        # (at most the rest of the file is read, so a damaged segment_num can't ask for more memory than that)
+        # read the whole table at once (a read per segment is slow on some file systems), but never more than the rest
+        # of the file, so a damaged segment_num can't make it allocate more memory than the file's size.
         table_size = self.segment_num * _segment_size
         stored_size = table_size
         if FJMVersion.CompressedSegmentsVersion == self.version:
@@ -297,7 +297,7 @@ class Reader:
 
 
 def _assert_first_op(starts_and_lengths: Iterable[Tuple[int, int]]) -> None:
-    """raise FlipJumpReadFjmException if no (segment_start, segment_length) holds the first op (words 0 and 1)"""
+    """Raise FlipJumpReadFjmException unless a (segment_start, segment_length) holds the first op (words 0 and 1)."""
     if not any(start == 0 and length >= 2 for start, length in starts_and_lengths):
         raise FlipJumpReadFjmException(
             "the program has no first op at address 0: no segment holds bits 0..2w-1 "
@@ -308,8 +308,8 @@ def _assert_first_op(starts_and_lengths: Iterable[Tuple[int, int]]) -> None:
 @dataclasses.dataclass
 class FjmHeader:
     """
-    what the .fjm's header and segment table say - read without touching the data (see read_fjm_header).
-    segments are (segment_start, segment_length, data_start, data_length), in words.
+    The .fjm's header and segment table, read without the data (see read_fjm_header).
+    Each segment is (segment_start, segment_length, data_start, data_length), in words.
     """
 
     memory_width: int
@@ -320,8 +320,8 @@ class FjmHeader:
 
     @property
     def span_words(self) -> int:
-        """the end of the highest segment, in words: the flat-storage window that holds every segment
-        (what `fj --run --flat-memory` uses). 0 when there are no segments"""
+        """The end of the highest segment, in words: the smallest flat window that holds every segment (the one
+        `fj --run --flat-memory` uses). 0 if there are no segments."""
         return max((start + length for start, length, _data_start, _data_length in self.segments), default=0)
 
     @property
@@ -334,7 +334,7 @@ class FjmHeader:
         )
 
     def assert_runnable(self) -> None:
-        """execution starts at address 0, so a segment must hold the first op (words 0 and 1)"""
+        """Check that a segment holds the first op (words 0 and 1), since execution starts at address 0."""
         _assert_first_op((start, length) for start, length, _, _ in self.segments)
 
 
@@ -351,15 +351,16 @@ def _read_header(fjm_file: BinaryIO, input_file: Path) -> FjmHeader:
 
 def read_fjm_header(input_file: Path) -> FjmHeader:
     """
-    read the .fjm's header and segment table only - the memory itself is not read or decompressed
-    (in version 4 only the segment table's own stream is), so this is cheap even for a huge program.
+    Read only the .fjm's header and segment table, not the data (version 4 decompresses just the segment table),
+    so this is cheap even for a huge program.
     @param input_file: the path to the .fjm file
     """
     with open(input_file, 'rb') as fjm_file:
         return _read_header(fjm_file, input_file)
 
 
-# the decompression buffer is at most this many times the compressed size (a typical program expands ~10x)
+# the decompression buffer starts at most this many times the compressed size, and grows if needed
+# (a typical program expands ~10x)
 _INITIAL_EXPANSION = 16
 # the decompression is fed in chunks of this many compressed bytes, so its progress can be shown
 _DECOMPRESS_CHUNK = 1 << 20
@@ -369,9 +370,9 @@ def read_fjm_raw(
     input_file: Path, on_progress: Optional[Callable[[float], None]] = None
 ) -> Tuple[FjmHeader, Union[bytes, bytearray]]:
     """
-    read the .fjm's header, segments and its raw data: the (decompressed) data pool as bytes of
-    little-endian w-bit words, exactly as the segments index it (jump words still relative in
-    versions 2-4, see FjmHeader.relative_jumps). This is the lean load: no python object per word.
+    Read the .fjm's header and its data as raw bytes: the decompressed data, as little-endian w-bit words, indexed by
+    the segments. Jump words stay relative in versions 2-4 (see FjmHeader.relative_jumps). No python object is made
+    per word, so this is the fast way to load.
     @param input_file: the path to the .fjm file
     @param on_progress: if given, called with the decompression's progress, a fraction in [0, 1]
     @return: the header, and the data (a bytearray when it was decompressed)
@@ -398,10 +399,11 @@ def _decompress_in_chunks(
     file_data: bytes, on_progress: Optional[Callable[[float], None]], expected_size: int = 0, stream: str = 'data'
 ) -> bytearray:
     """
-    exactly lzma.decompress(file_data, format=_LZMA_FORMAT, filters=...) - its streams one after the other, junk after
-    the last ignored - fed in chunks so its progress can be reported. A stream the default filters cannot decode is
-    decoded again with the presets 7-9 dictionary. The output is allocated once at `expected_size` (the size the not
-    yet validated segments imply, trusted up to _INITIAL_EXPANSION x the compressed size), and grows past it.
+    Return lzma.decompress(file_data, format=_LZMA_FORMAT, filters=...), but feed it in chunks so its progress can be
+    reported. Like lzma.decompress, decode the streams one after the other and ignore junk after the last one.
+    A stream the default filters cannot decode is decoded again with the presets 7-9 dictionary.
+    The output is allocated once at `expected_size`, and grows past it if needed. `expected_size` comes from segments
+    that are not validated yet, so it is trusted only up to _INITIAL_EXPANSION x the compressed size.
     @param stream: what the stream holds, for the error message (the data, or version 4's segment table)
     """
     damaged = f'Error: The compressed {stream} is damaged; Unable to decompress.'
@@ -444,9 +446,9 @@ def _decompress_in_chunks(
 
 def validate_segments(segments: List[Tuple[int, int, int, int]], data_words: int) -> None:
     """
-    the checks every segment of a .fjm must pass before it is loaded: an even data length within the data
-    pool, data that fits its segment, and segments that don't overlap (the writer guarantees all of these;
-    a file that breaks them is damaged).
+    Check the segments of a .fjm before loading it: each data length is even and inside the data pool, each segment's
+    data fits in the segment, and no segments overlap. The writer guarantees all of these, so a file that breaks one
+    is damaged.
     """
     for segment_start, segment_length, data_start, data_length in segments:
         if data_length % 2 != 0:

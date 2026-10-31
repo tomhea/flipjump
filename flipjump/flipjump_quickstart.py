@@ -61,22 +61,22 @@ def assemble(
     :param debugging_file_path:[out]: is specified, save debug information in this file
     :param show_statistics: if true shows macro-usage statistics
     :param show_progress: if true, show each assemble stage's time (and on a terminal, its progress bar)
-    :param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
+    :param print_time: the old name (flipjump 1.5) of show_progress: if given, it overrides show_progress
     :param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
     :param lzma_preset: the preset used to compress a version-3 or version-4 .fjm (0-9, faster->smaller).
-    :param defines: constants that OVERRIDE the program's declarations of them (`fj -D NAME=VALUE`): each full name
-    (`a.b.NAME` for a namespaced one) to its value, a number or an fj expression (which may use `w` and an earlier
-    define). Overriding a constant that nothing declares is an error.
+    :param defines: constants that override the program's own declarations of them (`fj -D NAME=VALUE`), as
+    {full name: value}. A namespaced name is `a.b.NAME`. A value is a number or an fj expression, which may use `w`
+    and earlier defines. Overriding a constant that nothing declares is an error.
 
-    :param table_pool: if given, move the tables declared relocatable (the expansions of `__relocatable__`
-    macros) to where they are cheap to arm, so every table dispatch runs fewer ops; the program runs the same.
-    See flipjump/assembler/inner_classes/table_pool.py (`fj --pool-tables` makes BlockPool(memory_width)).
+    :param table_pool: if given, move the tables (the expansions of `__relocatable__` macros) to addresses that are
+    cheap to arm, so table dispatches run fewer ops. The program's behavior doesn't change.
+    See flipjump/assembler/inner_classes/table_pool.py; `fj --pool-tables` passes BlockPool(memory_width).
     :param flat_memory: written into the .fjm: it runs in the native engine's flat memory by default (see run())
     :param io_mode: written into the .fjm: the io device it runs with by default (`fj --io-mode`): 'standard' or
     'pc', or its number (fjm_consts.IO_MODE_*)
-    :return: the labels: each one's full name to its address, in bits. With debugging_file_path, also the labels
-    only the debugging file needs (`...---:start:` at each macro use, `:wflips:N` at each wflip-chain op).
+    :return: the labels, {full name: address in bits}. With debugging_file_path, also the labels only the debugging
+    file needs (`...---:start:` at each macro use, `:wflips:N` at each wflip-chain op).
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
@@ -125,14 +125,15 @@ def run(
     .fjm (`fj --io-mode`; Standard IO unless it was set).
     @param show_trace: if true print every opcode executed
     @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
-    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
+    @param print_time: the old name (flipjump 1.5) of show_progress: if given, it overrides show_progress
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile: if true collect the full per-op statistics (uses the slower featured run-loop)
-    @param flat_memory: run with the whole program in the native engine's fast flat array (`fj --flat-memory`); if
-    it cannot be allocated, raise FlipJumpFlatMemoryException. None: as the .fjm says (`assemble(flat_memory=)`);
-    False: not, whatever the .fjm says. The FLIPJUMP_FLAT_MAX_WORDS environment variable wins over the .fjm, not
-    over True. Without any of these, a program spanning at most 2^24 words runs flat (see run_defaults.flat_window)
+    @param flat_memory: if True, the whole program must run in the native engine's fast flat array
+    (`fj --flat-memory`): raise FlipJumpFlatMemoryException if it cannot be allocated. If False, ignore the .fjm's
+    request for that (`fj --no-flat-memory`). If None, do what the .fjm says (`assemble(flat_memory=)`).
+    The FLIPJUMP_FLAT_MAX_WORDS environment variable wins over the .fjm, but not over True. When nothing asks for
+    flat memory, a program spanning at most 2^24 words still runs flat if it can (see run_defaults.flat_window).
     @param flat_max_words: the native engine's flat-storage window, in words (`fj --flat-max-words`): memory below it
     runs in the fast flat array, memory above it paged. Give it or flat_memory=True, not both.
     flat_memory and flat_max_words only affect native-engine runs - not a pure-python loop (e.g. when
@@ -189,7 +190,7 @@ def debug(
     .fjm (`fj --io-mode`; Standard IO unless it was set).
     @param show_trace: if true print every opcode executed
     @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
-    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
+    @param print_time: the old name (flipjump 1.5) of show_progress: if given, it overrides show_progress
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile, flat_memory, flat_max_words: as in run()
@@ -266,7 +267,7 @@ def run_test_output(
     @param debugging_file:[in]: the path to the debugging file
     @param show_trace: if true print every opcode executed
     @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
-    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
+    @param print_time: the old name (flipjump 1.5) of show_progress: if given, it overrides show_progress
     @param print_termination: if true print the termination statistics
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile, flat_memory, flat_max_words: as in run()

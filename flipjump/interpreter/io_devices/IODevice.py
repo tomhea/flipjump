@@ -49,8 +49,8 @@ class IODevice(ABC):
 
     def read_byte(self) -> int:
         """
-        read 8 input bits, lsb first. a device that overrides it is called once a byte by the native engine, so it
-        overrides it only when its next byte does not depend on what the program outputs meanwhile (a byte stream).
+        read 8 input bits, lsb first. The native engine calls an override once per byte instead of read_bit 8 times, so
+        override it only if the device's next byte can't depend on what the program outputs meanwhile (a byte stream).
         """
         return sum(int(self.read_bit()) << i for i in range(8))
 
