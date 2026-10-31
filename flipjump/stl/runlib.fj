@@ -2,6 +2,21 @@
 dw   = 2 * w    // double word size
 dbit = w + #w   // the bit-distance from the variable's start, to the bit/hex value (w + dw-width)
 
+ns hex {
+    ns pointers {
+        // The bits one pointed-to cell holds: ptr_init lays a 2^PTR_CELL_BITS-entry decoder table at op 2^PTR_CELL_BITS.
+        // A multiple of 4, at least 8, and dbit+PTR_CELL_BITS < dw. Override per build: fj ... -D hex.pointers.PTR_CELL_BITS=16
+        PTR_CELL_BITS = 8
+
+        // A second, WIDE decoder table (0: none) at op 2^PTR_WIDE_BITS, for hex.read_cell / hex.write_cell only;
+        //   the other pointer macros keep the narrow table's cost. Same rules, and wider than PTR_CELL_BITS.
+        PTR_WIDE_BITS = 0
+
+        // The width hex.read_cell / hex.write_cell move.
+        PTR_WIDE = .PTR_WIDE_BITS > 0 ? .PTR_WIDE_BITS : .PTR_CELL_BITS
+    }
+}
+
 
 // More info about the FlipJump input / output in: https://esolangs.org/wiki/FlipJump#Input_/_Output
 
@@ -44,14 +59,15 @@ ns stl {
         stl.ptr_init
     }
 
-    // Complexity: ~7000  (7026 for w=64, 6894 for w=16)
+    // Complexity: ~7000  (7010 for w=64, 6890 for w=16)
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
+    // It does not fit w=16: the init alone is ~7000 ops, and a w=16 memory holds 2048.
     def startup_and_init_all {
         .startup_and_init_all 100
     }
 
-    // Complexity: 6725 + 2.75w+@ + n
+    // Complexity: 6725 + 2.5w+@ + n
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     // stack_bit_size is the size of the global-stack (will hold this number of hexes / return-addresses).
@@ -60,7 +76,7 @@ ns stl {
       code_start:
     }
 
-    // Complexity: 6725 + 2.75w+@ + n
+    // Complexity: 6725 + 2.5w+@ + n
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     // stack_bit_size is the size of the global-stack (will hold this number of hexes / return-addresses).
@@ -162,6 +178,7 @@ ns stl {
 
     // Complexity: 8 * string_length
     // str is a constant. The macro outputs the bytes of it (from lsB to msB) until it becomes all zeros.
+    // string_length is that many bytes: ((#str)+7)/8.
     def output str {
         rep(((#str)+7)>>3, i) .output_char (str>>(8*i))&0xff
     }

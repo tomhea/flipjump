@@ -1,0 +1,8 @@
+// C30: hex.count_bits flips its dst's bits 4 and 5 above the hex value (dst+dbit+4/5) while dst is armed with an
+// inline 64-op table: a move inside that table, the same under the block base - the word must stay pinned.
+stl.startup
+    hex.count_bits 2, n, x
+    hex.print_as_digit 2, n, 0
+    stl.loop
+x:  hex.vec 2, 0xb7
+n:  hex.vec 2, 0

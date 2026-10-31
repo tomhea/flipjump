@@ -104,7 +104,7 @@ pip install flipjump
 And jump right into the neat [**FlipJump Docs**](https://fjdocs.tomhe.app) site!
 
 You can also install it with its extras:
-- `flipjump[io]`: the interactive IO devices (e.g. pygame for the `--io pc` keyboard+screen window).
+- `flipjump[io]`: the interactive IO devices (pygame-ce, for the `--io pc` keyboard+screen window).
 - `flipjump[stats]`: support for viewing macro usage in an interactive graph.
 - `flipjump[tests]`: all the testing libraries needed.
 ```shell
@@ -149,12 +149,33 @@ fj --run hello_world.fjm
 - The first line will assemble your code.
 - The second line will run your code.
 
+`--pool-tables` makes the assembled program run fewer ops: it moves the tables the stl declares relocatable (those
+of `hex.exact_xor` and its kin, and of the bit shifts) to blocks right above the program (from the first power of two
+above its end), where they are cheap to arm. The program runs the same: where moving a table would change an operand
+that names a label (an offset from another label into or across the table), the table stays where it is, or - if the
+operand comes too late for that - the program is refused with the reason, as is a program that leaves the tables no
+room in the memory. With it, `__relocatable__` is a reserved namespace: a macro whose innermost namespace has that
+name is a table the pool may move.
+
+A program that reads or writes cells raw through pointers (`hex.pointers`) gets its tables moved but nothing pinned,
+unless `--pin-all-but LABEL[:OPS],...` names those cells: then every other dispatch word is pinned too, which saves
+more ops (`--pin-all-but d0,d1:1` - a label alone runs to the next label). Leaving such a cell out makes the program
+run wrong.
+
+The pool's layout, each flag with `--pool-tables`:
+- `--pool-base ADDRESS`, `--pool-end ADDRESS`: where the pool lies (default: from the first power of two above the
+  program to the top of memory).
+- `--pool-max-slot-ops N`: the widest table it moves, in ops (default 32).
+- `--pool-spread-factor N`, `--pool-spread-min-tables M`: a group of at least M tables gets N times the slots, so its
+  tables take the cheapest ones (defaults 1, 256).
+- `--pool-pin-incomplete-groups`: pin a group's dispatch word even when some of its tables stayed in place.
+
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
 
 The interpreter has three engines:
 - **The native engine** (~300M fj-ops/s) - a C-extension, prebuilt in the official wheels
-  (Linux glibc/musl, macOS, Windows; every CPython >= 3.10), so a plain `pip install flipjump`
+  (Linux glibc/musl, macOS, Windows; every CPython >= 3.11), so a plain `pip install flipjump`
   already has it. it is used automatically whenever present (`FLIPJUMP_NO_NATIVE=1` disables it).
 - **The fast loop** (~4M fj-ops/s) - pure Python, the fallback when the native engine isn't built.
 - **The featured loop** - used for `--trace`/breakpoints, or with `--profile` for the full
@@ -173,16 +194,34 @@ The interpreter's IO is pluggable: `--io MODE` picks one complete IO device.
 fj --run program.fjm --io pc
 ```
 
-- **`--io standard`** (the default) - input/output over the terminal.
-- **`--io pc`** - an interactive window: live keyboard input **and** a scaled 256-color screen,
+- **`--io standard`** - input/output over the terminal.
+- **`--io pc`** - an interactive window: live keyboard input **and** a scaled screen,
   in one window the device owns (F11 toggles fullscreen, closing it stops the run). Needs
-  pygame (`pip install flipjump[io]`); works on Windows, Linux and macOS.
+  pygame-ce (`pip install flipjump[io]`), not upstream pygame (the window refuses it); works on
+  Windows, Linux and macOS.
+
+A program can carry its own defaults in the `.fjm` header, so `fj --run program.fjm` is all it takes:
+
+```bash
+fj --asm game.fj -o game.fjm --io-mode pc --flat-memory
+fj --run game.fjm                                        # runs with the pc window, in flat memory
+```
+
+- **`--io-mode MODE`** (assembling): the default io device - `standard` (the default) or `pc`.
+  `--io MODE` overrides it at run time.
+- **`--flat-memory`**: the whole program in the native engine's flat array (fastest; costs memory for its
+  whole span). Compiled in when assembling; `--flat-memory` / `--no-flat-memory` override it when running.
+  If the flat allocation fails, the run stops and says so (`--no-flat-memory` runs it slower).
+
+From python, `flipjump.assemble(..., io_mode=, flat_memory=)` compiles them in and `flipjump.run` /
+`flipjump.debug` follow them the same way (`flat_memory=True / False` or an `io_device` override them).
 
 Each mode is one complete `IODevice` that owns all of its channels (and window, if any).
 Adding a new device (e.g. a windowed text console, or one that also
 drives speakers/printer) is one entry in `IO_MODES` (`io_devices/cli_devices.py`) plus its
 device class. Devices can also read the program's memory through the `DeviceMemory` hook
-(`IODevice.attach_memory`) - e.g. the screen reads pixel data straight from memory. Headless /
+(`IODevice.attach_memory`); the screen and keyboard protocols are
+[io_devices/README.md](flipjump/interpreter/io_devices/README.md). Headless /
 scripted devices (a scripted keyboard + PNG frames, a plain `InMemoryScreen`, ...) are built
 programmatically and passed to `fjm_run.run(io_device=...)` - e.g. `PcIO.headless(events, dir)`.
 </details>

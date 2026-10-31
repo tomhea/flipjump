@@ -1,0 +1,24 @@
+// C34: c23 (a numeric arm, 0x4000) plus a LABEL arm of the same word to an inline table at
+// `segment 0x8000`. That address's own alignment (15 bits) is no table's: the window stays the moved table's, so the
+// numeric arm is above it and the word is unpinned.
+stl.startup
+    hex.xor z, x
+    wflip x+w, 0x4000, x
+segment 0x4000
+    ;o0
+    ;o1
+o0: wflip x+w, 0x4000, p0
+o1: wflip x+w, 0x4000, p1
+p0: stl.output '0'
+    stl.loop
+p1: stl.output '1'
+    stl.loop
+    ;never
+never:
+    wflip x+w, T2, x
+segment 0x8000
+T2:
+    ;p0
+    ;p1
+x:  hex.hex 1
+z:  hex.hex 0

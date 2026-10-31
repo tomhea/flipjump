@@ -9,6 +9,13 @@ from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.utils.classes import RunStatistics
 
 
+@pytest.fixture
+def clean_flat_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """unset the environment variables that pick the engine and its flat-memory window."""
+    for var in ('FLIPJUMP_NO_NATIVE', 'FLIPJUMP_NO_FLAT', 'FLIPJUMP_FLAT_MAX_WORDS', 'FLIPJUMP_TEST_FLAT_ALLOC_FAIL'):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture(params=['fast-python', 'native', 'featured'])
 def engine(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
     """parametrizes a test over all three run-loops: the pure-python fast loop, the native

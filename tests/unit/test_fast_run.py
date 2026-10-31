@@ -13,6 +13,7 @@ from typing import Optional, Tuple
 
 import pytest
 
+from flipjump.fjm import fjm_reader
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
@@ -61,8 +62,8 @@ def run_both_loops(
 ) -> Tuple[TerminationStatistics, TerminationStatistics, bytes, bytes]:
     """run the .fjm with the engine under test (the default loop) and the featured loop."""
     fast_io, featured_io = FixedIO(fixed_input), FixedIO(fixed_input)
-    fast_stats = fjm_run.run(fjm_path, io_device=fast_io, print_time=False)
-    featured_stats = fjm_run.run(fjm_path, io_device=featured_io, print_time=False, profile=True)
+    fast_stats = fjm_run.run(fjm_path, io_device=fast_io, show_progress=False)
+    featured_stats = fjm_run.run(fjm_path, io_device=featured_io, show_progress=False, profile=True)
     return (
         fast_stats,
         featured_stats,
@@ -123,7 +124,7 @@ def _build_program(program_id: str, tmp_path: Path) -> Path:
 
 def test_unaligned_op_runs_correctly(tmp_path: Path, engine: str) -> None:
     fjm_path = build_unaligned_fjm(tmp_path)
-    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False)
     assert statistics.termination_cause == TerminationCause.Looping
     assert statistics.op_counter == 2
 
@@ -131,12 +132,12 @@ def test_unaligned_op_runs_correctly(tmp_path: Path, engine: str) -> None:
 def test_fast_loop_is_the_default_and_skips_detailed_counters(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(HELLO_NO_STL.read_text(), tmp_path)
 
-    fast_stats = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False)
+    fast_stats = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False)
     assert fast_stats.op_counter > 0
     assert fast_stats.flip_counter == 0
     assert fast_stats.jump_counter == 0
 
-    featured_stats = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False, profile=True)
+    featured_stats = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False, profile=True)
     assert featured_stats.flip_counter > 0
     assert featured_stats.jump_counter > 0
 
@@ -144,11 +145,11 @@ def test_fast_loop_is_the_default_and_skips_detailed_counters(tmp_path: Path) ->
 def test_fast_loop_tracks_last_ops_when_requested(tmp_path: Path, engine: str) -> None:
     fjm_path = assemble_to_path(INFINITE_LOOP_PROGRAM, tmp_path)
 
-    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False, last_ops_debugging_list_length=3)
+    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False, last_ops_debugging_list_length=3)
     assert statistics.last_ops_addresses is not None
     assert 0 < len(statistics.last_ops_addresses) <= 3
 
-    statistics_none = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False)
+    statistics_none = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False)
     assert statistics_none.last_ops_addresses is None
 
 
@@ -174,12 +175,12 @@ def test_eof_op_counting_matches_featured_loop(tmp_path: Path, engine: str, last
     fjm_path = assemble_to_path(CAT_PROGRAM.read_text(), tmp_path, use_stl=True)
 
     fast_stats = fjm_run.run(
-        fjm_path, io_device=FixedIO(b'A'), print_time=False, last_ops_debugging_list_length=last_ops_length
+        fjm_path, io_device=FixedIO(b'A'), show_progress=False, last_ops_debugging_list_length=last_ops_length
     )
     featured_stats = fjm_run.run(
         fjm_path,
         io_device=FixedIO(b'A'),
-        print_time=False,
+        show_progress=False,
         profile=True,
         last_ops_debugging_list_length=last_ops_length,
     )
@@ -187,3 +188,23 @@ def test_eof_op_counting_matches_featured_loop(tmp_path: Path, engine: str, last
     assert fast_stats.termination_cause == TerminationCause.EOF
     assert featured_stats.termination_cause == TerminationCause.EOF
     assert fast_stats.op_counter == featured_stats.op_counter
+
+
+def test_ctrl_c_while_loading_ends_the_run_as_keyboard_interrupt(
+    tmp_path: Path, engine: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    class InterruptedReader(fjm_reader.Reader):
+        def __init__(self, *_args: object) -> None:
+            interrupted()
+
+    monkeypatch.setattr(fjm_run, '_load_native', interrupted)
+    monkeypatch.setattr(fjm_reader, 'Reader', InterruptedReader)
+    fjm_path = assemble_to_path(INFINITE_LOOP_PROGRAM, tmp_path, use_stl=True)
+
+    statistics = fjm_run.run(fjm_path, show_progress=False)
+
+    assert statistics.termination_cause == TerminationCause.KeyboardInterrupt
+    assert statistics.op_counter == 0

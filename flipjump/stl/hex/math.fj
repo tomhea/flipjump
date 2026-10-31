@@ -13,51 +13,59 @@ ns hex {
         .tables.jump_to_table_entry dst, src, .add.dst
     }
 
-    //  Time Complexity: n(4@+12)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+14)
+    // Space Complexity: n(3@+54)
     //   dst[:n] += src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     // @requires hex.add.init (or hex.init)
-    def add n, dst, src {
-        .add.clear_carry
-        rep(n, i) .add dst+i*dw, src+i*dw
-        .add.clear_carry
+    def add n, dst, src @ end {
+        rep(n > 0, i) .add.chain n, dst, src, end, end
+        rep(n == 0, i) .add.clear_carry
+      end:
     }
 
-    //  Time Complexity: src_n(4@+12)   + 5@+1        // It's on average, see the note in hex.inc.
-    // Space Complexity: src_n(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+28
+    //  Time Complexity: src_n(3@+14)
+    // Space Complexity: src_n(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] += src[:src_n] << (4*hex_shift)
     // @requires hex.add.init (or hex.init)
+    // @Assumes: src_n + hex_shift <= dst_n.
     def add_shifted dst_n, src_n, dst, src, hex_shift @ do_inc, end {
-        .add.clear_carry
-        rep(src_n, i) .add dst+(hex_shift + i)*dw, src+i*dw
-        .add.clear_carry end, do_inc
+        rep(src_n > 0, i) .add.chain src_n, dst+hex_shift*dw, src, end, do_inc
+        rep(src_n == 0, i) .add.clear_carry end, end
       do_inc:
         rep(dst_n - (src_n + hex_shift), i) .inc.step dst+(src_n + hex_shift + i)*dw, end
       end:
     }
 
-    //  Time Complexity: n_const(4@+12)   + 5@+2
-    // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+29
+    //  Time Complexity: n_const(3@+14)
+    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:n] += const
     // @requires hex.add.init (or hex.init)
-    // const must be a positive constant.
+    // const is taken modulo 16^n (so a negative const subtracts |const|).
     // n_const is the hex-length of const, without all of it's least-significant-hexes zeros.
+    // hex_shift is the number of those zero hexes, and dst_n is n.
     def add_constant n, dst, const @ end {
-        rep(const!=0, _) .add.add_constant_with_leading_zeros n, dst, const, (#(const&(0-const)))-1
+        rep((const & ((1<<(4*n))-1)) != 0, _) \
+            .add.add_constant_with_leading_zeros n, dst, const & ((1<<(4*n))-1), (#(const&(0-const)))-1
       end:
     }
     ns add {
+        //   dst[:n] += const, where const has leading_lsb_const_zeros zero bits at its bottom (add_constant's step).
+        // @requires hex.add.init (or hex.init)
         def add_constant_with_leading_zeros n, dst, const, leading_lsb_const_zeros {
             .add_hex_shifted_constant n, dst, const >> (leading_lsb_const_zeros & (0-4)), leading_lsb_const_zeros >> 2
         }
+        //   dst[:n] += const << (4*hex_shift)    (n_const is const's hex-length)
+        // @requires hex.add.init (or hex.init)
         def add_hex_shifted_constant n, dst, const, hex_shift {
             .add_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
-        //  Time Complexity: n_const(4@+12)   + 5@+2
-        // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+29
+        //  Time Complexity: n_const(3@+14)
+        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
         //   dst[:dst_n] += const << (4*hex_shift)
         // @requires hex.add.init (or hex.init)
         // const is a constant of size hex[:n_const]
+        // @Assumes: n_const + hex_shift <= n_dst.
         def add_hex_shifted_constant n_dst, n_const, dst, const, hex_shift @ shifted_constant, end {
             hex.add_shifted n_dst, n_const, dst, shifted_constant, hex_shift
             ;end
@@ -87,6 +95,32 @@ ns hex {
             wflip ..tables.ret+w, ret, .dst
           ret:
             wflip ..tables.ret+w, ret
+            // carry is 0/1
+            ..if0 ..tables.res, c0
+            ..tables.res+dbit; c1
+        }
+
+        //  Time Complexity: n(3@+14)
+        // Space Complexity: n(3@+54)
+        //   carry = 0
+        //   x[:n] += y[:n]
+        //   carry = 0. jump to c0 if it was 0, and to c1 otherwise.
+        //
+        // x,y are hex[:n] (named so, as .dst is the table's jumper).
+        // @Assumes: n >= 1.
+        // The two clear_carry dances and the n add dances are one chain of table jumps (see hex.tables.chained_jump).
+        // @requires hex.add.init (or hex.init)
+        def chain n, x, y, c0, c1 @ head, tail, return < ..tables.ret, ..tables.res, .dst {
+            ..tables.chained_jump .dst, 0
+          head:
+            ..zero ..tables.res
+            ..tables.chained_jump_to_table_entry x, y, .dst, head
+            rep(n-1, i) ..tables.chain_step x+i*dw, x+(i+1)*dw, y+(i+1)*dw, .dst
+          tail:
+            ..xor_zero x+(n-1)*dw, ..tables.res
+            ..tables.chained_jump .dst, tail
+          return:
+            wflip ..tables.ret+w, return
             // carry is 0/1
             ..if0 ..tables.res, c0
             ..tables.res+dbit; c1
@@ -158,49 +192,58 @@ ns hex {
         .tables.jump_to_table_entry dst, src, .sub.dst
     }
 
-    //  Time Complexity: n(4@+12)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+14)
+    // Space Complexity: n(3@+54)
     //   dst[:n] -= src[:n]
+    // Unsafe if dst and src overlap! but safe if they are the exact same address.
     // @requires hex.sub.init (or hex.init)
-    def sub n, dst, src {
-        .sub.clear_carry
-        rep(n, i) .sub dst+i*dw, src+i*dw
-        .sub.clear_carry
+    def sub n, dst, src @ end {
+        rep(n > 0, i) .sub.chain n, dst, src, end, end
+        rep(n == 0, i) .sub.clear_carry
+      end:
     }
 
-    //  Time Complexity: src_n(4@+12)   + 5@+10        // It's on average, see the note in hex.inc.
-    // Space Complexity: src_n(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+40
+    //  Time Complexity: src_n(3@+14)
+    // Space Complexity: src_n(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] -= src[:src_n] << (4*hex_shift)
     // @requires hex.sub.init (or hex.init)
+    // @Assumes: src_n + hex_shift <= dst_n.
     def sub_shifted dst_n, src_n, dst, src, hex_shift @ do_dec, end {
-        .sub.clear_carry
-        rep(src_n, i) .sub dst+(hex_shift + i)*dw, src+i*dw
-        .sub.clear_carry end, do_dec
+        rep(src_n > 0, i) .sub.chain src_n, dst+hex_shift*dw, src, end, do_dec
+        rep(src_n == 0, i) .sub.clear_carry end, end
       do_dec:
         rep(dst_n - (src_n + hex_shift), i) .dec.step dst+(src_n + hex_shift + i)*dw, end
       end:
     }
 
-    //  Time Complexity: n_const(4@+12)   + 5@+11
-    // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+41
+    //  Time Complexity: n_const(3@+14)
+    // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
     //   dst[:dst_n] -= const
     // @requires hex.sub.init (or hex.init)
+    // const is taken modulo 16^n (so a negative const adds |const|).
     // n_const is the hex-length of const, without all of it's least-significant-hexes zeros.
+    // hex_shift is the number of those zero hexes, and dst_n is n.
     def sub_constant n, dst, const {
-        .sub.sub_constant_with_leading_zeros n, dst, const, (#(const&(0-const)))-1
+        rep((const & ((1<<(4*n))-1)) != 0, _) \
+            .sub.sub_constant_with_leading_zeros n, dst, const & ((1<<(4*n))-1), (#(const&(0-const)))-1
     }
     ns sub {
+        //   dst[:n] -= const, where const has leading_lsb_const_zeros zero bits at its bottom (sub_constant's step).
+        // @requires hex.sub.init (or hex.init)
         def sub_constant_with_leading_zeros n, dst, const, leading_lsb_const_zeros {
             .sub_hex_shifted_constant n, dst, const >> (leading_lsb_const_zeros & (0-4)), leading_lsb_const_zeros >> 2
         }
+        //   dst[:n] -= const << (4*hex_shift)    (n_const is const's hex-length)
+        // @requires hex.sub.init (or hex.init)
         def sub_hex_shifted_constant n, dst, const, hex_shift {
             .sub_hex_shifted_constant n, ((#const)+3)/4, dst, const, hex_shift
         }
-        //  Time Complexity: n_const(4@+12)   + 5@+2
-        // Space Complexity: n_const(2.5@+39) + (dst_n - hex_shift)(1.5@+13) + 4@+29
+        //  Time Complexity: n_const(3@+14)
+        // Space Complexity: n_const(1.5@+41) + (dst_n - hex_shift)(1.5@+13)
         //   dst[:dst_n] -= const << (4*hex_shift)
         // @requires hex.sub.init (or hex.init)
         // const is a constant of size hex[:n_const]
+        // @Assumes: n_const + hex_shift <= n_dst.
         def sub_hex_shifted_constant n_dst, n_const, dst, const, hex_shift @ shifted_constant, end {
             hex.sub_shifted n_dst, n_const, dst, shifted_constant, hex_shift
             ;end
@@ -228,6 +271,37 @@ ns hex {
             wflip ..tables.ret+w, ret, .dst
           ret:
             wflip ..tables.ret+w, ret
+            // carry is 0/f
+            ..if0 ..tables.res, c0
+            .not_carry
+            wflip ..tables.res+w, 0xf*dw, c1
+        }
+
+        //  Time Complexity: n(3@+14)
+        // Space Complexity: n(3@+54)
+        //   carry = 0
+        //   x[:n] -= y[:n]
+        //   carry = 0. jump to c0 if it was 0, and to c1 otherwise.
+        //
+        // x,y are hex[:n] (named so, as .dst is the table's jumper).
+        // @Assumes: n >= 1.
+        // The two clear_carry dances and the n sub dances are one chain of table jumps (see hex.tables.chained_jump).
+        // @requires hex.sub.init (or hex.init)
+        def chain n, x, y, c0, c1 @ head, cleared, tail, return < ..tables.ret, ..tables.res, .dst {
+            ..tables.chained_jump .dst, 0
+          head:
+            // carry is 0/f
+            ..if0 ..tables.res, cleared
+            .not_carry
+            wflip ..tables.res+w, 0xf*dw
+          cleared:
+            ..tables.chained_jump_to_table_entry x, y, .dst, head
+            rep(n-1, i) ..tables.chain_step x+i*dw, x+(i+1)*dw, y+(i+1)*dw, .dst
+          tail:
+            ..xor_zero x+(n-1)*dw, ..tables.res
+            ..tables.chained_jump .dst, tail
+          return:
+            wflip ..tables.ret+w, return
             // carry is 0/f
             ..if0 ..tables.res, c0
             .not_carry

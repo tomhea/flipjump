@@ -45,25 +45,83 @@ ns hex {
     //  Time Complexity: n(@-1)
     // Space Complexity: n(@+15)
     //   if hex[:n]==0 goto l0, else goto l1.
+    // @Assumes: n >= 1.
     def if n, hex, l0, l1 {
         rep(n-1, i) .if1 hex+i*dw, l1
         .if hex+(n-1)*dw, l0, l1
     }
     //   if hex[:n]==0 goto l0, else continue.
+    // @Assumes: n >= 1.
     def if0 n, hex, l0 @ l1 {
         .if n, hex, l0, l1
       l1:
     }
     //   if hex[:n]!=0 goto l1, else continue.
+    // @Assumes: n >= 1.
     def if1 n, hex, l1 @ l0 {
         .if n, hex, l0, l1
       l0:
     }
 
 
+    //  Time Complexity: @-2
+    // Space Complexity: 8.5@-18
+    //   jump to t<x>    (a 16-way jump on the value of the hex x)
+    //
+    // if_flags' trick: x's jump word is armed with switch, each entry disarms it and jumps on, so x is unchanged.
+    // x is a hex; t0..t15 are addresses.
+    def switch x, t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15 \
+            @ switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 {
+        wflip x+w, switch, x
+        pad 16
+        .switch.__relocatable__.table switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15
+      r0:  wflip x+w, switch, t0
+      r1:  wflip x+w, switch, t1
+      r2:  wflip x+w, switch, t2
+      r3:  wflip x+w, switch, t3
+      r4:  wflip x+w, switch, t4
+      r5:  wflip x+w, switch, t5
+      r6:  wflip x+w, switch, t6
+      r7:  wflip x+w, switch, t7
+      r8:  wflip x+w, switch, t8
+      r9:  wflip x+w, switch, t9
+      r10: wflip x+w, switch, t10
+      r11: wflip x+w, switch, t11
+      r12: wflip x+w, switch, t12
+      r13: wflip x+w, switch, t13
+      r14: wflip x+w, switch, t14
+      r15: wflip x+w, switch, t15
+    }
+    ns switch {
+        ns __relocatable__ {
+            // switch's table, which a table pool may move (see table_pool.py)
+            def table switch, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 {
+              switch:
+                ;r0
+                ;r1
+                ;r2
+                ;r3
+                ;r4
+                ;r5
+                ;r6
+                ;r7
+                ;r8
+                ;r9
+                ;r10
+                ;r11
+                ;r12
+                ;r13
+                ;r14
+                ;r15
+            }
+        }
+    }
+
+
     //  Time Complexity: @-1
     // Space Complexity: @+15
     //   if number[:n] < 0 jump to neg, else jump to zpos (Zero POSitive).
+    // @Assumes: n >= 1.
     def sign n, number, neg, zpos {
         .if_flags number+(n-1)*dw, 0xff00, zpos, neg
     }
@@ -117,6 +175,7 @@ ns hex {
     // @requires hex.cmp.init (or hex.init)
     //
     // n is size-constant; a,b are hexes; lt/eq/gt are addresses.
+    // @Assumes: n >= 1.
     def cmp n, a, b, lt, eq, gt {
         rep(n-1, i) .cmp.cmp_eq_next a+(n-1-i)*dw, b+(n-1-i)*dw, lt, gt
         .cmp a, b, lt, eq, gt
@@ -124,6 +183,7 @@ ns hex {
 
     ns cmp {
         // compares a to b; if equal just continue.
+        // @requires hex.cmp.init (or hex.init)
         def cmp_eq_next a, b, lt, gt @ eq {
             ..cmp a, b, lt, eq, gt
           eq:
@@ -206,6 +266,7 @@ ns hex {
     //   signed range monotonically onto the unsigned range, so it is correct over the whole range
     //   with no subtraction (hence no overflow).
     // @requires hex.cmp.init (or hex.init)
+    // @Assumes: n >= 1.
     def scmp n, a, b, lt, eq, gt @ ba, bb {
         .mov n, ba, a
         .xor_by ba+(n-1)*dw, 8

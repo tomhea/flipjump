@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import collections
 import sys
-from typing import Dict, Tuple, Iterable, Union, Deque, Set, List, Optional, NoReturn
+from typing import Any, Dict, Tuple, Iterable, Union, Deque, Set, List, Optional, NoReturn, Callable
 
 from flipjump.interpreter.debugging.macro_usage_graph import show_macro_usage_pie_graph
 from flipjump.utils.constants import (
@@ -35,16 +35,34 @@ from flipjump.assembler.inner_classes.ops import (
     ReserveBits,
     Pad,
     Padding,
+    Op,
     INITIAL_MACRO_NAME,
     INITIAL_ARGS,
     INITIAL_LABELS_PREFIX,
+    get_used_labels,
+)
+from flipjump.assembler.inner_classes.op_stream import OpStream
+from flipjump.assembler.table_pool import (
+    BlockPool,
+    DEFER_INLINE,
+    DEFER_TOO_WIDE,
+    DeferredTables,
+    OffsetGuard,
+    POINTER_RUNTIME_LABELS,
+    RESERVED_BELOW,
+    heat_key,
+    reached_the_pool,
 )
 
 CurrTree = Deque[Union[MacroCall, RepCall]]
-OpsQueue = Deque[LastPhaseOp]
+OpsQueue = OpStream  # the preprocessor's output
 LabelsDict = Dict[str, int]
 
 wflip_start_label = '_.wflip_area_start_'
+
+
+# a macro whose innermost namespace is this declares a table a pool may move: see relocatable_call
+RELOCATABLE_NAMESPACE = '__relocatable__'
 
 
 def macro_resolve_error(
@@ -73,6 +91,8 @@ class PreprocessorData:
     """
 
     class _PrepareMacroCall:
+        __slots__ = ('curr_tree', 'calling_op', 'macros', 'max_recursion_depth')
+
         def __init__(
             self,
             curr_tree: CurrTree,
@@ -111,15 +131,31 @@ class PreprocessorData:
         def __exit__(self, exc_type, exc_val, exc_tb):  # type: ignore[no-untyped-def]
             self.curr_tree.pop()
 
-    def __init__(self, memory_width: int, macros: Dict[MacroName, Macro], max_recursion_depth: int):
+    def __init__(
+        self,
+        memory_width: int,
+        macros: Dict[MacroName, Macro],
+        max_recursion_depth: int,
+        *,
+        save_debug_labels: bool = True,
+        table_pool: Optional[BlockPool] = None,
+        consume_main: bool = False,
+        on_progress: Optional[Callable[[float], None]] = None,
+    ):
         """
         @param memory_width: the memory-width
         @param macros: parser's result; the dictionary from the macro names to the macro declaration
         @param max_recursion_depth: The compiler supports macros that recursively uses other macros,
         up to the specified recursion depth.
+        @param save_debug_labels: record the `...---:start:` macro-start labels (see insert_macro_start_label)
+        @param table_pool: if given, relocate the declared tables (see relocatable_call, BlockPool)
+        @param consume_main: the caller will not use `macros` again: the top level's ops are dropped as they expand
+        @param on_progress: if given, told how far into the top level the expansion is (a fraction in [0, 1))
         """
         self.memory_width = memory_width
         self.macros = macros
+        self.save_debug_labels = save_debug_labels
+        self.consume_main = consume_main
 
         self.curr_address: int = 0
 
@@ -128,16 +164,54 @@ class PreprocessorData:
         self.curr_tree: CurrTree = collections.deque()
 
         self.curr_segment_index: int = 0
-        self.labels_code_positions: Dict[str, CodePosition] = {}
+        # where each label is declared - read only to word a "declared twice" error. MEMORY: a list
+        # aligned with the labels dict's insertion order (labels are never removed), 8 bytes a label,
+        # not a second dict of millions of string keys; a one-pass deferred table's labels, which reach
+        # the labels dict only when the expansion ends, wait in their own small dict until then.
+        self._label_positions: List[Optional[CodePosition]] = []
+        self._deferred_label_positions: Dict[str, CodePosition] = {}
 
-        self.result_ops: Deque[LastPhaseOp] = collections.deque()
         self.labels: Dict[str, int] = {}
+        # TABLE PLACEMENT: the guard of the operands a moved table could change (see OffsetGuard)
+        self.table_pool = table_pool
+        self.offset_guard: Optional[OffsetGuard] = None
+        if table_pool is not None:
+            if table_pool.laid_out:
+                raise FlipJumpPreprocessorException(
+                    'table-placement: this pool already laid out an assembly; construct a fresh one for every '
+                    'assemble()'
+                )
+            table_pool.laid_out = True
+            self.offset_guard = table_pool.offset_guard = OffsetGuard(
+                table_pool.pool_start(),
+                self.labels,
+                where=self._where,
+                emitting=lambda: self.curr_address if self._resume is None else self._resume[0],
+            )
+        # the emitted ops, compactly (see OpStream). Every stream of this preprocessor shares one refs list.
+        self._op_refs: List[Any] = []
+        self.result_ops: OpStream = OpStream(self._op_refs, self.labels, self.offset_guard)
         self.addresses_with_labels: Set[int] = set()
         self.macro_start_labels: List[Tuple[int, str, CodePosition]] = []  # (address, label, code_position)
 
         first_segment: NewSegment = NewSegment(0)
         self.last_new_segment: NewSegment = first_segment
         self.result_ops.append(first_segment)
+
+        # TABLE PLACEMENT: a table the pool takes goes into pool_ops behind a NewSegment, placed by finish()
+        self.pool_ops: OpStream = OpStream(self._op_refs, self.labels, self.offset_guard)
+        # {address: the bits a `pad` aligned it to, 0 where only a segment starts} (the OffsetGuard's, or a caller's)
+        self.pads: Optional[Dict[int, int]] = None if self.offset_guard is None else self.offset_guard.pads
+        self._dollar_ops: Dict[int, Dict[int, bool]] = {}  # id(macro) -> its ops that name `$` (see dollar_ops)
+        self._pointer_runtime_users: Dict[int, bool] = {}  # id(macro) -> it names POINTER_RUNTIME_LABELS
+        self.emit_target: OpStream = self.result_ops
+        self._resume: Optional[Tuple[int, OpStream]] = None  # (in a moved table) the inline address and stream after it
+        self._shift = 0  # the ops the program without the pool is ahead of this one, in this segment
+        self._code_end = 0  # where the code of the segments closed so far ends, at most
+        self._deferred = DeferredTables()
+        self._moved_starts: List[Tuple[int, int]] = []  # each moved table's first (op, slot) in pool_ops
+
+        self.on_progress = on_progress
 
         self.max_recursion_depth = max_recursion_depth
         # set python's recursion-limit so the preprocessor's own depth-check (at max_recursion_depth)
@@ -148,8 +222,141 @@ class PreprocessorData:
     def patch_last_wflip_address(self) -> None:
         self.last_new_segment.wflip_start_address = self.curr_address
 
+    def emit(self, op: LastPhaseOp) -> None:
+        self.emit_target.append(op)
+
+    def begin_relocation(
+        self, ops_alignment: int, labels_prefix: str, table_ops: int, group_expr: Optional[Expr], table: str
+    ) -> bool:
+        """take the declared table (`table`: its start label) out of the op stream, its labels offsets from its start
+        (curr_address counts from 0 in it); False if it stays inline (unsafe, the runtime's, or declined)"""
+        pool, guard = self.table_pool, self.offset_guard
+        assert pool is not None and guard is not None
+        unsafe = guard.may_move(self.curr_address)
+        if unsafe is not None:
+            pool.unsafe_declines[unsafe] = pool.unsafe_declines.get(unsafe, 0) + 1
+            return False  # it stays inline: see OffsetGuard
+        if group_expr is not None and self._is_runtime_word(group_expr):
+            pool.reserved_words += 1
+            return False
+        group = None if group_expr is None else str(group_expr)
+        verdict = pool._defer(ops_alignment, table_ops, group_expr)
+        if verdict == DEFER_INLINE:
+            return False
+        site = sys.intern(heat_key(labels_prefix))
+        # (a raw program's table may have no group: BlockPool._place_cheapest)
+        segment = None if verdict == DEFER_TOO_WIDE else NewSegment(0)  # its address is decided once all are queued
+        self._deferred.add(group or '', ops_alignment, table_ops, site, segment)
+        if segment is None:
+            return False  # aligned and emitted in place
+        guard.table_moved(self.curr_address, table)
+        plain = self.curr_address // (2 * self.memory_width) + self._shift  # where the program without the pool is
+        self._shift += (-plain) % ops_alignment + table_ops
+        self._moved_starts.append((len(self.pool_ops), len(self.pool_ops.vals)))
+        self.pool_ops.append(segment)
+        self._resume = self.curr_address, self.emit_target
+        self.emit_target = self.pool_ops
+        self.curr_address = 0
+        return True
+
+    def dollar_ops(self, macro: Macro) -> Dict[int, bool]:
+        """{op index: names `$` in a sum} of the macro's ops that name `$` (False: it falls through)"""
+        found = self._dollar_ops.get(id(macro))
+        if found is None:
+            found = self._dollar_ops[id(macro)] = {}
+            for index, op in enumerate(macro.ops):
+                if isinstance(op, FlipJump):
+                    operands: Tuple[Expr, ...] = (op.flip, op.jump)
+                elif isinstance(op, WordFlip):
+                    operands = (op.word_address, op.flip_value, op.return_address)
+                else:
+                    continue
+                in_sum = any(operand.value != '$' and '$' in operand.all_unknown_labels() for operand in operands)
+                if in_sum or any(operand.value == '$' for operand in operands):
+                    found[index] = in_sum
+        return found
+
+    def dollar(
+        self, in_sum: bool, labels_prefix: str, op_index: int, code_position: CodePosition, params_dict: Dict[str, Expr]
+    ) -> None:
+        """the op being emitted names `$`: in a sum it becomes a label at the next op, else the op falls through"""
+        assert self.offset_guard is not None
+        if in_sum:
+            name = f'{labels_prefix}{MACRO_SEPARATOR_STRING}$:{op_index}' if labels_prefix else f'$:{op_index}'
+            self.insert_label(name, code_position)
+            self.offset_guard.watched.add(name)
+            params_dict['$'] = Expr(name)
+        else:
+            self.offset_guard.falls_to = self.curr_address
+
+    def _where(self) -> str:
+        path = ' > '.join(call.trace_str() for call in self.curr_tree) or 'the top level'
+        if self._resume is not None:
+            return f' of an op of a moved table (in {path})'
+        return f' of the op at {hex(self.curr_address - 2 * self.memory_width)} (in {path})'
+
+    def _is_runtime_word(self, word: Expr) -> bool:
+        """is `word` one of the runtime's (declared before the code, so it resolves now; see RESERVED_BELOW)?"""
+        try:
+            return word.exact_eval(self.labels) < RESERVED_BELOW
+        except FlipJumpExprException:
+            return False
+
+    def _place_deferred_tables(self, pool: BlockPool) -> None:
+        """have the pool place every queued table, give each moved one its labels and its segment's address, and
+        append the moved tables (each a NewSegment and its ops) to the stream, by address"""
+        tables, guard, op_bits = self._deferred, self.offset_guard, 2 * self.memory_width
+        assert guard is not None
+        # the program without the tables ends where its code does, or past every address an operand reaches
+        addresses = pool.place_deferred(tables, self.labels, max(self._code_end, self.curr_address, guard.reach + 1))
+        guard.inline_end = pool.pool_start()  # (AFTER_PROGRAM: where the pool went)
+        moved: List[Tuple[int, int, NewSegment]] = []  # (address, the how-manyth table to leave the stream, segment)
+        for index, address in enumerate(addresses):
+            if not address:
+                continue  # it stayed inline: its labels are in place already
+            end = address + tables.sizes[index] * op_bits
+            guard.tables.append((address, end, guard.moved_tables[len(moved)]))
+            for label, offset in tables.labels_of(index):
+                self.labels[label] = address + offset
+                self._label_positions.append(self._deferred_label_positions.get(label))
+                if self.save_debug_labels:
+                    self.addresses_with_labels.add(address + offset)
+            segment = tables.segments[index]
+            assert segment is not None
+            segment.start_address, segment.wflip_start_address = address, end  # a table has no wflips
+            moved.append((address, len(moved), segment))
+        guard.tables.sort()
+        self._deferred = DeferredTables()  # release them
+        starts = self._moved_starts + [(len(self.pool_ops), len(self.pool_ops.vals))]
+        for _, at, segment in sorted(moved):
+            self.last_new_segment = segment
+            self.result_ops.extend_slice(self.pool_ops, *starts[at], *starts[at + 1])
+        self.pool_ops = OpStream(self._op_refs, self.labels, self.offset_guard)  # release them
+
+    def end_relocation(self) -> None:
+        """close the moved table (it holds exactly the ops _relocatable_table_ops counted), and resume the stream"""
+        assert self.curr_address == self._deferred.sizes[-1] * 2 * self.memory_width and self._resume is not None
+        self.curr_address, self.emit_target = self._resume
+        self._resume = None
+
+    def note_pointer_runtime(self, macro: Macro) -> None:
+        """tell the pool if the macro names the pointer runtime's words (POINTER_RUNTIME_LABELS)"""
+        uses = self._pointer_runtime_users.get(id(macro))
+        if uses is None:
+            uses = self._pointer_runtime_users[id(macro)] = bool(get_used_labels(macro.ops) & POINTER_RUNTIME_LABELS)
+        if uses and self.table_pool is not None:
+            self.table_pool.reads_words_raw = True
+
+    def _refuse_reaching_the_pool(self, address: int) -> None:
+        """a program that reaches the pool is refused (labels-resolve checks the wflip areas)"""
+        if self.table_pool is not None and address > self.table_pool.pool_start():
+            raise reached_the_pool(address, self.table_pool.pool_start())
+
     def finish(self, show_statistics: bool) -> None:
         self.patch_last_wflip_address()
+        self._refuse_reaching_the_pool(self.curr_address)
+        if self.table_pool is not None:
+            self._place_deferred_tables(self.table_pool)
         self.insert_macro_start_labels_if_their_address_not_used()
         if show_statistics:
             show_macro_usage_pie_graph(dict(self.macro_code_size), self.curr_address)
@@ -161,8 +368,16 @@ class PreprocessorData:
         return self.result_ops, self.labels
 
     def insert_segment(self, next_segment_start: int) -> None:
+        self._refuse_reaching_the_pool(self.curr_address)
+        self._refuse_reaching_the_pool(next_segment_start + 1)
         self.labels[f'{wflip_start_label}{self.curr_segment_index}'] = self.curr_address
+        self._label_positions.append(None)
         self.curr_segment_index += 1
+        self._code_end = max(self._code_end, self.curr_address)
+        self._shift = 0  # a segment starts where it does without the pool too
+        if self.offset_guard is not None:
+            self.offset_guard.segment_started(next_segment_start)
+        self._aligned(next_segment_start, 0)
 
         self.patch_last_wflip_address()
 
@@ -174,26 +389,50 @@ class PreprocessorData:
 
     def insert_reserve(self, reserved_bits_size: int) -> None:
         self.curr_address += reserved_bits_size
+        self._refuse_reaching_the_pool(self.curr_address)
         self.result_ops.append(ReserveBits(self.curr_address))
 
     def insert_label(self, label: str, code_position: CodePosition, *, address: Optional[int] = None) -> None:
         if address is None:
             address = self.curr_address
 
-        if label in self.labels:
-            other_position = self.labels_code_positions[label]
+        # (a deferred table's label is in _deferred_label_positions before it is in labels)
+        if label in self.labels or label in self._deferred_label_positions:
+            other_position = self.label_position(label)
             macro_resolve_error(
                 self.curr_tree, f'label declared twice - "{label}" on ' f'{code_position} and {other_position}'
             )
-        self.labels_code_positions[label] = code_position
+        if self._resume is not None:
+            # a deferred table's label: an offset now, an address once the table is placed
+            self._deferred_label_positions[label] = code_position
+            self._deferred.add_label(label, address)
+            return
         self.labels[label] = address
-        self.addresses_with_labels.add(address)
+        self._label_positions.append(code_position)
+        if self.save_debug_labels:
+            # only insert_macro_start_labels_if_their_address_not_used reads this set
+            self.addresses_with_labels.add(address)
 
-    def insert_macro_start_label(self, label: str, code_position: CodePosition) -> None:
+    def label_position(self, label: str) -> Optional[CodePosition]:
+        """where `label` was declared (None if it was not declared by insert_label). Slow: it walks
+        the labels in insertion order - only an error message asks."""
+        if label in self._deferred_label_positions:
+            return self._deferred_label_positions[label]
+        for index, name in enumerate(self.labels):
+            if name == label:
+                return self._label_positions[index] if index < len(self._label_positions) else None
+        return None
+
+    def insert_macro_start_label(self, labels_prefix: str, code_position: CodePosition) -> None:
+        """Record that a macro expansion starts here, so a `<path>---:start:` label can name it.
+        The label is unreachable from fj source, and only the debugging file reads it.
+
+        @note must be called at the start of the expansion.
+        @note takes the PREFIX, not the finished label: when labels are off the string is never built.
         """
-        @note must be called at the start of the function.
-        """
-        self.macro_start_labels.append((self.curr_address, label, code_position))
+        if self.save_debug_labels and self._resume is None:
+            label = f'{labels_prefix}{MACRO_SEPARATOR_STRING}{STARTING_LABEL_IN_MACROS_STRING}'
+            self.macro_start_labels.append((self.curr_address, label, code_position))
 
     def insert_macro_start_labels_if_their_address_not_used(self) -> None:
         for address, label, code_position in self.macro_start_labels[::-1]:
@@ -214,8 +453,25 @@ class PreprocessorData:
                 f"(this usually happens after a 'reserve' or 'segment' that isn't 2*w-aligned).",
             )
         ops_to_pad = (-self.curr_address // op_size) % ops_alignment
+        if self.offset_guard is not None:  # without the pool the pad starts `_shift` ops further
+            plain_pad = (-(self.curr_address // op_size + self._shift)) % ops_alignment
+            if plain_pad != ops_to_pad:
+                self.offset_guard.pad_realigned(self.curr_address, ops_alignment)
+                self._shift += plain_pad - ops_to_pad
         self.curr_address += ops_to_pad * op_size
-        self.result_ops.append(Padding(ops_to_pad))
+        self.emit(Padding(ops_to_pad))
+        if ops_alignment > 1:
+            bits = ops_alignment * op_size
+            self._aligned(self.curr_address, (bits & -bits).bit_length() - 1)
+
+    def check_evaluated(self, expr: Expr, value: int, is_address: bool = False) -> None:
+        """an expression the expansion evaluates (a rep's count, a pad, a reserve, a segment) is checked as operands"""
+        if self.offset_guard is not None and expr.all_unknown_labels():
+            self.offset_guard.check_expr(expr, value, is_address)
+
+    def _aligned(self, address: int, bits: int) -> None:
+        if self.pads is not None and address:
+            self.pads[address] = max(self.pads.get(address, 0), bits)
 
 
 def get_rep_times(op: RepCall, preprocessor_data: PreprocessorData) -> int:
@@ -292,11 +548,103 @@ def get_params_dictionary(
     for local_param in current_macro.local_params:
         params_dict[local_param] = Expr(f'{labels_prefix}{MACRO_SEPARATOR_STRING}{local_param}')
 
-    if namespace:
-        for k, v in tuple(params_dict.items()):
-            params_dict[f'{namespace}.{k}'] = v
+    # namespaced_params is empty for a macro with no namespace
+    for namespaced_name, name in current_macro.namespaced_params:
+        params_dict[namespaced_name] = params_dict[name]
 
     return params_dict
+
+
+def is_relocatable(macro_name: MacroName) -> bool:
+    """does the macro declare a relocatable table: is its innermost namespace RELOCATABLE_NAMESPACE?"""
+    return macro_name.name.rpartition('.')[0].rpartition('.')[2] == RELOCATABLE_NAMESPACE
+
+
+def relocatable_call(
+    preprocessor_data: PreprocessorData, ops: List[Op], pad_index: int, params_dict: Dict[str, Expr], ops_alignment: int
+) -> Optional[Tuple[int, int, Optional[Expr], str]]:
+    """(the call's index, the table's ops, its group's source-word Expr, its start label) if the op after the
+    `pad` at `ops[pad_index]` (labels aside) calls a relocatable table, else None.
+
+    THE TABLE is one expansion of a macro whose innermost namespace is `__relocatable__`, its start label its first
+    argument; it may hold only labels and `a;b` ops, and no `$` (see _relocatable_table_ops). Its group is the word of
+    the `wflip` right after the call (labels aside) that disarms the start label: the word it is dispatched through.
+    """
+    for index in range(pad_index + 1, len(ops)):
+        op = ops[index]
+        if isinstance(op, Label):
+            continue
+        if not isinstance(op, MacroCall) or not is_relocatable(op.macro_name):
+            return None
+        break
+    else:
+        return None
+    call = op.eval_new(params_dict)
+    macro = preprocessor_data.macros.get(call.macro_name)
+    if macro is None:
+        return None  # the expansion says so
+    table_ops = _relocatable_table_ops(preprocessor_data, macro, call)
+    if ops_alignment & (ops_alignment - 1):
+        macro_resolve_error(
+            preprocessor_data.curr_tree,
+            f'the relocatable table after `pad {ops_alignment}` (at {ops[pad_index].code_position}) needs a '
+            f'power-of-two pad: a pool places tables in power-of-two slots',
+        )
+    group_expr: Optional[Expr] = None
+    for after in range(index + 1, len(ops)):
+        disarm = ops[after]
+        if isinstance(disarm, Label):
+            continue
+        if isinstance(disarm, WordFlip) and disarm.flip_value.eval_new(params_dict).value == call.arguments[0].value:
+            # bind the macro's parameters (`src + w` names the caller's variable); unknown labels
+            # stay as names, so two sites on the same variable compare equal
+            group_expr = disarm.word_address.eval_new(params_dict)
+        break
+    return index, table_ops, group_expr, str(call.arguments[0].value)
+
+
+def _relocatable_table_ops(preprocessor_data: PreprocessorData, macro: Macro, call: MacroCall) -> int:
+    """the number of ops the relocatable `call` expands, or a compilation error (see relocatable_call)"""
+
+    def refuse(message: str) -> NoReturn:
+        macro_resolve_error(
+            preprocessor_data.curr_tree,
+            f'the relocatable table {call.macro_name} (called at {call.code_position}) {message}',
+        )
+
+    if not macro.params or not call.arguments or not isinstance(call.arguments[0].value, str):
+        refuse("needs its start label as its first argument")
+    start = macro.params[0]
+    op_bits = 2 * preprocessor_data.memory_width
+    offsets: Dict[str, int] = {}  # its labels (local and full names) -> their bit offsets in the table
+    entries: List[FlipJump] = []
+    for op in macro.ops:
+        if isinstance(op, Label):
+            if op.name.rpartition('.')[2] == start or offsets:
+                offsets[op.name] = offsets[op.name.rpartition('.')[2]] = len(entries) * op_bits
+        elif isinstance(op, FlipJump):
+            if not offsets:
+                refuse(f'must declare its start label ({start}, its first parameter) before its first op')
+            if '$' in op.flip.all_unknown_labels() or '$' in op.jump.all_unknown_labels():
+                refuse(f'uses `$` in {op} (a `dst;` falls through to `$`): a moved table has no next address')
+            entries.append(op)
+        else:
+            refuse(f'may hold only labels and `a;b` ops, not {op}')
+    if not entries:
+        refuse('holds no op')
+    size = len(entries) * op_bits
+    if max(offsets.values()) >= size:
+        refuse('declares a label after its last op: it names the op after the table, which a moved table does not have')
+    for op in entries:
+        for operand in (op.flip, op.jump):
+            named = operand.all_unknown_labels()
+            if not named & offsets.keys():
+                continue
+            if named - offsets.keys():
+                refuse(f'mixes its own labels with others in {op}: whether it stays inside the table cannot be known')
+            if not 0 <= operand.exact_eval(offsets) < size:
+                refuse(f'leaves the table through {op}: an offset from its own label must land inside it')
+    return len(entries)
 
 
 def resolve_macro_aux(
@@ -314,37 +662,92 @@ def resolve_macro_aux(
     @param labels_prefix: The prefix for all labels defined in this macro
     """
     init_curr_address = preprocessor_data.curr_address
+    table_call = -1  # (a table pool is on) the relocatable call the last `pad` aligns
+    relocated_call = -1  # ...if its table is being moved
     current_macro = preprocessor_data.macros[macro_name]
+    if preprocessor_data.table_pool is not None and not preprocessor_data.table_pool.reads_words_raw:
+        preprocessor_data.note_pointer_runtime(current_macro)
     params_dict = get_params_dictionary(current_macro, args, current_macro.namespace, labels_prefix)
 
-    preprocessor_data.insert_macro_start_label(
-        f'{labels_prefix}{MACRO_SEPARATOR_STRING}{STARTING_LABEL_IN_MACROS_STRING}', current_macro.code_position
-    )
+    preprocessor_data.insert_macro_start_label(labels_prefix, current_macro.code_position)
+    dollar_ops = None if preprocessor_data.offset_guard is None else preprocessor_data.dollar_ops(current_macro)
 
-    for op in current_macro.ops:
+    # when the caller gave the tree away (consume_main), the top level's ops are dropped as the expansion
+    # passes them. What is kept: the last non-label op already expanded and everything after it, which
+    # is all a `pad` looks forward to (relocatable_call).
+    ops = current_macro.ops
+    consume = preprocessor_data.consume_main and macro_name is INITIAL_MACRO_NAME
+    released_up_to = 0  # ops[:released_up_to] are None
+    last_non_label = 0
+    on_progress = preprocessor_data.on_progress if macro_name is INITIAL_MACRO_NAME else None
+
+    for op_index, op in enumerate(ops):
+        if on_progress is not None:
+            on_progress(op_index / len(ops))
+        if consume:
+            if last_non_label > released_up_to:
+                for index in range(released_up_to, last_non_label):
+                    ops[index] = None  # type: ignore[call-overload]
+                released_up_to = last_non_label
+            if not isinstance(op, Label):
+                last_non_label = op_index
         if isinstance(op, Label):
             preprocessor_data.insert_label(op.eval_name(params_dict), op.code_position)
 
         elif isinstance(op, FlipJump) or isinstance(op, WordFlip):
             preprocessor_data.curr_address += 2 * preprocessor_data.memory_width
             params_dict['$'] = Expr(preprocessor_data.curr_address)
-            preprocessor_data.result_ops.append(op.eval_new(params_dict))
+            if dollar_ops and op_index in dollar_ops:
+                preprocessor_data.dollar(dollar_ops[op_index], labels_prefix, op_index, op.code_position, params_dict)
+            # straight into the compact stream - no FlipJump/WordFlip object is built for it
+            if op.__class__ is FlipJump:
+                preprocessor_data.emit_target.add_flip_jump_in(op.flip, op.jump, params_dict, op.code_position)
+            elif op.__class__ is WordFlip:
+                preprocessor_data.emit_target.add_word_flip_in(
+                    op.word_address, op.flip_value, op.return_address, params_dict, op.code_position
+                )
+            else:
+                preprocessor_data.emit(op.eval_new(params_dict))
             del params_dict['$']
 
         elif isinstance(op, Pad):
             op = op.eval_new(params_dict)
             ops_alignment = get_pad_ops_alignment(op, preprocessor_data)
-            preprocessor_data.align_current_address(ops_alignment)
+            preprocessor_data.check_evaluated(op.ops_alignment, ops_alignment)
+            # a `pad` right before a relocatable call aligns a declared table: with a table pool it may be
+            # emitted at a pool address instead, and the interrupted stream resumes after the call
+            table = None
+            if preprocessor_data.table_pool is not None:
+                table = relocatable_call(preprocessor_data, ops, op_index, params_dict, ops_alignment)
+                table_call = -1 if table is None else table[0]
+            if table is not None and preprocessor_data.begin_relocation(ops_alignment, labels_prefix, *table[1:]):
+                relocated_call = table_call
+            else:
+                preprocessor_data.align_current_address(ops_alignment)
 
         elif isinstance(op, MacroCall):
+            if preprocessor_data.table_pool is not None and op_index != table_call and is_relocatable(op.macro_name):
+                macro_resolve_error(
+                    preprocessor_data.curr_tree,
+                    f'the relocatable table {op.macro_name} (called at {op.code_position}) needs a `pad` right '
+                    f'before its call: the pool places it at that alignment',
+                )
             op = op.eval_new(params_dict)
             next_macro_path = (
                 f"{labels_prefix}{MACRO_SEPARATOR_STRING}" if labels_prefix else ""
             ) + f"{op.code_position.short_str()}:{op.macro_name}"
             with preprocessor_data.prepare_macro_call(op):
                 resolve_macro_aux(preprocessor_data, op.macro_name, op.arguments, next_macro_path)
+            if op_index == relocated_call:
+                preprocessor_data.end_relocation()
 
         elif isinstance(op, RepCall):
+            if preprocessor_data.table_pool is not None and is_relocatable(op.macro_name):
+                macro_resolve_error(
+                    preprocessor_data.curr_tree,
+                    f'the relocatable table {op.macro_name} (called at {op.code_position}) is called by rep: '
+                    f'each table needs its own `pad` right before its call',
+                )
             # Make the rep iterator hygienic: rename it (and its references in the rep's arguments)
             # to a per-expansion-unique name BEFORE substituting params/@-labels, so a caller label
             # named like the iterator (e.g. `d`, `i`) can't be captured by it. The `:rep:` marker
@@ -354,7 +757,9 @@ def resolve_macro_aux(
             ) + f"{op.code_position.short_str()}:rep:{op.iterator_name}"
             op = op.rename_iterator(hygienic_iterator)
             op = op.eval_new(params_dict)
+            times = op.repeat_times
             rep_times = get_rep_times(op, preprocessor_data)
+            preprocessor_data.check_evaluated(times, rep_times)
             if rep_times == 0:
                 continue
             next_macro_path = (
@@ -371,10 +776,12 @@ def resolve_macro_aux(
             op = op.eval_new(params_dict)
             next_segment_start = get_next_segment_start(op, preprocessor_data)
             preprocessor_data.insert_segment(next_segment_start)
+            preprocessor_data.check_evaluated(op.start_address, next_segment_start, True)
 
         elif isinstance(op, Reserve):
             op = op.eval_new(params_dict)
             reserved_bits_size = get_reserved_bits_size(op, preprocessor_data)
+            preprocessor_data.check_evaluated(op.reserved_bit_size, reserved_bits_size)
             preprocessor_data.insert_reserve(reserved_bits_size)
 
         else:
@@ -389,6 +796,10 @@ def resolve_macros(
     *,
     show_statistics: bool = False,
     max_recursion_depth: int = DEFAULT_MAX_MACRO_RECURSION_DEPTH,
+    save_debug_labels: bool = True,
+    table_pool: Optional[BlockPool] = None,
+    on_progress: Optional[Callable[[float], None]] = None,
+    consume_main: bool = False,
 ) -> Tuple[OpsQueue, LabelsDict]:
     """
     unwind the macro tree to a serialized-queue of ops,
@@ -398,9 +809,21 @@ def resolve_macros(
     @param show_statistics: if True then prints the macro-usage statistics
     @param max_recursion_depth: The compiler supports macros that recursively uses other macros,
     up to the specified recursion depth.
+    @param table_pool: if given, relocate the declared tables (see relocatable_call, BlockPool)
+    @param save_debug_labels: record the `...---:start:` macro-start labels (only the debugging file reads them)
+    @param on_progress: if given, called with the expansion's progress, a fraction in [0, 1)
+    @param consume_main: the caller will not use `macros` again: the top level's ops are dropped as they expand
     @return: tuple of the queue of ops, and the labels' dictionary
     """
-    preprocessor_data = PreprocessorData(memory_width, macros, max_recursion_depth)
+    preprocessor_data = PreprocessorData(
+        memory_width,
+        macros,
+        max_recursion_depth,
+        save_debug_labels=save_debug_labels,
+        table_pool=table_pool,
+        consume_main=consume_main,
+        on_progress=on_progress,
+    )
     resolve_macro_aux(preprocessor_data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX)
 
     preprocessor_data.finish(show_statistics)

@@ -1,0 +1,21 @@
+// C7a: an outside op jumps to `T + dw`: in the plain program the op after the table (the disarm),
+// in the pooled one the slot after the moved table.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;T + dw
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

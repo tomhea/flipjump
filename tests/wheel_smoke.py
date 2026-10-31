@@ -87,9 +87,11 @@ def run_program(name: str, width: int, tmp_dir: Path) -> Tuple[int, float]:
     correctness failure (wrong termination cause or wrong op-count)."""
     fj_path, run_input = PROGRAMS[name]
     fjm_path = tmp_dir / f'{name}_w{width}.fjm'
-    assemble([fj_path], fjm_path, memory_width=width, print_time=False)
+    assemble([fj_path], fjm_path, memory_width=width, show_progress=False)
 
-    stats = fjm_run.run(fjm_path, io_device=FixedIO(run_input), print_time=False, last_ops_debugging_list_length=None)
+    stats = fjm_run.run(
+        fjm_path, io_device=FixedIO(run_input), show_progress=False, last_ops_debugging_list_length=None
+    )
 
     if stats.termination_cause != TerminationCause.Looping:
         raise AssertionError(f'{name} w={width}: terminated as {stats.termination_cause.name}, expected Looping')

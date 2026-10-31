@@ -1,55 +1,138 @@
 ns hex {
-    //  Time Complexity: w(0.75@+ 5) + 6@+13
-    // Space Complexity: w(0.75@+29) + 6@+36
+    //  Time Complexity: w( 0.5@+ 4) + 4@+25
+    // Space Complexity: w( 0.5@+22) + 4@+52
     //   like:  dst ^= *ptr
     // dst is a hex. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_hex_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
         .xor dst, hex.pointers.read_byte
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 7@+13
-    // Space Complexity: w(0.75@+29) + 7@+48
+    //  Time Complexity: w( 0.5@+ 4) + 5@+25
+    // Space Complexity: w( 0.5@+22) + 5@+64
     //   like:  dst[:2] ^= *ptr
-    // dst is a hex[2:]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // dst is a hex[:2]. ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def xor_byte_from_ptr dst, ptr < hex.pointers.read_byte {
         .pointers.set_flip_and_jump_pointers ptr
         .pointers.read_byte_from_inners_ptrs
         .xor 2, dst, hex.pointers.read_byte
     }
 
+    //  Time Complexity: w(0.5@+4) + (1+2*PTR_WIDE/4)@ + PTR_WIDE/2 + 21   (at w=64)
+    // Space Complexity: w(0.5@+22) + (1+2*PTR_WIDE/4)@ + 24(PTR_WIDE/4) + 16
+    //   like:  dst[:PTR_WIDE/4] ^= *ptr
+    //   Reads a whole cell (all PTR_WIDE bits) in one dereference.
+    // dst is a hex[:PTR_WIDE/4]. ptr is a hex[:w/4] holding a dw-aligned address.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
+    def xor_cell_from_ptr dst, ptr < hex.pointers.read_byte {
+        .pointers.set_flip_and_jump_pointers ptr
+        rep(.pointers.PTR_WIDE_BITS > 0, i) .pointers.read_wide_from_inners_ptrs
+        rep(.pointers.PTR_WIDE_BITS == 0, i) .pointers.read_byte_from_inners_ptrs
+        .xor .pointers.PTR_WIDE/4, dst, hex.pointers.read_byte
+    }
+
     ns pointers {
-        //  Time Complexity: 5@+13
-        // Space Complexity: 5@+24
+        //  Time Complexity: n((h+2)@ + 4h+24)
+        // Space Complexity: n((w-#w)(@+18) + h(@+28) + 9)
         //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
-        //   does:       hex.pointers.read_byte[:2] = *ptr
+        //   does:       dst[i*h:(i+1)*h] ^= *(ptr+i*2w)      for i in range(n)     (the armed fields end at ptr+(n-1)*2w)
+        //
+        // The n read dances as one chain (see hex.tables.chained_jump); the armed fields advance by 2w per cell.
+        // dst is a hex[:n*h]; h (1 or 2) is the hexes taken from each cell.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def xor_cells_from_inners_ptrs n, h, dst @ last < .read_byte, .ret_after_read_byte, .to_flip {
+            ..zero h, .read_byte
+            wflip .to_flip, dbit+.PTR_CELL_BITS
+            wflip .ret_after_read_byte+w, .to_flip
+            .read_cell_chained 0
+            rep(n-1, i) .read_cell_step h, dst+i*h*dw
+          last:
+            wflip .ret_after_read_byte+w, .to_flip
+            wflip .to_flip, dbit+.PTR_CELL_BITS
+            wflip .to_flip+w, last
+            ..xor h, dst+(n-1)*h*dw, .read_byte
+        }
+
+        //  Time Complexity: (h+2)@ + 4h+24
+        // Space Complexity: (w-#w)(@+18) + h(@+28) + 9
+        //   prev_dst[:h] ^= read_byte[:h];  read_byte[:h] = 0 (only h hexes are read);  the armed fields += 2w;  then read_cell_chained.
+        // @Assumes: the previous dance's landing label is this macro's start (see hex.tables.chained_jump).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def read_cell_step h, prev_dst @ start < .read_byte {
+          start:
+            ..xor_zero h, prev_dst, .read_byte
+            .advance
+            .read_cell_chained start
+        }
+
+        //  Time Complexity: 18         (the two moves of to_flip+w, 5.7 and 2.9 on average, and the dance's 5 + popcount(the byte))
+        // Space Complexity: 9          (the two moves' popcounts, 5.7 and 2.9 on average)
+        //   The read dance of read_cell_from_inners_ptrs, chained (the caller sets .ret_after_read_byte once).
+        // @Assumes: to_flip+w holds prev_return (0 if it's clear).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def read_cell_chained prev_return @ read, cleanup < .to_flip, .to_jump {
+            wflip .to_flip+w, prev_return ^ read, .to_flip
+            pad 4
+          read:
+            wflip .to_flip+w, read ^ cleanup, .to_jump
+            pad 16
+          cleanup:
+        }
+
+        //  Time Complexity: (1+PTR_CELL_BITS/4)@ + PTR_CELL_BITS/2 + 21   (at w=64, where dbit+bits has 5 on-bits; 3@+25 at the default 8)
+        // Space Complexity: (1+PTR_CELL_BITS/4)@ + 12(PTR_CELL_BITS/4) + 16
+        //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
+        //   does:       hex.pointers.read_byte[:PTR_CELL_BITS/4] = *ptr
         //
         // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
-        def read_byte_from_inners_ptrs @ read_ptr_and_flip_back, cleanup \
-                < hex.pointers.ret_after_read_byte, hex.pointers.read_byte, hex.pointers.to_jump, hex.pointers.to_flip {
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def read_byte_from_inners_ptrs < .ret_after_read_byte {
+            .read_cell_from_inners_ptrs .PTR_CELL_BITS, .ret_after_read_byte
+        }
+
+        //  Time Complexity: (1+PTR_WIDE/4)@ + PTR_WIDE/2 + 21   (at w=64, where dbit+bits has 5 on-bits)
+        // Space Complexity: (1+PTR_WIDE/4)@ + 12(PTR_WIDE/4) + 16
+        //   the same dance against the wide table (PTR_WIDE_BITS > 0).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def read_wide_from_inners_ptrs < .ret_after_read_wide {
+            .read_cell_from_inners_ptrs .PTR_WIDE_BITS, .ret_after_read_wide
+        }
+
+        //  Time Complexity: (1+bits/4)@ + bits/2 + 21   (at w=64, where dbit+bits has 5 on-bits)
+        // Space Complexity: (1+bits/4)@ + 3bits + 16
+        //   use after:  hex.pointers.set_flip_and_jump_pointers ptr
+        //   does:       hex.pointers.read_byte[:bits/4] = *ptr
+        // bits picks the decoder table (PTR_CELL_BITS or PTR_WIDE_BITS), and ret is that table's return opcode.
+        // ptr is a hex[:w/4] that holds an address, which we assume is dw-aligned.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def read_cell_from_inners_ptrs bits, ret @ read_ptr_and_flip_back, cleanup \
+                < hex.pointers.read_byte, hex.pointers.to_jump, hex.pointers.to_flip {
             // 1.  setup:
             //       zero read_byte.
-            //       to_flip   = ptr + dbit+8.
+            //       to_flip   = ptr + dbit+bits.
             //       to_jump+w = ptr.
-            hex.zero 2, hex.pointers.read_byte
-            wflip hex.pointers.to_flip, dbit+8
+            hex.zero bits/4, hex.pointers.read_byte
+            wflip hex.pointers.to_flip, dbit+bits
 
-            // 2.  *(ptr+w)^=256, so that now *(ptr+w) == 256 + original_value.
+            // 2.  *(ptr+w) ^= 2^bits, so the slot now jumps to its OWN entry of the table that
+            //     begins at op 2^bits.
             wflip hex.pointers.to_flip+w, read_ptr_and_flip_back, hex.pointers.to_flip
 
             pad 4
           read_ptr_and_flip_back:
-            // 3.  Jump to *(ptr+w). It will xor the pointed original_value byte into hex.pointers.read_byte.
-            // 4.  Then jump to hex.pointers.to_flip to make *(ptr+w)==original_value back again.
+            // 3.  Jump to *(ptr+w). It xors the pointed value into hex.pointers.read_byte.
+            // 4.  Then jump to hex.pointers.to_flip to make *(ptr+w) itself again.
             // 5.  Then return to cleanup.
             wflip hex.pointers.to_flip+w, read_ptr_and_flip_back^cleanup
-            wflip hex.pointers.ret_after_read_byte+w, hex.pointers.to_flip, hex.pointers.to_jump
+            wflip ret+w, hex.pointers.to_flip, hex.pointers.to_jump
 
           cleanup:
             // 6.  to_flip = ptr, clean jump-back addresses.
-            wflip hex.pointers.ret_after_read_byte+w, hex.pointers.to_flip
-            wflip hex.pointers.to_flip, dbit+8
+            wflip ret+w, hex.pointers.to_flip
+            wflip hex.pointers.to_flip, dbit+bits
             wflip hex.pointers.to_flip+w, cleanup
         }
     }

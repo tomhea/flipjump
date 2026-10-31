@@ -1,0 +1,213 @@
+// Tests hex.ptr_index n (an unsigned hex[:n] index), n = 1, 2, 3, 4, 7, 8, 16: indexes 0, 1, the maximum and a
+//   random one, on bases near 0, random, and near the top of the address range (the add carries across many
+//   hexes, and wraps). Then hex.ptr_index w/4 against hex.ptr_index on random full-width ("negative") indexes.
+// Then dst == index at every n. dst starts as garbage, and a garbage hex follows index[:n].
+// Expected values are python's (seed 20261024, w=64): dst = (ptr + index * 2w) modulo 2^w, on random bases and
+//   indexes from random.Random(20261024). Each check prints '=' when the result is right.
+stl.startup
+
+GARBAGE = 0x5a3c96e15a3c96e15a3c96e15a3c96e1
+
+test_ptr_index_n 1, 0x0, 0x0, 0x0
+test_ptr_index_n 1, 0x0, 0x1, 0x80
+test_ptr_index_n 1, 0x0, 0xf, 0x780
+test_ptr_index_n 1, 0x0, 0x8, 0x400
+test_ptr_index_n 1, 0xc083d9a8c60ed6eb, 0x0, 0xc083d9a8c60ed6eb
+test_ptr_index_n 1, 0xc083d9a8c60ed6eb, 0x1, 0xc083d9a8c60ed76b
+test_ptr_index_n 1, 0xc083d9a8c60ed6eb, 0xf, 0xc083d9a8c60ede6b
+test_ptr_index_n 1, 0xc083d9a8c60ed6eb, 0x3, 0xc083d9a8c60ed86b
+test_ptr_index_n 1, 0xfffffffffffff533, 0x0, 0xfffffffffffff533
+test_ptr_index_n 1, 0xfffffffffffff533, 0x1, 0xfffffffffffff5b3
+test_ptr_index_n 1, 0xfffffffffffff533, 0xf, 0xfffffffffffffcb3
+test_ptr_index_n 1, 0xfffffffffffff533, 0x8, 0xfffffffffffff933
+test_ptr_index_n 1, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 1, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 1, 0xffffffffffffff80, 0xf, 0x700
+test_ptr_index_n 1, 0xffffffffffffff80, 0x8, 0x380
+test_ptr_index_n 2, 0x0, 0x0, 0x0
+test_ptr_index_n 2, 0x0, 0x1, 0x80
+test_ptr_index_n 2, 0x0, 0xff, 0x7f80
+test_ptr_index_n 2, 0x0, 0x45, 0x2280
+test_ptr_index_n 2, 0x9045e13492afdccb, 0x0, 0x9045e13492afdccb
+test_ptr_index_n 2, 0x9045e13492afdccb, 0x1, 0x9045e13492afdd4b
+test_ptr_index_n 2, 0x9045e13492afdccb, 0xff, 0x9045e13492b05c4b
+test_ptr_index_n 2, 0x9045e13492afdccb, 0x79, 0x9045e13492b0194b
+test_ptr_index_n 2, 0xfffffffffffff996, 0x0, 0xfffffffffffff996
+test_ptr_index_n 2, 0xfffffffffffff996, 0x1, 0xfffffffffffffa16
+test_ptr_index_n 2, 0xfffffffffffff996, 0xff, 0x7916
+test_ptr_index_n 2, 0xfffffffffffff996, 0x58, 0x2596
+test_ptr_index_n 2, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 2, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 2, 0xffffffffffffff80, 0xff, 0x7f00
+test_ptr_index_n 2, 0xffffffffffffff80, 0xe8, 0x7380
+test_ptr_index_n 3, 0x0, 0x0, 0x0
+test_ptr_index_n 3, 0x0, 0x1, 0x80
+test_ptr_index_n 3, 0x0, 0xfff, 0x7ff80
+test_ptr_index_n 3, 0x0, 0xda3, 0x6d180
+test_ptr_index_n 3, 0x47cd096ecec6fa9a, 0x0, 0x47cd096ecec6fa9a
+test_ptr_index_n 3, 0x47cd096ecec6fa9a, 0x1, 0x47cd096ecec6fb1a
+test_ptr_index_n 3, 0x47cd096ecec6fa9a, 0xfff, 0x47cd096ececefa1a
+test_ptr_index_n 3, 0x47cd096ecec6fa9a, 0x46a, 0x47cd096ecec92f9a
+test_ptr_index_n 3, 0xfffffffffffff2ea, 0x0, 0xfffffffffffff2ea
+test_ptr_index_n 3, 0xfffffffffffff2ea, 0x1, 0xfffffffffffff36a
+test_ptr_index_n 3, 0xfffffffffffff2ea, 0xfff, 0x7f26a
+test_ptr_index_n 3, 0xfffffffffffff2ea, 0xbe9, 0x5e76a
+test_ptr_index_n 3, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 3, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 3, 0xffffffffffffff80, 0xfff, 0x7ff00
+test_ptr_index_n 3, 0xffffffffffffff80, 0xd2a, 0x69480
+test_ptr_index_n 4, 0x0, 0x0, 0x0
+test_ptr_index_n 4, 0x0, 0x1, 0x80
+test_ptr_index_n 4, 0x0, 0xffff, 0x7fff80
+test_ptr_index_n 4, 0x0, 0x2341, 0x11a080
+test_ptr_index_n 4, 0x3ff12df6acf14685, 0x0, 0x3ff12df6acf14685
+test_ptr_index_n 4, 0x3ff12df6acf14685, 0x1, 0x3ff12df6acf14705
+test_ptr_index_n 4, 0x3ff12df6acf14685, 0xffff, 0x3ff12df6ad714605
+test_ptr_index_n 4, 0x3ff12df6acf14685, 0x6491, 0x3ff12df6ad238f05
+test_ptr_index_n 4, 0xfffffffffffff11c, 0x0, 0xfffffffffffff11c
+test_ptr_index_n 4, 0xfffffffffffff11c, 0x1, 0xfffffffffffff19c
+test_ptr_index_n 4, 0xfffffffffffff11c, 0xffff, 0x7ff09c
+test_ptr_index_n 4, 0xfffffffffffff11c, 0x6b9a, 0x35be1c
+test_ptr_index_n 4, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 4, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 4, 0xffffffffffffff80, 0xffff, 0x7fff00
+test_ptr_index_n 4, 0xffffffffffffff80, 0xb90c, 0x5c8580
+test_ptr_index_n 7, 0x0, 0x0, 0x0
+test_ptr_index_n 7, 0x0, 0x1, 0x80
+test_ptr_index_n 7, 0x0, 0xfffffff, 0x7ffffff80
+test_ptr_index_n 7, 0x0, 0xb238c01, 0x591c60080
+test_ptr_index_n 7, 0x3ca7668e005187df, 0x0, 0x3ca7668e005187df
+test_ptr_index_n 7, 0x3ca7668e005187df, 0x1, 0x3ca7668e0051885f
+test_ptr_index_n 7, 0x3ca7668e005187df, 0xfffffff, 0x3ca766960051875f
+test_ptr_index_n 7, 0x3ca7668e005187df, 0xb55fe33, 0x3ca76693ab50a15f
+test_ptr_index_n 7, 0xfffffffffffff419, 0x0, 0xfffffffffffff419
+test_ptr_index_n 7, 0xfffffffffffff419, 0x1, 0xfffffffffffff499
+test_ptr_index_n 7, 0xfffffffffffff419, 0xfffffff, 0x7fffff399
+test_ptr_index_n 7, 0xfffffffffffff419, 0xfb44585, 0x7da22b699
+test_ptr_index_n 7, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 7, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 7, 0xffffffffffffff80, 0xfffffff, 0x7ffffff00
+test_ptr_index_n 7, 0xffffffffffffff80, 0xf99dbac, 0x7ccedd580
+test_ptr_index_n 8, 0x0, 0x0, 0x0
+test_ptr_index_n 8, 0x0, 0x1, 0x80
+test_ptr_index_n 8, 0x0, 0xffffffff, 0x7fffffff80
+test_ptr_index_n 8, 0x0, 0xdb8cfb02, 0x6dc67d8100
+test_ptr_index_n 8, 0x54dc4089c30885b3, 0x0, 0x54dc4089c30885b3
+test_ptr_index_n 8, 0x54dc4089c30885b3, 0x1, 0x54dc4089c3088633
+test_ptr_index_n 8, 0x54dc4089c30885b3, 0xffffffff, 0x54dc4109c3088533
+test_ptr_index_n 8, 0x54dc4089c30885b3, 0x5fbf689e, 0x54dc40b9a2bcd4b3
+test_ptr_index_n 8, 0xfffffffffffff23b, 0x0, 0xfffffffffffff23b
+test_ptr_index_n 8, 0xfffffffffffff23b, 0x1, 0xfffffffffffff2bb
+test_ptr_index_n 8, 0xfffffffffffff23b, 0xffffffff, 0x7ffffff1bb
+test_ptr_index_n 8, 0xfffffffffffff23b, 0x4af87269, 0x257c3926bb
+test_ptr_index_n 8, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 8, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 8, 0xffffffffffffff80, 0xffffffff, 0x7fffffff00
+test_ptr_index_n 8, 0xffffffffffffff80, 0x9c27cc82, 0x4e13e64080
+test_ptr_index_n 16, 0x0, 0x0, 0x0
+test_ptr_index_n 16, 0x0, 0x1, 0x80
+test_ptr_index_n 16, 0x0, 0xffffffffffffffff, 0xffffffffffffff80
+test_ptr_index_n 16, 0x0, 0x2360a16dbd564a, 0x11b050b6deab2500
+test_ptr_index_n 16, 0x48af178684dfa1b0, 0x0, 0x48af178684dfa1b0
+test_ptr_index_n 16, 0x48af178684dfa1b0, 0x1, 0x48af178684dfa230
+test_ptr_index_n 16, 0x48af178684dfa1b0, 0xffffffffffffffff, 0x48af178684dfa130
+test_ptr_index_n 16, 0x48af178684dfa1b0, 0x5e8ebfd73f363821, 0x900f03261ffbb230
+test_ptr_index_n 16, 0xfffffffffffff1ee, 0x0, 0xfffffffffffff1ee
+test_ptr_index_n 16, 0xfffffffffffff1ee, 0x1, 0xfffffffffffff26e
+test_ptr_index_n 16, 0xfffffffffffff1ee, 0xffffffffffffffff, 0xfffffffffffff16e
+test_ptr_index_n 16, 0xfffffffffffff1ee, 0x8a805d069bf26abb, 0x402e834df9354f6e
+test_ptr_index_n 16, 0xffffffffffffff80, 0x0, 0xffffffffffffff80
+test_ptr_index_n 16, 0xffffffffffffff80, 0x1, 0x0
+test_ptr_index_n 16, 0xffffffffffffff80, 0xffffffffffffffff, 0xffffffffffffff00
+test_ptr_index_n 16, 0xffffffffffffff80, 0x7a28a937d20c9c84, 0x14549be9064e4180
+// ptr_index w/4 == ptr_index (random full-width indexes, negatives included)
+test_ptr_index_full 0x249cf3ba07529dc7, 0x19a692e888403db2, 0xf7e667fe277176c7
+test_ptr_index_full 0xaf836c512cd54b14, 0x837e728a2bd2783d, 0x6ebcb16716116994
+test_ptr_index_full 0x4ccbb191685bb143, 0xf35cdd8e4a21790a, 0xfb3a78b679183643
+test_ptr_index_full 0xe9eca763751e197a, 0xc25b98fe45a4f254, 0x17b926864797437a
+test_ptr_index_full 0x3eb04803d4a10475, 0xd195c0e57b510e36, 0x990bac17d281f75
+test_ptr_index_full 0x68bc701fcf6e151d, 0x3c59a5548b467fc7, 0x958f1a6572adf89d
+test_ptr_index_full 0x861addfc70827ea3, 0x15ed6da785fe856e, 0x7cd1b1bf6fc535a3
+test_ptr_index_full 0x72a70abd4d989c0c, 0xec052d10b10ff81e, 0x753d9315d594ab0c
+test_ptr_index_full 0x7cc7952d2cf38aa9, 0x8e6c947b6d6bf055, 0xb311d2e3e2ebb529
+test_ptr_index_full 0x15c486831c5d261e, 0x692eaecff272ef8e, 0xad1bee7c55d4ed1e
+test_ptr_index_full 0x47ee49bee6f376ce, 0xa923aa8c9636413f, 0xd9c3900a0214164e
+test_ptr_index_full 0x357d1cd544b35a90, 0x8389577054b887a4, 0xfa28d4ffa0f72c90
+test_ptr_index_full 0x54bd486ae2742b77, 0xffffffffffffffff, 0x54bd486ae2742af7
+test_ptr_index_full 0x75b77a18b36b1a07, 0xfffffffffffffffe, 0x75b77a18b36b1907
+test_ptr_index_full 0x8bfc1fdc3f9021d0, 0x8000000000000000, 0x8bfc1fdc3f9021d0
+// dst == index (its hexes above index[:n] are garbage), at every n
+test_ptr_index_self 1, 0xe09d7658d61c11da, 0x0, 0xe09d7658d61c11da
+test_ptr_index_self 1, 0xfb48c7e048ca9733, 0x9, 0xfb48c7e048ca9bb3
+test_ptr_index_self 2, 0xab30486588fcb6c, 0x76, 0xab304865890066c
+test_ptr_index_self 2, 0x91c356ea27ae76e6, 0xf1, 0x91c356ea27aeef66
+test_ptr_index_self 3, 0x7de126f93ad04235, 0xc22, 0x7de126f93ad65335
+test_ptr_index_self 3, 0x3458ae044e5e66e9, 0x486, 0x3458ae044e60a9e9
+test_ptr_index_self 4, 0xab9dac429e4b44dc, 0x8db1, 0xab9dac429e921d5c
+test_ptr_index_self 4, 0xf4263d70b775f5e2, 0xa428, 0xf4263d70b7c809e2
+test_ptr_index_self 7, 0x83a22900542cb7ef, 0xde5130a, 0x83a2290746b63cef
+test_ptr_index_self 7, 0x58cd5116ce4be16c, 0x4cb3f9e, 0x58cd511933ebb06c
+test_ptr_index_self 8, 0x6e1780bc16ccc0a0, 0xaca9561, 0x6e1780c17c177120
+test_ptr_index_self 8, 0x11fb0f204d6ec3ef, 0xaf74422, 0x11fb0f25c910d4ef
+test_ptr_index_self 16, 0x65cdc52957f7155b, 0x61eed4841da92f4c, 0x5d3807382c8ebb5b
+test_ptr_index_self 16, 0x702787adbcdf4a13, 0x4384b2756bb1f00a, 0x3280c26395d74f13
+
+stl.loop
+
+
+hex.init
+
+
+def test_ptr_index_n n, base, idx, expected @ ptr, index, guard, dst, end {
+    hex.ptr_index n, dst, ptr, index
+    check w/4, dst, expected
+    ;end
+  ptr: hex.vec w/4, base
+  index: hex.vec n, idx
+  guard: hex.hex 0xd
+  dst: hex.vec w/4, GARBAGE
+  end:
+}
+
+// v[:n] is the index, v[n:] garbage; v = ptr + index*2w. At n == w/4, also through ptr_index dst, ptr, index.
+def test_ptr_index_self n, base, idx, expected @ ptr, v, v2, end {
+    hex.ptr_index n, v, ptr, v
+    check w/4, v, expected
+    rep(n == w/4, i) hex.ptr_index v2, ptr, v2
+    rep(n == w/4, i) check w/4, v2, expected
+    ;end
+  ptr: hex.vec w/4, base
+  v: hex.vec w/4, (GARBAGE << (4*n)) | idx
+  v2: hex.vec w/4, idx
+  end:
+}
+
+// one line for ptr_index w/4, one for ptr_index.
+def test_ptr_index_full base, idx, expected @ ptr, index, dst, end {
+    hex.ptr_index w/4, dst, ptr, index
+    check w/4, dst, expected
+    hex.ptr_index dst, ptr, index
+    check w/4, dst, expected
+    ;end
+  ptr: hex.vec w/4, base
+  index: hex.vec w/4, idx
+  dst: hex.vec w/4, GARBAGE
+  end:
+}
+
+// prints '=' if x[:n] == expected (mod 16^n), else '<' / '>'. Then a new line.
+def check n, x, expected @ lt, eq, gt, expected_x, end {
+    hex.cmp n, x, expected_x, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  expected_x: hex.vec n, expected
+  end:
+    stl.output '\n'
+}

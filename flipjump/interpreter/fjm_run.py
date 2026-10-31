@@ -16,19 +16,22 @@ three run-loops (engines) are implemented:
 
 from os import environ
 from pathlib import Path
-from typing import List, Optional, Deque
+from typing import Any, Optional, Deque
 
 from flipjump.fjm import fjm_reader
-from flipjump.fjm.fjm_reader import GarbageHandling
+from flipjump.fjm.fjm_reader import FjmHeader
 
 try:
     from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
 except ImportError:  # the native engine is optional - fall back to the pure-python loops
     _fjcore = None
 from flipjump.interpreter.debugging.breakpoints import BreakpointHandler, handle_breakpoint
-from flipjump.utils.classes import TerminationCause, PrintTimer, RunStatistics
+from flipjump.utils.classes import TerminationCause, RunStatistics
 from flipjump.utils.constants import LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH
+from flipjump.utils.progress import ProgressBar
 from flipjump.utils.exceptions import (
+    FlipJumpFlatMemoryException,
+    FlipJumpReadFjmException,
     FlipJumpRuntimeMemoryException,
     IOReadOnEOF,
     FlipJumpException,
@@ -176,10 +179,12 @@ def run(
     breakpoint_handler: Optional[BreakpointHandler] = None,
     io_device: Optional[IODevice] = None,
     show_trace: bool = False,
-    print_time: bool = False,
+    show_progress: bool = False,
     last_ops_debugging_list_length: Optional[int] = None,
     profile: bool = False,
     flat_max_words: Optional[int] = None,
+    flat_required: bool = False,
+    print_time: Optional[bool] = None,
 ) -> TerminationStatistics:
     """
     run / debug a .fjm file (a FlipJump interpreter)
@@ -187,20 +192,20 @@ def run(
     @param breakpoint_handler:[in]: the breakpoint handler (if not None - debug, and break on its breakpoints)
     @param io_device:[in,out]: the device handling input/output
     @param show_trace: if true print every opcode executed
-    @param print_time: if true print running times
+    @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
+    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile: if true use the featured loop and collect the full per-op statistics
     (flip/jump counters). by default the fast loop is used (which skips them).
     @param flat_max_words: the native engine's flat-storage window, in words (default 2^23,
     also settable with the FLIPJUMP_FLAT_MAX_WORDS environment variable). memory below the window
     runs flat; segments reaching above it keep the paged path for that part (hybrid). raising it
-    costs startup time + footprint (8 bytes x window), never per-op speed.
+    costs startup time + footprint (4 or 8 bytes a word, w<=32 / w=64), never per-op speed.
+    @param flat_required: the flat window must be allocated: if it cannot be, raise
+    FlipJumpFlatMemoryException instead of falling back to the slower paged memory (native engine only)
     @return: the run's termination-statistics
     """
-    with PrintTimer('  loading memory:  ', print_time=print_time):
-        mem = fjm_reader.Reader(fjm_path)
-    mem.assert_runnable()  # a program must hold its first op at address 0 (both engines)
-
+    show_progress = show_progress if print_time is None else print_time
     if io_device is None:
         io_device = BrokenIO()
 
@@ -209,16 +214,28 @@ def run(
     if last_ops_debugging_list_length is None and use_featured_loop:
         last_ops_debugging_list_length = LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH
 
-    statistics = RunStatistics(mem.memory_width, last_ops_debugging_list_length)
+    header = fjm_reader.read_fjm_header(fjm_path)
+    header.assert_runnable()  # a program must hold its first op at address 0 (both engines)
+    statistics = RunStatistics(header.memory_width, last_ops_debugging_list_length)
+    # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
+    native = not use_featured_loop and is_native_engine_active()
+    try:
+        with ProgressBar('  loading memory:  ', show_progress=show_progress) as progress:
+            if native:
+                mem = _load_native(fjm_path, header, flat_max_words, flat_required, progress)
+            else:
+                mem = fjm_reader.Reader(fjm_path)
+    except KeyboardInterrupt:
+        return TerminationStatistics(statistics, TerminationCause.KeyboardInterrupt)
 
     try:
-        if profile or show_trace or breakpoint_handler is not None:
+        if native:
+            return _end_of_run(io_device, _run_native(mem, header.memory_width, io_device, statistics))
+        if use_featured_loop:
             io_device.attach_memory(ReaderDeviceMemory(mem))
-            return _run_featured(mem, io_device, statistics, breakpoint_handler, show_trace)
-        if _is_native_engine_usable(mem):
-            return _run_native(mem, io_device, statistics, flat_max_words)
+            return _end_of_run(io_device, _run_featured(mem, io_device, statistics, breakpoint_handler, show_trace))
         io_device.attach_memory(ReaderDeviceMemory(mem))
-        return _run_fast(mem, io_device, statistics)
+        return _end_of_run(io_device, _run_fast(mem, io_device, statistics))
 
     except FlipJumpRuntimeMemoryException as mem_e:
         return TerminationStatistics(
@@ -234,6 +251,17 @@ def run(
         ) from unknown_exception
 
 
+# the terminations of a run that ended by itself: the device hears that its output is complete (IODevice.end_of_run)
+_ENDED_BY_ITSELF = (TerminationCause.Looping, TerminationCause.NullIP, TerminationCause.EOF)
+
+
+def _end_of_run(io_device: IODevice, termination: TerminationStatistics) -> TerminationStatistics:
+    """tell the device the run is over (exactly once, on every engine), when the program ended by itself"""
+    if termination.termination_cause in _ENDED_BY_ITSELF:
+        io_device.end_of_run()
+    return termination
+
+
 def is_native_engine_active() -> bool:
     """
     is the native (C) engine present and enabled - i.e. will runs use it (for the programs it
@@ -243,49 +271,75 @@ def is_native_engine_active() -> bool:
     the extension unimportable), in which case runs degrade to the python loop with no error at
     all. this predicate is the hard, cpu-independent signal for that: True iff _fjcore imported
     and FLIPJUMP_NO_NATIVE is not set. (whether a *specific* program also takes the native path
-    additionally needs Stop garbage-handling - see _is_native_engine_usable.)
+    additionally needs the default Stop garbage-handling - which every fjm_run.run uses.)
     """
     return _fjcore is not None and environ.get('FLIPJUMP_NO_NATIVE') != '1'
 
 
-def _is_native_engine_usable(mem: fjm_reader.Reader) -> bool:
+# the share of the loading bar that decompression takes; loading the words into the engine is the rest
+# (decompressing takes about as long as loading the words).
+_DECOMPRESS_SHARE = 0.5
+# report the loading progress every this many segments
+_LOAD_PROGRESS_SEGMENTS = 4096
+
+
+def _load_native(
+    fjm_path: Path, header: FjmHeader, flat_max_words: Optional[int], flat_required: bool, progress: ProgressBar
+) -> Any:
     """
-    is the native (C) engine available and able to run this program?
-    (it implements the Stop garbage-handling only - the default of fjm_run.run.)
+    load the .fjm straight into a native _fjcore.Memory: its segments, then its storage decided (so the
+    words go directly into the flat image), then the words from the raw data bytes.
+    @param header: the .fjm's header (read_fjm_header); the data must be read under the same header
+    @return: the loaded core
     """
-    return is_native_engine_active() and mem.garbage_handling == GarbageHandling.Stop
+    assert _fjcore is not None
+    fjm_reader.validate_segments(header.segments, data_words=1 << 64)  # the data pool is checked with the data
+    core = _fjcore.Memory(
+        header.memory_width, flat_max_words=flat_max_words if flat_max_words else 0, flat_required=flat_required
+    )
+    try:
+        for segment_start, segment_length, _data_start, _data_length in header.segments:
+            core.add_segment(segment_start, segment_length)
+    except ValueError as bad_segment:
+        raise FlipJumpReadFjmException(f"Bad .fjm file {fjm_path}: {bad_segment}") from bad_segment
+    try:
+        progress.clear()  # the engine may warn on stderr (a flat allocation that fell back to paged)
+        core.decide_storage()
+    except MemoryError as memory_error:
+        window = min(header.span_words, flat_max_words) if flat_max_words else header.span_words
+        raise FlipJumpFlatMemoryException(str(memory_error), window) from memory_error
+
+    def on_decompress_progress(fraction: float) -> None:
+        progress.update(fraction * _DECOMPRESS_SHARE)
+
+    raw_header, data = fjm_reader.read_fjm_raw(fjm_path, on_decompress_progress if progress.active else None)
+    if raw_header != header:
+        raise FlipJumpReadFjmException(f"{fjm_path} changed while it was being loaded.")
+
+    progress.update(_DECOMPRESS_SHARE)
+    relative_jumps = header.relative_jumps
+    segments_count = max(1, len(header.segments))
+    for index, (segment_start, _segment_length, data_start, data_length) in enumerate(header.segments):
+        if data_length:
+            core.set_words_bytes(segment_start, data, data_start, data_length, relative_jumps)
+        if progress.active and index % _LOAD_PROGRESS_SEGMENTS == 0:
+            progress.update(_DECOMPRESS_SHARE + (1 - _DECOMPRESS_SHARE) * index / segments_count)
+    progress.update(1.0)
+    return core
 
 
 def _run_native(
-    mem: fjm_reader.Reader,
+    core: Any,
+    memory_width: int,
     io_device: IODevice,
     statistics: RunStatistics,
-    flat_max_words: Optional[int] = None,
 ) -> TerminationStatistics:
     """
-    run with the native (C) engine: load the parsed program into a _fjcore.Memory and
-    execute the run-loop in C. behaves exactly like the python fast loop.
+    run with the native (C) engine: execute the run-loop in C over a loaded _fjcore.Memory (see
+    _load_native). behaves exactly like the python fast loop.
     """
     assert _fjcore is not None
-    core = _fjcore.Memory(mem.memory_width, flat_max_words=flat_max_words if flat_max_words else 0)
-    for memory_segment in mem.memory_segments:
-        core.add_segment(memory_segment.segment_start, memory_segment.segment_length)
-
-    # bulk-load the parsed memory words, grouped into contiguous runs
-    run_start: Optional[int] = None
-    next_address = 0
-    run_values: List[int] = []
-    for address in sorted(mem.memory):
-        if run_start is None or address != next_address:
-            if run_start is not None:
-                core.set_words(run_start, run_values)
-            run_start, run_values = address, []
-        run_values.append(mem.memory[address])
-        next_address = address + 1
-    if run_start is not None:
-        core.set_words(run_start, run_values)
-
-    io_device.attach_memory(NativeDeviceMemory(core, mem.memory_width))
+    io_device.attach_memory(NativeDeviceMemory(core, memory_width))
 
     last_ops = statistics.last_ops_addresses
     statistics.detailed_statistics = False
@@ -295,6 +349,10 @@ def _run_native(
             io_device.write_bit,
             IOReadOnEOF,
             last_ops_length=last_ops.maxlen if last_ops is not None and last_ops.maxlen else 0,
+            # only a device that handles whole bytes itself: the default write_byte is 8 write_bits anyway,
+            # and gathering would only delay each bit (and a device error) to its byte's end
+            write_byte=io_device.write_byte if type(io_device).write_byte is not IODevice.write_byte else None,
+            read_byte=io_device.read_byte if type(io_device).read_byte is not IODevice.read_byte else None,
         )
     finally:
         # keep op_counter, the IO-paused time and the storage mode valid on the exception

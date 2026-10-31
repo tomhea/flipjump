@@ -41,6 +41,21 @@ ns hex {
         rep(n, i) .input bytes+2*i*dw
     }
 
+    //  Time Complexity: 3@+6      (7@+20 when a key event arrived)
+    // Space Complexity: 7@+69
+    //   status = input(4bits)     // the keyboard's next status: 0x0 no event, 0x9 a key was pressed, 0x8 released
+    //   if status != 0:  keycode[:2] = input(8bits)     // the event's keycode (else keycode is unchanged)
+    //
+    // The keyboard device's protocol (flipjump/interpreter/io_devices/README.md): an event's keycode byte follows
+    //   its status, and must be read, or every later poll is out of phase. Polling never waits.
+    // status is a hex, keycode is a hex[:2].
+    def poll_key status, keycode @ end {
+        .input_hex status
+        .if0 status, end
+        .input keycode
+      end:
+    }
+
     //  Time Complexity: 7@+11
     // Space Complexity: 8.5@+92
     //   hex = hex_from_ascii(input(1byte))
@@ -93,11 +108,12 @@ ns hex {
         rep(n, i) .input_as_hex hex + (n-1-i)*dw, error
     }
 
-    //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
-    // Space Complexity: ~ n(9@+132)
+    //  Time Complexity: ~ nd(7@+53)    (d = number of digits)
+    // Space Complexity: ~ n(9@+161)
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
     // Reads ASCII '0'..'9' and STOPS at the first non-digit byte, which is stored in stop_byte[:2].
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_uint_until n, dst, stop_byte @ loop, digit_lo, add_digit, digit, done {
         .zero n, dst
         .zero n, digit
@@ -117,12 +133,13 @@ ns hex {
       done:
     }
 
-    //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
-    // Space Complexity: ~ n(10.5@+149)
+    //  Time Complexity: ~ nd(7@+53)    (d = number of digits)
+    // Space Complexity: ~ n(10.5@+178)
     //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
     // Reads an optional leading '-', then ASCII '0'..'9', and STOPS at the first non-digit byte,
     // which gets stored in stop_byte[:2] (note that a leading '+' stops with dst=0).
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_int_until n, dst, stop_byte @ sign_hi, do_minus, loop, digit_lo, add_digit, finish, digit, neg, end {
         .zero n, dst
         .zero n, digit
@@ -155,11 +172,12 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
-    // Space Complexity: ~ n(9@+150)
+    //  Time Complexity: ~ nd(7@+53)    (d = number of digits)
+    // Space Complexity: ~ n(9@+161)
     //   dst[:n] = the unsigned decimal number read from input (mod 16^n).
     // Reads ASCII '0'..'9' until a '\n' or '\0' (EOF) terminator; jumps to error on any other byte.
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_uint n, dst, error @ valid_lo, stopper, ok {
         .input_dec_uint_until n, dst, stopper
         .if_flags stopper+dw, 1<<0, error, valid_lo      // terminator high nibble must be 0
@@ -170,11 +188,12 @@ ns hex {
       ok:
     }
 
-    //  Time Complexity: ~ nd(10@+39)    (d = number of digits)
-    // Space Complexity: ~ n(10.5@+167)
+    //  Time Complexity: ~ nd(7@+53)    (d = number of digits)
+    // Space Complexity: ~ n(10.5@+178)
     //   dst[:n] = the signed decimal number read from input (two's complement, mod 16^n).
     // Reads an optional leading '-', then ASCII '0'..'9' until a '\n'/'\0' terminator; jumps to error on any other byte
     // @requires hex.init
+    // @Assumes: n >= 1.
     def input_dec_int n, dst, error @ valid_lo, stopper, ok {
         .input_dec_int_until n, dst, stopper
         .if_flags stopper+dw, 1<<0, error, valid_lo

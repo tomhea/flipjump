@@ -1,27 +1,54 @@
 """
 the .fjm file writer.
 writes a compiled flipjump program to an .fjm binary - emitting the header, the data
-and segments, and the metadata (flags) - with support for the different fjm versions
+and segments, and the metadata (the run flags and io mode) - with support for the different fjm versions
 and optional LZMA compression.
 """
 
+import array
+import bisect
 import lzma
+import sys
 from pathlib import Path
 from struct import pack
-from typing import List, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
     _header_base_format,
     _header_extension_format,
     _segment_format,
+    _segments_size_format,
+    IO_MODE_NUMBERS,
     SUPPORTED_VERSIONS_NAMES,
     SUPPORTED_MEMORY_WIDTHS,
     _LZMA_FORMAT,
     _lzma_compression_filters,
     FJMVersion,
+    bad_io_mode_message,
+    bad_run_flags_message,
 )
 from flipjump.utils.exceptions import FlipJumpWriteFjmException
+
+# the data is compressed in chunks of this many bytes, so the compression's progress can be shown (the LZMA2
+# encoder's output does not depend on how its input is fed: test_run_flags.py::test_chunked_compression_equals_one_shot)
+_COMPRESS_CHUNK = 1 << 20
+
+# the word array's typecode per memory-width (1, 2, 4 and 8 bytes on every supported platform)
+_ARRAY_TYPECODE = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
+
+
+def new_word_buffer(word_size: int) -> 'array.array[int]':
+    """an empty buffer of `word_size`-bit words (extend() it: `+=` takes only another array)"""
+    return array.array(_ARRAY_TYPECODE[word_size])
+
+
+def _pack_words_little_endian(words: 'array.array[int]', word_size: int) -> 'bytes | memoryview':
+    """`words` as little-endian unsigned integers of `word_size` bits: a view of the array's own bytes, not a copy"""
+    if sys.byteorder != 'little':
+        words = words[:]
+        words.byteswap()
+    return memoryview(words).cast('B')
 
 
 class Writer:
@@ -40,7 +67,8 @@ class Writer:
         memory_width: int,
         version: FJMVersion,
         *,
-        flags: int = 0,
+        run_flags: int = 0,
+        io_mode: Union[int, str] = 0,
         lzma_preset: int = lzma.PRESET_DEFAULT,
     ):
         """
@@ -48,7 +76,9 @@ class Writer:
         @param output_file: [in,out]: the path to the .fjm file
         @param memory_width: the memory-width
         @param version: the file's version
-        @param flags: the file's flags
+        @param run_flags: how the program runs by default (fjm_consts.RUN_FLAG_*; `fj --[no-]flat-memory` overrides it)
+        @param io_mode: the io device it runs with by default: 'standard' or 'pc', or its number
+        (fjm_consts.IO_MODE_*); `fj --io` overrides it
         @param lzma_preset: the preset to be used when compressing the .fjm data
         """
         if memory_width not in SUPPORTED_MEMORY_WIDTHS:
@@ -57,51 +87,72 @@ class Writer:
             raise FlipJumpWriteFjmException(
                 f'Error: unsupported version ({version}, this program supports {str(SUPPORTED_VERSIONS_NAMES)}).'
             )
-        if flags < 0 or flags >= (1 << 64):
-            raise FlipJumpWriteFjmException(f"flags must be a 64bit positive number, not {flags}")
-        if FJMVersion.BaseVersion == version and flags != 0:
-            raise FlipJumpWriteFjmException("version 0 does not support the flags option")
-        if FJMVersion.CompressedVersion == version:
+        for bad_flags in (bad_run_flags_message(run_flags), bad_io_mode_message(io_mode)):
+            if bad_flags is not None:
+                raise FlipJumpWriteFjmException(bad_flags)
+        io_mode = IO_MODE_NUMBERS[io_mode] if isinstance(io_mode, str) else io_mode
+        if FJMVersion.BaseVersion == version and (run_flags != 0 or io_mode != 0):
+            raise FlipJumpWriteFjmException("version 0 does not support the run flags and io mode options")
+        if version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
             if lzma_preset not in range(10):
-                raise FlipJumpWriteFjmException("version 3 requires an LZMA preset (0-9, faster->smaller).")
+                raise FlipJumpWriteFjmException("versions 3 and 4 require an LZMA preset (0-9, faster->smaller).")
             else:
                 self.lzma_preset = lzma_preset
 
         self.output_file = output_file
         self.word_size = memory_width
         self.version = version
-        self.flags = flags
+        self.run_flags = run_flags
+        self.io_mode = io_mode
         self.reserved: int = 0
 
         self.segments: List[Tuple[int, int, int, int]] = []
-        self.data: List[int] = []  # words array
+        # sorted views of the segments' start addresses, so overlap validation is a bisect over
+        # disjoint intervals rather than a scan (see _validate_segment_addresses_not_overlapping)
+        self._sorted_segment_starts: List[int] = []
+        self._segment_index_by_start: Dict[int, int] = {}
+        self._sorted_data_starts: List[int] = []
+        self._segment_index_by_data_start: Dict[int, int] = {}
+        self.data = new_word_buffer(memory_width)
 
-    def _compress_data(self, data: bytes) -> bytes:
+    def _compress_data(self, data: 'bytes | memoryview', progress: Optional[Callable[[float], None]] = None) -> bytes:
+        """lzma-compress the data, in chunks (telling `progress`, if given, the fraction done)"""
         try:
-            return lzma.compress(
-                data, format=_LZMA_FORMAT, filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset)
+            compressor = lzma.LZMACompressor(
+                format=_LZMA_FORMAT,
+                filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset),
             )
+            parts = []
+            for offset in range(0, len(data), _COMPRESS_CHUNK):
+                parts.append(compressor.compress(data[offset : offset + _COMPRESS_CHUNK]))  # noqa: E203
+                if progress is not None:
+                    progress(min(1.0, (offset + _COMPRESS_CHUNK) / len(data)))
+            parts.append(compressor.flush())
+            return b''.join(parts)
         except lzma.LZMAError as e:
             raise FlipJumpWriteFjmException('Error: Unable to compress the data.') from e
 
-    def write_to_file(self) -> None:
+    def write_to_file(self, progress: Optional[Callable[[float], None]] = None) -> None:
         """
-        writes the .fjm headers, segments and (might be compressed) data into the output_file.
+        writes the .fjm headers, segments and data (the data compressed in versions 3 and 4, the segments too in
+        version 4: a program of many segments, as a table pool makes, gets a much smaller file) into the output_file.
+        @param progress: if given, the compression tells it the fraction done
         @note call this after finished adding data and segments and editing the Writer.
         """
-        word_format = {8: 'B', 16: 'H', 32: 'L', 64: 'Q'}[self.word_size]
-
         with open(self.output_file, 'wb') as f:
             f.write(pack(_header_base_format, FJ_MAGIC, self.word_size, self.version.value, len(self.segments)))
             if FJMVersion.BaseVersion != self.version:
-                f.write(pack(_header_extension_format, self.flags, self.reserved))
+                f.write(pack(_header_extension_format, self.run_flags, self.io_mode, self.reserved))
 
-            for segment in self.segments:
-                f.write(pack(_segment_format, *segment))
+            segment_table = b''.join(pack(_segment_format, *segment) for segment in self.segments)
+            if FJMVersion.CompressedSegmentsVersion == self.version:
+                segment_table = self._compress_data(segment_table)
+                f.write(pack(_segments_size_format, len(segment_table)))
+            f.write(segment_table)
 
-            fjm_data = pack(f'<{len(self.data)}{word_format}', *self.data)
-            if FJMVersion.CompressedVersion == self.version:
-                fjm_data = self._compress_data(fjm_data)
+            fjm_data = _pack_words_little_endian(self.data, self.word_size)
+            if self.version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
+                fjm_data = self._compress_data(fjm_data, progress)
 
             f.write(fjm_data)
 
@@ -125,8 +176,19 @@ class Writer:
         return False
 
     def _validate_segment_addresses_not_overlapping(self, new_segment_start: int, new_segment_length: int) -> None:
+        # neighbours only: the stored intervals are disjoint, so only the sorted neighbours can collide.
+        # Same verdict; the message names a colliding neighbour (`_segment_index_by_start` keeps its `seg[i]`).
         new_segment_end = new_segment_start + new_segment_length - 1
-        for i, (segment_start, segment_length, _, _) in enumerate(self.segments):
+        neighbours = []
+        position = bisect.bisect_left(self._sorted_segment_starts, new_segment_start)
+        if position > 0:
+            neighbours.append(position - 1)
+        if position < len(self._sorted_segment_starts):
+            neighbours.append(position)
+        for neighbour in neighbours:
+            start = self._sorted_segment_starts[neighbour]
+            i = self._segment_index_by_start[start]
+            segment_start, segment_length, _, _ = self.segments[i]
             segment_end = segment_start + segment_length - 1
 
             if self._is_collision(segment_start, segment_end, new_segment_start, new_segment_end):
@@ -141,9 +203,18 @@ class Writer:
     def _validate_segment_data_not_overlapping(self, new_data_start: int, new_data_length: int) -> None:
         if new_data_length == 0:
             return
+        # the same bisect as the address check above, for the same reason
         new_data_end = new_data_start + new_data_length - 1
 
-        for i, (_, _, data_start, data_length) in enumerate(self.segments):
+        neighbours = []
+        position = bisect.bisect_left(self._sorted_data_starts, new_data_start)
+        if position > 0:
+            neighbours.append(self._sorted_data_starts[position - 1])
+        if position < len(self._sorted_data_starts):
+            neighbours.append(self._sorted_data_starts[position])
+        for start in neighbours:
+            i = self._segment_index_by_data_start[start]
+            _, _, data_start, data_length = self.segments[i]
             if data_length == 0:
                 continue
             data_end = data_start + data_length - 1
@@ -161,13 +232,22 @@ class Writer:
     ) -> None:
         self._validate_segment_addresses_not_overlapping(segment_start, segment_length)
 
-        if self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion):
+        if self.version in (
+            FJMVersion.RelativeJumpVersion,
+            FJMVersion.CompressedVersion,
+            FJMVersion.CompressedSegmentsVersion,
+        ):
             self._validate_segment_data_not_overlapping(data_start, data_length)
 
     def _update_to_relative_jumps(self, segment_start: int, data_start: int, data_length: int) -> None:
-        word_mask = (1 << self.word_size) - 1
-        for i in range(1, data_length, 2):
-            self.data[data_start + i] = (self.data[data_start + i] - (segment_start + i) * self.word_size) & word_mask
+        data = self.data
+        word_size = self.word_size
+        word_mask = (1 << word_size) - 1
+        subtrahend = (segment_start + 1) * word_size
+        step = 2 * word_size
+        for i in range(data_start + 1, data_start + data_length, 2):
+            data[i] = (data[i] - subtrahend) & word_mask
+            subtrahend += step
 
     def add_segment(self, segment_start: int, segment_length: int, data_start: int, data_length: int) -> None:
         """
@@ -198,22 +278,38 @@ class Writer:
 
         self._validate_segment_not_overlapping(segment_start, segment_length, data_start, data_length)
 
-        if self.version in (FJMVersion.RelativeJumpVersion, FJMVersion.CompressedVersion):
+        if self.version in (
+            FJMVersion.RelativeJumpVersion,
+            FJMVersion.CompressedVersion,
+            FJMVersion.CompressedSegmentsVersion,
+        ):
             self._update_to_relative_jumps(segment_start, data_start, data_length)
 
+        bisect.insort(self._sorted_segment_starts, segment_start)
+        self._segment_index_by_start[segment_start] = len(self.segments)
+        if data_length:
+            bisect.insort(self._sorted_data_starts, data_start)
+            self._segment_index_by_data_start[data_start] = len(self.segments)
         self.segments.append((segment_start, segment_length, data_start, data_length))
 
-    def add_data(self, data: List[int]) -> int:
+    def add_data(self, data: Iterable[int], *, take: bool = False) -> int:
         """
         append the data to the current data
-        @param data: [in]: a list of words
+        @param data: [in]: the words
+        @param take: the caller hands `data` over and will not touch it again. If no data was
+        added yet and `data` is a word array of this writer's type, it BECOMES the writer's data instead
+        of being copied - the first segment is the program's main stream, most of the binary.
         @return: the data start index
         """
         data_start = len(self.data)
-        self.data += data
+        if take and data_start == 0 and isinstance(data, array.array) and data.typecode == self.data.typecode:
+            self.data = data
+            return 0
+        # `+=` on an array only accepts another array; extend() takes any iterable of ints.
+        self.data.extend(data)
         return data_start
 
-    def add_simple_segment_with_data(self, segment_start: int, data: List[int]) -> None:
+    def add_simple_segment_with_data(self, segment_start: int, data: Sequence[int]) -> None:
         """
         adds the data and a segment that contains exactly the data, to the fjm
         @param segment_start: the start address of the segment in memory (in words)

@@ -18,6 +18,8 @@ This file contains constants and initialization macros.
 
 Offers outputting constant chars/strings.
 
+Macros: `startup`, `startup_and_init_pointers`, `startup_and_init_all`, `fj`, `wflip_macro`, `comp_if` / `comp_if0` / `comp_if1`, `comp_flip_if`, `skip`, `loop`, `output_bit`, `output_char`, `output`.
+
 **@note**: It should be the first file in the compilation order.
 
 ### [bit/](bit)
@@ -27,15 +29,15 @@ Offers macros for manipulating binary variables and vectors (i.e. numbers):
 
 - [memory.fj](bit/memory.fj) - bit/vec, zero, one, mov, swap
 - [cond_jumps.fj](bit/cond_jumps.fj) - if, cmp
-- [logics.fj](bit/logics.fj) - xor, or, and, not
+- [logics.fj](bit/logics.fj) - xor, xor_zero, or, and, not
 - [casting.fj](bit/casting.fj) - casting between bits and ascii
 - [input.fj](bit/input.fj) - input into bit variables
-- [output.fj](bit/output.fj) - output bits, bytes; print as hex/decimal
+- [output.fj](bit/output.fj) - output (a bit), print (bytes), print_str, print_as_digit; print as hex/decimal (print_hex_uint/int, print_dec_uint/int)
 - [shifts.fj](bit/shifts.fj) - bit-shift left/right, bit-rotate left/right
 - [math.fj](bit/math.fj) - inc, dec, add, sub
 - [mul.fj](bit/mul.fj) - mul10, mul, mul_loop
 - [div.fj](bit/div.fj) - div10, {i}div, {i}div_loop (i stands for signed)
-- [pointers.fj](bit/pointers.fj) - bit-vec pointers: flip, jump, xor_to, xor_from, inc/dec; pointers init
+- [pointers.fj](bit/pointers.fj) - bit-vec pointers: ptr_flip, ptr_flip_dbit, ptr_wflip, ptr_wflip_2nd_word, ptr_jump, xor_to_ptr, xor_from_ptr, exact_xor_from_ptr, ptr_inc/ptr_dec; pointers init
 
 ### [hex/](hex)
 Defines the `hex` data-structure (for hexadecimal variables).
@@ -45,25 +47,28 @@ Defines the `hex` data-structure (for hexadecimal variables).
 Offers macros for manipulating hexadecimal variables and vectors (i.e. numbers):
 
 - [memory.fj](hex/memory.fj) - hex/vec, zero, xor_by, set, mov, swap
-- [cond_jumps.fj](hex/cond_jumps.fj) - if, cmp, min/max
-- [logics.fj](hex/logics.fj) - xor, or, and, not
-- [input.fj](hex/input.fj) - input bits into hex, input ascii as hex, input decimal (signed & unsigned)
+- [cond_jumps.fj](hex/cond_jumps.fj) - if, switch (16-way), cmp, scmp (signed), min/max
+- [logics.fj](hex/logics.fj) - xor, xor_zero, double_xor, or, and, not; the exact_xor family (double_/triple_/quadrupled_exact_xor); the sparse_* forms
+- [input.fj](hex/input.fj) - input bits into hex, poll the keyboard, input ascii as hex, input decimal (signed & unsigned)
 - [output.fj](hex/output.fj) - output hex as bits/bytes; print as hex-number (in ascii)
-- [shifts.fj](hex/shifts.fj) - shift left/right by 1 bit/hex
+- [shifts.fj](hex/shifts.fj) - shl_bit/shr_bit (by 1 bit), shl_hex/shr_hex (by hexes)
 - [math_basic.fj](hex/math_basic.fj) - inc/dec, neg, abs, count_bits, sign_extend
-- [math.fj](hex/math.fj) - add/sub, {add/sub}_shifted, {add/sub}_constant
-- [mul.fj](hex/mul.fj) - add_mul, mul (works for signed & unsigned), mul10
-- [div.fj](hex/div.fj) - div, idiv (signed)
+- [math.fj](hex/math.fj) - add/sub, {add/sub}_shifted, {add/sub}_constant, {add/sub}_hex_shifted_constant
+- [mul.fj](hex/mul.fj) - add_mul, mul (works for signed & unsigned), mul10, mul_low, mul_const, fixed_mul{_low} (signed fixed-point)
+- [div.fj](hex/div.fj) - div, idiv (signed), fixed_div (signed fixed-point)
 - [strings.fj](hex/strings.fj) - the byte-buffer block helpers: input_ptr_line, print_ptr_text/line, fill_bytes, copy_bytes
-- [tables_init.fj](hex/tables_init.fj) - initializes the "results-tables" for the next hex macros: or,and, add,sub, cmp, mul
+- [tables_init.fj](hex/tables_init.fj) - hex.init: initializes the "results-tables" of the hex macros (the or, and, add, sub, cmp and mul inits)
 - [pointers/](hex/pointers) - hex-vec pointers subdirectory: [flip](hex/pointers/xor_to_pointer.fj), [jump](hex/pointers/basic_pointers.fj), [xor_to](hex/pointers/xor_to_pointer.fj), [xor_from](hex/pointers/xor_from_pointer.fj); [stack](hex/pointers/stack.fj)/[pointers](hex/pointers/basic_pointers.fj) init. [pointer arithmetics](hex/pointers/pointer_arithmetics.fj), [stack arithmetics + push/pop](hex/pointers/stack.fj).
 
 
 ### [casting.fj](casting.fj)
-Offers casting between bits and hexes.
+Offers casting between bits and hexes: bit2hex, hex2bit.
+
+### [screen.fj](screen.fj)
+The screen device's commands (output_bits, init_screen, define_palette, select_palette, builtin_palette, set_max_fps, set_window_title, set_window_icon_header, draw_raw, draw_collines, end_frame, end_command, present), as the [I/O devices README](../interpreter/io_devices/README.md) specifies them.
 
 ### [ptrlib.fj](ptrlib.fj)
-Init macros for pointers, stack and call/ret functions based on hex.pointers. Also offers fast call/ret macros.
+Init macros for pointers, stack and call/ret functions based on hex.pointers (ptr_init, stack_init, call, return, get_sp). Also offers fast call/ret macros (fcall, fret).
 
 ### [conf.json](conf.json)
 A configurable json file that maintains ordered lists of the standard library files. 
@@ -73,7 +78,8 @@ A configurable json file that maintains ordered lists of the standard library fi
 Every macro is documented with:
 - Its **time complexity** (and if it's significantly different, the **space complexity** as well).
   - The complexities use the **@** sign, which is the log2 of the total number of fj ops in this program (can be it usually will be between 15-25).
-  - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _address_; And it is widely used.
+  - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _value_ (usually an address, so about @/2); And it is widely used.
+  - A chained step's wflip (`wflip .ret+w, prev_return ^ return`, see `hex.tables.chained_jump`) flips the xor of two nearby pad-16 return addresses, so it costs 2.3 on average (median 2, 90% at most 4), not @/2.
 - An explanation about what the macro does (usually in a python-like syntax).
 - The type of each of the parameters (bit/hex/bit.vec/hex.vec/constant/address and so on).
   - if a parameter is called bit/hex, it is a bit/hex variable (of size 1).
@@ -89,7 +95,7 @@ The official [JetBrains](https://plugins.jetbrains.com/plugin/32134-flipjump/rev
 # The Standard Library Basics
 
 ## Reserved Names
-The standard library reserves all the labels under the "stl", "bit", and "hex" namespaces.
+The standard library reserves all the labels under the "stl", "bit", "hex", and "screen" namespaces.
 
 No other labels are reserved or used by the standard library.
 

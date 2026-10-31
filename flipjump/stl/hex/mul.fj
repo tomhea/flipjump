@@ -1,10 +1,10 @@
 ns hex {
-    //  Time Complexity: 5@+26
-    // Space Complexity: 4@+52
+    //  Time Complexity: 4@+34
+    // Space Complexity: 4@+50
     //   .mul.add_carry_dst : res   +=   x * .mul.dst + .mul.add_carry_dst
     //
     // .mul.add_carry_dst, res, x, .mul.dst, they are all hex.
-    // @requires hex.add.init (or hex.init)
+    // @requires hex.add.init & hex.mul.init (or hex.init)
     def add_mul res, x @ ret < .mul.dst, .add.dst, .mul.ret, .tables.res {
         .xor .mul.dst+4, x
         .xor .add.dst, res
@@ -15,24 +15,24 @@ ns hex {
         .xor_zero res, .tables.res
     }
 
-    //  Time Complexity: n(5@+26)
-    // Space Complexity: n(4@+52)
+    //  Time Complexity: n(3@+38)
+    // Space Complexity: n(3@+54)
     //   res[n] += a[n] * b[1]
     //
-    // @requires hex.add.init (or hex.init)
-    def add_mul n, res, a, b < .mul.dst {
-        .mul.clear_carry
-        .xor .mul.dst, b
-        rep(n, i) .add_mul res+i*dw, a+i*dw
-        .xor .mul.dst, b
-        .mul.clear_carry
+    // b must not be one of res's hexes (it is read again at the end; else every later multiply is wrong).
+    // res must not overlap a, except res == a.
+    // @requires hex.add.init & hex.mul.init (or hex.init)
+    def add_mul n, res, a, b {
+        rep(n > 0, i) .mul.chain n, res, a, b
+        rep(n == 0, i) .mul.clear_carry
     }
 
-    //  Time Complexity: n(6@+27)
-    // Space Complexity: n(5@+80)
+    //  Time Complexity: n(4@+39)
+    // Space Complexity: n(4@+82)
     //   x[n] *= 10
     //
-    // @requires hex.add.init (or hex.init)
+    // @requires hex.add.init & hex.mul.init (or hex.init)
+    // @Assumes: n >= 1.
     def mul10 n, x @ four, end {
         .add_mul n, x, x, four
         .shl_bit n, x
@@ -42,23 +42,23 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n^2(3@+7) + n*b(5@+26)
-    //       for n==b/2: n^2(5.5@+20)
-    // Space Complexity: n(21@+479)
+    //  Time Complexity: n^2(3@+7) + n*b(3@+38)
+    //       for b==n/2: n^2(4.5@+26)
+    // Space Complexity: n(20@+481)
     //
     //   res[:n] = a[:n] * b[:n]
     //
     // b is the minimum of #on-bits in a,b (b<n/2 on average, e.g. b=7 for n=16).
-    // @requires hex.add.init (or hex.init)
-    def mul n, res, a, b @ a_less_1bits, b_less_1bits, loop, after_add, dst, src, a_1bits, b_1bits, end {
+    // @requires hex.add.init & hex.mul.init & hex.cmp.init (or hex.init)
+    // res,a,b are hex[:n]; res must not alias a or b.
+    // @Assumes: n >= 1.
+    def mul n, res, a, b @ a_less_1bits, b_less_1bits, loop, after_add, dst, src, end {
         .zero n, dst
         .zero n, src
         .zero n, res
 
-        // if a has less 1(on) bits - jump to a_less_1bits. else jump to b_less_1bits
-        .count_bits n, a_1bits, a
-        .count_bits n, b_1bits, b
-        .cmp ((#(n*4))+3)/4, a, b, a_less_1bits, a_less_1bits, b_less_1bits
+        // if a is the smaller (unsigned) - jump to a_less_1bits (a is the loop operand). else jump to b_less_1bits
+        .cmp n, a, b, a_less_1bits, a_less_1bits, b_less_1bits
 
         a_less_1bits:
         .xor n, dst, b
@@ -81,23 +81,86 @@ ns hex {
 
       dst: hex.vec n
       src: hex.vec n
-      a_1bits: hex.vec ((#(n*4))+3)/4
-      b_1bits: hex.vec ((#(n*4))+3)/4
       end:
     }
 
     ns mul {
-        // Complexity: 3@+1
-        def clear_carry @ return < .ret, .add_carry_dst {
-            ..add.clear_carry
-            wflip .ret+w, return
-            .add_carry_dst+dbit+9; .add_carry_dst
-            pad 16
+        //  Time Complexity: 3@+24
+        // Space Complexity: 3@+9
+        // @requires hex.add.init & hex.mul.init (or hex.init)
+        def clear_carry @ return < .ret {
+            .chained_clear_carry 0
           return:
             wflip .ret+w, return
         }
 
-        //  Time Complexity: @+24 (when jumping to dst, until finished)
+        //  Time Complexity: n(3@+38)
+        // Space Complexity: n(3@+54)
+        //   res[n] += a[n] * b[1]
+        //
+        // The two clear_carry dances and the n add_mul dances are one chain of .ret jumps (see chain_step).
+        // @Assumes: n >= 1.
+        // b must not be one of res's hexes (it is read again at the end; else every later multiply is wrong).
+        // @requires hex.add.init & hex.mul.init (or hex.init)
+        def chain n, res, a, b @ head, tail, return < .dst, .ret, ..tables.res {
+            ..xor .dst, b
+            .chained_clear_carry 0
+          head:
+            .chained_add_mul res, a, head
+            rep(n-1, i) .chain_step res+i*dw, res+(i+1)*dw, a+(i+1)*dw
+          tail:
+            ..xor_zero res+(n-1)*dw, ..tables.res
+            .chained_clear_carry tail
+          return:
+            wflip .ret+w, return
+            ..xor .dst, b
+        }
+
+        //  Time Complexity: 2@+30      (2.5@+26 when prev_return is 0)
+        // Space Complexity: 2@+15      (2.5@+11 when prev_return is 0)
+        //   The chained form of clear_carry: .ret = this macro's end (it was prev_return).
+        // @Assumes: .ret holds prev_return (0 if it's clear). Like hex.tables.chained_jump, but for .ret:
+        //   until the chain clears .ret, no other .ret user (add_mul, mul, clear_carry) may run inside it.
+        // @requires hex.add.init & hex.mul.init (or hex.init)
+        def chained_clear_carry prev_return @ return < .ret, .add_carry_dst {
+            ..add.clear_carry
+            wflip .ret+w, prev_return ^ return
+            .add_carry_dst+dbit+9; .add_carry_dst
+            pad 16
+          return:
+        }
+
+        //  Time Complexity: 2@+34      (when chained; see hex.tables.chained_jump)
+        // Space Complexity: 2@+26
+        //   The chained form of add_mul: jumps to the add_mul flow of x, and returns to this macro's end,
+        //   with the result in hex.tables.res (not yet xored into res).
+        // @Assumes: .ret holds prev_return (see chained_clear_carry).
+        //
+        // res, x are hex.
+        // @requires hex.add.init & hex.mul.init (or hex.init)
+        def chained_add_mul res, x, prev_return @ return < .dst, ..add.dst, .ret {
+            ..xor .dst+4, x
+            ..xor ..add.dst, res
+            wflip .ret+w, prev_return ^ return, .dst
+            pad 16
+          return:
+        }
+
+        //  Time Complexity: 3@+38
+        // Space Complexity: 3@+54
+        //   prev_res ^= hex.tables.res;  hex.tables.res = 0
+        //   then chained_add_mul res, x (chained to the previous step's end).
+        // @Assumes: the previous step's end is this macro's start (see hex.tables.chained_jump).
+        //
+        // prev_res, res, x are hex.
+        // @requires hex.add.init & hex.mul.init (or hex.init)
+        def chain_step prev_res, res, x @ start < ..tables.res {
+          start:
+            ..xor_zero prev_res, ..tables.res
+            .chained_add_mul res, x, start
+        }
+
+        //  Time Complexity: 32 (when jumping to dst, until finished)
         // Space Complexity: 1620+@
         // This is where the add_mul "truth" tables are.
         // @output-param ret: The return address. Jumps to it after finishing the add_mul flow.
@@ -179,6 +242,119 @@ ns hex {
 
 
           end:
+        }
+    }
+}
+
+
+
+// ---------- Truncated, Constant and Fixed-Point Multiplication
+
+
+ns hex {
+    //  Time Complexity: n^2(1.5@+19) + n(10.5@+73)
+    // Space Complexity: n^2(1.5@+27) + n(10.5@+102)
+    //   res[:n] = a[:n] * b[:n]    (the low n hexes of the product, like hex.mul)
+    //
+    // A truncated schoolbook: row j adds a[:n-j] * b[j] into res[j:n] (skipped when b[j] is 0). Unrolled: its time
+    //   depends on b's zero hexes, not on its on-bits (as hex.mul's does).
+    // res,a,b are hex[:n]; res must not alias a or b.
+    // @requires hex.add.init & hex.mul.init (or hex.init)
+    def mul_low n, res, a, b {
+        .zero n, res
+        rep(n, j) .mul_low.row n, j, res, a, b+j*dw
+    }
+    ns mul_low {
+        //  Time Complexity: (m-j)(3@+38)
+        // Space Complexity: (m-j)(3@+54)
+        //   res[j:m] += wa[:m-j] * wbj    (skipped when wbj is 0)
+        // res is hex[:m], wa is hex[:m-j], wbj is a hex.
+        // @requires hex.add.init & hex.mul.init (or hex.init)
+        def row m, j, res, wa, wbj @ skip {
+            ..if0 wbj, skip
+            ..add_mul m-j, res+j*dw, wa, wbj
+          skip:
+        }
+    }
+
+    //  Time Complexity: n^2(12@+28) + n*b(6@+76)     (hex.mul's at 2n; b <= 2n is the non-zero hexes of the operand with fewer on-bits)
+    // Space Complexity: n(48@+1066)
+    //   dst[:n] = (a[:n] * b[:n]) >> 4f    (signed fixed-point multiply)
+    //
+    // a,b,dst are signed Q-format hex[:n] with f fraction-hexes (dst may alias a/b).
+    // The product is computed at full 2n-hex width (no intermediate overflow), then shifted right by the
+    //   (hex-aligned) fraction. The result is truncated to n hexes (wraps modulo 2^4n).
+    // @Assumes: 0 < f <= n.
+    // @requires hex.add.init & hex.mul.init & hex.cmp.init (or hex.init)
+    def fixed_mul n, f, dst, a, b @ wide_a, wide_b, product, end {
+        .mov n, wide_a, a
+        .sign_extend 2*n, n, wide_a
+        .mov n, wide_b, b
+        .sign_extend 2*n, n, wide_b
+        .mul 2*n, product, wide_a, wide_b
+        .mov n, dst, product+f*dw
+        ;end
+
+      wide_a: .vec 2*n
+      wide_b: .vec 2*n
+      product: .vec 2*n
+      end:
+    }
+
+    //  Time Complexity: (n^2/2 + nf)(3@+38)     (+ f^2(1.5@+19) when b is negative)
+    // Space Complexity: (n+f)^2(1.5@+27)
+    //   dst[:n] = (a[:n] * b[:n]) >> 4f    (signed fixed-point multiply - the same result as fixed_mul)
+    //
+    // Computes only the n+f low hexes of the product (the only ones the result can see), with mul_low's rows:
+    //   n rows on b's hexes, and f rows on its sign-extension hexes (0xf, and only if b is negative).
+    // a,b,dst are signed Q-format hex[:n] with f fraction-hexes (dst may alias a/b).
+    // @Assumes: 0 < f <= n.
+    // @requires hex.add.init & hex.mul.init (or hex.init)
+    def fixed_mul_low n, f, dst, a, b @ wide_a, product, sign_hex, negative, positive, end {
+        .mov n, wide_a, a
+        .sign_extend n+f, n, wide_a
+        .zero n+f, product
+        rep(n, j) .mul_low.row n+f, j, product, wide_a, b+j*dw
+        .sign n, b, negative, positive
+      negative:
+        rep(f, k) .mul_low.row n+f, n+k, product, wide_a, sign_hex
+      positive:
+        .mov n, dst, product+f*dw
+        ;end
+
+      wide_a: .vec n+f
+      product: .vec n+f
+      sign_hex: .hex 0xf
+      end:
+    }
+
+    //  Time Complexity: on*n(3@+14) + (#c-1)n(@+1)          (on = the on-bits of c)
+    // Space Complexity: on*n(3@+54) + (#c-1)n(@+28)
+    //   dst[:n] = src[:n] * c    (c is a constant, c >= 0)
+    //
+    // The strength-reduced constant multiply: every on-bit of c adds a shifted src. No multiplication tables.
+    // dst,src are hex[:n] (dst may alias src).
+    // @requires hex.add.init (or hex.init)
+    // @Assumes: n >= 1.
+    def mul_const n, dst, src, c @ shifted, end {
+        .mov n, shifted, src
+        .zero n, dst
+        rep(#c, i) .mul_const.step n, dst, shifted, (c>>i)&1, i < (#c)-1
+        ;end
+
+      shifted: .vec n
+      end:
+    }
+    ns mul_const {
+        //  Time Complexity: on*n(3@+14) + shift*n(@+1)
+        // Space Complexity: on*n(3@+54) + shift*n(@+28)
+        //   if on: dst[:n] += shifted[:n]
+        //   if shift: shifted[:n] <<= 1
+        // on, shift are constants (0/1).
+        // @requires hex.add.init (or hex.init)
+        def step n, dst, shifted, on, shift {
+            rep(on, i) ..add n, dst, shifted
+            rep(shift, i) ..shl_bit n, shifted
         }
     }
 }

@@ -1,8 +1,8 @@
 """
 shared utility functions.
 locating the standard-library files, building the (name, path) file-tuples the assembler
-consumes, and saving/loading the compressed debugging-info (label dictionaries) used by
-the debugger.
+consumes, writing the -D defines file, and saving/loading the compressed debugging-info
+(label dictionaries) used by the debugger.
 """
 
 from __future__ import annotations
@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import lzma
 import os
+import re
 from pathlib import Path
-from typing import List, Dict, Tuple, Union, Optional
+from typing import List, Dict, Mapping, Tuple, Union, Optional
 
 from flipjump.utils.constants import DEBUG_JSON_ENCODING, DEBUG_JSON_LZMA_FORMAT, DEBUG_JSON_LZMA_FILTERS, STL_PATH
 
@@ -69,6 +70,39 @@ def get_file_tuples(files: List[str], *, no_stl: bool = False) -> List[Tuple[str
         file_tuples.append((f"f{i}", Path(file)))
 
     return file_tuples
+
+
+_DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*$')
+
+
+def bad_define_message(name: str, value: Union[int, str]) -> Optional[str]:
+    """@return: why `name = value` is not a valid define, or None when it is"""
+    if not _DEFINE_NAME_RE.match(name):
+        return f'a define needs a (possibly dotted) name, like a.b.NAME, got {name!r}'
+    if not str(value).strip() or '\n' in str(value):
+        return f'the define {name} needs a one-line value, got {value!r}'
+    return None
+
+
+def write_defines_file(defines: Mapping[str, Union[int, str]], path: Path) -> None:
+    """
+    write the defines into a .fj file of constants, which the assembler parses first (before the stl), as overrides
+    of the declarations: a value may use `w` and an earlier define, not an stl constant. A dotted name is wrapped in
+    its namespaces: `hex.pointers.PTRSIZE = 12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`.
+    @param defines: the constants' full names, and their values (a number, or an fj expression)
+    @param path: the file to write
+    @raises ValueError: a define is invalid (see bad_define_message)
+    """
+    lines = []
+    for name, value in defines.items():
+        bad = bad_define_message(name, value)
+        if bad is not None:
+            raise ValueError(bad)
+        *namespaces, base_name = name.split('.')
+        opening = "".join(f"ns {namespace} {{\n" for namespace in namespaces)
+        closing = "\n}" * len(namespaces)
+        lines.append(f"{opening}{base_name} = {value}{closing}\n")
+    path.write_text(''.join(lines), encoding='utf-8')
 
 
 def get_temp_directory_suffix(files: Union[List[Path], List[str]]) -> str:

@@ -1,0 +1,34 @@
+// Tests hex.triple_exact_xor over EVERY source value 0..15.
+//
+// The macro is three chained 16-entry jump tables, and a source hex of value V walks entry V of
+// each of them; so a per-entry mistake - an off-by-one in a chain, a destination bit that is
+// never flipped - only shows for the source values that reach that entry, and shows as a WRONG
+// DIGIT rather than a crash. The pointer tests cannot cover this on their own: their sources are
+// the hexes of real addresses, which never happen to be 0xf.
+//
+// The three destinations start at different values so that a fault in any ONE group is visible.
+stl.startup
+
+    stl.output "triple:"
+    rep(16, val) xor_three val
+    stl.output '\n'
+
+    stl.loop
+
+
+  a: hex.hex 0x0
+  b: hex.hex 0x5
+  c: hex.hex 0xf
+  consts: rep(16, j) hex.hex j
+
+
+// {a} ^= consts[val],  {b} ^= consts[val],  {c} ^= consts[val] -- then print all three.
+def xor_three val < a, b, c, consts {
+    hex.triple_exact_xor a+dbit+3, a+dbit+2, a+dbit+1, a+dbit+0, \
+                         b+dbit+3, b+dbit+2, b+dbit+1, b+dbit+0, \
+                         c+dbit+3, c+dbit+2, c+dbit+1, c+dbit+0, \
+                         consts+val*dw
+    hex.print_as_digit a, 0
+    hex.print_as_digit b, 0
+    hex.print_as_digit c, 0
+}

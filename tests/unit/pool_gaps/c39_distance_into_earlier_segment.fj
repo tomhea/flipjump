@@ -1,0 +1,16 @@
+// C39: C38 with the segment declared EARLIER: its label is known when the distance is emitted, so
+// the operand is checked at once - before the code of the segment it is emitted in has ended.
+stl.startup
+    ;go
+segment 0x4000
+S:  ;S
+segment 0x1000
+go:
+    hex.print_as_digit 2, size, 0
+    stl.output '\n'
+    hex.xor y, x
+M:
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0
+size: hex.vec 2, ((S - M) / dw) & 0xff

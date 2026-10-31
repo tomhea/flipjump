@@ -1,0 +1,28 @@
+// C9: a relocatable aligned by a NON power of two (`pad 3`). A block slot is a power of two, so the
+// moved table is not at a multiple of 3 ops, and an xor dispatch lands differently.
+ns my {
+  ns __relocatable__ {
+    def table start, a, b, c {
+      start:
+        ;a
+        ;b
+        ;c
+    }
+  }
+}
+stl.startup
+    wflip x+w, T, x
+    pad 3
+    my.__relocatable__.table T, oa, ob, oc
+    wflip x+w, T
+    stl.loop
+oa: wflip x+w, T, pa
+ob: wflip x+w, T, pb
+oc: wflip x+w, T, pc
+pa: stl.output 'a'
+    stl.loop
+pb: stl.output 'b'
+    stl.loop
+pc: stl.output 'c'
+    stl.loop
+x:  hex.hex 2

@@ -1,33 +1,42 @@
 ns hex {
     ns pointers {
-        // NOTE: must be placed just after the startup, so that the read_ptr_byte_table will be in address 256.
+        // NOTE: must be placed just after the startup, so that the read_ptr_byte_table will be at op
+        //       exactly 2^PTR_CELL_BITS (256 by default).
         //
-        // Space Complexity: 0.75w+261
+        // Space Complexity: 0.5w + 2^PTR_CELL_BITS + PTR_CELL_BITS/4 + 3   (= 0.5w+261 at PTR_CELL_BITS=8)
         //   Initializes the global opcodes and pointer-copies required for the pointers macros.
         //   Initializes the read-byte-handling table and the result/return variables to the read-byte table.
+        // A pointed cell must hold a value below 2^PTR_CELL_BITS (2^PTR_WIDE_BITS for a wide read), and a pointer
+        //   must be dw-aligned: anything else is a wild jump.
         //
-        // @output-param read_byte:  hex[:2] variable. You want to zero it before jumping into ptr_jump.
-        //                           After jumping into ptr_jump, it's xored with the read byte.
+        // @output-param read_byte:  hex[:PTR_WIDE/4] variable. After jumping into ptr_jump, it's xored with the read byte.
         // @output-param ret_after_read_byte:  The return address. Jumps to it after finishing reading a byte.
         //
         // @output-param to_flip:  address of opcode that holds a flipping address in its first word. jumping into it will flip wanted bit.
-        // @output-param to_flip_var:  the hex-vector (pointer) that also holds the flipping address.
         // @output-param to_jump:  address of opcode that holds a jumping address in its second word. jumping into it will jump to the wanted address.
-        // @output-param to_jump_var:  the hex-vector (pointer) that also holds the jumping address.
-        def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_flip_var, to_jump_var, \
+        // @output-param to_ptr_var:  the hex-vector (pointer) that shadows both to_flip and to_jump (they hold the same address).
+        def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_ptr_var, \
                                              read_byte, ret_after_read_byte, nth_ptr {
-            pad 256
-          // Time Complexity: 4/8 (when jumping to hex.pointers.to_jump, until finished)
-          //                      (4 is for reading from an hex memory, 8 is for byte memory).
+            // a bad -D PTR_CELL_BITS would read wrong values silently: refuse it (the undefined macro names the rule).
+            rep(.PTR_CELL_BITS % 4 != 0, i) \
+                .PTR_CELL_BITS__must_be_a_multiple_of_4
+            rep(.PTR_CELL_BITS < 8, i) \
+                .PTR_CELL_BITS__must_be_at_least_8__the_byte_api_needs_two_hexes
+            rep(dbit + .PTR_CELL_BITS >= dw, i) \
+                .PTR_CELL_BITS__must_leave_dbit_plus_it_below_dw
+
+            pad 1<<.PTR_CELL_BITS
+          // Time Complexity: PTR_CELL_BITS (when jumping to hex.pointers.to_jump, until finished)
+          // Entry d flips d's top set bit into read_byte and jumps to entry d-without-it.
           read_ptr_byte_table:
-            rep(256, d) stl.fj \
-                d==0?0: (#d)<=4 \
-                    ? (.read_byte   +dbit+(#d)-1) \
-                    : (.read_byte+dw+dbit+(#d)-5), \
+            rep(1<<.PTR_CELL_BITS, d) stl.fj \
+                d==0 ? 0 : (.read_byte + (((#d)-1)/4)*dw + dbit + ((#d)-1)%4), \
                 (d==((1<<(#d))>>1)) ? .ret_after_read_byte : read_ptr_byte_table+(d^((1<<(#d))>>1))*dw
 
+            rep(.PTR_WIDE_BITS > 0, i) .wide_table_init
+
           read_byte:
-            hex.vec 2
+            hex.vec .PTR_WIDE/4
           ret_after_read_byte:
             ;0
 
@@ -36,9 +45,7 @@ ns hex {
           to_jump:
             ;0
 
-          to_flip_var:
-            hex.vec w/4, 0
-          to_jump_var:
+          to_ptr_var:
             hex.vec w/4, 0
 
           // Shared scratch pointer for the indexed read_nth_*/write_nth_* macros.
@@ -46,36 +53,81 @@ ns hex {
             hex.vec w/4, 0
         }
 
-        //  Time Complexity: w(0.5@+2)
-        // Space Complexity: w(0.5@+14)
-        //   Sets both to_jump and to_jump_var to point to the given pointer.
-        //   (  to_jump{_var} = ptr  )
-        // ptr is a hex[:w/4] that holds an address.
-        def set_jump_pointer ptr < .to_jump, .to_jump_var {
-            ..address_and_variable_xor w/4, .to_jump+w, .to_jump_var, .to_jump_var
-            ..address_and_variable_xor w/4, .to_jump+w, .to_jump_var, ptr
+        // Space Complexity: 2^PTR_WIDE_BITS
+        //   The wide decoder table, at op exactly 2^PTR_WIDE_BITS (a wide read flips dbit+PTR_WIDE_BITS to land here).
+        // @requires hex.pointers.ptr_init (stl.ptr_init lays it, when PTR_WIDE_BITS > 0)
+        def wide_table_init @ read_ptr_wide_table < .read_byte > ret_after_read_wide {
+            rep(.PTR_WIDE_BITS % 4 != 0, i) \
+                .PTR_WIDE_BITS__must_be_a_multiple_of_4
+            rep(.PTR_WIDE_BITS < 8, i) \
+                .PTR_WIDE_BITS__must_be_at_least_8
+            rep(dbit + .PTR_WIDE_BITS >= dw, i) \
+                .PTR_WIDE_BITS__must_leave_dbit_plus_it_below_dw
+            rep(.PTR_WIDE_BITS <= .PTR_CELL_BITS, i) \
+                .PTR_WIDE_BITS__must_be_wider_than_PTR_CELL_BITS
+
+            pad 1<<.PTR_WIDE_BITS
+          read_ptr_wide_table:
+            rep(1<<.PTR_WIDE_BITS, d) stl.fj \
+                d==0 ? 0 : (.read_byte + (((#d)-1)/4)*dw + dbit + ((#d)-1)%4), \
+                (d==((1<<(#d))>>1)) ? .ret_after_read_wide : read_ptr_wide_table+(d^((1<<(#d))>>1))*dw
+          ret_after_read_wide:
+            ;0
         }
 
-        //  Time Complexity: w(0.5@+2)
-        // Space Complexity: w(0.5@+14)
-        //   Sets both to_flip and to_flip_var to point to the given pointer.
-        //   (  to_flip{_var} = ptr  )
+        //  Time Complexity: w(0.5@+4)
+        // Space Complexity: w(0.5@+22)
+        //   Sets to_flip, to_jump and their shared shadow to point to the given pointer.
+        //   (  to_flip = to_jump{+w} = to_ptr_var = ptr  )
+        // @Invariant: to_flip == to_jump+w == to_ptr_var between pointer macros (one that offsets to_flip restores it).
         // ptr is a hex[:w/4] that holds an address.
-        def set_flip_pointer ptr < .to_flip, .to_flip_var {
-            ..address_and_variable_xor w/4, .to_flip, .to_flip_var, .to_flip_var
-            ..address_and_variable_xor w/4, .to_flip, .to_flip_var, ptr
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def set_flip_and_jump_pointers ptr < .to_flip, .to_jump, .to_ptr_var {
+            ..address_and_variable_triple_xor w/4, .to_flip, .to_jump+w, .to_ptr_var, .to_ptr_var
+            ..address_and_variable_triple_xor w/4, .to_flip, .to_jump+w, .to_ptr_var, ptr
         }
 
-        //  Time Complexity: w(0.75@+5)
-        // Space Complexity: w(0.75@+29)
-        //   Sets both to_flip and to_flip_var, and to_jump and to_jump_var to point to the given pointer.
-        //   (  to_flip{_var} = ptr  )
-        //   (  to_jump{_var} = ptr  )
+        //  Time Complexity: w(0.5@+4)
+        // Space Complexity: w(0.5@+22)
+        //   Sets to_jump (and with it to_flip and the shared shadow) to point to the given pointer.
+        // @note: must stay an alias of set_flip_and_jump_pointers: setting to_jump alone breaks the shadow invariant.
         // ptr is a hex[:w/4] that holds an address.
-        def set_flip_and_jump_pointers ptr < .to_flip, .to_flip_var, .to_jump, .to_jump_var {
-            ..address_and_variable_xor w/4, .to_flip, .to_flip_var, .to_flip_var
-            ..address_and_variable_xor w/4, .to_jump+w, .to_jump_var, .to_jump_var
-            ..address_and_variable_double_xor w/4, .to_flip, .to_flip_var, .to_jump+w, .to_jump_var, ptr
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def set_jump_pointer ptr {
+            .set_flip_and_jump_pointers ptr
+        }
+
+        //  Time Complexity: w(0.5@+4)
+        // Space Complexity: w(0.5@+22)
+        //   Sets to_flip (and with it to_jump and the shared shadow) to point to the given pointer.
+        // @note: an alias of set_flip_and_jump_pointers (see set_jump_pointer).
+        // ptr is a hex[:w/4] that holds an address.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def set_flip_pointer ptr {
+            .set_flip_and_jump_pointers ptr
+        }
+
+        //  Time Complexity: 2@+6           (two advance_bits on average: the carry stops on 1 bit in 2)
+        // Space Complexity: (w-#w)(@+18)
+        //   to_flip = to_jump{+w} = to_ptr_var += 2w      (a binary increment from bit #w, without re-arming)
+        // @Assumes: the armed address is dw-aligned (an offset below 2w in to_flip is kept).
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def advance @ done {
+            rep(w-#w, i) .advance_bit #w+i, done
+          done:
+        }
+
+        //  Time Complexity: @+3
+        // Space Complexity: @+18
+        //   flips bit k of to_flip, to_jump+w and to_ptr_var; jumps to done if it became 1, else continues.
+        // @requires stl.ptr_init (or stl.startup_and_init_all).
+        def advance_bit k, done @ carry < .to_flip, .to_jump, .to_ptr_var {
+            .to_flip+k;
+            .to_jump+w+k;
+            .to_ptr_var+(k/4)*dw+dbit+k%4;
+            ..if_flags .to_ptr_var+(k/4)*dw, (k%4 == 0) ? 0xAAAA : (k%4 == 1) ? 0xCCCC : (k%4 == 2) ? 0xF0F0 : 0xFF00, \
+                carry, done
+          carry:
         }
 
         // Space Complexity: n+w/4 + 330
@@ -89,7 +141,7 @@ ns hex {
 
             pad w
           stack:
-            hex.hex stack_error_handler
+            ;stack_error_handler
             hex.vec n, 0
 
           stack_error_handler:
@@ -105,11 +157,12 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: w(0.5@+2)
-    // Space Complexity: w(0.5@+14)
+    //  Time Complexity: w(0.5@+4)
+    // Space Complexity: w(0.5@+22)
         //   like:  ;*ptr
     //   Jump to the address the pointer points to.
     // ptr is a hex[:w/4] that holds an address.
+    // @requires stl.ptr_init (or stl.startup_and_init_all).
     def ptr_jump ptr < hex.pointers.to_jump {
         .pointers.set_jump_pointer ptr
         ;hex.pointers.to_jump

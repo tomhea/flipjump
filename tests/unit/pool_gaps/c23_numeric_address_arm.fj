@@ -1,0 +1,16 @@
+// C23: a pinned word armed with a NUMBER that is an address (an inline table at a fixed segment address).
+// "a number is a value": the arm is not rewritten for the block base.
+stl.startup
+    hex.xor z, x
+    wflip x+w, 0x4000, x
+segment 0x4000
+    ;o0
+    ;o1
+o0: wflip x+w, 0x4000, p0
+o1: wflip x+w, 0x4000, p1
+p0: stl.output '0'
+    stl.loop
+p1: stl.output '1'
+    stl.loop
+x:  hex.hex 1
+z:  hex.hex 0
