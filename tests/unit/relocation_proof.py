@@ -39,7 +39,7 @@ from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, l
 from flipjump.assembler.inner_classes.ops import INITIAL_ARGS, INITIAL_LABELS_PREFIX, INITIAL_MACRO_NAME
 from flipjump.assembler import preprocessor
 from flipjump.assembler.preprocessor import OpsQueue, PreprocessorData, is_relocatable
-from flipjump.assembler.table_pool import BlockPool
+from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH

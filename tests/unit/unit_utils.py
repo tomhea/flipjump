@@ -15,7 +15,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.table_pool import BlockPool, DeferredTables, OffsetGuard
+from flipjump.assembler.inner_classes.table_pool import BlockPool, DeferredTables, OffsetGuard
 from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run

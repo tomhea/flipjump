@@ -29,7 +29,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard, RESERVED_BELOW
+from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard, RESERVED_BELOW
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:

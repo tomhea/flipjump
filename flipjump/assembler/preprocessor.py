@@ -42,7 +42,7 @@ from flipjump.assembler.inner_classes.ops import (
     get_used_labels,
 )
 from flipjump.assembler.inner_classes.op_stream import OpStream
-from flipjump.assembler.table_pool import (
+from flipjump.assembler.inner_classes.table_pool import (
     BlockPool,
     DEFER_INLINE,
     DEFER_TOO_WIDE,

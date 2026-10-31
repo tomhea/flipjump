@@ -15,7 +15,7 @@ from typing import Dict, FrozenSet, Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
-from flipjump.assembler.table_pool import AFTER_PROGRAM, BlockPool, UnpinnedCell
+from flipjump.assembler.inner_classes.table_pool import AFTER_PROGRAM, BlockPool, UnpinnedCell
 from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,

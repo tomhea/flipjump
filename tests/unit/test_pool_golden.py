@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pytest
 
 from flipjump import assemble
-from flipjump.assembler.table_pool import BlockPool, HotSite, heat_key
+from flipjump.assembler.inner_classes.table_pool import BlockPool, HotSite, heat_key
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.functions import load_debugging_labels

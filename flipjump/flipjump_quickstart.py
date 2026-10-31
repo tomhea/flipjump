@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from typing import Dict, List, Mapping, Optional, Set, Union
 
 from flipjump.assembler import assembler
-from flipjump.assembler.table_pool import BlockPool
+from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.interpreter.debugging.breakpoints import get_breakpoint_handler
 from flipjump.fjm.fjm_consts import IO_MODE_NAMES, RUN_FLAG_FLAT_MEMORY, FJMVersion
 from flipjump.fjm.fjm_writer import Writer
@@ -71,7 +71,7 @@ def assemble(
 
     :param table_pool: if given, move the tables declared relocatable (the expansions of `__relocatable__`
     macros) to where they are cheap to arm, so every table dispatch runs fewer ops; the program runs the same.
-    See flipjump/assembler/table_pool.py (`fj --pool-tables` makes BlockPool(memory_width)).
+    See flipjump/assembler/inner_classes/table_pool.py (`fj --pool-tables` makes BlockPool(memory_width)).
     :param flat_memory: written into the .fjm: it runs in the native engine's flat memory by default (see run())
     :param io_mode: written into the .fjm: the io device it runs with by default (`fj --io-mode`): 'standard' or
     'pc', or its number (fjm_consts.IO_MODE_*)

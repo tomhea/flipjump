@@ -18,7 +18,7 @@ from flipjump.assembler import assembler
 from flipjump.assembler.fj_parser import parse_macro_tree
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard
+from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard
 from flipjump.utils.functions import get_file_tuples, load_debugging_labels
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run

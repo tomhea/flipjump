@@ -15,14 +15,14 @@ from typing import Any, Dict, List, Optional, Sequence
 import pytest
 
 import flipjump.assembler.preprocessor as preprocessor
-import flipjump.assembler.table_pool as table_pool
+import flipjump.assembler.inner_classes.table_pool as table_pool
 from flipjump import assemble
 from flipjump.assembler.assembler import resolve_pinned
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import MacroName, NewSegment
 from flipjump.assembler.preprocessor import PreprocessorData, is_relocatable, resolve_macros
-from flipjump.assembler.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, HotSite, heat_key
+from flipjump.assembler.inner_classes.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, HotSite, heat_key
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
