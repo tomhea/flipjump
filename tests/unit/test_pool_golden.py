@@ -1,7 +1,7 @@
 """
 a golden test of the table pool: a real stl program assembled with a one-pass BlockPool configured as fjdoom's
 shipped build is (merged aliases, spread 2, max_slot_ops 512, pin_broken, width buckets, a heat list, a
-pin_exclude), whose .fjm, labels and census are frozen by their sha256. A refactor of the pool may not move a byte.
+pin_all_but), whose .fjm, labels and census are frozen by their sha256. A refactor of the pool may not move a byte.
 
 The negative controls perturb a real knob (the spread, the heat list's order) or the raw placement's index order,
 and require the digests to change. EXTRA freezes more configurations: the CLI's flat pool, a raw program, the
@@ -145,32 +145,28 @@ CONFIGS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _pool(heat: Optional[Heat] = None, cls: type = BlockPool, **knobs: Any) -> BlockPool:
+ALL_BUT_D = [('d', 1)]  # the cell the pointer reads
+
+
+def _pool(heat: Optional[Heat] = None, cls: type = BlockPool, pin_all_but: Any = ALL_BUT_D, **knobs: Any) -> BlockPool:
     knobs = {**CONFIGS['shipped'], **knobs}
     pool: BlockPool = cls(
         W,
         POOL_BASE,
         span_bits=SPAN_BITS,
         spread_min_count=8,
+        pin_all_but=pin_all_but,
         **knobs,
         **({'heat': heat} if heat else {}),
     )
     return pool
 
 
-def _exclude_d(address: int, labels: Dict[str, int]) -> bool:
-    return address == labels['d'] + W  # the cell the pointer reads (its jump word)
-
-
-def _assemble(
-    tmp_path: Path, name: str, pool: Optional[BlockPool], exclude: bool = True
-) -> Tuple[bytes, Dict[str, int]]:
-    """the .fjm bytes and the debugging labels of PROGRAM assembled with `pool` (`exclude`: its pin_exclude)"""
+def _assemble(tmp_path: Path, name: str, pool: Optional[BlockPool]) -> Tuple[bytes, Dict[str, int]]:
+    """the .fjm bytes and the debugging labels of PROGRAM assembled with `pool`"""
     source = tmp_path / f'{name}.fj'
     source.write_text(PROGRAM)
     fjm, debug = tmp_path / f'{name}.fjm', tmp_path / f'{name}.fjd'
-    if pool is not None and exclude:
-        pool.pin_exclude = _exclude_d
     assemble([source], fjm, memory_width=W, print_time=False, table_pool=pool, debugging_file_path=debug)
     return fjm.read_bytes(), load_debugging_labels(debug)
 
@@ -193,11 +189,9 @@ def _heat(tmp_path: Path) -> Heat:
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}
 
 
-def _digests(
-    tmp_path: Path, heat: Heat, pool: Optional[BlockPool] = None, exclude: bool = True, **knobs: Any
-) -> Dict[str, Any]:
+def _digests(tmp_path: Path, heat: Heat, pool: Optional[BlockPool] = None, **knobs: Any) -> Dict[str, Any]:
     pool = _pool(heat, **knobs) if pool is None else pool
-    fjm, labels = _assemble(tmp_path, 'golden', pool, exclude)
+    fjm, labels = _assemble(tmp_path, 'golden', pool)
     census = pool.census()
     census_json = json.dumps([census.counts, census.widths, census.width_hist, census.alias])
     return {
@@ -231,14 +225,13 @@ def test_golden(tmp_path: Path, heat: Heat, config: str) -> None:
     assert digests == GOLDEN[config]
 
 
-# more configurations, frozen on f55290d (before the second shrink round): {name: (the pool, its pin_exclude is set,
-# its digests)} - the CLI's flat pool (with a pin_exclude it lays blocks out above the program; without one the
+# more configurations, frozen on f55290d (before the second shrink round): {name: (the pool, its digests)} - the
+# CLI's flat pool (with pin_all_but it lays blocks out above the program; without it the
 # pointer read makes the program raw: each table takes a cheap address), a raw program at POOL_BASE, a span too small
 # for every block (the overflow region) and the constructor's defaults
-EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
+EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
     'flat': (
-        lambda heat: BlockPool.for_flat(W),
-        True,
+        lambda heat: BlockPool.for_flat(W, ALL_BUT_D),
         {
             'fjm': 'bdc8e5dd8aa7a0d2923237d7e5c27793e5a67316598999733b739a8c57704a75',
             'labels': '1646034a149d1a3e3a67d67d4a826df8ff0e43c5bffbc3bc35eb1b581dc09fad',
@@ -267,7 +260,6 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
     ),
     'flat_raw': (
         lambda heat: BlockPool.for_flat(W),
-        False,
         {
             'fjm': 'd414bcbf643c069c887c278547824d353cd787defd3bee951e78491c52bad437',
             'labels': '967d5453523f79aff2e00bc4b46035fa33f5dcd1646b727d3cb873379ddc8d73',
@@ -295,8 +287,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
         },
     ),
     'raw': (
-        lambda heat: _pool(),
-        False,
+        lambda heat: _pool(pin_all_but=None),
         {
             'fjm': '328751a21ccf58e62e271b8ec042109246127146b5a6a7a85d9d290b6788973a',
             'labels': '44ac4ace5c33a058b4ad637b5f5e9b308612fbf533596695944865bc51d78a62',
@@ -325,9 +316,15 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
     ),
     'overflow': (
         lambda heat: BlockPool(
-            W, POOL_BASE, span_bits=0x278000, spread=2, spread_min_count=8, max_slot_ops=MAX_SLOT_OPS, heat=heat
+            W,
+            POOL_BASE,
+            span_bits=0x278000,
+            spread=2,
+            spread_min_count=8,
+            max_slot_ops=MAX_SLOT_OPS,
+            heat=heat,
+            pin_all_but=ALL_BUT_D,
         ),
-        True,
         {
             'fjm': '4c0d3ce9fcd2d1655d70b939c1fa92b0118df4e9837e07df2fda32cc9c78967f',
             'labels': '08fc67ca5ffa1e60561c0e19ab8b3ce45935a06e5a22dd5d2ca227d7044c41dd',
@@ -355,8 +352,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
         },
     ),
     'defaults': (
-        lambda heat: BlockPool(W, POOL_BASE),
-        True,
+        lambda heat: BlockPool(W, POOL_BASE, pin_all_but=ALL_BUT_D),
         {
             'fjm': '0e4a821802c1075e2eba8f89641f74b48bcea5d862befaab9ddfb3b1ab1a54ed',
             'labels': 'd18b90a2a771ce9a098d737caccb050abd3788bb81a6dbc659a20e4dbce2f632',
@@ -388,9 +384,9 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], bool, Dict[str, Any]]] = {
 
 @pytest.mark.parametrize('config', sorted(EXTRA))
 def test_golden_extra(tmp_path: Path, heat: Heat, config: str) -> None:
-    make, exclude, golden = EXTRA[config]
+    make, golden = EXTRA[config]
     pool = make(heat)
-    digests = _digests(tmp_path, heat, pool, exclude)
+    digests = _digests(tmp_path, heat, pool)
     digests['stats']['overflowed'] = pool.overflowed
     digests['stats']['end'] = pool.end
     print(json.dumps(digests, indent=1))
@@ -424,8 +420,8 @@ def test_golden_negative_control_heat_order(tmp_path: Path, heat: Heat) -> None:
 def test_golden_negative_control_raw_span(tmp_path: Path, heat: Heat) -> None:
     """R9: a raw program's tables take the cheapest addresses of a region 256 times their slots - in a span with no
     room for that, of their slots alone: the layout changes"""
-    make, exclude, golden = EXTRA['flat_raw']
+    make, golden = EXTRA['flat_raw']
     pool = make(heat)
     pool.span_bits = 1 << 24  # the region of 256 times the slots: 2^27.8 bits; the slots alone: 2^20
-    digests = _digests(tmp_path, heat, pool, exclude)
+    digests = _digests(tmp_path, heat, pool)
     assert digests['fjm'] != golden['fjm'] and digests['labels'] != golden['labels']

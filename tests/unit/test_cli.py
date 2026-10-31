@@ -413,6 +413,22 @@ def test_cli_pool_tables_runs_a_program_that_reads_through_pointers_the_same(tmp
     assert _output_and_ops(pooled)[0] == _output_and_ops(plain)[0] != b''
 
 
+def test_cli_pin_all_but_names_the_pointed_cells_and_the_pool_pins_the_rest(tmp_path: Path) -> None:
+    # hex_ptr's pointers reach d0..d3: named raw, the pool lays its blocks out and pins the other words
+    files = [PROGRAMS_DIR / 'concept_checks' / 'hex_ptr.fj']
+    plain, raw = _cli_assemble(tmp_path, 'plain', files), _cli_assemble(tmp_path, 'raw', files, '--pool-tables')
+    named = _cli_assemble(tmp_path, 'named', files, '--pool-tables', '--pin-all-but', 'd0,d1:1,d2,d3')
+    assert named.read_bytes() != raw.read_bytes()
+    assert _output_and_ops(named)[0] == _output_and_ops(plain)[0] != b''
+
+
+@pytest.mark.parametrize('options', [['--pin-all-but', 'd0'], ['--pool-tables', '--pin-all-but', 'd0:x']])
+def test_cli_pin_all_but_refuses_a_bad_use(tmp_path: Path, options: List[str]) -> None:
+    # without --pool-tables, or with an OPS that is no positive number
+    with pytest.raises(SystemExit):
+        _cli_assemble(tmp_path, 'bad', [PROGRAMS_DIR / 'concept_checks' / 'hex_ptr.fj'], *options)
+
+
 def test_cli_pool_tables_refuses_a_program_that_leaves_its_tables_no_room(tmp_path: Path) -> None:
     # prime_sieve reserves the upper half of memory after its code: no room for its tables above the program
     with pytest.raises(FlipJumpException, match='has no room for'):

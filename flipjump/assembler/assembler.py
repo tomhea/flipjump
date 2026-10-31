@@ -10,7 +10,7 @@ import gc
 from array import array
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional
+from typing import AbstractSet, Callable, List, Dict, MutableSequence, Sequence, Set, Tuple, Optional
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -304,11 +304,11 @@ def resolve_pinned(
     pinned_exprs: Dict[Expr, int],
     labels: Dict[str, int],
     reserved_below: int = RESERVED_BELOW,
-    exclude: Optional[Callable[[int, Dict[str, int]], bool]] = None,
+    unpinned_words: AbstractSet[int] = frozenset(),
 ) -> Tuple[Dict[int, int], int]:
     """({jump-word address: block base}, number of aliased addresses dropped): two group expressions that resolve to
-    one address with different bases (`(x + 32)`, `(x + w)`) leave it unpinned. `exclude(address, labels) -> bool`
-    vetoes the pin of a word the caller owns."""
+    one address with different bases (`(x + 32)`, `(x + w)`) leave it unpinned, and so does a word of `unpinned_words`
+    (BlockPool.unpinned_words: the program reads it raw)."""
     pinned: Dict[int, int] = {}
     conflicts = set()
     for expr, base in pinned_exprs.items():
@@ -318,8 +318,8 @@ def resolve_pinned(
             continue  # an unresolvable word simply is not pinned
         if address < reserved_below:
             continue  # the runtime's word (stl.IO), not the program's
-        if exclude is not None and exclude(address, labels):
-            continue  # the caller owns this word
+        if address in unpinned_words:
+            continue  # the program reads this word raw
         if address in pinned and pinned[address] != base:
             conflicts.add(address)
         pinned[address] = base
@@ -338,7 +338,7 @@ def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: D
     own and every flip of it arms it (a label plus a constant, flipped xor the base) or stays below its window: no
     number or computed value above it (`wflip x+w, 0x4000`, `T1 ^ T2`), no `a;b` flip above it, no wflip across two
     words; and while an op that is no arm of it jumps through it, no table below its window (OffsetGuard.pads) is a
-    value its flips can make (tables_armed_below). With the pointer runtime and no pin_exclude, no pin holds."""
+    value its flips can make (tables_armed_below). With the pointer runtime and no pin_all_but, no pin holds."""
     guard = pool.offset_guard
     assert guard is not None  # a pool's preprocessor made it
 
@@ -346,7 +346,7 @@ def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: D
         if pinned.pop(word, None) is not None:
             pool.unpins[reason] = pool.unpins.get(reason, 0) + 1
 
-    if pool.reads_words_raw and pool.pin_exclude is None:
+    if pool.reads_words_raw and pool.pin_all_but is None:
         for word in list(pinned):
             drop(word, 'the pointer runtime')
         return
@@ -681,7 +681,7 @@ def assemble(
         pinned = None
         if table_pool is not None:
             pinned, table_pool.pin_conflicts = resolve_pinned(
-                table_pool.pinned_words(), labels, exclude=table_pool.pin_exclude
+                table_pool.pinned_words(), labels, unpinned_words=table_pool.unpinned_words(labels)
             )
             if pinned:
                 unpin(ops, labels, memory_width, pinned, table_pool)

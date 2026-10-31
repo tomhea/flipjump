@@ -19,7 +19,7 @@ from flipjump.assembler.fj_parser import parse_macro_tree
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
 from flipjump.assembler.table_pool import BlockPool, OffsetGuard
-from flipjump.utils.functions import get_file_tuples
+from flipjump.utils.functions import get_file_tuples, load_debugging_labels
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
@@ -449,20 +449,20 @@ def _ops(fjm: Path, stdin: bytes = b'') -> Tuple[bytes, int]:
 
 
 def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: Path) -> None:
-    # the pointer runtime, with no pin_exclude, unpins every word: fj --pool-tables places each table at a cheap
+    # the pointer runtime, with no pin_all_but, unpins every word: fj --pool-tables places each table at a cheap
     # address instead (BlockPool._place_cheapest) - no block, no pinned word, and fewer ops than without the pool
     # (pointer_setters: 15137 plain, 11431 cheapest-first)
     source = [PROGRAMS_DIR / 'hexlib_tests' / 'basics2' / 'pointer_setters.fj']
-    assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
+    plain_fjd = tmp_path / 'plain.fjd'
+    assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False, debugging_file_path=plain_fjd)
     plain = _ops(tmp_path / 'plain.fjm')
     pool = BlockPool.for_flat(64)
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
     assert pool.reads_words_raw and pool.allocated and not pool.groups and pool.pinned_words() == {}
     assert list(pool.unpins) == ['the pointer runtime'] and pooled[0] == plain[0] and pooled[1] < plain[1]
-    # the control: in blocks (a pin_exclude that vetoes every pin keeps them), the same tables run more ops
-    blocked_pool = BlockPool.for_flat(64)
-    blocked_pool.pin_exclude = lambda address, labels: True
+    # the control: in blocks with no word pinned (every cell named raw), the same tables run more ops
+    blocked_pool = BlockPool.for_flat(64, pin_all_but=list(load_debugging_labels(plain_fjd)))
     assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
     blocked = _ops(tmp_path / 'blocked.fjm')
     assert blocked_pool.groups and blocked[0] == plain[0] and blocked[1] > pooled[1]
@@ -525,7 +525,9 @@ def test_the_cli_pool_gets_only_its_intended_arguments(tmp_path: Path, monkeypat
     args = ['--asm', '-s', '-o', str(tmp_path / 'a.fjm'), '-w', '32', '--pool-tables', '--flat-max-words', '4096']
     assemble_run_according_to_cmd_line_args(cmd_line_args=[*args, str(_source(tmp_path))])
     ((given, kwargs, pool),) = made
-    assert given == (32,) and kwargs == {} and pool.auto_base and pool.span_bits is None
+    assert (
+        given == (32, None) and kwargs == {} and pool.auto_base and pool.span_bits is None and pool.pin_all_but is None
+    )
     assert (pool.max_slot_ops, pool.spread, pool.spread_min_count) == (32, 1, 256)
     assert not (pool.pin_broken or pool.heat) and pool.counts and not pool.alias
 

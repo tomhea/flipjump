@@ -15,7 +15,7 @@ from typing import Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
-from flipjump.assembler.table_pool import BlockPool
+from flipjump.assembler.table_pool import BlockPool, UnpinnedCell
 from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
@@ -137,6 +137,20 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
         io_device.close()  # the device this run created (e.g. the pc window), also when the run raised
 
 
+def parse_unpinned_cells(text: str, error_func: ErrorFunc) -> List[UnpinnedCell]:
+    """`--pin-all-but a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but)"""
+    cells: List[UnpinnedCell] = []
+    for item in filter(None, (part.strip() for part in text.split(','))):
+        label, colon, ops = item.partition(':')
+        if not colon:
+            cells.append(label)
+        elif ops.isdigit() and int(ops) > 0:
+            cells.append((label, int(ops)))
+        else:
+            error_func(f'--pin-all-but expects LABEL or LABEL:OPS (OPS a positive number), got {item!r}')
+    return cells
+
+
 def get_version(version: Optional[int], is_outfile_specified: bool, error_func: ErrorFunc) -> FJMVersion:
     """
     @param version: the fjm version. if None the default version will be taken.
@@ -186,7 +200,10 @@ def assemble(
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
-    table_pool = BlockPool.for_flat(args.width) if args.pool_tables else None
+    if args.pin_all_but is not None and not args.pool_tables:
+        error_func('--pin-all-but needs --pool-tables.')
+    pin_all_but = None if args.pin_all_but is None else parse_unpinned_cells(args.pin_all_but, error_func)
+    table_pool = BlockPool.for_flat(args.width, pin_all_but) if args.pool_tables else None
     assembler.assemble(
         file_tuples,
         args.width,
@@ -397,6 +414,15 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         action='store_true',
         help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
         "they are cheap to arm: fewer ops per table dispatch, the same program",
+    )
+
+    asm_arguments.add_argument(
+        '--pin-all-but',
+        metavar='LABEL[:OPS],...',
+        help="with --pool-tables: pin every dispatch word (fewer ops) but the words of these cells - the cells the "
+        "program reads or writes raw, through a pointer. Each is a LABEL (the cell runs to the next label) or "
+        "LABEL:OPS. Leaving such a cell out makes the program run wrong. Without this flag, a program that uses "
+        "pointers pins nothing",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')

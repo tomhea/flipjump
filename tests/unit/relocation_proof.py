@@ -271,8 +271,10 @@ def prove_relocation(
         return {value + delta for delta in deltas_at[label_addresses[index]]}
 
     # the pins the assembler keeps: the subject, judged below with none of its rules
-    pinned, _ = resolve_pinned(table_pool.pinned_words(), pooled_labels, exclude=table_pool.pin_exclude)
-    raw = table_pool.reads_words_raw and table_pool.pin_exclude is None
+    pinned, _ = resolve_pinned(
+        table_pool.pinned_words(), pooled_labels, unpinned_words=table_pool.unpinned_words(pooled_labels)
+    )
+    raw = table_pool.reads_words_raw and table_pool.pin_all_but is None
     if pinned:
         unpin(pooled_stream, pooled_labels, memory_width, pinned, table_pool)
 
@@ -396,7 +398,7 @@ def _check_pins(
     (`jumped`); and no pointer runtime reaches it"""
     if raw and pinned:
         mismatch(
-            'the program uses the pointer runtime and no pin_exclude says which words it reaches, yet words are pinned'
+            'the program uses the pointer runtime and no pin_all_but says which words it reaches, yet words are pinned'
         )
     writer = Writer(Path('relocation_proof.fjm'), memory_width, FJMVersion.NormalVersion)
     labels_resolve(

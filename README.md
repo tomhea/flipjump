@@ -157,6 +157,11 @@ operand comes too late for that - the program is refused with the reason, as is 
 room in the memory. With it, `__relocatable__` is a reserved namespace: a macro whose innermost namespace has that
 name is a table the pool may move.
 
+A program that reads or writes cells raw through pointers (`hex.pointers`) gets its tables moved but nothing pinned,
+unless `--pin-all-but LABEL[:OPS],...` names those cells: then every other dispatch word is pinned too, which saves
+more ops (`--pin-all-but d0,d1:1` - a label alone runs to the next label). Leaving such a cell out makes the program
+run wrong.
+
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
 

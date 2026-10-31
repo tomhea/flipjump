@@ -12,7 +12,7 @@ import functools
 import re
 import sys
 from array import array
-from typing import Callable, Dict, Iterator, List, Mapping, NoReturn, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Iterable, Iterator, List, Mapping, NoReturn, Optional, Sequence, Set, Tuple, Union
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException, FlipJumpPreprocessorException
 from flipjump.assembler.inner_classes.expr import Expr
@@ -20,11 +20,13 @@ from flipjump.assembler.inner_classes.op_stream import linear_parts
 from flipjump.assembler.inner_classes.ops import NewSegment
 
 LabelsDict = Dict[str, int]
+# a cell the program reads or writes raw: its label, alone (the cell runs to the next label) or with its length in ops
+UnpinnedCell = Union[str, Tuple[str, int]]
 
 # the runtime's words lie below this bit address (`stl.IO` is op 1; 1024 covers every w <= 256): never pinned
 RESERVED_BELOW = 1024
 
-# a macro naming these reads or writes words raw through a pointer: without a pin_exclude, no word is pinned
+# a macro naming these reads or writes words raw through a pointer: without pin_all_but, no word is pinned
 POINTER_RUNTIME_LABELS = frozenset(
     {'bit.pointers.to_jump', 'bit.pointers.to_flip', 'hex.pointers.to_jump', 'hex.pointers.to_flip'}
 )
@@ -329,8 +331,8 @@ class BlockPool:
 
     `wflip src+w, switch` arms a hex variable's jump word. If the word RESTS at a block base B (it is PINNED) and its
     tables live in the block, the arm flips `switch ^ B`, the table's index, and every writer of the word flips
-    `V ^ B` (assembler.BinaryData.pinned_value). `pin_exclude(address, labels) -> bool` vetoes the pin of a word a
-    pointer can reach (POINTER_RUNTIME_LABELS).
+    `V ^ B` (assembler.BinaryData.pinned_value). A pinned word holds `B ^ value`, so a word the program reads raw
+    (through a pointer, POINTER_RUNTIME_LABELS) must not be pinned: `pin_all_but` names the cells to leave out.
 
     ONE PASS: the preprocessor takes each table out of the op stream (`defer`) and has the pool place them all once
     the expansion is done (`place_deferred`), the blocks sized from its census. Blocks are power-of-two sized and
@@ -352,6 +354,7 @@ class BlockPool:
         spread_min_count: int = 256,
         pin_broken: bool = False,
         heat: Optional[Mapping[str, Sequence[Tuple[str, int, int]]]] = None,
+        pin_all_but: Optional[Iterable[UnpinnedCell]] = None,
     ):
         """
         @param span_bits: how far above pool_base the pool may reach (None: to the top of memory)
@@ -359,6 +362,12 @@ class BlockPool:
         @param spread: a group of >= `spread_min_count` tables gets `spread` times the slots, the cheapest indices used
         @param pin_broken: pin a group although some of its tables got no slot (see pinned_words)
         @param heat: {heat_key(group): [(heat_key(site path), occurrence, slot_ops), ...]}, hottest site first
+        @param pin_all_but: pin every word but the words of these cells: each cell the program reads or writes RAW
+            (through a pointer, or by jumping through its word), as a label (the cell runs to the next label) or
+            (label, length in ops). Leaving such a cell out makes the program run WRONG, not slower. [] pins every
+            word. None (the default): the cells are not known - a program that uses the pointer runtime then pins
+            no word (its tables still go to cheap addresses). A label the program does not define is skipped
+            (listed in pin_all_but_missing).
         """
         self.memory_width = memory_width
         self.op_bits = 2 * memory_width
@@ -369,8 +378,9 @@ class BlockPool:
         self.spread_min_count = spread_min_count
         self.pin_broken = pin_broken
         self.heat = heat
+        self.pin_all_but = None if pin_all_but is None else tuple(pin_all_but)
+        self.pin_all_but_missing: List[str] = []  # the labels of pin_all_but the program does not define
         self.auto_base = False  # (for_flat) pool_base is chosen once the program's end is known
-        self.pin_exclude: Optional[Callable[[int, LabelsDict], bool]] = None
         self.pin_conflicts = 0
         self.reads_words_raw = False  # set by the preprocessor when a macro naming POINTER_RUNTIME_LABELS expands
         self.laid_out = False  # set by the preprocessor that lays this pool out
@@ -401,9 +411,9 @@ class BlockPool:
         self.hot_sites_matched = self.hot_sites_width_changed = 0
 
     @classmethod
-    def for_flat(cls, memory_width: int) -> BlockPool:
+    def for_flat(cls, memory_width: int, pin_all_but: Optional[Iterable[UnpinnedCell]] = None) -> BlockPool:
         """`fj --pool-tables`'s pool: at the first power of two above the program, its wflip areas after it"""
-        pool = cls(memory_width, 1 << memory_width)
+        pool = cls(memory_width, 1 << memory_width, pin_all_but=pin_all_but)
         pool.auto_base = True
         return pool
 
@@ -478,8 +488,28 @@ class BlockPool:
         return addresses
 
     def _raw(self) -> bool:
-        """does the program read words raw (the pointer runtime, no pin_exclude, no heat)? (see _place_cheapest)"""
-        return self.reads_words_raw and self.pin_exclude is None and not self.heat
+        """does the program read words raw with no pin_all_but to say which? (then none is pinned: _place_cheapest)"""
+        return self.reads_words_raw and self.pin_all_but is None
+
+    def unpinned_words(self, labels: LabelsDict) -> Set[int]:
+        """the addresses of the words of pin_all_but's cells (resolved by `labels`): words the assembler must not pin"""
+        if not self.pin_all_but:
+            return set()
+        addresses = sorted(set(labels.values()))
+        words: Set[int] = set()
+        for cell in self.pin_all_but:
+            label, ops = (cell, None) if isinstance(cell, str) else cell
+            if label not in labels:
+                self.pin_all_but_missing.append(label)
+                continue
+            start = labels[label]
+            if ops is None:
+                after = bisect.bisect_right(addresses, start)
+                end = addresses[after] if after < len(addresses) else start + self.op_bits
+            else:
+                end = start + ops * self.op_bits
+            words.update(range(start, end, self.memory_width))
+        return words
 
     def _place_cheapest(self, tables: DeferredTables) -> Sequence[int]:
         """place_deferred for a raw program, whose words cannot be pinned: each table takes a cheap ADDRESS - a slot at

@@ -10,7 +10,7 @@ is reached only by jump, so its address is free to choose.
 import re
 import tracemalloc
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pytest
 
@@ -356,11 +356,27 @@ def test_the_runtimes_words_are_reserved_at_every_width(memory_width: int) -> No
     assert 4 * w <= RESERVED_BELOW
 
 
-def test_resolve_pinned_lets_the_caller_veto_a_word() -> None:
-    pinned, _ = resolve_pinned(
-        {Expr('a'): 1, Expr('b'): 2}, {'a': 4096, 'b': 8192}, exclude=lambda a, labels: a == 8192
-    )
+def test_resolve_pinned_leaves_a_raw_word_unpinned() -> None:
+    pinned, _ = resolve_pinned({Expr('a'): 1, Expr('b'): 2}, {'a': 4096, 'b': 8192}, unpinned_words={8192})
     assert pinned == {4096: 1}
+
+
+def test_unpinned_words_are_every_word_of_each_cell() -> None:
+    # a label alone runs to the next label (the last one: its own op); (label, ops) runs `ops` ops; a label the
+    # program does not define is skipped and listed
+    labels = {'a': 4096, 'b': 4096 + 3 * W, 'c': 8192, 'z': 1 << 20}
+    pool = BlockPool(W, POOL_BASE, pin_all_but=['a', ('c', 2), 'z', 'missing'])
+    assert pool.unpinned_words(labels) == {
+        *range(4096, 4096 + 3 * W, W),
+        *range(8192, 8192 + 4 * W, W),
+        *range(1 << 20, (1 << 20) + 2 * W, W),
+    }
+    assert pool.pin_all_but_missing == ['missing']
+    assert (
+        BlockPool(W, POOL_BASE).unpinned_words(labels)
+        == set()
+        == BlockPool(W, POOL_BASE, pin_all_but=[]).unpinned_words(labels)
+    )
 
 
 # --- BlockPool, on synthetic tables ---
@@ -649,11 +665,8 @@ def test_a_pinned_word_read_through_a_pointer_needs_the_callers_exclusion(tmp_pa
     output, _, _ = build_and_run(POINTER_PROGRAM, tmp_path, unpinned_pool, name='unpinned')
     assert unpinned_pool.reads_words_raw
     assert output == reference and list(unpinned_pool.unpins) == ['the pointer runtime']
-    # with the pointed cell excluded from pinning the blocked program is the same program; the
-    # veto sees the bit address of the cell's JUMP word, `d + w`
-    blocked_pool = BlockPool(W, POOL_BASE)
-    exclude: Callable[[int, Dict[str, int]], bool] = lambda address, labels: address == labels['d'] + W  # noqa: E731
-    blocked_pool.pin_exclude = exclude
+    # with the pointed cell named raw (one op at `d`), the blocked program is the same program
+    blocked_pool = BlockPool(W, POOL_BASE, pin_all_but=[('d', 1)])
     output, _, _ = build_and_run(POINTER_PROGRAM, tmp_path, blocked_pool, name='excluded')
     assert output == reference and blocked_pool.unpins == {}
     assert blocked_pool.pinned_words()  # the other armed words are still pinned
