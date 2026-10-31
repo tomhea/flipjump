@@ -19,8 +19,9 @@ from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
     IO_MODE_NAMES,
+    IO_MODE_NUMBERS,
+    IO_MODE_STANDARD,
     RUN_FLAG_FLAT_MEMORY,
-    bad_io_mode_message,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.fjm.fjm_writer import Writer
@@ -186,7 +187,7 @@ def assemble(
     defines = parse_defines(args.define, error_func)
 
     version = get_version(args.version, args.outfile is not None, error_func)
-    if version == FJMVersion.BaseVersion and (args.flat_memory or args.io_mode):
+    if version == FJMVersion.BaseVersion and (args.flat_memory or IO_MODE_NUMBERS[args.io_mode] != IO_MODE_STANDARD):
         error_func('fjm version 0 has no header room for --flat-memory / --io-mode; use version 1 or above.')
     fjm_writer = Writer(
         out_fjm_file,
@@ -377,12 +378,11 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
 
     asm_arguments.add_argument(
         '--io-mode',
-        metavar='NUMBER',
-        type=_checked_number(bad_io_mode_message),
-        default=0,
-        help="compile the default io device into the .fjm: "
-        + ", ".join(f"{number} = {name}" for number, name in IO_MODE_NAMES.items())
-        + ". 0 by default. `fj --run --io MODE` still overrides it",
+        metavar='MODE',
+        choices=list(IO_MODE_NUMBERS),
+        default=IO_MODE_NAMES[IO_MODE_STANDARD],
+        help=f"compile the default io device into the .fjm: {' or '.join(IO_MODE_NUMBERS)} "
+        f"({IO_MODE_NAMES[IO_MODE_STANDARD]} by default). `fj --run --io MODE` overrides it",
     )
 
     asm_arguments.add_argument(
@@ -432,31 +432,6 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         "overriding a constant that nothing declares is an error, not a new definition",
     )
     asm_arguments.add_argument('--stats', help="show macro code-size statistics", action='store_true')
-
-
-def _parse_number(value: str) -> int:
-    """an int in python syntax (decimal, 0x.., 0b..), or argparse's error naming what is wrong"""
-    try:
-        return int(value, 0)
-    except ValueError:
-        pass
-    try:
-        return int(value, 10)  # e.g. '01', which int(x, 0) refuses
-    except ValueError:
-        raise argparse.ArgumentTypeError(f'{value!r} is not a number') from None
-
-
-def _checked_number(bad_message: Callable[[int], Optional[str]]) -> Callable[[str], int]:
-    """an argparse type: a number (_parse_number) that bad_message (fjm_consts.bad_*_message) accepts"""
-
-    def checked_number(value: str) -> int:
-        number = _parse_number(value)
-        bad = bad_message(number)
-        if bad is not None:
-            raise argparse.ArgumentTypeError(bad)
-        return number
-
-    return checked_number
 
 
 def add_universal_arguments(parser: argparse.ArgumentParser) -> None:

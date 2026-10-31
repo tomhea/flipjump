@@ -47,7 +47,7 @@ def assemble(
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
     flat_memory: bool = False,
-    io_mode: int = 0,
+    io_mode: Union[int, str] = 0,
 ) -> None:
     """
     runs the assembly pipeline. assembles the input files to a .fjm.
@@ -71,7 +71,8 @@ def assemble(
     macros) to where they are cheap to arm, so every table dispatch runs fewer ops; the program runs the same.
     See flipjump/assembler/table_pool.py (`fj --pool-tables` makes BlockPool.for_flat(memory_width)).
     :param flat_memory: written into the .fjm: it runs in the native engine's flat memory by default (see run())
-    :param io_mode: written into the .fjm: the io device it runs with by default (fjm_consts.IO_MODE_*)
+    :param io_mode: written into the .fjm: the io device it runs with by default (`fj --io-mode`): 'standard' or
+    'pc', or its number (fjm_consts.IO_MODE_*)
 
     :note: This is a wrapper function to the assembler.assemble() function.
     """
@@ -310,7 +311,7 @@ def assemble_and_run(
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     flat_memory: bool = False,
-    io_mode: int = 0,
+    io_mode: Union[int, str] = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
@@ -365,7 +366,7 @@ def assemble_and_debug(
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     flat_memory: bool = False,
-    io_mode: int = 0,
+    io_mode: Union[int, str] = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,
@@ -438,7 +439,7 @@ def assemble_and_run_test_output(
     print_termination: bool = True,
     last_ops_debugging_list_length: Optional[int] = None,
     flat_memory: bool = False,
-    io_mode: int = 0,
+    io_mode: Union[int, str] = 0,
     lzma_preset: int = lzma.PRESET_DEFAULT,
     defines: Optional[Mapping[str, Union[int, str]]] = None,
     table_pool: Optional[BlockPool] = None,

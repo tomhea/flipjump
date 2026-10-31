@@ -1,7 +1,7 @@
 """
 unit-tests for what a .fjm carries about how to run it, and for loading it.
 
-the header's run flags and io mode (`fj --flat-memory` / `--io-mode N` compile them in; `--[no-]flat-memory`
+the header's run flags and io mode (`fj --flat-memory` / `--io-mode MODE` compile them in; `--[no-]flat-memory`
 and `--io` override them at run time), the flat window the CLI derives from them, the error a forced flat
 memory gives when it cannot be allocated, and the lean native load (the .fjm's bytes straight into the
 engine, no python object per word) - pinned against the Reader's memory, word for word.
@@ -12,12 +12,12 @@ import lzma
 import random
 import struct
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union
 
 import pytest
 
 from flipjump import assemble_run_according_to_cmd_line_args
-from flipjump import flipjump_cli
+from flipjump import flipjump_cli, flipjump_quickstart
 from flipjump.fjm.fjm_consts import (
     FJMVersion,
     IO_MODE_PC,
@@ -52,7 +52,7 @@ pytestmark = pytest.mark.usefixtures('clean_flat_mode_env')
 
 
 def _write_simple(
-    path: Path, version: FJMVersion = FJMVersion.NormalVersion, *, run_flags: int = 0, io_mode: int = 0
+    path: Path, version: FJMVersion = FJMVersion.NormalVersion, *, run_flags: int = 0, io_mode: Union[int, str] = 0
 ) -> Path:
     writer = Writer(path, 16, version, run_flags=run_flags, io_mode=io_mode)
     writer.add_simple_segment_with_data(0, [0, 0])
@@ -87,7 +87,9 @@ def test_a_base_version_file_has_no_flags(tmp_path: Path) -> None:
             Writer(tmp_path / 'y.fjm', 16, FJMVersion.BaseVersion, run_flags=run_flags, io_mode=io_mode)
 
 
-@pytest.mark.parametrize('flags', [{'run_flags': 2}, {'run_flags': 3}, {'run_flags': 1 << 31}, {'io_mode': 2}])
+@pytest.mark.parametrize(
+    'flags', [{'run_flags': 2}, {'run_flags': 3}, {'run_flags': 1 << 31}, {'io_mode': 2}, {'io_mode': 'hologram'}]
+)
 def test_the_writer_rejects_bad_flags(tmp_path: Path, flags: Any) -> None:
     with pytest.raises(FlipJumpWriteFjmException, match='bad'):
         Writer(tmp_path / 'x.fjm', 16, FJMVersion.NormalVersion, **flags)
@@ -117,7 +119,7 @@ def test_cli_compiles_the_flags_into_the_fjm(tmp_path: Path) -> None:
     fj_path.write_text(_looping_source())
     out = tmp_path / 'out.fjm'
     assemble_run_according_to_cmd_line_args(
-        cmd_line_args=['--asm', '-s', '--no_stl', '-o', str(out), '--io-mode', '1', '--flat-memory', str(fj_path)]
+        cmd_line_args=['--asm', '-s', '--no_stl', '-o', str(out), '--io-mode', 'pc', '--flat-memory', str(fj_path)]
     )
     header = read_fjm_header(out)
     assert (header.run_flags, header.io_mode) == (RUN_FLAG_FLAT_MEMORY, IO_MODE_PC)
@@ -127,11 +129,23 @@ def test_cli_compiles_the_flags_into_the_fjm(tmp_path: Path) -> None:
         assert read_fjm_header(out).run_flags == 0
 
 
-@pytest.mark.parametrize('argument, value', [('--io-mode', '2'), ('--io-mode', '-1')])
-def test_cli_rejects_bad_flag_values(argument: str, value: str, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize('value', ['1', '0', 'PC', 'hologram'])
+def test_cli_io_mode_takes_a_name_only(value: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
-        flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', argument, value, 'a.fj'])
-    assert 'bad' in capsys.readouterr().err
+        flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--io-mode', value, 'a.fj'])
+    assert 'invalid choice' in capsys.readouterr().err
+    for name in ('standard', 'pc'):  # the control: the names parse
+        args, _ = flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--io-mode', name, 'a.fj'])
+        assert args.io_mode == name
+
+
+@pytest.mark.parametrize('io_mode, expected', [('pc', IO_MODE_PC), (IO_MODE_PC, IO_MODE_PC), ('standard', 0), (0, 0)])
+def test_the_api_takes_the_io_mode_by_name_or_number(tmp_path: Path, io_mode: Any, expected: int) -> None:
+    assert read_fjm_header(_write_simple(tmp_path / 'w.fjm', io_mode=io_mode)).io_mode == expected
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text(_looping_source())
+    flipjump_quickstart.assemble([fj_path], tmp_path / 'q.fjm', use_stl=False, print_time=False, io_mode=io_mode)
+    assert read_fjm_header(tmp_path / 'q.fjm').io_mode == expected
 
 
 @pytest.mark.parametrize('option', ['--flags', '--run-flags'])
@@ -475,7 +489,7 @@ def test_the_automatic_window_includes_a_span_of_exactly_2_24(tmp_path: Path, mo
 def test_version_0_with_flags_is_a_usage_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fj_path = tmp_path / 'p.fj'
     fj_path.write_text(_looping_source())
-    for flags in (['--io-mode', '1'], ['--flat-memory']):
+    for flags in (['--io-mode', 'pc'], ['--flat-memory']):
         with pytest.raises(SystemExit):
             assemble_run_according_to_cmd_line_args(
                 cmd_line_args=[
@@ -491,6 +505,11 @@ def test_version_0_with_flags_is_a_usage_error(tmp_path: Path, capsys: pytest.Ca
                 ]
             )
         assert 'version 0' in capsys.readouterr().err
+    # the control: the default io mode, given explicitly, fits version 0
+    assemble_run_according_to_cmd_line_args(
+        cmd_line_args=['--asm', '-s', '--no_stl', '-v', '0', '-o', str(tmp_path / 'o.fjm'), '--io-mode', 'standard']
+        + [str(fj_path)]
+    )
 
 
 def test_assemble_and_run_in_one_command_uses_the_compiled_io_mode(
@@ -499,7 +518,7 @@ def test_assemble_and_run_in_one_command_uses_the_compiled_io_mode(
     fj_path = tmp_path / 'p.fj'
     fj_path.write_text(_looping_source())
     modes = _spy_io_modes(monkeypatch)
-    assemble_run_according_to_cmd_line_args(cmd_line_args=['-s', '--no_stl', '--io-mode', '1', str(fj_path)])
+    assemble_run_according_to_cmd_line_args(cmd_line_args=['-s', '--no_stl', '--io-mode', 'pc', str(fj_path)])
     assert modes == ['pc']
 
 
@@ -518,12 +537,6 @@ def test_assemble_and_run_in_one_command_compiles_and_runs_flat_memory(
             )
         assert [required_ for _, required_, _ in seen] == [required]
         assert read_fjm_header(out).run_flags == (RUN_FLAG_FLAT_MEMORY if required else 0)
-
-
-def test_a_non_number_flag_value_says_so(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--io-mode', 'pc', 'a.fj'])
-    assert "'pc' is not a number" in capsys.readouterr().err
 
 
 @functools.lru_cache(maxsize=None)
@@ -604,11 +617,6 @@ def test_an_env_window_the_engine_ignores_does_not_cancel_the_run_flag(
     patch_run_header(fjm_path, run_flags=RUN_FLAG_FLAT_MEMORY)
     monkeypatch.setenv('FLIPJUMP_FLAT_MAX_WORDS', value)
     assert _run_and_spy(fjm_path, monkeypatch, []) == (_BIG_TOP + 4, True, 'flat')
-
-
-def test_flag_values_with_leading_zeros_are_numbers() -> None:
-    args, _ = flipjump_cli.parse_arguments(cmd_line_args=['--asm', '-o', 'o.fjm', '--io-mode', '01', 'a.fj'])
-    assert args.io_mode == 1
 
 
 def test_the_decompression_buffer_grows_with_highly_compressible_data() -> None:

@@ -7,7 +7,7 @@ LZMA compression settings used by the compressed versions.
 
 import lzma
 from enum import Enum
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 """
 struct {
@@ -50,6 +50,7 @@ _header_extension_size = 4 + 4 + 4
 IO_MODE_STANDARD = 0
 IO_MODE_PC = 1
 IO_MODE_NAMES: Dict[int, str] = {IO_MODE_STANDARD: 'standard', IO_MODE_PC: 'pc'}
+IO_MODE_NUMBERS: Dict[str, int] = {name: number for number, name in IO_MODE_NAMES.items()}
 
 # the header's run_flags: 32 bits, all off by default.
 # bit 0 - flat memory: run with the whole program in the native engine's flat array (`--flat-memory`).
@@ -69,11 +70,11 @@ def bad_run_flags_message(run_flags: int) -> Optional[str]:
     return None
 
 
-def bad_io_mode_message(io_mode: int) -> Optional[str]:
-    """@return: why this io mode is invalid, or None when it is valid"""
-    if io_mode not in IO_MODE_NAMES:
-        supported = ', '.join(f'{number} ({name})' for number, name in IO_MODE_NAMES.items())
-        return f'bad io mode {io_mode}: supported io modes are {supported}'
+def bad_io_mode_message(io_mode: Union[int, str]) -> Optional[str]:
+    """@return: why this io mode (a name, or its number) is invalid, or None when it is valid"""
+    if io_mode not in IO_MODE_NAMES and io_mode not in IO_MODE_NUMBERS:
+        supported = ', '.join(f'{name} ({number})' for number, name in IO_MODE_NAMES.items())
+        return f'bad io mode {io_mode!r}: supported io modes are {supported}'
     return None
 
 

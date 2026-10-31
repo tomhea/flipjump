@@ -195,12 +195,12 @@ fj --run program.fjm --io pc
 A program can carry its own defaults in the `.fjm` header, so `fj --run program.fjm` is all it takes:
 
 ```bash
-fj --asm game.fj -o game.fjm --io-mode 1 --flat-memory   # io mode 1 = pc
+fj --asm game.fj -o game.fjm --io-mode pc --flat-memory
 fj --run game.fjm                                        # runs with the pc window, in flat memory
 ```
 
-- **`--io-mode NUMBER`** (assembling): the default io device - `0` standard (the default), `1` pc.
-  `--io MODE` still overrides it at run time.
+- **`--io-mode MODE`** (assembling): the default io device - `standard` (the default) or `pc`.
+  `--io MODE` overrides it at run time.
 - **`--flat-memory`**: the whole program in the native engine's flat array (fastest; costs memory for its
   whole span). Compiled in when assembling; `--flat-memory` / `--no-flat-memory` override it when running.
   If the flat allocation fails, the run stops and says so (`--no-flat-memory` runs it slower).
