@@ -11,7 +11,7 @@ the title and the icon reach the window, and the set_max_fps cap holds a fast pr
 
 import time
 from pathlib import Path
-from typing import Iterator, List, Tuple
+from typing import Callable, Iterator, List, Tuple
 
 import pytest
 
@@ -55,7 +55,8 @@ def present_raw_2x2(device: InteractiveScreen) -> None:
 def painted() -> List[Tuple[int, int, int]]:
     surface = pygame.display.get_surface()
     width, height = surface.get_size()
-    return [tuple(surface.get_at((x, y))[:3]) for y in range(height) for x in range(width)]
+    pixels = [surface.get_at((x, y)) for y in range(height) for x in range(width)]
+    return [(pixel.r, pixel.g, pixel.b) for pixel in pixels]
 
 
 def keyboard_on(window: PygameWindow) -> KeyboardIO:
@@ -441,7 +442,7 @@ class FakeClock:
     def __init__(self, start: float = 0.0) -> None:
         self.now = start
         self.slept: List[float] = []
-        self.on_sleep: List[object] = []  # callables run on each sleep (a test's hook into the wait)
+        self.on_sleep: List[Callable[[], None]] = []  # callables run on each sleep (a test's hook into the wait)
 
     def perf_counter(self) -> float:
         return self.now
@@ -450,7 +451,7 @@ class FakeClock:
         self.slept.append(seconds)
         self.now += seconds
         for hook in self.on_sleep:
-            hook()  # type: ignore[operator]
+            hook()
 
 
 @pytest.fixture

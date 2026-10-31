@@ -14,6 +14,7 @@ three run-loops (engines) are implemented:
   debugging features are requested, or explicitly with profile=True.
 """
 
+import importlib
 from os import environ
 from pathlib import Path
 from typing import Any, Optional, Deque
@@ -22,7 +23,7 @@ from flipjump.fjm import fjm_reader
 from flipjump.fjm.fjm_reader import FjmHeader
 
 try:
-    from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
+    _fjcore: Any = importlib.import_module('flipjump.interpreter._fjcore')  # the C extension: no type stubs
 except ImportError:  # the native engine is optional - fall back to the pure-python loops
     _fjcore = None
 from flipjump.interpreter.debugging.breakpoints import BreakpointHandler, handle_breakpoint

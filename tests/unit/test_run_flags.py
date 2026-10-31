@@ -8,6 +8,7 @@ engine, no python object per word) - pinned against the Reader's memory, word fo
 """
 
 import functools
+import importlib
 import lzma
 import random
 import struct
@@ -43,7 +44,7 @@ from tests.unit.unit_utils import (
 )
 
 try:
-    from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
+    _fjcore: Any = importlib.import_module('flipjump.interpreter._fjcore')  # the C extension: no type stubs
 except ImportError:
     _fjcore = None
 
@@ -267,11 +268,11 @@ def _lean_load(fjm_path: Path, flat_max_words: Optional[int] = None) -> Any:
 
 def _assert_loaded_like_the_reader(fjm_path: Path, flat_max_words: Optional[int] = None, core: Any = None) -> None:
     reader = Reader(fjm_path)
-    core = _lean_load(fjm_path, flat_max_words) if core is None else core
-    mismatches = [address for address, value in reader.memory.items() if core.get_word(address) != value]
+    memory: Any = _lean_load(fjm_path, flat_max_words) if core is None else core
+    mismatches = [address for address, value in reader.memory.items() if memory.get_word(address) != value]
     assert not mismatches, f'{len(mismatches)} words differ, first at {hex(mismatches[0])}'
     for start, end in reader.zeros_boundaries:  # the long reserved tails the Reader leaves implicit
-        assert core.get_word(start) == 0 and core.get_word(end - 1) == 0
+        assert memory.get_word(start) == 0 and memory.get_word(end - 1) == 0
 
 
 _TWO_SEGMENTS = MINIMAL_STARTUP + '''

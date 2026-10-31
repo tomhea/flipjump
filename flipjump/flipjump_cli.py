@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Dict, Tuple, List, Callable, Optional
+from typing import Dict, FrozenSet, Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
@@ -39,7 +39,7 @@ ErrorFunc = Callable[[str], None]
 
 # option spellings that parse but are not listed in the help: the underscore spellings of the hyphenated options,
 # and --version, which names the fjm version (-v / --fjm-version), not the tool's (-V)
-HIDDEN_ALIASES = frozenset(
+HIDDEN_ALIASES: FrozenSet[str] = frozenset(
     {'--breakpoint_contains', '--lzma_preset', '--max_recursion_depth', '--no_stl', '--flipjump_version', '--version'}
 )
 

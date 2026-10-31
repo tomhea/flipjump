@@ -694,20 +694,18 @@ def resolve_macro_aux(
         if isinstance(op, Label):
             preprocessor_data.insert_label(op.eval_name(params_dict), op.code_position)
 
-        elif isinstance(op, FlipJump) or isinstance(op, WordFlip):
+        elif isinstance(op, (FlipJump, WordFlip)):
             preprocessor_data.curr_address += 2 * preprocessor_data.memory_width
             params_dict['$'] = Expr(preprocessor_data.curr_address)
             if dollar_ops and op_index in dollar_ops:
                 preprocessor_data.dollar(dollar_ops[op_index], labels_prefix, op_index, op.code_position, params_dict)
             # straight into the compact stream - no FlipJump/WordFlip object is built for it
-            if op.__class__ is FlipJump:
+            if isinstance(op, FlipJump):
                 preprocessor_data.emit_target.add_flip_jump_in(op.flip, op.jump, params_dict, op.code_position)
-            elif op.__class__ is WordFlip:
+            else:
                 preprocessor_data.emit_target.add_word_flip_in(
                     op.word_address, op.flip_value, op.return_address, params_dict, op.code_position
                 )
-            else:
-                preprocessor_data.emit(op.eval_new(params_dict))
             del params_dict['$']
 
         elif isinstance(op, Pad):

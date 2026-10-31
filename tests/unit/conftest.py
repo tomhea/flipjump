@@ -22,7 +22,7 @@ def engine(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> s
     engine, and the featured loop (the slower one used for tracing/breakpoints/profiling)."""
     param = str(request.param)
     if param == 'native':
-        if fjm_run._fjcore is None:  # type: ignore[attr-defined]
+        if fjm_run._fjcore is None:
             pytest.skip('the native engine (_fjcore) is not built')
         monkeypatch.delenv('FLIPJUMP_NO_NATIVE', raising=False)
     else:

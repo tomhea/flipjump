@@ -115,7 +115,7 @@ def test_the_assembler_phases_report_forward_progress_and_assemble_the_same_byte
     _terminal(monkeypatch)
     # every phase's bar on, through a fake terminal; the output must be byte-identical to a quiet assembly
     updates: List[List[float]] = []
-    real_update = ProgressBar.update
+    real_update = vars(ProgressBar)['update']  # the original, called by the patch
 
     def recording_update(self: ProgressBar, done: float) -> None:
         if getattr(self, '_recorded', None) is None:

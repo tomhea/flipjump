@@ -11,12 +11,13 @@ parameter / FLIPJUMP_FLAT_MAX_WORDS env var / 2^23-word default), the paged fall
 failed flat-array allocation, and the storage_mode observability ('flat'/'paged').
 """
 
+import importlib
 from typing import Any
 
 import pytest
 
 try:
-    from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
+    _fjcore: Any = importlib.import_module('flipjump.interpreter._fjcore')  # the C extension: no type stubs
 except ImportError:
     _fjcore = None
 

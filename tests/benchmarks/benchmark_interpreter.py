@@ -57,7 +57,8 @@ def benchmark(program: str, memory_width: int, n: int) -> None:
 
     ops = termination_statistics.op_counter
     run_time = termination_statistics.run_time
-    print(f'w={memory_width}: {ops:,} ops in {run_time:.2f}s (wall {wall_time:.2f}s) ' f'=> {ops / run_time:,.0f} fj/s')
+    rate = round(ops / run_time)
+    print(f'w={memory_width}: {ops:,} ops in {run_time:.2f}s (wall {wall_time:.2f}s) => {rate:,} fj/s')
 
 
 def main() -> None:

@@ -6,6 +6,7 @@ sources (no stl) to a .fjm path, getting a Reader for the result, or running it 
 FixedIO - so the individual test files stay short and focused.
 """
 
+import importlib
 import struct
 from pathlib import Path
 from typing import Any, Callable, Iterator, List, Optional, Sequence, Tuple, Union
@@ -24,7 +25,7 @@ from flipjump.interpreter.io_devices.IODevice import IODevice
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 
 try:
-    from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
+    _fjcore: Any = importlib.import_module('flipjump.interpreter._fjcore')  # the C extension: no type stubs
 except ImportError:
     _fjcore = None
 
@@ -37,7 +38,7 @@ PROGRAMS_DIR = REPO_ROOT / 'programs'
 HELLO_NO_STL = PROGRAMS_DIR / 'print_tests' / 'hello_no-stl.fj'
 CAT_PROGRAM = PROGRAMS_DIR / 'print_tests' / 'cat.fj'
 
-HELLO_WORLD_OUTPUT = b'Hello, World!'
+HELLO_WORLD_OUTPUT: bytes = b'Hello, World!'
 
 # a minimal no-stl preamble (taken from hello_no-stl.fj) that places the IO output-cell at
 # address 2w and jumps over it to code_start. it's required before any real op in a no-stl
@@ -204,10 +205,10 @@ def labels_off_their_ops(
 ) -> None:
     """the control: a pool whose ops and labels disagree - the labels of one moved table (`which` picks its index from
     the pool's placement: BlockPool.place_deferred) lie `delta` bits off its ops (DeferredTables.labels_of)"""
-    place, labels_of = BlockPool.place_deferred, DeferredTables.labels_of
+    place, labels_of = vars(BlockPool)['place_deferred'], vars(DeferredTables)['labels_of']  # the originals
 
     def placing(self: BlockPool, tables: DeferredTables, labels: Any, end: int) -> Sequence[int]:
-        addresses = place(self, tables, labels, end)
+        addresses: Sequence[int] = place(self, tables, labels, end)
         tables.shifted = which(self, tables, addresses)  # type: ignore[attr-defined]
         return addresses
 

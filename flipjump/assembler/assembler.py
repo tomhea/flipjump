@@ -412,7 +412,7 @@ def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: D
         elif kind == PAD:
             address += next_slot() * 2 * w
         elif kind == op_stream.OBJ:
-            obj = stream.refs[next_slot()]
+            obj = stream.refs[next(slots)]
             address = obj.start_address if isinstance(obj, NewSegment) else obj.first_address_after_reserved
         else:
             if kind == FJ_PACKED:
@@ -471,9 +471,12 @@ def tables_armed_below(pads: Sequence[Tuple[int, int]], top: int, rest: int, fli
 
 def _label_address(stream: OpStream, encoded: int, labels: Dict[str, int]) -> int:
     ref = stream.refs[encoded >> 2]
-    if encoded & 3 == op_stream.TAG_EXPR:
-        ref = op_stream.linear_sum(ref)[0]  # type: ignore[index]
-    return labels[ref]
+    if encoded & 3 != op_stream.TAG_EXPR:
+        return labels[ref]
+    linear = op_stream.linear_sum(ref)
+    label = None if linear is None else linear[0]
+    assert label is not None  # a VALUE_ADDRESS expression is one label plus a constant
+    return labels[label]
 
 
 # what a wflip's value is (see BinaryData.pinned_value): a number, an address (a label plus a constant), or computed
@@ -588,10 +591,11 @@ def resolve_into(
     )
     guard = offset_guard
     if guard is not None:  # a refusal says where the op is: its address, and the label nearest it
+        label_below = guard.label_below
 
         def where() -> str:
             address = binary_data.first_address + len(binary_data.fj_words) * memory_width
-            return f' of the op at {hex(address)} (after the label {guard.label_below(address)})'
+            return f' of the op at {hex(address)} (after the label {label_below(address)})'
 
         guard.resolving(where)
 
@@ -648,7 +652,7 @@ def resolve_into(
             elif kind == PAD:
                 binary_data.insert_padding(next_slot())
             else:
-                op = refs[next_slot()]
+                op = refs[next(slots)]
                 if isinstance(op, NewSegment):
                     binary_data.insert_new_segment(fjm_writer, op.start_address, op.wflip_start_address)
                 elif isinstance(op, ReserveBits):
@@ -719,14 +723,15 @@ def assemble(
     defines_file: Optional[Path] = None
     if defines:
         # a .fj file parsed before the stl (so a constant the stl uses is overridden too), deleted when done
-        defines_dir = TemporaryDirectory(suffix='__defines')
-        defines_file = Path(defines_dir.name) / '_defines.fj'
+        directory = TemporaryDirectory(suffix='__defines')
+        file = Path(directory.name) / '_defines.fj'
         try:
-            write_defines_file(defines, defines_file)
+            write_defines_file(defines, file)
         except ValueError:
-            defines_dir.cleanup()
+            directory.cleanup()
             raise
-        input_files = [('d1', defines_file), *input_files]
+        input_files = [('d1', file), *input_files]
+        defines_dir, defines_file = directory, file
     # the pipeline allocates a large acyclic graph: the cyclic gc only re-walks it (restored in finally)
     gc_was_enabled = gc.isenabled()
     gc.disable()

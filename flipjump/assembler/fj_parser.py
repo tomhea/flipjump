@@ -270,11 +270,9 @@ class FJLexer(sly.Lexer):
 
     ignore = ' \t'
 
-    # noinspection PyTypeChecker
     def NUMBER(self, t: Token) -> Token:
-        n = t.value
+        n = str(t.value)
         if len(n) >= 2:
-            # noinspection PyUnresolvedReferences
             if n[0] == "'":
                 t.value = get_char_value_and_length(n[1:-1])[0]
             elif n[1] in 'xX':
@@ -289,7 +287,7 @@ class FJLexer(sly.Lexer):
 
     def STRING(self, t: Token) -> Token:
         chars = []
-        s = t.value[1:-1]
+        s = str(t.value)[1:-1]
         i = 0
         while i < len(s):
             val, length = get_char_value_and_length(s[i:])
@@ -596,7 +594,7 @@ class FJParser(sly.Parser):
     def to_base_name(name: str) -> str:
         return name.split('.')[-1]
 
-    def error(self, token: Token) -> None:
+    def error(self, token: Optional[Token]) -> None:
         global error_occurred, all_errors
         error_occurred = True
 

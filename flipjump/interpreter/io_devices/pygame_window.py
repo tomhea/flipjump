@@ -114,8 +114,7 @@ class PygameWindow:
     def _os_window(self) -> Any:
         """the OS window of the display surface: `from_display_module` is pygame-ce's only handle to it (its
         deprecation, in favour of building on `pygame.Window`, is silenced)."""
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', DeprecationWarning)
+        with warnings.catch_warnings(record=False, action='ignore', category=DeprecationWarning):
             return self._pygame.window.Window.from_display_module()
 
     def set_title(self, title: str) -> None:
@@ -274,9 +273,8 @@ class PcIO(IODevice):
         self._keyboard.end_of_run()
 
     def close(self) -> None:
-        window = getattr(self._screen, 'window', None)
-        if window is not None:
-            window.close()
+        if isinstance(self._screen, InteractiveScreen):
+            self._screen.window.close()
 
     def read_bit(self) -> bool:
         return self._keyboard.read_bit()

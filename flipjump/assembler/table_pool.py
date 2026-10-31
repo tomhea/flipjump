@@ -272,6 +272,12 @@ class OffsetGuard:
             return bisect.bisect_left(self.anchors, stranded[0]) + stranded[1]
         return bisect.bisect_right(self.anchors, address)
 
+    def check_label(self, label: str, offset: int) -> None:
+        """check `label + offset` now if `label` is declared (else labels_resolve does)"""
+        address = self.labels.get(label)
+        if address is not None:
+            self.check(label, address, offset)
+
     def check(self, label: str, address: int, offset: int, operand: Optional[str] = None) -> None:
         """the operand `label + offset` (or a sum that is one: `operand`), where `label` is at `address`"""
         target = address + offset
@@ -351,7 +357,8 @@ class OffsetGuard:
 
     def label_below(self, address: int) -> str:
         """the label nearest at or below `address` (slow - a refusal asks)"""
-        return max(((value, name) for name, value in self.labels.items() if value <= address), default=(0, ''))[1]
+        _, label = max(((value, name) for name, value in self.labels.items() if value <= address), default=(0, ''))
+        return label
 
     def _refuse_inside(self, operand: str, target: int) -> None:
         table = self.table_at(target)
@@ -360,8 +367,9 @@ class OffsetGuard:
 
     def refuse(self, operand: str, why: str) -> NoReturn:
         """refuse the program: moving the tables would change what `operand` (of the op `where()` names) means"""
-        if self.emitting is not None and self.emitting() > self.inline_end:
-            raise reached_the_pool(self.emitting(), self.inline_end)  # the program's own code did: that is the cause
+        emitting = None if self.emitting is None else self.emitting()
+        if emitting is not None and emitting > self.inline_end:
+            raise reached_the_pool(emitting, self.inline_end)  # the program's own code did: that is the cause
         raise FlipJumpAssemblerException(
             f'table-placement: the operand `{operand}`{self.where()} {why}. Address a moved table by its own labels, '
             f'or assemble without a table pool.'
@@ -809,9 +817,10 @@ class BlockPool:
     def pinned_words(self) -> Dict[Expr, int]:
         """{source-word Expr: block base}; a broken group's word too if `pin_incomplete_groups` or hot (an inline
         table at `A` is armed with `A ^ base`: slower, still right)"""
-        return {
-            expr: base
-            for group, (base, expr) in self.groups.items()
-            if expr is not None
-            and (self.pin_incomplete_groups or group in self.hot_sites or group not in self.broken_groups)
-        }
+        pinned: Dict[Expr, int] = {}
+        for group, (base, expr) in self.groups.items():
+            if expr is not None and (
+                self.pin_incomplete_groups or group in self.hot_sites or group not in self.broken_groups
+            ):
+                pinned[expr] = base
+        return pinned

@@ -16,10 +16,13 @@ the one its Expr evaluates to. An op with a deferred operand keeps its CodePosit
 from __future__ import annotations
 
 from array import array
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple, Union
 
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, NewSegment, Padding, ReserveBits, WordFlip
+
+if TYPE_CHECKING:
+    from flipjump.assembler.table_pool import OffsetGuard  # (it imports this module)
 
 # op kinds. Slots per kind:
 FJ = 0  # flip, jump - both literal
@@ -149,7 +152,7 @@ class OpStream:
 
     __slots__ = ('kinds', 'vals', 'refs', 'labels', 'keep_label_values', 'guard')
 
-    def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Any = None):
+    def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Optional[OffsetGuard] = None):
         """
         @param refs: the reference list, shared by every stream of one preprocessor
         @param labels: the preprocessor's labels: a declared label is folded into a literal
@@ -179,7 +182,7 @@ class OpStream:
                 return False
         elif value.__class__ is str:
             if self.guard is not None and value in self.guard.watched:
-                self._guarded(value, 0)
+                self.guard.check_label(value, 0)
             known = self.labels.get(value)
             if known is not None and 0 <= known <= LITERAL_MAX:
                 vals.append(known)
@@ -190,8 +193,10 @@ class OpStream:
             return True
         else:
             linear = _linear_in(expr, _NO_PARAMS)
-            if linear is not None and linear[0] is not None and self._label_plus(linear[0], linear[1]):
-                return linear[0] not in self.labels
+            if linear is not None:
+                name, const = linear
+                if name is not None and self._label_plus(name, const):
+                    return name not in self.labels
             if self.guard is not None:
                 self.guard.check_emitted(expr, is_address)
         refs = self.refs
@@ -203,7 +208,7 @@ class OpStream:
         """append the slot(s) of `labels[name] + const`; False (nothing appended) if it does not fit"""
         vals = self.vals
         if self.guard is not None and (const or name in self.guard.watched):
-            self._guarded(name, const)
+            self.guard.check_label(name, const)
         known = self.labels.get(name)
         if known is not None:
             if 0 <= known + const <= LITERAL_MAX:
@@ -220,12 +225,6 @@ class OpStream:
             refs.append(name)
             return True
         return False
-
-    def _guarded(self, name: str, const: int) -> None:
-        """the pool's guard checks `name + const` now if `name` is declared (else labels_resolve does)"""
-        address = self.guard.labels.get(name)
-        if address is not None:
-            self.guard.check(name, address, const)
 
     def _operand_in(self, expr: Expr, params: Dict[str, Expr], is_address: bool = True) -> bool:
         """_operand(expr.eval_new(params), is_address) - the same slots - building no Expr for a +/- operand.
@@ -246,9 +245,12 @@ class OpStream:
                     name, const = value, 0
                 else:
                     linear = _linear_memo(substitute)
-                    if linear is None or linear[0] is None:
+                    if linear is None:
                         return self._operand(substitute, is_address)
-                    name, const = linear  # type: ignore[assignment]
+                    label, const = linear
+                    if label is None:
+                        return self._operand(substitute, is_address)
+                    name = label
         elif value.__class__ is int:
             if 0 <= value <= LITERAL_MAX:
                 self.vals.append(value)
@@ -258,14 +260,15 @@ class OpStream:
             linear = _linear_in(expr, params)
             if linear is None:
                 return self._operand(expr.eval_new(params), is_address)
-            name, const = linear  # type: ignore[assignment]
-            if name is None:
+            label, const = linear
+            if label is None:
                 if 0 <= const <= LITERAL_MAX:
                     self.vals.append(const)
                     return False
                 return self._operand(expr.eval_new(params), is_address)
+            name = label
         if self.guard is not None and (const or name in self.guard.watched):
-            self._guarded(name, const)
+            self.guard.check_label(name, const)
         known = self.labels.get(name)
         if known is not None:
             known += const
