@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
-from flipjump import assemble, assemble_run_according_to_cmd_line_args, flipjump_quickstart
+from flipjump import assemble, assemble_run_according_to_cmd_line_args, flipjump_cli, flipjump_quickstart
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
 from flipjump.assembler import assembler
@@ -250,7 +250,7 @@ def test_count_bits_keeps_its_pin(tmp_path: Path) -> None:
     # but nothing jumps through dst except its arms, so no flip of it is one: dst stays pinned. With an op that jumps
     # to dst's op (as C32's arm by a number does), it would not
     source = GAPS / 'c30_count_bits_stays_pinned.fj'
-    pool = BlockPool.for_flat(W)
+    pool = BlockPool(W)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
     assert pool.pinned_words() and pool.unpins == {}
     # count_switch, behind a `pad 16`, a value dst's flips can make
@@ -329,7 +329,7 @@ def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monke
 
 def _proof(name: str) -> List[str]:
     files = get_file_tuples([str(GAPS / f'{name}.fj')], no_stl=False)
-    return prove_relocation(W, parse_macro_tree(files, W, True), BlockPool.for_flat(W)).mismatches
+    return prove_relocation(W, parse_macro_tree(files, W, True), BlockPool(W)).mismatches
 
 
 @pytest.mark.parametrize(
@@ -411,7 +411,7 @@ def _source(tmp_path: Path, text: str = _XOR) -> Path:
 
 
 def test_a_pool_lays_out_one_assembly(tmp_path: Path) -> None:
-    for pool in (BlockPool(W, POOL_BASE), BlockPool.for_flat(W)):
+    for pool in (BlockPool(W, POOL_BASE), BlockPool(W)):
         assemble([_source(tmp_path)], tmp_path / 'a.fjm', memory_width=W, print_time=False, table_pool=pool)
         with pytest.raises(FlipJumpException, match='already laid out'):
             assemble([_source(tmp_path)], tmp_path / 'b.fjm', memory_width=W, print_time=False, table_pool=pool)
@@ -456,19 +456,28 @@ def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: P
     plain_fjd = tmp_path / 'plain.fjd'
     assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False, debugging_file_path=plain_fjd)
     plain = _ops(tmp_path / 'plain.fjm')
-    pool = BlockPool.for_flat(64)
+    pool = BlockPool(64)
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
     assert pool.reads_words_raw and pool.allocated and not pool.groups and pool.pinned_words() == {}
     assert list(pool.unpins) == ['the pointer runtime'] and pooled[0] == plain[0] and pooled[1] < plain[1]
-    # the control: in blocks with no word pinned (every cell named raw), the same tables run more ops
-    blocked_pool = BlockPool.for_flat(64, pin_all_but=list(load_debugging_labels(plain_fjd)))
-    assemble(source, tmp_path / 'blocked.fjm', memory_width=64, print_time=False, table_pool=blocked_pool)
+    # the control: in blocks with no word pinned (every cell named raw), the same tables run more ops. (The debugging
+    # file's macro-start labels exist only in a build that writes one: here they are missing labels, a warning.)
+    blocked_pool = BlockPool(64, pin_all_but=list(load_debugging_labels(plain_fjd)))
+    assemble(
+        source,
+        tmp_path / 'blocked.fjm',
+        memory_width=64,
+        print_time=False,
+        table_pool=blocked_pool,
+        warning_as_errors=False,
+    )
     blocked = _ops(tmp_path / 'blocked.fjm')
     assert blocked_pool.groups and blocked[0] == plain[0] and blocked[1] > pooled[1]
 
 
-# the flat spec: fj --pool-tables's pool (BlockPool.for_flat) sits at the first power of two above the program
+# the flat spec: fj --pool-tables's pool (BlockPool(w): AFTER_PROGRAM) sits at the first power of two above the
+# program
 _INIT_FIRST = """
 stl.startup
     ;code
@@ -487,9 +496,9 @@ y: hex.hex 5
 
 
 def _flat(tmp_path: Path, text: str, memory_width: int) -> Tuple[BlockPool, Tuple[str, str], int]:
-    """(the pool, the run, the .fjm's span in words) of `text` assembled with BlockPool.for_flat"""
+    """(the pool, the run, the .fjm's span in words) of `text` assembled with BlockPool(memory_width)"""
     source = _source(tmp_path, text)
-    table_pool = BlockPool.for_flat(memory_width)
+    table_pool = BlockPool(memory_width)
     assemble([source], tmp_path / 'flat.fjm', memory_width=memory_width, print_time=False, table_pool=table_pool)
     return table_pool, run(tmp_path / 'flat.fjm', 30), read_fjm_header(tmp_path / 'flat.fjm').span_words
 
@@ -511,25 +520,40 @@ def test_the_default_flat_layout_is_compact(tmp_path: Path, memory_width: int) -
     assert base < 2 * plain_span * memory_width and span < 2 * plain_span
 
 
-def test_the_cli_pool_gets_only_its_intended_arguments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # G4: fj --pool-tables passes the width, and no tuning knob
-    made: List[Tuple[Tuple[Any, ...], Dict[str, Any], BlockPool]] = []
-    real = BlockPool.for_flat.__func__  # type: ignore[attr-defined]
+def _cli_pools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *flags: str) -> List[BlockPool]:
+    """the pools fj --pool-tables <flags> makes"""
+    made: List[BlockPool] = []
 
-    def for_flat(cls: Any, *args: Any, **kwargs: Any) -> BlockPool:
-        pool: BlockPool = real(cls, *args, **kwargs)
-        made.append((args, kwargs, pool))
-        return pool
+    class Recorded(BlockPool):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            made.append(self)
 
-    monkeypatch.setattr(BlockPool, 'for_flat', classmethod(for_flat))
+    monkeypatch.setattr(flipjump_cli, 'BlockPool', Recorded)
     args = ['--asm', '-s', '-o', str(tmp_path / 'a.fjm'), '-w', '32', '--pool-tables', '--flat-max-words', '4096']
-    assemble_run_according_to_cmd_line_args(cmd_line_args=[*args, str(_source(tmp_path))])
-    ((given, kwargs, pool),) = made
-    assert (
-        given == (32, None) and kwargs == {} and pool.auto_base and pool.span_bits is None and pool.pin_all_but is None
+    assemble_run_according_to_cmd_line_args(cmd_line_args=[*args, *flags, str(_source(tmp_path))])
+    return made
+
+
+def test_the_cli_pool_gets_only_its_intended_arguments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # G4: fj --pool-tables alone: the pool goes after the program, with no tuning knob
+    (pool,) = _cli_pools(tmp_path, monkeypatch)
+    assert pool.after_program and pool.pool_end is None and pool.pin_all_but is None
+    assert (pool.max_slot_ops, pool.spread_factor, pool.spread_min_tables) == (32, 1, 256)
+    assert not (pool.pin_incomplete_groups or pool.heat) and pool.counts and not pool.alias
+
+
+def test_the_cli_pool_flags_reach_the_pool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    flags = ['--pool-base', '0x40000000', '--pool-end', '0x80000000', '--pool-max-slot-ops', '64']
+    flags += ['--pool-spread-factor', '2', '--pool-spread-min-tables', '4', '--pool-pin-incomplete-groups']
+    (pool,) = _cli_pools(tmp_path, monkeypatch, *flags)
+    assert not pool.after_program and (pool.pool_base, pool.pool_end) == (0x40000000, 0x80000000)
+    assert (pool.max_slot_ops, pool.spread_factor, pool.spread_min_tables, pool.pin_incomplete_groups) == (
+        64,
+        2,
+        4,
+        True,
     )
-    assert (pool.max_slot_ops, pool.spread, pool.spread_min_count) == (32, 1, 256)
-    assert not (pool.pin_broken or pool.heat) and pool.counts and not pool.alias
 
 
 def test_a_flat_pool_that_places_no_table_is_no_pool(tmp_path: Path) -> None:
@@ -537,7 +561,7 @@ def test_a_flat_pool_that_places_no_table_is_no_pool(tmp_path: Path) -> None:
     # no table has no start - the binary is the plain one, byte for byte
     source = [PROGRAMS_DIR / 'print_tests' / 'hello_world_with_str.fj']
     assemble(source, tmp_path / 'plain.fjm', memory_width=64, print_time=False)
-    pool = BlockPool.for_flat(64)
+    pool = BlockPool(64)
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     assert pool.end == 0 and pool.pool_start() == 1 << 64
     assert (tmp_path / 'pooled.fjm').read_bytes() == (tmp_path / 'plain.fjm').read_bytes()
@@ -548,4 +572,4 @@ def test_a_program_that_leaves_its_tables_no_room_is_refused(tmp_path: Path) -> 
     # memory: no room for them above the program
     source = [PROGRAMS_DIR / 'prime_sieve.fj']
     with pytest.raises(FlipJumpException, match='has no room for its tables'):
-        assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=BlockPool.for_flat(64))
+        assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=BlockPool(64))

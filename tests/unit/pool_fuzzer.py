@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # refusals that say why (any other refusal of a pooled build is a finding)
 # the refusals a random program may meet: a span too small, a program reaching the pool, and a label distance across
 # a moved table's place (the `distance` op)
-KNOWN_REFUSALS = ('inside the table pool', 'Raise span_bits', 'cannot hold', 'takes the distance across the place')
+KNOWN_REFUSALS = ('inside the table pool', 'Raise pool_end', 'cannot hold', 'takes the distance across the place')
 
 _RUNNER = """
 import sys
@@ -191,16 +191,18 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
     made: Dict[str, BlockPool] = {}
 
     def cli() -> BlockPool:
-        made['cli'] = BlockPool.for_flat(memory_width)
+        made['cli'] = BlockPool(memory_width)
         return made['cli']
 
     def tight() -> BlockPool:
         used = getattr(made['cli'], '_used', 0) or 64 * 2 * memory_width
         span = max(32 * memory_width, int(used * rng.uniform(0.3, 0.95)) // (2 * memory_width) * 2 * memory_width)
-        return BlockPool(memory_width, base, span_bits=span, pin_broken=rng.random() < 0.5)
+        return BlockPool(memory_width, base, pool_end=base + span, pin_incomplete_groups=rng.random() < 0.5)
 
     def spread_buckets() -> BlockPool:
-        return BlockPool(memory_width, base, spread=2, spread_min_count=4, max_slot_ops=512, pin_broken=True)
+        return BlockPool(
+            memory_width, base, spread_factor=2, spread_min_tables=4, max_slot_ops=512, pin_incomplete_groups=True
+        )
 
     return {
         'cli': cli,
@@ -238,7 +240,7 @@ def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0
             findings.append(f'{seed} w={memory_width} {name}: the pooled run differs from the plain one')
     if cli_same is not None:
         macros = parse_macro_tree(get_file_tuples([str(source)]), memory_width, True)
-        proof = prove_relocation(memory_width, macros, BlockPool.for_flat(memory_width))
+        proof = prove_relocation(memory_width, macros, BlockPool(memory_width))
         if bool(proof.mismatches) == cli_same:
             findings.append(
                 f'{seed} w={memory_width} proof: {proof.mismatches[:1]} where the cli pool runs the same: {cli_same}'

@@ -68,7 +68,7 @@ def assemble(
 
     :param table_pool: if given, move the tables declared relocatable (the expansions of `__relocatable__`
     macros) to where they are cheap to arm, so every table dispatch runs fewer ops; the program runs the same.
-    See flipjump/assembler/table_pool.py (`fj --pool-tables` makes BlockPool.for_flat(memory_width)).
+    See flipjump/assembler/table_pool.py (`fj --pool-tables` makes BlockPool(memory_width)).
     :param run_flags: written into the .fjm: how it runs by default (fjm_consts.RUN_FLAG_*)
     :param io_mode: written into the .fjm: the io device it runs with by default (fjm_consts.IO_MODE_*)
 

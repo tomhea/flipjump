@@ -15,7 +15,7 @@ from typing import AbstractSet, Callable, List, Dict, MutableSequence, Sequence,
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.functions import save_debugging_labels
-from flipjump.utils.progress import ProgressBar
+from flipjump.utils.progress import ProgressBar, clear_progress_line
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.utils.exceptions import (
     FlipJumpAssemblerException,
@@ -330,6 +330,16 @@ def resolve_pinned(
 
 # labels_resolve reports its progress once per this many ops
 _PROGRESS_CHUNK = 1 << 16
+
+
+def pin_all_but_warning(missing: List[str], warning_as_errors: bool) -> None:
+    """pin_all_but names labels the program does not define (a typo leaves a raw cell pinned): a warning, or an error"""
+    shown = ', '.join(missing[:5]) + (f' and {len(missing) - 5} more' if len(missing) > 5 else '')
+    message = f'pin_all_but names labels the program does not define: {shown}'
+    if warning_as_errors:
+        raise FlipJumpAssemblerException(message)
+    clear_progress_line()
+    print(f'Warning: {message}')
 
 
 def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: Dict[int, int], pool: BlockPool) -> None:
@@ -680,8 +690,11 @@ def assemble(
         # is dropped (the pool's unpins say why)
         pinned = None
         if table_pool is not None:
+            unpinned_words = table_pool.unpinned_words(labels)
+            if table_pool.pin_all_but_missing:
+                pin_all_but_warning(table_pool.pin_all_but_missing, warning_as_errors)
             pinned, table_pool.pin_conflicts = resolve_pinned(
-                table_pool.pinned_words(), labels, unpinned_words=table_pool.unpinned_words(labels)
+                table_pool.pinned_words(), labels, unpinned_words=unpinned_words
             )
             if pinned:
                 unpin(ops, labels, memory_width, pinned, table_pool)

@@ -422,9 +422,17 @@ def test_cli_pin_all_but_names_the_pointed_cells_and_the_pool_pins_the_rest(tmp_
     assert _output_and_ops(named)[0] == _output_and_ops(plain)[0] != b''
 
 
-@pytest.mark.parametrize('options', [['--pin-all-but', 'd0'], ['--pool-tables', '--pin-all-but', 'd0:x']])
+@pytest.mark.parametrize(
+    'options',
+    [
+        ['--pin-all-but', 'd0'],
+        ['--pool-end', '0x1000'],
+        ['--pool-pin-incomplete-groups'],
+        ['--pool-tables', '--pin-all-but', 'd0:x'],
+    ],
+)
 def test_cli_pin_all_but_refuses_a_bad_use(tmp_path: Path, options: List[str]) -> None:
-    # without --pool-tables, or with an OPS that is no positive number
+    # a pool flag without --pool-tables, or an OPS that is no positive number
     with pytest.raises(SystemExit):
         _cli_assemble(tmp_path, 'bad', [PROGRAMS_DIR / 'concept_checks' / 'hex_ptr.fj'], *options)
 

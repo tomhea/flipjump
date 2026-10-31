@@ -15,7 +15,7 @@ from typing import Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
-from flipjump.assembler.table_pool import BlockPool, UnpinnedCell
+from flipjump.assembler.table_pool import AFTER_PROGRAM, BlockPool, UnpinnedCell
 from flipjump.fjm.fjm_consts import (
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
@@ -151,6 +151,36 @@ def parse_unpinned_cells(text: str, error_func: ErrorFunc) -> List[UnpinnedCell]
     return cells
 
 
+# the pool's flags: {argparse dest: BlockPool's keyword}
+POOL_OPTIONS = {
+    'pool_end': 'pool_end',
+    'pool_max_slot_ops': 'max_slot_ops',
+    'pool_spread_factor': 'spread_factor',
+    'pool_spread_min_tables': 'spread_min_tables',
+}
+
+
+def make_table_pool(args: argparse.Namespace, error_func: ErrorFunc) -> Optional[BlockPool]:
+    """the BlockPool of --pool-tables and its flags (None without --pool-tables)"""
+    given = [dest for dest in ('pool_base', 'pin_all_but', *POOL_OPTIONS) if getattr(args, dest) is not None]
+    if args.pool_pin_incomplete_groups:
+        given.append('pool_pin_incomplete_groups')
+    if not args.pool_tables:
+        if given:
+            error_func(f"--{given[0].replace('_', '-')} needs --pool-tables.")
+        return None
+    options = {
+        keyword: getattr(args, dest) for dest, keyword in POOL_OPTIONS.items() if getattr(args, dest) is not None
+    }
+    return BlockPool(
+        args.width,
+        AFTER_PROGRAM if args.pool_base is None else args.pool_base,
+        pin_incomplete_groups=args.pool_pin_incomplete_groups,
+        pin_all_but=None if args.pin_all_but is None else parse_unpinned_cells(args.pin_all_but, error_func),
+        **options,
+    )
+
+
 def get_version(version: Optional[int], is_outfile_specified: bool, error_func: ErrorFunc) -> FJMVersion:
     """
     @param version: the fjm version. if None the default version will be taken.
@@ -200,10 +230,7 @@ def assemble(
         io_mode=args.io_mode,
         lzma_preset=args.lzma_preset,
     )
-    if args.pin_all_but is not None and not args.pool_tables:
-        error_func('--pin-all-but needs --pool-tables.')
-    pin_all_but = None if args.pin_all_but is None else parse_unpinned_cells(args.pin_all_but, error_func)
-    table_pool = BlockPool.for_flat(args.width, pin_all_but) if args.pool_tables else None
+    table_pool = make_table_pool(args, error_func)
     assembler.assemble(
         file_tuples,
         args.width,
@@ -414,6 +441,45 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         action='store_true',
         help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
         "they are cheap to arm: fewer ops per table dispatch, the same program",
+    )
+
+    asm_arguments.add_argument(
+        '--pool-base',
+        type=lambda text: int(text, 0),
+        metavar='ADDRESS',
+        help="with --pool-tables: the bit address of the pool's first block (default: the first power of two above "
+        "the program)",
+    )
+    asm_arguments.add_argument(
+        '--pool-end',
+        type=lambda text: int(text, 0),
+        metavar='ADDRESS',
+        help="with --pool-tables: the pool ends below this bit address (default: the top of memory)",
+    )
+    asm_arguments.add_argument(
+        '--pool-max-slot-ops',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: the widest table, in ops, the pool moves (default 32); wider ones stay in place",
+    )
+    asm_arguments.add_argument(
+        '--pool-spread-factor',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: give each big group of tables N times the slots it needs, so its tables take the "
+        "cheapest ones (default 1)",
+    )
+    asm_arguments.add_argument(
+        '--pool-spread-min-tables',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: a group of at least N tables is big, for --pool-spread-factor (default 256)",
+    )
+    asm_arguments.add_argument(
+        '--pool-pin-incomplete-groups',
+        action='store_true',
+        help="with --pool-tables: pin a group's dispatch word even when some of its tables stayed in place (cheaper "
+        "for the moved ones, dearer for the others)",
     )
 
     asm_arguments.add_argument(

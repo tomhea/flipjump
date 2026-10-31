@@ -162,6 +162,14 @@ unless `--pin-all-but LABEL[:OPS],...` names those cells: then every other dispa
 more ops (`--pin-all-but d0,d1:1` - a label alone runs to the next label). Leaving such a cell out makes the program
 run wrong.
 
+The pool's layout, each flag with `--pool-tables`:
+- `--pool-base ADDRESS`, `--pool-end ADDRESS`: where the pool lies (default: from the first power of two above the
+  program to the top of memory).
+- `--pool-max-slot-ops N`: the widest table it moves, in ops (default 32).
+- `--pool-spread-factor N`, `--pool-spread-min-tables M`: a group of at least M tables gets N times the slots, so its
+  tables take the cheapest ones (defaults 1, 256).
+- `--pool-pin-incomplete-groups`: pin a group's dispatch word even when some of its tables stayed in place.
+
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
 

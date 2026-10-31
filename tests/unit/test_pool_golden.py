@@ -1,7 +1,8 @@
 """
 a golden test of the table pool: a real stl program assembled with a one-pass BlockPool configured as fjdoom's
-shipped build is (merged aliases, spread 2, max_slot_ops 512, pin_broken, width buckets, a heat list, a
-pin_all_but), whose .fjm, labels and census are frozen by their sha256. A refactor of the pool may not move a byte.
+shipped build is (merged aliases, spread factor 2, max_slot_ops 512, pin_incomplete_groups, width buckets, a heat
+list, a pin_all_but), whose .fjm, labels and census are frozen by their sha256. A refactor of the pool may not move
+a byte.
 
 The negative controls perturb a real knob (the spread, the heat list's order) or the raw placement's index order,
 and require the digests to change. EXTRA freezes more configurations: the CLI's flat pool, a raw program, the
@@ -140,8 +141,8 @@ class _Recorder(BlockPool):
 
 # fjdoom's shipped knobs, and a narrow variant whose 32-op tables are too wide (declined, their groups broken)
 CONFIGS: Dict[str, Dict[str, Any]] = {
-    'shipped': {'spread': 2, 'max_slot_ops': MAX_SLOT_OPS, 'pin_broken': True},
-    'narrow': {'spread': 2, 'max_slot_ops': 16, 'pin_broken': False},
+    'shipped': {'spread_factor': 2, 'max_slot_ops': MAX_SLOT_OPS, 'pin_incomplete_groups': True},
+    'narrow': {'spread_factor': 2, 'max_slot_ops': 16, 'pin_incomplete_groups': False},
 }
 
 
@@ -153,8 +154,8 @@ def _pool(heat: Optional[Heat] = None, cls: type = BlockPool, pin_all_but: Any =
     pool: BlockPool = cls(
         W,
         POOL_BASE,
-        span_bits=SPAN_BITS,
-        spread_min_count=8,
+        pool_end=POOL_BASE + SPAN_BITS,
+        spread_min_tables=8,
         pin_all_but=pin_all_but,
         **knobs,
         **({'heat': heat} if heat else {}),
@@ -231,7 +232,7 @@ def test_golden(tmp_path: Path, heat: Heat, config: str) -> None:
 # for every block (the overflow region) and the constructor's defaults
 EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
     'flat': (
-        lambda heat: BlockPool.for_flat(W, ALL_BUT_D),
+        lambda heat: BlockPool(W, pin_all_but=ALL_BUT_D),
         {
             'fjm': 'bdc8e5dd8aa7a0d2923237d7e5c27793e5a67316598999733b739a8c57704a75',
             'labels': '1646034a149d1a3e3a67d67d4a826df8ff0e43c5bffbc3bc35eb1b581dc09fad',
@@ -259,7 +260,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         },
     ),
     'flat_raw': (
-        lambda heat: BlockPool.for_flat(W),
+        lambda heat: BlockPool(W),
         {
             'fjm': 'd414bcbf643c069c887c278547824d353cd787defd3bee951e78491c52bad437',
             'labels': '967d5453523f79aff2e00bc4b46035fa33f5dcd1646b727d3cb873379ddc8d73',
@@ -318,9 +319,9 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(
             W,
             POOL_BASE,
-            span_bits=0x278000,
-            spread=2,
-            spread_min_count=8,
+            pool_end=POOL_BASE + 0x278000,
+            spread_factor=2,
+            spread_min_tables=8,
             max_slot_ops=MAX_SLOT_OPS,
             heat=heat,
             pin_all_but=ALL_BUT_D,
@@ -406,7 +407,7 @@ def test_golden_program_runs_as_without_the_pool(tmp_path: Path, heat: Heat) -> 
 
 def test_golden_negative_control_spread(tmp_path: Path, heat: Heat) -> None:
     """R9: another spread is another layout - the golden digests must see it"""
-    digests = _digests(tmp_path, heat, spread=1)
+    digests = _digests(tmp_path, heat, spread_factor=1)
     assert digests['fjm'] != GOLDEN['shipped']['fjm'] and digests['labels'] != GOLDEN['shipped']['labels']
 
 
@@ -421,7 +422,8 @@ def test_golden_negative_control_raw_span(tmp_path: Path, heat: Heat) -> None:
     """R9: a raw program's tables take the cheapest addresses of a region 256 times their slots - in a span with no
     room for that, of their slots alone: the layout changes"""
     make, golden = EXTRA['flat_raw']
-    pool = make(heat)
-    pool.span_bits = 1 << 24  # the region of 256 times the slots: 2^27.8 bits; the slots alone: 2^20
+    probe = make(heat)
+    _digests(tmp_path, heat, probe)  # where the pool goes: the first power of two above the program
+    pool = BlockPool(W, pool_end=probe.pool_base + (1 << 24))  # 256 times the slots: 2^27.8 bits; the slots: 2^20
     digests = _digests(tmp_path, heat, pool)
     assert digests['fjm'] != golden['fjm'] and digests['labels'] != golden['labels']

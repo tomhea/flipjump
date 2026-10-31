@@ -403,7 +403,7 @@ def test_a_table_too_wide_for_any_slot_declines_and_breaks_the_group() -> None:
     assert _reserve(pool) == POOL_BASE + 32 * OP_BITS
     assert _reserve(pool, 40) is None and pool.declined == 1 and pool.broken_groups == {'g'}
     assert pool.pinned_words() == {}  # a broken group is never pinned...
-    pool.pin_broken = True
+    pool.pin_incomplete_groups = True
     assert list(pool.pinned_words().values()) == [POOL_BASE]  # ...unless the caller opts in
 
 
@@ -411,19 +411,23 @@ def test_where_the_blocks_do_not_fit_the_last_groups_get_none() -> None:
     # big (4 slots) and mid (3 tables, 4 slots) are laid out before small; in 8 slots of span only big keeps its
     # block: mid's 3 tables and small's 1 take 4 slots of the overflow region after it
     slot = 16 * OP_BITS
-    assert set(_uniform({'big': 4, 'mid': 3, 'small': 1}, span_bits=9 * slot).groups) == {'big', 'mid', 'small'}
-    pool = _uniform({'big': 4, 'mid': 3, 'small': 1}, span_bits=8 * slot)
+    assert set(_uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 9 * slot).groups) == {
+        'big',
+        'mid',
+        'small',
+    }
+    pool = _uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 8 * slot)
     assert set(pool.groups) == {'big'} and pool._used == 4 * slot
     assert _reserve(pool, group='mid') is None and _reserve(pool, group='big') == POOL_BASE  # mid: the overflow
     # a hot group always keeps its block (small: 2 slots, with its rank), laid out first: the others give theirs up
-    hot = _uniform({'big': 4, 'mid': 3, 'small': 1}, span_bits=9 * slot, heat={'small': [('h', 0, 16)]})
+    hot = _uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 9 * slot, heat={'small': [('h', 0, 16)]})
     assert set(hot.groups) == {'small'}
 
 
 def test_a_pool_too_small_for_its_tables_is_refused() -> None:
     for heat in (None, {'g': [('h', 0, 16)]}):
         with pytest.raises(FlipJumpPreprocessorException, match='has no room for its tables'):
-            _uniform({'a': 1, 'g': 2}, span_bits=16 * OP_BITS, heat=heat)
+            _uniform({'a': 1, 'g': 2}, pool_end=POOL_BASE + 16 * OP_BITS, heat=heat)
 
 
 def test_the_runtime_words_are_never_relocated() -> None:
@@ -439,7 +443,7 @@ def test_the_runtime_words_are_never_relocated() -> None:
 
 
 def test_sparse_indices_use_the_cheapest_slots_of_a_spread_block() -> None:
-    pool = _uniform({'g': 300}, spread=2, spread_min_count=256)
+    pool = _uniform({'g': 300}, spread_factor=2, spread_min_tables=256)
     assert [_reserve(pool) for _ in range(4)] == [POOL_BASE + i * 16 * OP_BITS for i in (0, 1, 2, 4)]
 
 
@@ -535,8 +539,8 @@ def test_a_hot_width_grows_only_when_its_ranks_do_not_fit() -> None:
     # 300 tables with spread 2 own 1,024 slots, so 300 reserved ranks (600 in all) fit and the block
     # keeps its size; sizing the next power of two of 600 before the spread would double it
     heat = {'g': [(f's{i}', 0, 16) for i in range(300)]}
-    plain = _uniform({'g': 300}, spread=2, spread_min_count=256)
-    hot = _uniform({'g': 300}, spread=2, spread_min_count=256, heat=heat)
+    plain = _uniform({'g': 300}, spread_factor=2, spread_min_tables=256)
+    hot = _uniform({'g': 300}, spread_factor=2, spread_min_tables=256, heat=heat)
     assert hot._block_bits('g') == plain._block_bits('g')
     # 4 tables own 4 slots: 3 more ranks do not fit, so the block doubles
     grown = _uniform({'g': 4}, heat={'g': [(s, 0, 16) for s in 'abc']})
@@ -587,7 +591,7 @@ def test_no_heat_and_an_empty_heat_list_change_nothing() -> None:
     sites = [(group, f'f1:l{i}:t') for i in range(40) for group in ('g', 'k') if group == 'g' or i < 5]
     results = []
     for heat in (None, {}, {'(absent + 32)': [('h', 0, 16)]}):
-        pool = _uniform({'g': 300, 'k': 5}, spread=2, spread_min_count=256, heat=heat)
+        pool = _uniform({'g': 300, 'k': 5}, spread_factor=2, spread_min_tables=256, heat=heat)
         results.append([_reserve(pool, group=g, site=site) for g, site in sites])
     assert results[0] == results[1] == results[2]
 
@@ -672,6 +676,26 @@ def test_a_pinned_word_read_through_a_pointer_needs_the_callers_exclusion(tmp_pa
     assert blocked_pool.pinned_words()  # the other armed words are still pinned
 
 
+def test_a_pin_all_but_label_the_program_does_not_define_is_an_error_or_a_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / 'p.fj'
+    source.write_text(POINTER_PROGRAM)
+    with pytest.raises(FlipJumpException, match='does not define: dd'):  # warnings are errors: the default
+        assemble([source], tmp_path / 'e.fjm', memory_width=W, print_time=False, table_pool=_pin_all_but('dd'))
+    pool = _pin_all_but('dd')
+    assemble([source], tmp_path / 'w.fjm', memory_width=W, print_time=False, table_pool=pool, warning_as_errors=False)
+    assert pool.pin_all_but_missing == ['dd'] and 'Warning: pin_all_but names labels' in capsys.readouterr().out
+    # the control: a label the program defines is no warning
+    pool = _pin_all_but('d')
+    assemble([source], tmp_path / 'd.fjm', memory_width=W, print_time=False, table_pool=pool)
+    assert pool.pin_all_but_missing == []
+
+
+def _pin_all_but(*cells: str) -> BlockPool:
+    return BlockPool(W, POOL_BASE, pin_all_but=cells)
+
+
 def test_an_undeclared_table_stays_inline(tmp_path: Path) -> None:
     reference, _, _ = build_and_run(FALL_THROUGH_PROGRAM, tmp_path, None, name='inline')
     pool = BlockPool(W, POOL_BASE)
@@ -684,18 +708,18 @@ def test_a_program_that_grows_into_the_pool_is_refused(tmp_path: Path) -> None:
         build_and_run(XOR_PROGRAM, tmp_path, BlockPool(W, 1 << 12))
 
 
-@pytest.mark.parametrize('pin_broken', [False, True], ids=['unpin-broken', 'pin-broken'])
+@pytest.mark.parametrize('pin_incomplete', [False, True], ids=['unpin-incomplete', 'pin-incomplete'])
 def test_a_table_too_wide_for_any_slot_stays_inline_and_the_program_runs_the_same(
-    tmp_path: Path, pin_broken: bool
+    tmp_path: Path, pin_incomplete: bool
 ) -> None:
     # no slot of max_slot_ops=16 holds hex.cmp's 31-op table: it is declined at its pad, and its group breaks
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
-    pool = BlockPool(W, POOL_BASE, max_slot_ops=16, pin_broken=pin_broken)
+    pool = BlockPool(W, POOL_BASE, max_slot_ops=16, pin_incomplete_groups=pin_incomplete)
     output, _, _ = build_and_run(CMP_PROGRAM, tmp_path, pool)
     assert output == reference and pool.declined > 0 and pool.broken_groups
     pinned = set(pool.pinned_words())
     for group, (_, expr) in pool.groups.items():
-        assert (expr in pinned) == (expr is not None and (pin_broken or group not in pool.broken_groups))
+        assert (expr in pinned) == (expr is not None and (pin_incomplete or group not in pool.broken_groups))
 
 
 # a span too small for hex.cmp's blocks: the groups at the end of the layout order go to the overflow region
@@ -707,10 +731,10 @@ def _overflow_starts(pool: BlockPool, fjm_path: Path) -> List[int]:
     return [s.segment_start * W for s in Reader(fjm_path).memory_segments if s.segment_start * W >= blocks_end]
 
 
-@pytest.mark.parametrize('pin_broken', [False, True], ids=['unpin-broken', 'pin-broken'])
-def test_what_gets_no_block_goes_to_the_overflow_region(tmp_path: Path, pin_broken: bool) -> None:
+@pytest.mark.parametrize('pin_incomplete', [False, True], ids=['unpin-incomplete', 'pin-incomplete'])
+def test_what_gets_no_block_goes_to_the_overflow_region(tmp_path: Path, pin_incomplete: bool) -> None:
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
-    pool = BlockPool(W, POOL_BASE, span_bits=NO_ROOM_SPAN, pin_broken=pin_broken)
+    pool = BlockPool(W, POOL_BASE, pool_end=POOL_BASE + NO_ROOM_SPAN, pin_incomplete_groups=pin_incomplete)
     output, _, fjm_path = build_and_run(CMP_PROGRAM, tmp_path, pool)
     assert output == reference
     assert pool.overflowed > 0 and pool.allocated > 0 and pool.deferred == pool.allocated + pool.overflowed
@@ -732,7 +756,7 @@ def test_an_overflow_table_moved_off_its_labels_is_caught(tmp_path: Path, monkey
 
     labels_off_their_ops(monkeypatch, 16 * OP_BITS, first_overflow)
     try:
-        output = build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, span_bits=NO_ROOM_SPAN))[0]
+        output = build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, pool_end=POOL_BASE + NO_ROOM_SPAN))[0]
     except FlipJumpException:
         output = None  # (refused: its segment overlaps another)
     assert output != reference
@@ -740,7 +764,7 @@ def test_an_overflow_table_moved_off_its_labels_is_caught(tmp_path: Path, monkey
 
 def test_a_program_too_big_for_its_pool_is_refused(tmp_path: Path) -> None:
     with pytest.raises(FlipJumpException, match='has no room for its tables'):
-        build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, span_bits=1 << 14), name='tiny')
+        build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, pool_end=POOL_BASE + (1 << 14)), name='tiny')
 
 
 def test_the_op_stream_does_not_depend_on_what_the_pool_decides(tmp_path: Path) -> None:
@@ -749,7 +773,7 @@ def test_the_op_stream_does_not_depend_on_what_the_pool_decides(tmp_path: Path) 
     def outside_tables(labels: Dict[str, int]) -> Dict[str, int]:
         return {label: address for label, address in labels.items() if address < POOL_BASE}
 
-    configs: List[Dict[str, Any]] = [{}, {'spread': 2, 'spread_min_count': 4}, {'max_slot_ops': 512}]
+    configs: List[Dict[str, Any]] = [{}, {'spread_factor': 2, 'spread_min_tables': 4}, {'max_slot_ops': 512}]
     laid_out = [outside_tables(expand_labels(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, **c))) for c in configs]
     assert all(labels == laid_out[0] for labels in laid_out[1:])
     assert outside_tables(expand_labels(CMP_PROGRAM, tmp_path, None)) != laid_out[0]  # the comparison can see a move

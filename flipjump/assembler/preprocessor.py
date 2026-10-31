@@ -304,7 +304,7 @@ class PreprocessorData:
         assert guard is not None
         # the program without the tables ends where its code does, or past every address an operand reaches
         addresses = pool.place_deferred(tables, self.labels, max(self._code_end, self.curr_address, guard.reach + 1))
-        guard.inline_end = pool.pool_start()  # (for_flat: where the pool went)
+        guard.inline_end = pool.pool_start()  # (AFTER_PROGRAM: where the pool went)
         moved: List[Tuple[int, int, NewSegment]] = []  # (address, the how-manyth table to leave the stream, segment)
         for index, address in enumerate(addresses):
             if not address:

@@ -59,7 +59,7 @@ def _macros(files: List[str], memory_width: int, use_stl: bool = True) -> Dict[M
 
 
 def _cli_pool(memory_width: int) -> BlockPool:
-    return BlockPool.for_flat(memory_width)  # the pool of fj --pool-tables
+    return BlockPool(memory_width)  # the pool of fj --pool-tables
 
 
 @pytest.mark.parametrize('program', PROOF_PARAMS)
@@ -69,7 +69,7 @@ def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str
     try:
         proof = prove_relocation(memory_width, _macros(files, memory_width, use_stl), pool)
     except FlipJumpPreprocessorException as refused:
-        assert 'Raise span_bits' in str(refused)  # prime_sieve's reserve fills the memory above its tables
+        assert 'Raise pool_end' in str(refused)  # prime_sieve's reserve fills the memory above its tables
         pytest.skip('the program leaves its tables no room')
     assert proof.mismatches == []
     assert len(proof.unchecked) <= UNCHECKED_CEILINGS.get(program[0], 0), proof.unchecked

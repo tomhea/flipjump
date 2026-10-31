@@ -26,6 +26,9 @@ UnpinnedCell = Union[str, Tuple[str, int]]
 # the runtime's words lie below this bit address (`stl.IO` is op 1; 1024 covers every w <= 256): never pinned
 RESERVED_BELOW = 1024
 
+# BlockPool's pool_base: the first power of two above the program
+AFTER_PROGRAM = 'after_program'
+
 # a macro naming these reads or writes words raw through a pointer: without pin_all_but, no word is pinned
 POINTER_RUNTIME_LABELS = frozenset(
     {'bit.pointers.to_jump', 'bit.pointers.to_flip', 'hex.pointers.to_jump', 'hex.pointers.to_flip'}
@@ -346,21 +349,24 @@ class BlockPool:
     def __init__(
         self,
         memory_width: int,
-        pool_base: int,
+        pool_base: Union[int, str] = AFTER_PROGRAM,
         *,
-        span_bits: Optional[int] = None,
+        pool_end: Optional[int] = None,
         max_slot_ops: int = 32,
-        spread: int = 1,
-        spread_min_count: int = 256,
-        pin_broken: bool = False,
+        spread_factor: int = 1,
+        spread_min_tables: int = 256,
+        pin_incomplete_groups: bool = False,
         heat: Optional[Mapping[str, Sequence[Tuple[str, int, int]]]] = None,
         pin_all_but: Optional[Iterable[UnpinnedCell]] = None,
     ):
         """
-        @param span_bits: how far above pool_base the pool may reach (None: to the top of memory)
+        @param pool_base: the address of the pool's first block, or AFTER_PROGRAM: the first power of two above the
+            program (the wflip areas then go after the pool)
+        @param pool_end: the pool ends below this address (None: the top of memory)
         @param max_slot_ops: the widest table a slot holds (32 fits the stl's widest, `hex.cmp`'s 31 ops)
-        @param spread: a group of >= `spread_min_count` tables gets `spread` times the slots, the cheapest indices used
-        @param pin_broken: pin a group although some of its tables got no slot (see pinned_words)
+        @param spread_factor: a group of >= `spread_min_tables` tables gets this many times the slots, and uses the
+            cheapest indices
+        @param pin_incomplete_groups: pin a group's word even when some of its tables got no slot (see pinned_words)
         @param heat: {heat_key(group): [(heat_key(site path), occurrence, slot_ops), ...]}, hottest site first
         @param pin_all_but: pin every word but the words of these cells: each cell the program reads or writes RAW
             (through a pointer, or by jumping through its word), as a label (the cell runs to the next label) or
@@ -371,16 +377,18 @@ class BlockPool:
         """
         self.memory_width = memory_width
         self.op_bits = 2 * memory_width
-        self.pool_base = pool_base
-        self.span_bits = span_bits
+        self.after_program = pool_base == AFTER_PROGRAM  # the base is chosen once the program's end is known
+        self.pool_base = 1 << memory_width if isinstance(pool_base, str) else pool_base
+        if isinstance(pool_base, str) and not self.after_program:
+            raise FlipJumpPreprocessorException(f'pool_base is an address or {AFTER_PROGRAM!r}, not {pool_base!r}')
+        self.pool_end = pool_end
         self.max_slot_ops = max_slot_ops
-        self.spread = max(1, spread)
-        self.spread_min_count = spread_min_count
-        self.pin_broken = pin_broken
+        self.spread_factor = max(1, spread_factor)
+        self.spread_min_tables = spread_min_tables
+        self.pin_incomplete_groups = pin_incomplete_groups
         self.heat = heat
         self.pin_all_but = None if pin_all_but is None else tuple(pin_all_but)
         self.pin_all_but_missing: List[str] = []  # the labels of pin_all_but the program does not define
-        self.auto_base = False  # (for_flat) pool_base is chosen once the program's end is known
         self.pin_conflicts = 0
         self.reads_words_raw = False  # set by the preprocessor when a macro naming POINTER_RUNTIME_LABELS expands
         self.laid_out = False  # set by the preprocessor that lays this pool out
@@ -410,13 +418,6 @@ class BlockPool:
         self.hot_ambiguous: List[str] = []  # listed keys that name two of its groups
         self.hot_sites_matched = self.hot_sites_width_changed = 0
 
-    @classmethod
-    def for_flat(cls, memory_width: int, pin_all_but: Optional[Iterable[UnpinnedCell]] = None) -> BlockPool:
-        """`fj --pool-tables`'s pool: at the first power of two above the program, its wflip areas after it"""
-        pool = cls(memory_width, 1 << memory_width, pin_all_but=pin_all_but)
-        pool.auto_base = True
-        return pool
-
     def defer(
         self, ops_alignment: int, table_ops: int, group: Optional[str], group_expr: Optional[Expr], labels_prefix: str
     ) -> str:
@@ -439,7 +440,7 @@ class BlockPool:
     def place_deferred(self, tables: DeferredTables, labels: LabelsDict, end: int) -> Sequence[int]:
         """the address of every queued table (0: it stayed inline), after merging the groups whose words `labels`
         resolve to one address; `end`: where the program ends"""
-        if self.auto_base:  # the first power of two above the program, or right above it where there is none
+        if self.after_program:  # the first power of two above the program, or right above it where there is none
             self.pool_base = 1 << max(0, (end - 1).bit_length())
             if self.pool_base >= 1 << self.memory_width:
                 self.pool_base = end
@@ -541,7 +542,7 @@ class BlockPool:
     def _no_room(self) -> FlipJumpPreprocessorException:
         return FlipJumpPreprocessorException(
             f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
-            f'tables. Raise span_bits, or assemble without the pool.'
+            f'tables. Raise pool_end, or assemble without the pool.'
         )
 
     def lay_out(self, counts: Dict[str, int], width_hist: Dict[str, Dict[int, int]]) -> None:
@@ -594,7 +595,7 @@ class BlockPool:
         raw = self._next_index.get(key, 0)
         if hot_site is not None:
             index = self._hot_index(group, slot_ops, slots, hot_site)
-        elif self.spread > 1 and self.counts[group] >= self.spread_min_count:
+        elif self.spread_factor > 1 and self.counts[group] >= self.spread_min_tables:
             index = _cheapest_order(slots)[raw]
         else:
             index = raw
@@ -669,7 +670,7 @@ class BlockPool:
         for width, count in self.width_hist[group].items():
             slot_ops = 1 << (min(max(width, 1), self.max_slot_ops) - 1).bit_length()
             buckets[slot_ops] = buckets.get(slot_ops, 0) + count
-        spread = self.spread if self.counts[group] >= self.spread_min_count else 1
+        spread = self.spread_factor if self.counts[group] >= self.spread_min_tables else 1
         sized: Dict[int, Tuple[int, int]] = {}
         for slot_ops, count in buckets.items():
             slots = (1 << (count - 1).bit_length()) * spread
@@ -694,21 +695,22 @@ class BlockPool:
 
     def _pool_limit(self) -> int:
         top = 1 << self.memory_width
-        return top if self.span_bits is None else min(top, self.pool_base + self.span_bits)
+        return top if self.pool_end is None else min(top, self.pool_end)
 
     def pool_start(self) -> int:
-        """the lowest address the pool places a table at (an unplaced for_flat pool: the top of memory)"""
-        return 1 << self.memory_width if self.auto_base and not self.end else self.pool_base
+        """the lowest address the pool places a table at (an unplaced AFTER_PROGRAM pool: the top of memory)"""
+        return 1 << self.memory_width if self.after_program and not self.end else self.pool_base
 
     def wflips_at(self) -> Optional[int]:
-        """where the wflip areas go (assembler.BinaryData): after a for_flat pool that placed a table, else None"""
-        return self.end if self.auto_base and self.end else None
+        """where the wflip areas go (assembler.BinaryData): after an AFTER_PROGRAM pool that placed a table"""
+        return self.end if self.after_program and self.end else None
 
     def pinned_words(self) -> Dict[Expr, int]:
-        """{source-word Expr: block base}; a broken group's word too if `pin_broken` or hot (an inline table at `A` is
-        armed with `A ^ base`: slower, still right)"""
+        """{source-word Expr: block base}; a broken group's word too if `pin_incomplete_groups` or hot (an inline
+        table at `A` is armed with `A ^ base`: slower, still right)"""
         return {
             expr: base
             for group, (base, expr) in self.groups.items()
-            if expr is not None and (self.pin_broken or group in self.hot_sites or group not in self.broken_groups)
+            if expr is not None
+            and (self.pin_incomplete_groups or group in self.hot_sites or group not in self.broken_groups)
         }
