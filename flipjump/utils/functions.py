@@ -86,9 +86,10 @@ def bad_define_message(name: str, value: Union[int, str]) -> Optional[str]:
 
 def write_defines_file(defines: Mapping[str, Union[int, str]], path: Path) -> None:
     """
-    write the defines into a .fj file of constants, which the assembler parses first (before the stl), as overrides
-    of the declarations: a value may use `w` and an earlier define, not an stl constant. A dotted name is wrapped in
-    its namespaces: `hex.pointers.PTRSIZE = 12` becomes `ns hex { ns pointers { PTRSIZE = 12 } }`.
+    Write the defines into a .fj file of constants. The assembler parses it first (before the stl), and its constants
+    override the program's declarations, so a value may use `w` and earlier defines, but not stl constants.
+    A dotted name is wrapped in its namespaces: `hex.pointers.PTRSIZE = 12` becomes
+    `ns hex { ns pointers { PTRSIZE = 12 } }`.
     @param defines: the constants' full names, and their values (a number, or an fj expression)
     @param path: the file to write
     @raises ValueError: a define is invalid (see bad_define_message)

@@ -30,7 +30,7 @@ This folder is the table-driven counterpart to `bit/`. Where `bit/`-macros work 
 | `read_pointers.fj`                | `read_byte`, `read_hex`, `read_cell`, `read_byte_and_inc`, `read_hex_and_inc`, `read_cell_and_inc`, `read_nth_*`, `read_back`, `read_entry` / `read_entry_byte` / `read_entry_packed` (an entry of a constant array; `pointers.entry_address` computes its address). |
 | `write_pointers.fj`               | `write_byte`, `write_hex`, `write_cell`, `write_byte_and_inc`, `write_hex_and_inc`, `write_cell_and_inc`, `zero_byte`, `zero_cell`, `write_nth_*`, `write_back`, and the `pointers.write_cells` / `write_cell` / `advance_and_write_cell` steps. |
 | `stack.fj`                        | `push`, `pop`, `push_byte` / `push_hex` / `push_ret_address`, `pop_byte` / `pop_hex` / `pop_ret_address`, `sp_inc` / `sp_dec` / `sp_add` / `sp_sub`. |
-| `xor_from_pointer.fj`             | `xor_byte_from_ptr`, `xor_hex_from_ptr`, `xor_cell_from_ptr`, plus the `read_*_from_inners_ptrs` dances both decoder tables share, and the chained `xor_cells_from_inners_ptrs` / `read_cell_step` / `read_cell_chained`. |
+| `xor_from_pointer.fj`             | `xor_byte_from_ptr`, `xor_hex_from_ptr`, `xor_cell_from_ptr`, plus the `read_*_from_inners_ptrs` reads (through either decoder table), and the chained `xor_cells_from_inners_ptrs` / `read_cell_step` / `read_cell_chained`. |
 | `xor_to_pointer.fj`               | `ptr_flip`, `ptr_flip_dbit`, `ptr_wflip`, `ptr_wflip_2nd_word`, `xor_*_to_ptr`, `xor_*_to_flip_ptr`, and in `ns pointers`: `xor_hex_to_ptr_and_inc` / `xor_byte_to_ptr_and_inc`, `advance_and_xor_to_flip_ptr`, `advance_by_one_and_flip__ptr_wflip`. |
 
 ## Conventions

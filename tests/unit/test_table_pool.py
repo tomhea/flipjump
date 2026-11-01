@@ -15,14 +15,14 @@ from typing import Any, Dict, List, Optional, Sequence
 import pytest
 
 import flipjump.assembler.preprocessor as preprocessor
-import flipjump.assembler.table_pool as table_pool
+import flipjump.assembler.inner_classes.table_pool as table_pool
 from flipjump import assemble
 from flipjump.assembler.assembler import resolve_pinned
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import MacroName, NewSegment
 from flipjump.assembler.preprocessor import PreprocessorData, is_relocatable, resolve_macros
-from flipjump.assembler.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, HotSite, heat_key
+from flipjump.assembler.inner_classes.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, HotSite, heat_key
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
@@ -389,7 +389,7 @@ def test_defer_counts_the_census_and_keeps_a_too_wide_table_inline() -> None:
     assert [pool._defer(16, width, Expr('g')) for width in (16, 16, 31)] == [table_pool.DEFER_OUT] * 3
     assert pool._defer(16, 40, Expr('g')) == table_pool.DEFER_TOO_WIDE  # wider than max_slot_ops (32)
     assert pool._defer(16, 16, None) == table_pool.DEFER_INLINE and pool.ungrouped == 1
-    assert pool.counts == {'g': 4} and pool.width_hist == {'g': {16: 2, 31: 1, 40: 1}} and pool.deferred == 3
+    assert pool.census().counts == {'g': 4} and pool.width_hist == {'g': {16: 2, 31: 1, 40: 1}} and pool.deferred == 3
     assert pool.census().widths == {'g': 40}
 
 
@@ -439,9 +439,9 @@ def test_the_runtime_words_are_never_relocated() -> None:
     data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
     data.labels['stl.IO'] = 64
     assert not data.begin_relocation(16, '', 16, sum_expr('stl.IO', 32), 'T')
-    assert pool.reserved_words == 1 and pool.deferred == 0
+    assert pool.deferred == 0  # it stayed inline
     assert data.begin_relocation(16, '', 16, sum_expr('x', 32), 'T')
-    assert pool.reserved_words == 1 and pool.deferred == 1
+    assert pool.deferred == 1
 
 
 def test_sparse_indices_use_the_cheapest_slots_of_a_spread_block() -> None:
@@ -601,10 +601,9 @@ def test_no_heat_and_an_empty_heat_list_change_nothing() -> None:
 def test_a_heat_ordered_program_is_the_same_program_in_fewer_ops(tmp_path: Path) -> None:
     recorder = BlockPool(W, POOL_BASE)
     reference, plain_ops, _ = build_and_run(XOR_PROGRAM, tmp_path, recorder, name='plain')
-    assert recorder.report is not None
     # the busiest group's LAST table, which encounter order hands its dearest index
     group = max(recorder.counts, key=lambda g: (recorder.counts[g], g))
-    last = [table for table in recorder.report.table_sites if table.group == group][-1]
+    last = [table for table in recorder.table_sites if table.group == group][-1]
     assert last.site.endswith('hex.exact_xor(5)') and last.address  # a real table's path, and where it went
     placing = BlockPool(W, POOL_BASE, heat={group: [HotSite(last.site, last.occurrence, 16)]})
     output, ops, _ = build_and_run(XOR_PROGRAM, tmp_path, placing, name='heat')
@@ -680,11 +679,11 @@ def test_a_pin_all_but_label_the_program_does_not_define_is_an_error_or_a_warnin
     assert pool.pin_all_but_missing == []
 
 
-def test_the_report_holds_the_words_the_pool_pinned(tmp_path: Path) -> None:
-    # pool.report.pinned is the final pin map: with `d` left out its jump word is not in it, with [] it is
+def test_the_pool_holds_the_words_it_pinned(tmp_path: Path) -> None:
+    # pool.pinned is the final pin map: with `d` left out its jump word is not in it, with [] it is
     source = tmp_path / 'p.fj'
     source.write_text(POINTER_PROGRAM)
-    reports = {}
+    pins = {}
     for name, cells in (('all_but_d', [('d', 1)]), ('all', [])):
         pool = BlockPool(W, POOL_BASE, pin_all_but=cells)
         debug = tmp_path / f'{name}.fjd'
@@ -696,12 +695,12 @@ def test_the_report_holds_the_words_the_pool_pinned(tmp_path: Path) -> None:
             table_pool=pool,
             debugging_file_path=debug,
         )
-        assert pool.report is not None and pool.report.moved == pool.deferred > 0
-        reports[name] = (pool.report, load_debugging_labels(debug)['d'] + W)
-    report, d_jump = reports['all_but_d']
-    assert report.pinned and d_jump not in report.pinned
-    report, d_jump = reports['all']
-    assert d_jump in report.pinned
+        assert pool.deferred > 0
+        pins[name] = (pool.pinned, load_debugging_labels(debug)['d'] + W)
+    pinned, d_jump = pins['all_but_d']
+    assert pinned and d_jump not in pinned
+    pinned, d_jump = pins['all']
+    assert d_jump in pinned
 
 
 def _pin_all_but(*cells: str) -> BlockPool:

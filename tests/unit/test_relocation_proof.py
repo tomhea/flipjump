@@ -8,7 +8,7 @@ operand it cannot compare, and a pin whose arms were not rewritten; and it passe
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import pytest
 
@@ -18,7 +18,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
-from flipjump.assembler.table_pool import BlockPool
+from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import get_file_tuples
 from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, every_table_moves, no_refusals, relocatable
@@ -71,8 +71,9 @@ def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str
     except FlipJumpPreprocessorException as refused:
         assert 'Raise pool_end' in str(refused)  # prime_sieve's reserve fills the memory above its tables
         pytest.skip('the program leaves its tables no room')
-    assert proof.mismatches == []
-    assert len(proof.unchecked) <= UNCHECKED_CEILINGS.get(program[0], 0), proof.unchecked
+    else:
+        assert proof.mismatches == []
+        assert len(proof.unchecked) <= UNCHECKED_CEILINGS.get(program[0], 0), proof.unchecked
     if not pool.allocated:
         pytest.skip('the program uses no relocatable table')
 
@@ -249,7 +250,7 @@ def _with_extents_changed(monkeypatch: pytest.MonkeyPatch, start: int, end: int)
 
     def changing(*args: Any, **kwargs: Any) -> Any:
         result = real_resolve(*args, **kwargs)
-        extents = kwargs.get('relocatable_extents')
+        extents: Optional[List[Tuple[int, int]]] = kwargs.get('relocatable_extents')
         if extents is not None:
             op_bits = 2 * args[0]
             extents[:] = [(s + start * op_bits, e + end * op_bits) for s, e in extents]

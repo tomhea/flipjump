@@ -18,7 +18,7 @@ from flipjump.assembler import assembler
 from flipjump.assembler.fj_parser import parse_macro_tree
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
-from flipjump.assembler.table_pool import BlockPool, OffsetGuard
+from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard
 from flipjump.utils.functions import get_file_tuples, load_debugging_labels
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
@@ -257,13 +257,14 @@ def test_count_bits_keeps_its_pin(tmp_path: Path) -> None:
     assert pool.offset_guard is not None and pool.offset_guard.pads[0x400] == 10
 
 
-_real_alignment = OffsetGuard.alignment
+_real_alignment = vars(OffsetGuard)['alignment']  # the original, called by the patch
 
 
 def _address_alignment(self: OffsetGuard, address: int) -> int:
     """OffsetGuard.alignment without its rule: an inline table's alignment taken as its address's own"""
     if self.table_at(address) is not None:
-        return _real_alignment(self, address)
+        alignment: int = _real_alignment(self, address)
+        return alignment
     return (address & -address).bit_length() - 1 if address else 1 << 30
 
 

@@ -161,7 +161,7 @@ def test_is_native_engine_active_tracks_engine_state(engine: str) -> None:
 
 
 def test_no_native_env_var_disables_native_predicate(monkeypatch: pytest.MonkeyPatch) -> None:
-    if fjm_run._fjcore is None:  # type: ignore[attr-defined]
+    if fjm_run._fjcore is None:
         pytest.skip('the native engine (_fjcore) is not built')
     monkeypatch.setenv('FLIPJUMP_NO_NATIVE', '1')
     assert fjm_run.is_native_engine_active() is False

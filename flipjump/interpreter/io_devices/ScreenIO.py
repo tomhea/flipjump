@@ -1,6 +1,7 @@
 """
-the InMemoryScreen output-device, headless-first: io_devices/README.md's "Screen" (the wire format, its errors and
-the frame hash). Its internals are all `_scr_...` (the subclass hooks aside), so a subclass's names cannot collide.
+The InMemoryScreen output device: it keeps the frames in memory, with no window. io_devices/README.md's "Screen"
+has the wire format, its errors and the frame hash. Its internal names all start with `_scr_` (except the
+subclass hooks), so a subclass's names can't collide with them.
 """
 
 import hashlib
@@ -40,12 +41,12 @@ FIELD_WIDTHS = (4, 8, 12, 16)
 
 
 def row_field_width(height: int) -> int:
-    """R: the smallest of 4, 8, 12, 16 with h < 2^R - 4."""
+    """Return R, the row field's bit width: the smallest of 4, 8, 12, 16 with h < 2^R - 4 (the top 4 are tokens)."""
     return next(r for r in FIELD_WIDTHS if height < (1 << r) - 4)
 
 
 def column_field_width(width: int) -> int:
-    """C: the smallest of 4, 8, 12, 16 with w < 2^C - 1."""
+    """Return C, the column field's bit width: the smallest of 4, 8, 12, 16 with w < 2^C - 1 (the top 2 are tokens)."""
     return next(c for c in FIELD_WIDTHS if width < (1 << c) - 1)
 
 
@@ -53,7 +54,7 @@ def column_field_width(width: int) -> int:
 
 
 def scale_level(level: int, bits: int) -> int:
-    """a `bits`-bit channel level as an 8-bit one: round(level * 255 / (2^bits - 1)), halves up; 0 bits give 0."""
+    """Scale a `bits`-bit channel level to 8 bits: round(level * 255 / (2^bits - 1)), halves up. 0 bits give 0."""
     if bits == 0:
         return 0
     top = (1 << bits) - 1
@@ -80,7 +81,8 @@ XTERM256: Tuple[RGB, ...] = (
 
 
 def rgb_cube_split(bits: int) -> Tuple[int, int, int]:
-    """the RGB cube's (red, green, blue) bit counts: green ceil(b/3), red ceil((b - green)/2), blue the rest."""
+    """Return the RGB cube's (red, green, blue) bit counts: green gets ceil(bits/3), red ceil((bits - green)/2), blue
+    the rest."""
     green = -(-bits // 3)
     red = -(-(bits - green) // 2)
     return red, green, bits - green - red
@@ -88,8 +90,8 @@ def rgb_cube_split(bits: int) -> Tuple[int, int, int]:
 
 @lru_cache(maxsize=None)
 def builtin_palette(builtin_id: int, bits: int) -> Tuple[RGB, ...]:
-    """built-in `builtin_id` (0 black/white, 1 grey ramp, 2 EGA-16, 3 xterm-256, 4 the RGB cube) for a format of
-    `bits` bits per colour: exactly 2^bits entries (a longer list cut, a shorter one padded with black)."""
+    """Return built-in palette `builtin_id` (0 black/white, 1 grey ramp, 2 EGA-16, 3 xterm-256, 4 the RGB cube) for
+    `bits` bits per colour. It has exactly 2^bits entries: a longer list is cut, a shorter one padded with black."""
     size = 1 << bits
     if builtin_id == 1:
         colours = tuple((scale_level(i, bits),) * 3 for i in range(size))
@@ -111,7 +113,7 @@ def builtin_palette(builtin_id: int, bits: int) -> Tuple[RGB, ...]:
 
 
 def default_palette(screen_format: int) -> Tuple[RGB, ...]:
-    """the palette every slot holds after init_screen: formats 1, 2, 4, 8 get built-ins 0-3, the others the cube."""
+    """Return the palette every slot holds after init_screen: built-ins 0-3 for formats 1, 2, 4 and 8, else the cube."""
     return builtin_palette({1: 0, 2: 1, 4: 2, 8: 3}.get(screen_format, 4), screen_format)
 
 
@@ -137,24 +139,24 @@ def encode_png(width: int, height: int, rgb: bytes) -> bytes:
 
 
 class _OutputEnded(Exception):
-    """thrown into the parser when the program's output is declared over inside a command."""
+    """Thrown into the parser when the program's output ends in the middle of a command."""
 
 
 Parser = Generator[None, int, None]
 
 
 class InMemoryScreen(IODevice):
-    """the screen: the command stream of io_devices/README.md, presented as frames in memory."""
+    """A screen that reads the command stream of io_devices/README.md and keeps the frames in memory."""
 
     def __init__(self, *, frames_dir: Optional[Path] = None):
         self.frames_dir = frames_dir
         self.width = self.height = 0
         self.bpp = 8
         self.pixel_indices: List[int] = []
-        # slots never written may share one list object: read-only; the device copies a slot before writing it
+        # slots never written may share one list object, so treat it as read-only: copy a slot before writing to it
         self.palettes: List[List[RGB]] = []
         self.selected_slot = 0
-        self.palette: List[RGB] = []  # the slot selected at the last present
+        self.palette: List[RGB] = []  # the palette of the slot selected at the last present
         self.frame_count = 0
         self.frame_hashes: List[Tuple[int, str]] = []  # (present-time ns, sha256 hexdigest)
         self.window_title: Optional[str] = None
@@ -163,12 +165,12 @@ class InMemoryScreen(IODevice):
 
         self._scr_row_bits = self._scr_column_bits = 0  # init_screen's field widths: R and C
         self._scr_default: List[RGB] = []  # init_screen's palette, the list every slot starts sharing
-        self._scr_presented: Optional[Tuple[int, ...]] = None  # the presented values (expanded only when asked)
+        self._scr_presented: Optional[Tuple[int, ...]] = None  # the last frame's colour values (RGB only when asked)
         self._scr_palette_bytes_cache: Optional[Tuple[List[RGB], bytes]] = None
         # the output stream: a partial byte, the bytes handed to the parser, and the parser's bit buffer
         self._scr_current_byte = self._scr_bits_count = self._scr_bytes_in = 0
         self._scr_acc = self._scr_nacc = 0
-        self._scr_command: Optional[Tuple[str, int, int]] = None  # (name, opcode, its byte offset) inside a command
+        self._scr_command: Optional[Tuple[str, int, int]] = None  # (name, opcode, byte offset) of the current command
         self._scr_failure: Optional[IODeviceException] = None
         self._scr_in_extension = False  # inside an _extension_command's payload
         self._scr_parser: Parser = self._scr_parse()
@@ -184,7 +186,7 @@ class InMemoryScreen(IODevice):
             self.write_byte(byte)
 
     def write_byte(self, byte: int) -> None:
-        if self._scr_bits_count:  # never from the engine (it gathers bytes from a byte boundary only)
+        if self._scr_bits_count:  # mid-byte, so the bit path (the engine never calls this mid-byte)
             super().write_byte(byte)
             return
         if self._scr_failure is not None:
@@ -196,7 +198,8 @@ class InMemoryScreen(IODevice):
         raise IOReadOnEOF('the screen device has no input - use a device that also reads input (e.g. --io pc)')
 
     def end_of_run(self) -> None:
-        """the output must not have ended inside a command (inside an _extension_command is the subclass's business)"""
+        """Raise if the output ended inside a command.
+        (Inside an _extension_command's payload, that is the subclass's to check.)"""
         if self._scr_failure is not None:
             raise self._scr_failure
         if self._scr_in_extension:
@@ -210,7 +213,8 @@ class InMemoryScreen(IODevice):
             )
 
     def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
-        """the screen has no byte output. unless `allow_incomplete_output`, checks what end_of_run checks."""
+        """Return b'': the screen has no byte output. Unless `allow_incomplete_output`, first check what
+        end_of_run checks."""
         if not allow_incomplete_output:
             self.end_of_run()
         return b''
@@ -219,9 +223,10 @@ class InMemoryScreen(IODevice):
 
     def _extension_command(self, opcode: int) -> Optional[Union[Callable[[int], bool], Literal[True]]]:
         """
-        a subclass hook (not the wire API) for an opcode that is not a command (nor 0x00). None: the unknown-opcode
-        error. True: a command with no payload. A callable: handed every next output byte until it returns True;
-        commands resume at the next byte. The byte offsets and the frame count count through these bytes.
+        A subclass hook (not part of the wire format) for an opcode that is neither a command nor 0x00.
+        Return None for the unknown-opcode error, True for a command with no payload, or a callable that gets each
+        next output byte until it returns True; commands resume at the byte after that. The byte offsets and the
+        frame count keep counting through these bytes.
         """
         return None
 
@@ -236,7 +241,8 @@ class InMemoryScreen(IODevice):
         return value
 
     def _scr_error(self, reason: Optional[str] = None, at: str = '') -> IODeviceException:
-        """the current command's error, `at` a place inside it; no reason: the output ended inside the command"""
+        """Return the current command's error, at the place `at` inside it. With no `reason`, the error is that
+        the output ended inside the command."""
         assert self._scr_command is not None
         name, opcode, offset = self._scr_command
         if reason is None:
@@ -289,7 +295,7 @@ class InMemoryScreen(IODevice):
                         'not zero (the stream is probably misaligned)'
                     )
                 self._scr_command = None
-        except IODeviceException as failure:  # the parser is over: every later call raises it again
+        except IODeviceException as failure:  # the parser stops here: every later write raises this failure again
             self._scr_failure = failure
             raise
 
@@ -308,7 +314,7 @@ class InMemoryScreen(IODevice):
         self._init_screen(width, height, bpp)
 
     def _init_screen(self, width: int, height: int, bpp: int) -> None:
-        """the life cycle's init_screen: everything but the title, the icon, max fps and the frame count resets."""
+        """Do init_screen: reset everything but the title, the icon, max fps and the frame count."""
         self.width, self.height, self.bpp = width, height, bpp
         self._scr_row_bits, self._scr_column_bits = row_field_width(height), column_field_width(width)
         self.pixel_indices = [0] * (width * height)
@@ -376,8 +382,8 @@ class InMemoryScreen(IODevice):
         yield from self._scr_colours(self.pixel_indices, self.width)
 
     def _scr_colours(self, values: List[int], width: int) -> Generator[None, int, None]:
-        """read colours of B bits into `values`, in order (rows of `width`), inline as draw_collines reads.
-        The output ending inside them is an error at the pixel being read."""
+        """Read B-bit colours into `values`, in order (rows of `width`), reading the bits inline like draw_collines.
+        If the output ends inside them, the error names the pixel being read."""
         bits = self.bpp
         mask = (1 << bits) - 1
         acc, nacc = self._scr_acc, self._scr_nacc
@@ -402,7 +408,7 @@ class InMemoryScreen(IODevice):
         x: Optional[int] = None
         cursor = 0
 
-        def refuse(reason: Optional[str] = None) -> IODeviceException:  # at the column and its cursor, once x is read
+        def refuse(reason: Optional[str] = None) -> IODeviceException:  # names the column and cursor once x is read
             return self._scr_error(reason, '' if x is None else f', column {x:,}, cursor {cursor:,}')
 
         try:
@@ -466,13 +472,13 @@ class InMemoryScreen(IODevice):
         yield from ()  # a generator, like every command
 
     def _present(self) -> None:
-        """record the picture as a frame: the snapshot behind last_frame_rgb, the hash, the PNG."""
+        """Record the picture as a frame: snapshot it for last_frame_rgb, hash it, and write its PNG if asked."""
         values = tuple(self.pixel_indices)
         palette: List[RGB] = []
         if self.bpp == FORMAT_RGB:
             hashed = b''.join(value.to_bytes(3, 'little') for value in values)
         else:
-            palette = self.palettes[self.selected_slot]  # frozen while it is self.palette (define_palette copies)
+            palette = self.palettes[self.selected_slot]  # stays as presented: define_palette copies it first
             cached = self._scr_palette_bytes_cache
             if cached is None or cached[0] is not palette:
                 cached = self._scr_palette_bytes_cache = (palette, bytes(chain.from_iterable(palette)))
@@ -490,6 +496,7 @@ class InMemoryScreen(IODevice):
 
     @property
     def last_frame_rgb(self) -> List[RGB]:
-        """the last presented frame as row-major RGB tuples ([] before the first present). LAZY (the window hands
-        SDL the indices); its inputs are snapshotted at present time, so it is the frame that was presented."""
+        """The last presented frame as row-major RGB tuples ([] before the first present). It is built only when
+        asked (the window gives SDL the indices instead), from a snapshot taken at the present, so later commands
+        don't change it."""
         return [] if self._scr_presented is None else to_rgb(self._scr_presented, self.palette)

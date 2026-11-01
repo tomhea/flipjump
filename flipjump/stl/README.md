@@ -79,7 +79,7 @@ Every macro is documented with:
 - Its **time complexity** (and if it's significantly different, the **space complexity** as well).
   - The complexities use the **@** sign, which is the log2 of the total number of fj ops in this program (can be it usually will be between 15-25).
   - The reason for this _weird_ log complexity, is that `wflip address, value` has the complexity of the number of on-bits in _value_ (usually an address, so about @/2); And it is widely used.
-  - A chained step's wflip (`wflip .ret+w, prev_return ^ return`, see `hex.tables.chained_jump`) flips the xor of two nearby pad-16 return addresses, so it costs 2.3 on average (median 2, 90% at most 4), not @/2.
+  - A chained step's wflip (see `hex.tables.chained_jump`) flips only the bits in which two nearby, 16-padded return addresses differ, so it costs 2.3 on average (median 2, and at most 4 in 90% of the steps), not @/2.
 - An explanation about what the macro does (usually in a python-like syntax).
 - The type of each of the parameters (bit/hex/bit.vec/hex.vec/constant/address and so on).
   - if a parameter is called bit/hex, it is a bit/hex variable (of size 1).
@@ -128,6 +128,18 @@ By making the padding a part of the assembly, we can (and do) **utilize the free
 The free space, gained by the padding, is also **being used for storing fj-ops that will be created by future ```wflip```s**. 
 
 That way, **using the ```pad n```** macros won't only **not waste up space**, but might even **save space**; That's because ```wflip```s to a padded address are smaller (less 1's in that address binary representation -> less fj-ops will be created for ```wflip```ing there).
+
+## Movable tables
+A lookup table that a dispatch jumps into can be declared movable: write it as a macro inside an `ns __relocatable__` namespace, and call it right after a `pad`. With a table pool (`fj --pool-tables`), the assembler may move the table to an address that is cheaper to jump to; without one, nothing changes.
+
+A movable table:
+- takes its start label as its first argument;
+- holds only labels and `a;b` ops (no `wflip`, no `$`);
+- is dispatched through one jump word: the one the `wflip` right after the call turns back off.
+
+The program runs the same either way: if moving a table would change any operand, it stays in place.
+
+For example, `hex.exact_xor` (in [hex/logics.fj](hex/logics.fj)) points `src`'s jump word at its table, `pad 16`s, calls `hex.exact_xor.__relocatable__.table`, and turns the word back off at `end`.
 
 # Contribute
 

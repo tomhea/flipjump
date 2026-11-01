@@ -160,14 +160,15 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: n^2(68@+232)    (hex.idiv's at (2n, n): every compare full and every subtract taken, as its line counts)
+    //  Time Complexity: n^2(68@+232)    (hex.idiv's line, for a 2n-hex dividend and an n-hex divisor:
+    //                                    every compare full, every subtract taken)
     // Space Complexity: n(54.5@+799)
     //   if b==0: goto div0
     //   dst[:n] = (a[:n] << 4f) / b[:n]    (signed fixed-point divide, truncated toward zero)
     //
     // a,b,dst are signed Q-format hex[:n] with f fraction-hexes (dst may alias a/b). div0 is an address.
-    // The dividend is shifted at full 2n-hex width (hex-aligned - no runtime shift).
-    //   The quotient is truncated to n hexes (wraps modulo 2^4n).
+    // The dividend a << 4f is formed in 2n hexes by copying a f hexes up (no shift runs).
+    //   The quotient is truncated to n hexes (it wraps modulo 2^4n).
     // @Assumes: 0 < f <= n.
     // @requires hex.add.init & hex.sub.init & hex.cmp.init (or hex.init)
     def fixed_div n, f, dst, a, b, div0 @ wide_a, quotient, remainder, end {

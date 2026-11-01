@@ -11,7 +11,7 @@ import hashlib
 import struct
 import zlib
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Literal, Optional, Tuple, Union
 
 import pytest
 
@@ -498,7 +498,7 @@ def test_present_runs_once_per_present_command_with_the_presented_picture_and_pa
     assert device.frame_count == 3
 
 
-ExtensionResult = Optional[Union[Callable[[int], bool], bool]]
+ExtensionResult = Optional[Union[Callable[[int], bool], Literal[True]]]
 
 
 class HostChannelScreen(InMemoryScreen):
@@ -508,7 +508,7 @@ class HostChannelScreen(InMemoryScreen):
         super().__init__()
         self.messages: List[Tuple[int, bytes]] = []
 
-    def _extension_command(self, opcode: int) -> ExtensionResult:  # type: ignore[override]
+    def _extension_command(self, opcode: int) -> ExtensionResult:
         if opcode == 0x81:
             self.messages.append((0x81, b''))
             return True

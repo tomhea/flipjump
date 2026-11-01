@@ -1,10 +1,10 @@
 // ---------- The Screen Device
 
 
-// The screen device's commands (the spec: flipjump/interpreter/io_devices/README.md): an opcode byte, the fields
-//   packed lsb-first at exactly their width in bits, then zero bits up to the next byte. These macros output the
-//   commands with constant operands; a run-time field (draw_collines's column records, say) is the program's own
-//   output, between the macros.
+// The screen device's commands, as flipjump/interpreter/io_devices/README.md specifies them. A command is an
+//   opcode byte, then its fields packed lsb-first at exactly their width in bits, then zero bits up to the next byte.
+// These macros output commands whose operands are constants. A field known only at run time (like
+//   draw_collines's column records) is output by the program itself, between the macros.
 ns screen {
     // Complexity: n
     //   outputs the n low bits of the constant value, lsb first (a packed field of a command).
@@ -15,7 +15,8 @@ ns screen {
     // Complexity: 48
     //   init_screen: [0x01] [width:16] [height:16] [format:8]. The screen shows black at once; every palette slot
     //   holds the format's default, and slot 0 is selected.
-    // width, height (1..65534 / 1..65531) and format (bits per colour: 1-16 indexed, 24 RGB) are constants.
+    // width (1..65534), height (1..65531) and format (the bits per colour: 1-16 for indexed colours, 24 for RGB)
+    //   are constants.
     def init_screen width, height, format {
         rep(width < 1 || width > 65534, i) .init_screen__width_must_be_1_to_65534
         rep(height < 1 || height > 65531, i) .init_screen__height_must_be_1_to_65531
@@ -28,7 +29,7 @@ ns screen {
 
     // Complexity: 24(last-first+1)  (+ the padding to the byte)
     //   define_palette: [0x02] [slot:8] [first:B] [last:B]  then (last-first+1) x [R:8] [G:8] [B:8]
-    // format is init_screen's (B bits per colour, an indexed format); slot, first, last, rgb are constants.
+    // format is init_screen's: B, the bits per colour of an indexed format. slot, first, last, rgb are constants.
     // rgb's bytes 3i, 3i+1, 3i+2 are entry first+i's R, G, B (R the least-significant); missing bytes are 0 (black),
     //   bytes beyond the 3(last-first+1) are dropped.
     def define_palette format, slot, first, last, rgb {
@@ -43,7 +44,7 @@ ns screen {
     }
 
     // Complexity: 16
-    //   select_palette: [0x06] [slot:8]  (the palette present shows the picture through). slot is a constant.
+    //   select_palette: [0x06] [slot:8]  (present then shows the picture through this palette). slot is a constant.
     def select_palette slot {
         rep(slot < 0 || slot > 255, i) .select_palette__slot_must_be_0_to_255
         stl.output_char 0x06
@@ -71,9 +72,8 @@ ns screen {
 
     // Complexity: 8(string_length+2)
     //   set_window_title: [0x04] <utf-8 bytes> [0x00]
-    // text is a constant string (least-significant byte first, as stl.output outputs it) of UTF-8 bytes with no 0
-    //   byte (a non-ASCII character as its \xNN bytes), sent up to its top non-zero byte; string_length is
-    //   ((#text)+7)/8.
+    // text is a constant string of UTF-8 bytes, least-significant byte first (as stl.output outputs it), with no 0
+    //   byte in it. Write a non-ASCII character as its \xNN bytes. string_length is ((#text)+7)/8.
     def set_window_title text {
         stl.output_char 0x04
         stl.output text
@@ -81,8 +81,8 @@ ns screen {
     }
 
     // Complexity: 24
-    //   set_window_icon: [0x05] [width:8] [height:8], the header only: the width*height colours (B bits each,
-    //   through the palette selected now), then zero bits to the byte, are the program's own output.
+    //   set_window_icon: [0x05] [width:8] [height:8]. This is only the header: the program itself outputs the
+    //   width*height colours (B bits each, through the palette selected now), then zero bits up to the byte.
     // width, height (1..255) are constants.
     def set_window_icon_header width, height {
         rep(width < 1 || width > 255 || height < 1 || height > 255, i) .set_window_icon_header__sides_must_be_1_to_255
@@ -92,8 +92,8 @@ ns screen {
     }
 
     // Complexity: 8
-    //   draw_raw: [0x10], the header only: the width*height colours (B bits each, row-major), then zero bits to the
-    //   byte, are the program's own output.
+    //   draw_raw: [0x10]. This is only the header: the program itself outputs the width*height colours (B bits each,
+    //   row-major), then zero bits up to the byte.
     def draw_raw {
         stl.output_char 0x10
     }
@@ -105,10 +105,10 @@ ns screen {
     }
 
     // Complexity: C + (zero bits to the byte) + 8
-    //   end_frame: END_CMD (C one-bits: C is the smallest of 4, 8, 12, 16 with width < 2^C - 1), zero bits to the
-    //   byte, then present (0x1F).
-    // width is init_screen's; used_bits is how many bits of the current output byte the column records already
-    //   wrote (0-7: 0 when they end on a byte boundary). Both are constants.
+    //   end_frame: END_CMD, zero bits up to the byte, then present (0x1F). END_CMD is C one-bits, where C is the
+    //   column field's width: the smallest of 4, 8, 12, 16 with width < 2^C - 1.
+    // width is init_screen's. used_bits is how many bits of the current output byte the column records already
+    //   wrote (0 when they ended on a byte boundary). Both are constants.
     def end_frame width, used_bits {
         .end_command (width < 15) ? 4 : (width < 255) ? 8 : (width < 4095) ? 12 : 16, used_bits
         .present

@@ -3,7 +3,7 @@ ns hex {
         // NOTE: must be placed just after the startup, so that the read_ptr_byte_table will be at op
         //       exactly 2^PTR_CELL_BITS (256 by default).
         //
-        // Space Complexity: 0.5w + 2^PTR_CELL_BITS + PTR_CELL_BITS/4 + 3   (= 0.5w+261 at PTR_CELL_BITS=8)
+        // Space Complexity: 0.5w + 2^PTR_CELL_BITS + PTR_WIDE/4 + 3 + wide_table_init's   (0.5w+261 at the defaults)
         //   Initializes the global opcodes and pointer-copies required for the pointers macros.
         //   Initializes the read-byte-handling table and the result/return variables to the read-byte table.
         // A pointed cell must hold a value below 2^PTR_CELL_BITS (2^PTR_WIDE_BITS for a wide read), and a pointer
@@ -17,7 +17,8 @@ ns hex {
         // @output-param to_ptr_var:  the hex-vector (pointer) that shadows both to_flip and to_jump (they hold the same address).
         def ptr_init @ read_ptr_byte_table > to_flip, to_jump, to_ptr_var, \
                                              read_byte, ret_after_read_byte, nth_ptr {
-            // a bad -D PTR_CELL_BITS would read wrong values silently: refuse it (the undefined macro names the rule).
+            // Refuse a bad -D PTR_CELL_BITS, which would read wrong values silently: calling an undefined macro
+            // fails the assembly, and the macro's name states the rule.
             rep(.PTR_CELL_BITS % 4 != 0, i) \
                 .PTR_CELL_BITS__must_be_a_multiple_of_4
             rep(.PTR_CELL_BITS < 8, i) \
@@ -53,7 +54,7 @@ ns hex {
             hex.vec w/4, 0
         }
 
-        // Space Complexity: 2^PTR_WIDE_BITS
+        // Space Complexity: 2^PTR_WIDE_BITS + 1
         //   The wide decoder table, at op exactly 2^PTR_WIDE_BITS (a wide read flips dbit+PTR_WIDE_BITS to land here).
         // @requires hex.pointers.ptr_init (stl.ptr_init lays it, when PTR_WIDE_BITS > 0)
         def wide_table_init @ read_ptr_wide_table < .read_byte > ret_after_read_wide {
@@ -79,7 +80,9 @@ ns hex {
         // Space Complexity: w(0.5@+22)
         //   Sets to_flip, to_jump and their shared shadow to point to the given pointer.
         //   (  to_flip = to_jump{+w} = to_ptr_var = ptr  )
-        // @Invariant: to_flip == to_jump+w == to_ptr_var between pointer macros (one that offsets to_flip restores it).
+        // Setting these three to ptr is called arming ptr (they are "the armed fields").
+        // @Invariant: between pointer macros, to_flip == to_jump+w == to_ptr_var (a macro that offsets to_flip restores
+        //   it before it ends).
         // ptr is a hex[:w/4] that holds an address.
         // @requires stl.ptr_init (or stl.startup_and_init_all).
         def set_flip_and_jump_pointers ptr < .to_flip, .to_jump, .to_ptr_var {

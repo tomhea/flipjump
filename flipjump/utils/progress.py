@@ -1,6 +1,6 @@
 """
-the progress bar of a long stage: a drop-in for `PrintTimer` (the same `  stage:  1.234s` line at its end) that, on
-a terminal, also draws `  loading memory:  ##############----------------  48%  0:03 left` while it runs.
+A progress bar for a long stage. It replaces `PrintTimer`: it prints the same `  stage:  1.234s` line at the end, and
+on a terminal it also draws `  loading memory:  ##############----------------  48%  0:03 left` while it runs.
 """
 
 import sys
@@ -20,7 +20,10 @@ def clear_progress_line() -> None:
 
 
 class ProgressBar:
-    """`with ProgressBar('  stage:  ') as bar: ... bar.update(fraction) ...`; `active`: the bar is drawn (a terminal)"""
+    """
+    A progress bar for a long stage: `with ProgressBar('  stage:  ') as bar: bar.update(fraction)`.
+    It is drawn only on a terminal (`active`).
+    """
 
     def __init__(self, init_message: str, *, show_progress: bool = True):
         self.init_message = init_message

@@ -30,8 +30,8 @@ from flipjump.fjm.fjm_consts import (
 )
 from flipjump.utils.exceptions import FlipJumpWriteFjmException
 
-# the data is compressed in chunks of this many bytes, so the compression's progress can be shown (the LZMA2
-# encoder's output does not depend on how its input is fed: test_run_flags.py::test_chunked_compression_equals_one_shot)
+# the data is compressed in chunks of this many bytes, so its progress can be shown. The output is the same as
+# compressing it in one call (test_run_flags.py::test_chunked_compression_equals_one_shot).
 _COMPRESS_CHUNK = 1 << 20
 
 # the word array's typecode per memory-width (1, 2, 4 and 8 bytes on every supported platform)
@@ -39,12 +39,13 @@ _ARRAY_TYPECODE = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
 
 
 def new_word_buffer(word_size: int) -> 'array.array[int]':
-    """an empty buffer of `word_size`-bit words (extend() it: `+=` takes only another array)"""
+    """Return an empty array of `word_size`-bit words. Fill it with extend(): `+=` takes only another array."""
     return array.array(_ARRAY_TYPECODE[word_size])
 
 
 def _pack_words_little_endian(words: 'array.array[int]', word_size: int) -> 'bytes | memoryview':
-    """`words` as little-endian unsigned integers of `word_size` bits: a view of the array's own bytes, not a copy"""
+    """Return `words` as the bytes of little-endian `word_size`-bit words. On a little-endian machine this is a view of
+    the array's own bytes, not a copy."""
     if sys.byteorder != 'little':
         words = words[:]
         words.byteswap()
@@ -134,9 +135,10 @@ class Writer:
 
     def write_to_file(self, progress: Optional[Callable[[float], None]] = None) -> None:
         """
-        writes the .fjm headers, segments and data (the data compressed in versions 3 and 4, the segments too in
-        version 4: a program of many segments, as a table pool makes, gets a much smaller file) into the output_file.
-        @param progress: if given, the compression tells it the fraction done
+        writes the .fjm headers, segments and data into the output_file. Versions 3 and 4 compress the data; version 4
+        compresses the segment table too, which makes a much smaller file for a program of many segments (as a table
+        pool makes).
+        @param progress: if given, called with the data compression's progress, a fraction in [0, 1]
         @note call this after finished adding data and segments and editing the Writer.
         """
         with open(self.output_file, 'wb') as f:
@@ -176,8 +178,8 @@ class Writer:
         return False
 
     def _validate_segment_addresses_not_overlapping(self, new_segment_start: int, new_segment_length: int) -> None:
-        # neighbours only: the stored intervals are disjoint, so only the sorted neighbours can collide.
-        # Same verdict; the message names a colliding neighbour (`_segment_index_by_start` keeps its `seg[i]`).
+        # check only the new segment's two sorted neighbours: the stored segments are disjoint, so if any of
+        # them overlaps the new one, a neighbour does. `_segment_index_by_start` gives the message its `seg[i]`.
         new_segment_end = new_segment_start + new_segment_length - 1
         neighbours = []
         position = bisect.bisect_left(self._sorted_segment_starts, new_segment_start)
@@ -296,9 +298,9 @@ class Writer:
         """
         append the data to the current data
         @param data: [in]: the words
-        @param take: the caller hands `data` over and will not touch it again. If no data was
-        added yet and `data` is a word array of this writer's type, it BECOMES the writer's data instead
-        of being copied - the first segment is the program's main stream, most of the binary.
+        @param take: the caller gives `data` away and won't use it again. If no data was added yet and `data` is a word
+        array of this writer's type, the writer keeps it instead of copying it. This saves copying the program's main
+        stream, which is added first and is most of the binary.
         @return: the data start index
         """
         data_start = len(self.data)

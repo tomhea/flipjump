@@ -54,7 +54,8 @@ def _painted(window: pygame_window.PygameWindow) -> List[Tuple[int, int, int]]:
     """what landed on the window surface, as RGB tuples"""
     surface = window._screen_surface
     assert surface is not None
-    return [tuple(surface.get_at((x, y))[:3]) for y in range(H) for x in range(W)]
+    pixels = [surface.get_at((x, y)) for y in range(H) for x in range(W)]
+    return [(pixel.r, pixel.g, pixel.b) for pixel in pixels]
 
 
 def test_draw_indexed_paints_exactly_what_draw_paints() -> None:

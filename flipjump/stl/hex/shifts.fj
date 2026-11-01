@@ -80,7 +80,9 @@ ns hex {
         }
         ns shl_bit_once {
             ns __relocatable__ {
-                // shl_bit_once's two tables, which a table pool may move (see table_pool.py)
+                // shl_bit_once's two 16-entry tables: switch entry i flips i's top bit into next's bit 0, then jumps to
+                //   xor_by entry i ^ ((i<<1)&0xf), which xors that into dst (leaving (i<<1)&0xf), then jumps to end.
+                // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
                 def table switch, xor_by, end, dst, next {
                   switch:
                                ;xor_by+0*dw   //  0
@@ -136,7 +138,9 @@ ns hex {
         }
         ns shr_bit_once {
             ns __relocatable__ {
-                // shr_bit_once's two tables, which a table pool may move (see table_pool.py)
+                // shr_bit_once's two 16-entry tables: switch entry i flips i's low bit into next's bit 3, then jumps to
+                //   xor_by entry i ^ (i>>1), which xors that into dst (leaving i>>1), then jumps to end.
+                // It is a macro of its own so that a table pool can move it (see stl/README.md, "Movable tables").
                 def table switch, xor_by, end, dst, next {
                   switch:
                                ;xor_by+0*dw   //  0

@@ -92,8 +92,8 @@ ns stl {
 ns stl {
     // Complexity: @-1
     //   Jumps to label, and saves the return address in the given "ret_reg" variable.
-    // ret_reg is an op `;0` (it must hold jump 0 between calls: the call xors the return address in, and its
-    //   landing op xors it out). So a function is not re-entrant through the same ret_reg (no recursion).
+    // ret_reg is an op `;0`, and must hold jump 0 between calls: fcall xors the return address into it, and the op
+    //   fcall returns to xors it back out. So a function can't call itself through the same ret_reg (no recursion).
     def fcall label, ret_reg @ ret {
         wflip ret_reg+w, ret, label
         pad 2

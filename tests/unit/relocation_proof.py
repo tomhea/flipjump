@@ -39,7 +39,7 @@ from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, l
 from flipjump.assembler.inner_classes.ops import INITIAL_ARGS, INITIAL_LABELS_PREFIX, INITIAL_MACRO_NAME
 from flipjump.assembler import preprocessor
 from flipjump.assembler.preprocessor import OpsQueue, PreprocessorData, is_relocatable
-from flipjump.assembler.table_pool import BlockPool
+from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -491,10 +491,11 @@ def _check_pins(
 def _selected(operand: Expr) -> Expr:
     """`c ? a : b` whose condition is a number is a or b, compared as that (hex.if_flags' entries, `(flags >> i) & 1 ?
     return + dbit : 0`, and the tables' `x ? label : other_label`)"""
-    value = operand.value
-    while isinstance(value, tuple) and value[0] == '?:' and isinstance(value[1][0].value, int):
-        operand = value[1][1] if value[1][0].value else value[1][2]
-        value = operand.value
+    while isinstance(operand.value, tuple) and operand.value[0] == '?:':
+        condition, if_true, if_false = operand.value[1]
+        if not isinstance(condition.value, int):
+            break
+        operand = if_true if condition.value else if_false
     return operand
 
 
@@ -539,12 +540,15 @@ def _flipped(image: _Image, address: int, return_address: int, memory_width: int
     """the bits the wflip chain at `address` flips, followed until it jumps to `return_address` (None: it does not)"""
     flipped: Set[int] = set()
     for _ in range(memory_width + 1):
-        flip, jump = image.word(address), image.word(address + memory_width)
-        if flip is None or jump is None:
+        flip = image.word(address)
+        if flip is None:
+            return None
+        jump = image.word(address + memory_width)
+        if jump is None:
             return None
         if flip:
             flipped ^= {flip}
-        if jump == return_address:
-            return flipped
         address = jump
+        if address == return_address:
+            return flipped
     return None

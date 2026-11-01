@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pytest
 
 from flipjump import assemble
-from flipjump.assembler.table_pool import BlockPool, HotSite, heat_key
+from flipjump.assembler.inner_classes.table_pool import BlockPool, HotSite, heat_key
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.functions import load_debugging_labels
@@ -68,12 +68,13 @@ v: hex.hex
 p: hex.vec w/4, d
 """
 
-# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9, whose stl comment trims
-# moved the call-site line numbers the labels carry - the .fjm and census digests did not move)
+# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9 and on the plain-comments
+# stl rewrite and its cost-line fixes, whose comment lines moved the call-site line numbers the labels carry - the
+# .fjm and census digests did not move)
 GOLDEN: Dict[str, Dict[str, Any]] = {
     'shipped': {
         'fjm': 'dca7d91cc81896ec582654f2f52571dafb5782279fa640f0b98808c708cbc2c4',
-        'labels': 'a7a8f67f9419c2063e6705d1faf55392f88d32de7cdf2c0005844a697eefa1a6',
+        'labels': '603d08bf3bbc0771f5ce6fecaa31a55e934ce392dbc5f307a1428cbb2323b1a7',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 416,
@@ -96,7 +97,7 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
     },
     'narrow': {
         'fjm': 'd56c6e1dc5e83425177b7fcf05285b46ce979e79a81f368b671aa7a0cc38d40b',
-        'labels': '9a178b30a0ac750cb388b85195ee778b867bd301591e7f836f34c50c8a7cfedc',
+        'labels': '694b580004088aea569d68417dcb7fffc8bb60f5a1b651a1266170a925356de7',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 289,
@@ -163,9 +164,8 @@ def _heat(tmp_path: Path) -> Heat:
     """a heat list over the three biggest groups: each one's last three sites, hottest first"""
     recorder = _pool()
     _assemble(tmp_path, 'record', recorder)
-    assert recorder.report is not None
     sites: Heat = {}
-    for table in recorder.report.table_sites:
+    for table in recorder.table_sites:
         sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, _slot_ops(table.slot_ops)))
     biggest = sorted(sites, key=lambda group: (-len(sites[group]), group))[:3]
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}
@@ -216,7 +216,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(W, pin_all_but=ALL_BUT_D),
         {
             'fjm': 'bdc8e5dd8aa7a0d2923237d7e5c27793e5a67316598999733b739a8c57704a75',
-            'labels': '1646034a149d1a3e3a67d67d4a826df8ff0e43c5bffbc3bc35eb1b581dc09fad',
+            'labels': 'b1fb4add98d514b00ce8ae88fa90865006afa087b58a69456354ba8111cada33',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 400,
@@ -244,7 +244,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(W),
         {
             'fjm': 'd414bcbf643c069c887c278547824d353cd787defd3bee951e78491c52bad437',
-            'labels': '967d5453523f79aff2e00bc4b46035fa33f5dcd1646b727d3cb873379ddc8d73',
+            'labels': 'd373ef42284c574cf15b9827ee413e8c8704501854f0e2aa91b4827b7be45fd7',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 416,
@@ -272,7 +272,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: _pool(pin_all_but=None),
         {
             'fjm': '328751a21ccf58e62e271b8ec042109246127146b5a6a7a85d9d290b6788973a',
-            'labels': '44ac4ace5c33a058b4ad637b5f5e9b308612fbf533596695944865bc51d78a62',
+            'labels': '9efc48b5ce56b404a7dc67ca523d187e97f93e0ba5ba63303a36d1ab0cae83d5',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 416,
@@ -309,7 +309,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         ),
         {
             'fjm': '4c0d3ce9fcd2d1655d70b939c1fa92b0118df4e9837e07df2fda32cc9c78967f',
-            'labels': '08fc67ca5ffa1e60561c0e19ab8b3ce45935a06e5a22dd5d2ca227d7044c41dd',
+            'labels': '0bc09a148cd26d1a16aa0fdca7af282226dd523790c66b2ae8ce4a4487464ef9',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 306,
@@ -337,7 +337,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
         lambda heat: BlockPool(W, POOL_BASE, pin_all_but=ALL_BUT_D),
         {
             'fjm': '0e4a821802c1075e2eba8f89641f74b48bcea5d862befaab9ddfb3b1ab1a54ed',
-            'labels': 'd18b90a2a771ce9a098d737caccb050abd3788bb81a6dbc659a20e4dbce2f632',
+            'labels': '15d4923ee34242694f6549709b8e5c83a8952d76b2b3eb23c2053898537c65a2',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 400,

@@ -14,6 +14,7 @@ three run-loops (engines) are implemented:
   debugging features are requested, or explicitly with profile=True.
 """
 
+import importlib
 from os import environ
 from pathlib import Path
 from typing import Any, Optional, Deque
@@ -22,7 +23,7 @@ from flipjump.fjm import fjm_reader
 from flipjump.fjm.fjm_reader import FjmHeader
 
 try:
-    from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
+    _fjcore: Any = importlib.import_module('flipjump.interpreter._fjcore')  # the C extension: no type stubs
 except ImportError:  # the native engine is optional - fall back to the pure-python loops
     _fjcore = None
 from flipjump.interpreter.debugging.breakpoints import BreakpointHandler, handle_breakpoint
@@ -193,7 +194,7 @@ def run(
     @param io_device:[in,out]: the device handling input/output
     @param show_trace: if true print every opcode executed
     @param show_progress: if true, show the run's times (and on a terminal, the loading's progress bar)
-    @param print_time: show_progress's name in flipjump 1.5: if given, it is show_progress
+    @param print_time: the old name (flipjump 1.5) of show_progress: if given, it overrides show_progress
     @param last_ops_debugging_list_length: The length of the last-ops list
     @param profile: if true use the featured loop and collect the full per-op statistics
     (flip/jump counters). by default the fast loop is used (which skips them).
@@ -251,7 +252,7 @@ def run(
         ) from unknown_exception
 
 
-# the terminations of a run that ended by itself: the device hears that its output is complete (IODevice.end_of_run)
+# the ways a run ends by itself; after these, the device is told its output is complete (IODevice.end_of_run)
 _ENDED_BY_ITSELF = (TerminationCause.Looping, TerminationCause.NullIP, TerminationCause.EOF)
 
 
@@ -287,13 +288,14 @@ def _load_native(
     fjm_path: Path, header: FjmHeader, flat_max_words: Optional[int], flat_required: bool, progress: ProgressBar
 ) -> Any:
     """
-    load the .fjm straight into a native _fjcore.Memory: its segments, then its storage decided (so the
-    words go directly into the flat image), then the words from the raw data bytes.
-    @param header: the .fjm's header (read_fjm_header); the data must be read under the same header
+    Load the .fjm straight into a native _fjcore.Memory: add its segments, choose its storage (so the words go
+    straight into the flat array), then copy in the words from the raw data bytes.
+    @param header: the .fjm's header, from read_fjm_header (the data is read under it: a changed header or segment
+    table fails the load)
     @return: the loaded core
     """
     assert _fjcore is not None
-    fjm_reader.validate_segments(header.segments, data_words=1 << 64)  # the data pool is checked with the data
+    fjm_reader.validate_segments(header.segments, data_words=1 << 64)  # the data pool is checked later, with the data
     core = _fjcore.Memory(
         header.memory_width, flat_max_words=flat_max_words if flat_max_words else 0, flat_required=flat_required
     )
@@ -335,8 +337,8 @@ def _run_native(
     statistics: RunStatistics,
 ) -> TerminationStatistics:
     """
-    run with the native (C) engine: execute the run-loop in C over a loaded _fjcore.Memory (see
-    _load_native). behaves exactly like the python fast loop.
+    Run the program in the native (C) engine, over a _fjcore.Memory that _load_native loaded.
+    It behaves exactly like the python fast loop.
     """
     assert _fjcore is not None
     io_device.attach_memory(NativeDeviceMemory(core, memory_width))
@@ -349,8 +351,9 @@ def _run_native(
             io_device.write_bit,
             IOReadOnEOF,
             last_ops_length=last_ops.maxlen if last_ops is not None and last_ops.maxlen else 0,
-            # only a device that handles whole bytes itself: the default write_byte is 8 write_bits anyway,
-            # and gathering would only delay each bit (and a device error) to its byte's end
+            # pass the byte callbacks only for a device that overrides them: the default write_byte just makes
+            # 8 write_bit calls, and gathering bits into bytes would only delay each bit (and any device error)
+            # to the end of its byte
             write_byte=io_device.write_byte if type(io_device).write_byte is not IODevice.write_byte else None,
             read_byte=io_device.read_byte if type(io_device).read_byte is not IODevice.read_byte else None,
         )
