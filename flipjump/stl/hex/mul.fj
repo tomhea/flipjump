@@ -43,13 +43,15 @@ ns hex {
       end:
     }
 
-    //  Time Complexity: n^2(3@+7) + n*b(3@+38)
-    //       for b==n/2: n^2(4.5@+26)
+    //  Time Complexity: n*L(3@+7) + n*b(3@+38) + n(7@+50)
+    //       for L==n, b==n/2: n^2(4.5@+26)
     // Space Complexity: n(20@+481)
     //
     //   res[:n] = a[:n] * b[:n]
     //
-    // b is the minimum of #on-bits in a,b (b<n/2 on average, e.g. b=7 for n=16).
+    // It loops over the operand with the smaller value, a hex a round, and stops after its top non-zero hex:
+    //   L is how many hexes that is, and b is how many of them are non-zero (only those add a row).
+    //   The n(7@+50) is the setup: zeroing, the compare and the copies.
     // @requires hex.add.init & hex.mul.init & hex.cmp.init (or hex.init)
     // res,a,b are hex[:n]; res must not alias a or b.
     // @Assumes: n >= 1.
