@@ -1,0 +1,10 @@
+// C22: hex.set of a digit computed from a label (a pointer-like constant) into a hex that is also a
+// hex.xor source (so pinned). The value is a VALUE, (L >> 6) & 0xf, and L does not move.
+stl.startup
+L:
+    hex.set y, (L >> 6) & 0xf
+    hex.xor z, y
+    hex.print_as_digit z, 0
+    stl.loop
+y:  hex.hex 0
+z:  hex.hex 0

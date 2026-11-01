@@ -1,0 +1,8 @@
+// C3: the pinned word lives in a `reserve` region: no op is emitted for it, so insert_fj_op never
+// bakes the block base into its rest value.
+stl.startup
+    hex.xor y, x
+    hex.print_as_digit y, 0
+    stl.loop
+y:  hex.hex 0
+x:  reserve dw

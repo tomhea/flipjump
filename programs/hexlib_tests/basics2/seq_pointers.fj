@@ -1,0 +1,257 @@
+// Tests the n-cell pointer ops (read_byte / read_hex / write_byte / write_hex / xor_byte_to_ptr / xor_hex_to_ptr n),
+//   n = 1, 2, 3, 4, 7, 8, 16, on random bytes: the values, every cell written (read back one by one), the pointer left
+//   where it was, and the armed address left at the last cell (read_back). The "high" array straddles op 2048, so
+//   moving the armed address to the next cell carries through 11 bits there.
+// Values are random (python, seed 4242); each check prints '=' when the result is right.
+stl.startup_and_init_all
+
+// the low array
+test_read_byte_n low, 1, 15, 0xd
+test_read_hex_n low, 1, 15, 0xd
+test_write_byte_n low, 1, 15, 0x8e
+test_write_hex_n low, 1, 15, 0x2, 0x82
+test_xor_byte_to_ptr_n low, 1, 15, 0x33, 0xb1
+test_xor_hex_to_ptr_n low, 1, 15, 0xc, 0xbd
+test_read_byte_n low, 2, 13, 0x3df3
+test_read_hex_n low, 2, 13, 0xd3
+test_write_byte_n low, 2, 13, 0xf1ee
+test_write_hex_n low, 2, 13, 0xf7, 0xffe7
+test_xor_byte_to_ptr_n low, 2, 13, 0x3572, 0xca95
+test_xor_hex_to_ptr_n low, 2, 13, 0xde, 0xc79b
+test_read_byte_n low, 3, 17, 0xac5c48
+test_read_hex_n low, 3, 17, 0xcc8
+test_write_byte_n low, 3, 17, 0x7f71d7
+test_write_hex_n low, 3, 17, 0xc6b, 0x7c76db
+test_xor_byte_to_ptr_n low, 3, 17, 0x1e9e2b, 0x62e8f0
+test_xor_hex_to_ptr_n low, 3, 17, 0xd36, 0x6febf6
+test_read_byte_n low, 4, 0, 0xc70e43d4
+test_read_hex_n low, 4, 0, 0x7e34
+test_write_byte_n low, 4, 0, 0x8168db0c
+test_write_hex_n low, 4, 0, 0xd6fd, 0x8d66df0d
+test_xor_byte_to_ptr_n low, 4, 0, 0xd8537db4, 0x5535a2b9
+test_xor_hex_to_ptr_n low, 4, 0, 0xf3c0, 0x5a36aeb9
+test_read_byte_n low, 7, 7, 0x9b4f50f00cfc5e
+test_read_hex_n low, 7, 7, 0xbf00cce
+test_write_byte_n low, 7, 7, 0xd0c4d3897bfee
+test_write_hex_n low, 7, 7, 0xa764e15, 0xa0746349eb1e5
+test_xor_byte_to_ptr_n low, 7, 7, 0xeaeb6834a148bd, 0xe0ec2e003ff958
+test_xor_hex_to_ptr_n low, 7, 7, 0x53b7890, 0xe5ef250737f058
+test_read_byte_n low, 8, 4, 0x250737f0588ca4c2
+test_read_hex_n low, 8, 4, 0x57708c42
+test_write_byte_n low, 8, 4, 0xe00d33bf274e2446
+test_write_hex_n low, 8, 4, 0xce656d85, 0xec0e36b5264d2845
+test_xor_byte_to_ptr_n low, 8, 4, 0x1ecc867b3833f445, 0xf2c2b0ce1e7edc00
+test_xor_hex_to_ptr_n low, 8, 4, 0xf0485dc9, 0xfdc2b4c61b73d009
+test_read_byte_n low, 16, 0, 0xbdc7e5effdc2b4c61b73d0095a36aeb9
+test_read_hex_n low, 16, 0, 0xd75fd246b309a6e9
+test_write_byte_n low, 16, 0, 0x6f7a9335fcb67170dca5494354cdeda9
+test_write_hex_n low, 16, 0, 0x773422a4de2e5198, 0x67779334f2b27a74ddae424e55c1e9a8
+test_xor_byte_to_ptr_n low, 16, 0, 0xeb4c142dede31d864acbd10bfda60247, 0x8c3b87191f5167f297659345a867ebef
+test_xor_hex_to_ptr_n low, 16, 0, 0xef3d8709dd68896, 0x8c35881a125960f29e689e43a06fe2e9
+// the high array
+test_read_byte_n high, 1, 3, 0xac
+test_read_hex_n high, 1, 3, 0xc
+test_write_byte_n high, 1, 3, 0xad
+test_write_hex_n high, 1, 3, 0x0, 0xa0
+test_xor_byte_to_ptr_n high, 1, 3, 0x80, 0x20
+test_xor_hex_to_ptr_n high, 1, 3, 0x8, 0x28
+test_read_byte_n high, 2, 2, 0x288c
+test_read_hex_n high, 2, 2, 0x8c
+test_write_byte_n high, 2, 2, 0xbc79
+test_write_hex_n high, 2, 2, 0xee, 0xbe7e
+test_xor_byte_to_ptr_n high, 2, 2, 0xa11b, 0x1f65
+test_xor_hex_to_ptr_n high, 2, 2, 0xbf, 0x146a
+test_read_byte_n high, 3, 2, 0x2146a
+test_read_hex_n high, 3, 2, 0x24a
+test_write_byte_n high, 3, 2, 0x46aefe
+test_write_hex_n high, 3, 2, 0x825, 0x48a2f5
+test_xor_byte_to_ptr_n high, 3, 2, 0xce69a, 0x44446f
+test_xor_hex_to_ptr_n high, 3, 2, 0x280, 0x464c6f
+test_read_byte_n high, 4, 1, 0x464c6f1f
+test_read_hex_n high, 4, 1, 0x6cff
+test_write_byte_n high, 4, 1, 0x8a5b3cc1
+test_write_hex_n high, 4, 1, 0x3254, 0x835235c4
+test_xor_byte_to_ptr_n high, 4, 1, 0x2938b59, 0x81c1be9d
+test_xor_hex_to_ptr_n high, 4, 1, 0x3ff2, 0x82ceb19f
+test_read_byte_n high, 7, 0, 0x56a382ceb19fe4
+test_read_hex_n high, 7, 0, 0x632e1f4
+test_write_byte_n high, 7, 0, 0x8fe972ef707813
+test_write_hex_n high, 7, 0, 0xe73629c, 0x8ee773e672791c
+test_xor_byte_to_ptr_n high, 7, 0, 0x2adbb6eb74e62, 0x8c4ac888c5377e
+test_xor_hex_to_ptr_n high, 7, 0, 0xa5fe568, 0x864fc786c03176
+test_read_byte_n high, 8, 0, 0xac864fc786c03176
+test_read_hex_n high, 8, 0, 0xc6f76016
+test_write_byte_n high, 8, 0, 0x3de62be5077331a0
+test_write_hex_n high, 8, 0, 0xa7e0bdb0, 0x3ae72ee00b7d3ba0
+test_xor_byte_to_ptr_n high, 8, 0, 0x9a4139e877d984b2, 0xa0a617087ca4bf12
+test_xor_hex_to_ptr_n high, 8, 0, 0x92edaffe, 0xa9a4190576abb01c
+test_read_byte_n high, 16, 0, 0xf8b0559da4cec9b6a9a4190576abb01c
+test_read_hex_n high, 16, 0, 0x805d4e9694956b0c
+test_write_byte_n high, 16, 0, 0xfdd78de177ffbb4537b61e82d1f8552a
+test_write_hex_n high, 16, 0, 0xc13e6fb98dc90833, 0xfcd183ee76ffbb4938bd1c89d0f85323
+test_xor_byte_to_ptr_n high, 16, 0, 0x85d2b153127f22d85774b26fff132b02, 0x790332bd648099916fc9aee62feb7821
+test_xor_hex_to_ptr_n high, 16, 0, 0xb1388bb431d7f82a, 0x720231b56c8b92956cc8a3e120e37a2b
+
+stl.loop
+
+
+def set_ptr array, k < p {
+    hex.set w/4, p, array + k*dw
+}
+
+// three lines: dst[:2n] == expected; the pointer is where it was; read_back == the last cell.
+def test_read_byte_n array, n, k, expected @ dst, end < p, v {
+    set_ptr array, k
+    hex.read_byte n, dst, p
+    check 2*n, dst, expected
+    check w/4, p, array + k*dw
+    hex.read_back v
+    check 2, v, (expected >> (8*(n-1))) & 0xff
+    ;end
+  dst: hex.vec 2*n, 0x5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c & ((1 << (8*n)) - 1)     // dirty: the op zeroes it first
+  end:
+}
+
+// three lines: dst[:n] == expected (the cells' low hexes); the pointer; read_back == the last cell's low hex.
+def test_read_hex_n array, n, k, expected @ dst, end < p, v {
+    set_ptr array, k
+    hex.read_hex n, dst, p
+    check n, dst, expected
+    check w/4, p, array + k*dw
+    hex.read_back v
+    check 1, v, (expected >> (4*(n-1))) & 0xf
+    ;end
+  dst: hex.vec n, 0x5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c5a3c & ((1 << (4*n)) - 1)     // dirty: the op zeroes it first
+  end:
+}
+
+// n+2 lines: the cells one by one, the pointer, read_back == the last cell.
+def test_write_byte_n array, n, k, bytes @ src, end < p, v {
+    set_ptr array, k
+    hex.write_byte n, p, src
+    check w/4, p, array + k*dw
+    hex.read_back v
+    check 2, v, (bytes >> (8*(n-1))) & 0xff
+    rep(n, i) check_cell array, k + i, (bytes >> (8*i)) & 0xff
+    ;end
+  src: hex.vec 2*n, bytes
+  end:
+}
+
+def test_write_hex_n array, n, k, hexes, expected_cells @ src, end < p, v {
+    set_ptr array, k
+    hex.write_hex n, p, src
+    check w/4, p, array + k*dw
+    hex.read_back v
+    check 2, v, (expected_cells >> (8*(n-1))) & 0xff
+    rep(n, i) check_cell array, k + i, (expected_cells >> (8*i)) & 0xff
+    ;end
+  src: hex.vec n, hexes
+  end:
+}
+
+def test_xor_byte_to_ptr_n array, n, k, bytes, expected_cells @ src, end < p, v {
+    set_ptr array, k
+    hex.xor_byte_to_ptr n, p, src
+    check w/4, p, array + k*dw
+    hex.read_back v
+    check 2, v, (expected_cells >> (8*(n-1))) & 0xff
+    rep(n, i) check_cell array, k + i, (expected_cells >> (8*i)) & 0xff
+    ;end
+  src: hex.vec 2*n, bytes
+  end:
+}
+
+def test_xor_hex_to_ptr_n array, n, k, hexes, expected_cells @ src, end < p, v {
+    set_ptr array, k
+    hex.xor_hex_to_ptr n, p, src
+    check w/4, p, array + k*dw
+    hex.read_back v
+    check 2, v, (expected_cells >> (8*(n-1))) & 0xff
+    rep(n, i) check_cell array, k + i, (expected_cells >> (8*i)) & 0xff
+    ;end
+  src: hex.vec n, hexes
+  end:
+}
+
+// reads cell k of the array (through q) and checks it.
+def check_cell array, k, value < q, v {
+    hex.set w/4, q, array + k*dw
+    hex.read_byte v, q
+    check 2, v, value
+}
+
+// prints '=' if x[:n] == expected, else '<' / '>'. Then a new line.
+def check n, x, expected @ lt, eq, gt, expected_x, end {
+    hex.cmp n, x, expected_x, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  expected_x: hex.vec n, expected
+  end:
+    stl.output '\n'
+}
+
+
+p: hex.vec w/4
+q: hex.vec w/4
+v: hex.vec 2
+low:
+  ;212*dw
+  ;67*dw
+  ;14*dw
+  ;199*dw
+  ;194*dw
+  ;164*dw
+  ;140*dw
+  ;94*dw
+  ;252*dw
+  ;12*dw
+  ;240*dw
+  ;80*dw
+  ;79*dw
+  ;243*dw
+  ;61*dw
+  ;13*dw
+  ;64*dw
+  ;72*dw
+  ;92*dw
+  ;172*dw
+  ;62*dw
+  ;87*dw
+  ;121*dw
+  ;119*dw
+
+  pad 2048
+  rep(2045, i) stl.fj 0, 0
+high:
+  ;228*dw
+  ;31*dw
+  ;140*dw
+  ;172*dw
+  ;2*dw
+  ;163*dw
+  ;86*dw
+  ;172*dw
+  ;182*dw
+  ;201*dw
+  ;206*dw
+  ;164*dw
+  ;157*dw
+  ;85*dw
+  ;176*dw
+  ;248*dw
+  ;137*dw
+  ;225*dw
+  ;40*dw
+  ;244*dw
+  ;131*dw
+  ;85*dw
+  ;85*dw
+  ;144*dw

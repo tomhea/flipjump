@@ -12,3 +12,4 @@ longer one at every offset.
 | `and.fj` / `and_n.fj` | `hex.and`: single-digit and multi-hex. |
 | `or.fj` / `or_n.fj` | `hex.or`: single-digit and multi-hex. |
 | `cmp.fj` / `cmp_n.fj` | `hex.cmp`: single-digit and multi-hex. |
+| `chain_n.fj` | the chained n-hex ops (`add`/`sub`/`or`/`and` n, `add_shifted`/`sub_shifted`) at n = 1, 2, 3, 4, 7, 8, 16, with carries and borrows through every nibble. |

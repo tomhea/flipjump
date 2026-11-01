@@ -1,0 +1,32 @@
+// C8b: C8 with labels after each call, so the relocation proof sees nothing but the retarget wflip.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;begin
+    pad 16
+    my.__relocatable__.table T1, outA
+  e1:
+    wflip x+w, T1
+    ;outA
+    pad 16
+    my.__relocatable__.table T2, outB
+  e2:
+    wflip x+w, T2
+    ;outB
+begin:
+    wflip x+w, T1
+    wflip x+w, T1 ^ T2, x
+outA:
+    stl.output 'A'
+    stl.loop
+outB:
+    wflip x+w, T2
+    stl.output 'B'
+    stl.loop
+x:  hex.hex 0

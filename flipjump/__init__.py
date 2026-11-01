@@ -15,7 +15,8 @@ from flipjump.flipjump_quickstart import (
     assemble_and_debug,
     assemble_and_run_test_output,
 )
-from flipjump.fjm.fjm_consts import FJMVersion, FJ_MAGIC
+from flipjump.fjm.fjm_consts import FJMVersion, FJ_MAGIC, IO_MODE_STANDARD, IO_MODE_PC, RUN_FLAG_FLAT_MEMORY
+from flipjump.fjm.fjm_reader import FjmHeader, read_fjm_header
 from flipjump.interpreter.fjm_run import TerminationStatistics, is_native_engine_active
 from flipjump.utils.classes import TerminationCause
 from flipjump.utils.constants import FLIPJUMP_VERSION as __version__
@@ -38,6 +39,11 @@ __all__ = [
     'assemble_and_run_test_output',
     'FJMVersion',
     'FJ_MAGIC',
+    'IO_MODE_STANDARD',
+    'IO_MODE_PC',
+    'RUN_FLAG_FLAT_MEMORY',
+    'FjmHeader',
+    'read_fjm_header',
     'TerminationCause',
     'TerminationStatistics',
     'is_native_engine_active',

@@ -2,6 +2,7 @@ ns bit {
     // Complexity: n(14@+10)
     //   x[:n] *= 10
     // @NOTE: this implementation works with both signed and unsigned numbers.
+    // @Assumes: n >= 2.
     def mul10 n, x @ twice, end {
         .shl n, x
         .mov n, twice, x
@@ -24,6 +25,7 @@ ns bit {
     // @Assumes: dst and src are NOT the same address (aliasing makes this macro loop forever).
     //           For squaring (dst==src) use the mul macro, which handles aliasing safely.
     // @NOTE: For a faster multiplication see hex.mul (requires hex.init).
+    // @Assumes: n >= 1.
     def mul_loop n, dst, src @ start, after_add, src_copy, res, end {
         .zero n, res
         .mov n, src_copy, src

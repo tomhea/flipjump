@@ -1,0 +1,26 @@
+// C13: a label between the `pad` and the call names the table's start in both programs.
+ns my {
+  ns __relocatable__ {
+    def table start, a, b {
+      start:
+        ;a
+        ;b
+    }
+  }
+}
+stl.startup
+    ;M + dw
+    wflip x+w, T, x
+    pad 16
+  M:
+    my.__relocatable__.table T, outA, outB
+  after:
+    wflip x+w, T
+    stl.loop
+outA:
+    stl.output 'A'
+    stl.loop
+outB:
+    stl.output 'B'
+    stl.loop
+x:  hex.hex 0

@@ -1,0 +1,131 @@
+// Tests the invariant that all of hex's pointer-setters establish, and that every pointer
+// macro then depends on:
+//
+//     after set_flip_pointer / set_jump_pointer / set_flip_and_jump_pointers,
+//     to_flip, to_jump+w and the shadow pointer all hold the SAME address.
+//
+// Every section below runs a FLIP-side macro (ptr_flip, ptr_wflip, xor_byte_to_ptr - the
+// write half of the library) and then a JUMP-side one (read_byte, ptr_jump - the read
+// half). That order is the whole point: a setter which updates one address field and
+// leaves the other stale is not a slow path, it is a wild jump, because read_byte's dance
+// arms the pointed-to cell through to_flip and jumps into it through to_jump. Such a
+// setter fails HERE - silently, with a wrong digit - and nowhere else in the test-suite.
+//
+// This is also the behavioural test of hex.address_and_variable_triple_xor: the three
+// fields that macro writes are exactly the three that ptr_flip, ptr_jump and read_byte
+// read back.
+stl.startup_and_init_all
+
+
+// 1. read/write round-trip through the combined setter.  ->  a7
+    stl.output "roundtrip:"
+    hex.set w/4, p, cell
+    hex.set 2, v, 0xa7
+    hex.write_byte p, v
+    hex.zero 2, v
+    hex.read_byte v, p
+    hex.print_as_digit 2, v, 0
+    stl.output '\n'
+
+
+// 2. the flip-only setter (ptr_flip), then a read through the combined one.  ->  a7 1
+    stl.output "flip-then-read:"
+    hex.ptr_flip fp
+    hex.read_byte v, p
+    hex.print_as_digit 2, v, 0
+    bit.if fbit, flipped_0, flipped_1
+  flipped_0:
+    stl.output "0\n"
+    ;test3
+  flipped_1:
+    stl.output "1\n"
+    ;test3
+
+
+// 3. ptr_wflip walks to_flip through all w bit-positions and must land it back where it
+//    started; the read proves it did, and the jump proves to_jump agrees.  ->  a7 N
+  test3:
+    stl.output "wflip-read-jump:"
+    hex.ptr_wflip wp, wbase
+    hex.read_byte v, p
+    hex.print_as_digit 2, v, 0
+    hex.ptr_jump wpj
+
+    pad 2
+  wbase:
+    ;wjump_0
+    ;wjump_1
+  wjump_0:
+    stl.output "N\n"
+    ;test4
+  wjump_1:
+    stl.output "Y\n"
+    ;test4
+
+
+// 4. stl.call/stl.return reach BOTH one-sided setters - push_ret_address goes through
+//    hex.ptr_wflip (flip-side) and stl.return through hex.ptr_jump (jump-side) - around a
+//    write the callee makes with the combined one.  ->  3c
+  test4:
+    stl.output "call:"
+    stl.call subroutine
+    hex.read_byte v, p
+    hex.print_as_digit 2, v, 0
+    stl.output '\n'
+
+
+// 5. the write half through the flip-only setter, read back through the jump half.
+//    *p ^= 0x0f  ->  0x3c ^ 0x0f = 33
+    stl.output "xor-to-ptr:"
+    hex.set 2, u, 0x0f
+    hex.xor_byte_to_ptr p, u
+    hex.read_byte v, p
+    hex.print_as_digit 2, v, 0
+    stl.output '\n'
+
+
+// 6. the _and_inc forms, which are the bulk of real pointer traffic: one setter per cell,
+//    write then read the same four bytes.  ->  1234abcd
+    stl.output "multi:"
+    hex.set w/4, q, arr
+    hex.write_byte 4, q, src4
+    hex.zero 8, dst4
+    hex.read_byte 4, dst4, q
+    hex.print_as_digit 8, dst4, 0
+    stl.output '\n'
+
+    stl.loop
+
+
+  subroutine:
+    hex.set 2, u, 0x3c
+    hex.write_byte p, u
+    stl.return
+
+
+  p:     hex.vec w/4
+  q:     hex.vec w/4
+  v:     hex.vec 2
+  u:     hex.vec 2
+  cell:  hex.vec 2, 0
+
+  // 2: a pointer to a bit, for ptr_flip.
+  fp:    hex.vec w/4, fbit+dbit
+  fbit:  bit.bit 0
+
+  // 3: wp points at wcell's second word (what ptr_wflip flips), wpj at wcell itself.
+  wp:    hex.vec w/4, wcell+w
+  wpj:   hex.vec w/4, wcell
+  wcell: bit.bit 0
+
+  // 6: four bytes in, four bytes out.
+  arr:   hex.vec 8, 0
+  src4:  hex.hex 0xd
+         hex.hex 0xc
+         hex.hex 0xb
+         hex.hex 0xa
+         hex.hex 4
+         hex.hex 3
+         hex.hex 2
+         hex.hex 1
+  dst4:  hex.vec 8, 0

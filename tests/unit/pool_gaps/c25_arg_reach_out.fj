@@ -1,0 +1,22 @@
+// C25: the table's start label plus an offset passed IN as an argument (nxt = T + dw): the body's own check
+// sees only the parameter name; OffsetGuard sees `T + 64` while the table is still being emitted.
+ns my {
+  ns __relocatable__ {
+    def table start, nxt {
+      start:
+        ;nxt
+    }
+  }
+}
+def go x @ T, end {
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, T + dw
+  end:
+    wflip x+w, T
+}
+stl.startup
+    go x
+    stl.output 'K'
+    stl.loop
+x:  hex.hex 0

@@ -2,9 +2,11 @@
 // (By "buffers" we mean hex.pointers to those buffers.)
 
 ns hex {
-    //  Time Complexity:  len(w(0.75@+5) + 39@+79)
-    // Space Complexity:  w(2.25@+44) + 34@+381
+    //  Time Complexity:  len(w(0.5@+4) + 35@+106)
+    // Space Complexity:  w(2@+37) + 30@+397
     //   Reads bytes from input into a pointed buffer, until a '\n' or a 0-byte (EOF); writes the byte count into len[:w/4].
+    // The '\n' / 0-byte is not stored, and nothing 0-terminates the line. There is no length bound: the
+    //   buffer must hold the whole line.
     // @requires hex.init and stl.ptr_init (or stl.startup_and_init_all).
     def input_ptr_line ptr, len @ loop, store, finish, wptr, bytebuf, nl, end {
         .mov w/4, wptr, ptr
@@ -26,8 +28,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity:  len(w(@+5) + 21@+27)
-    // Space Complexity:  w(3@+55) + 16@+179
+    //  Time Complexity:  len(w(0.75@+4) + 17@+54)
+    // Space Complexity:  w(2.75@+48) + 12@+195
     //   Prints "len[:w/4]" bytes from the pointed buffer.
     // @requires hex.init and stl.ptr_init (or stl.startup_and_init_all).
     def print_ptr_text ptr, len @ loop, finish, pptr, cnt, bytebuf, end {
@@ -49,8 +51,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity:  len(w(0.75@+5) + 29@+41)
-    // Space Complexity:  w(2.25@+45) + 28@+220
+    //  Time Complexity:  len(w(0.5@+4) + 25@+68)
+    // Space Complexity:  w(2@+38) + 24@+236
     //   Prints bytes from the pointed buffer, until a '\n' or a 0-byte (EOF); writes the byte count into len[:w/4].
     //   A terminating '\n' is printed too (a terminating 0-byte is not); either way len excludes it.
     // @requires hex.init and stl.ptr_init (or stl.startup_and_init_all).
@@ -81,8 +83,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity:  count(w(@+5) + 28@+55)
-    // Space Complexity:  w(2.25@+44) + 35@+300
+    //  Time Complexity:  count(w(0.75@+4) + 24@+82)
+    // Space Complexity:  w(2@+37) + 31@+316
     //   Fills "count[:w/4]" bytes of the pointed buffer with the value byte.
     // ptr,count are hex[:w/4]; value is a hex[:2]. All three are preserved.
     // @requires hex.init and stl.ptr_init (or stl.startup_and_init_all).
@@ -102,8 +104,8 @@ ns hex {
       end:
     }
 
-    //  Time Complexity:  count(w(1.75@+10) + 45@+80)
-    // Space Complexity:  w(4.5@+90) + 55@+450
+    //  Time Complexity:  count(w(1.25@+8) + 37@+134)
+    // Space Complexity:  w(4@+76) + 47@+482
     //   Copies "count[:w/4]" bytes from the src-pointed buffer to the dst-pointed buffer.
     // dst_ptr,src_ptr,count are hex[:w/4]. All three are preserved.
     // @Assumes: the buffers do not overlap.

@@ -46,6 +46,18 @@ class FixedIO(IODevice):
             self.current_output_byte = 0
             self.bits_to_write_in_output_byte = 0
 
+    def read_byte(self) -> int:
+        if self.bits_to_read_in_input_byte or not self.remaining_input:  # mid-byte, or EOF: the bit path
+            return super().read_byte()
+        byte, self.remaining_input = self.remaining_input[0], self.remaining_input[1:]
+        return byte
+
+    def write_byte(self, byte: int) -> None:
+        if self.bits_to_write_in_output_byte:  # mid-byte: the bit path
+            super().write_byte(byte)
+            return
+        self._output += bytes((byte,))
+
     def get_output(self, *, allow_incomplete_output: bool = False) -> bytes:
         """
         @raise IncompleteOutput when the number of outputted bits can't be divided by 8

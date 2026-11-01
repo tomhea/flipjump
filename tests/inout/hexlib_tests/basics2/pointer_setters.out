@@ -1,0 +1,6 @@
+roundtrip:a7
+flip-then-read:a71
+wflip-read-jump:a7N
+call:3c
+xor-to-ptr:33
+multi:1234abcd

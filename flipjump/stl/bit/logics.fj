@@ -12,6 +12,7 @@ ns bit {
     // Complexity: n(@-1)
     //   dst[:n] ^= src[:n]
     // dst,src are bit[:n].
+    // note: doesn't work if dst and src overlap. works if dst==src.
     def xor n, dst, src {
         rep(n, i) .xor dst+dw*i, src+dw*i
     }
@@ -57,7 +58,7 @@ ns bit {
     // Complexity: @
     //   dst ^= src
     //   src = 0
-    // dst,src are bits.
+    // dst,src are bits. dst and src must differ (xor_zero x, x leaves x).
     def xor_zero dst, src {
         .double_exact_xor dst+dbit, src+dbit, src
     }
@@ -65,7 +66,7 @@ ns bit {
     // Complexity: n@
     //   dst[:n] ^= src[:n]
     //   src[:n] = 0
-    // dst,src are bit[:n].
+    // dst,src are bit[:n]. dst and src must not overlap (xor_zero n, x, x leaves x).
     def xor_zero n, dst, src {
         rep(n, i) .xor_zero dst+dw*i, src+dw*i
     }
@@ -83,6 +84,7 @@ ns bit {
     // Complexity: n(2@+2)
     //   dst[:n] |= src[:n]
     // dst,src are bit[:n].
+    // note: doesn't work if dst and src overlap. works if dst==src.
     def or n, dst, src {
         rep(n, i) .or dst+dw*i, src+dw*i
     }
@@ -100,6 +102,7 @@ ns bit {
     // Complexity: n(2@+2)
     //   dst[:n] &= src[:n]
     // dst,src are bit[:n].
+    // note: doesn't work if dst and src overlap. works if dst==src.
     def and n, dst, src {
         rep(n, i) .and dst+dw*i, src+dw*i
     }

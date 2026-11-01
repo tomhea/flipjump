@@ -1,0 +1,145 @@
+// Tests the chained hex.add_mul n (res[:n] += a[:n] * b), n = 1, 2, 3, 4, 7, 8, 16.
+// Every n gets a random case, the all-0xf case (a carry through every nibble), and a random case
+//   entered with a dirty multiply-carry (left by a single hex.add_mul: 0xf*0xf + 0xf). The multiply-carry
+//   left by hex.add_mul n must be clear (else '<'). Then n = 0, and hex.mul.clear_carry.
+// Generated with python's random (seed 20261023); each line prints '=' when the result is right.
+stl.startup
+
+test_add_mul 1, 0x6, 0x7, 7, 0
+test_add_mul 1, 0xf, 0xf, 15, 0
+test_add_mul 1, 0x8, 0x2, 5, 1
+test_add_mul 2, 0x4, 0x8b, 8, 0
+test_add_mul 2, 0xff, 0xff, 15, 0
+test_add_mul 2, 0x5e, 0x60, 5, 1
+test_add_mul 3, 0xf50, 0xc30, 10, 0
+test_add_mul 3, 0xfff, 0xfff, 15, 0
+test_add_mul 3, 0x816, 0x809, 6, 1
+test_add_mul 4, 0xec9d, 0xc774, 6, 0
+test_add_mul 4, 0xffff, 0xffff, 15, 0
+test_add_mul 4, 0x976a, 0x944e, 6, 1
+test_add_mul 7, 0x9b51355, 0xea8ee0, 0, 0
+test_add_mul 7, 0xfffffff, 0xfffffff, 15, 0
+test_add_mul 7, 0x25fe6cc, 0xde9c1fd, 13, 1
+test_add_mul 8, 0x3e7683f, 0xfb80d64a, 1, 0
+test_add_mul 8, 0xffffffff, 0xffffffff, 15, 0
+test_add_mul 8, 0xcc8054b6, 0x3089978c, 9, 1
+test_add_mul 16, 0x445081bcaea03a58, 0xa30d125683befd23, 1, 0
+test_add_mul 16, 0xffffffffffffffff, 0xffffffffffffffff, 15, 0
+test_add_mul 16, 0xd58c913983b934ed, 0xb902da41ba460d84, 2, 1
+// n = 0 is a no-op
+test_add_mul_n0
+// n = 0 entered with a dirty multiply-carry: add_mul 0 clears it, as n >= 1 does (the control is test_mul_clear_carry 0, 0xf)
+test_add_mul_n0_dirty
+// hex.mul.clear_carry clears a dirty multiply-carry; and without it, the dirt is seen (the control)
+test_mul_clear_carry 1, 0
+test_mul_clear_carry 0, 0xf
+
+stl.loop
+
+
+hex.init
+
+
+def test_add_mul n, r, a, b, dirty @ res, x, bh, f, carry, zero, lt, eq, gt, expected, end {
+    rep(dirty, i) dirty_mul_carry f
+    hex.add_mul n, res, x, bh
+    hex.add_mul carry, zero         // carry += 0 * 0 + the multiply-carry
+    hex.if1 carry, lt
+    hex.cmp n, res, expected, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  res: hex.vec n, r
+  x: hex.vec n, a
+  bh: hex.hex b
+  f: hex.hex 0xf
+  carry: hex.hex
+  zero: hex.hex
+  expected: hex.vec n, r + a * b
+  end:
+    stl.output '\n'
+}
+
+// n = 0: s (the hex before x) = 1, x = 5 (then 7) - and after the op, still s:x = 0x751.
+def test_add_mul_n0 @ s, x, y, bh, lt, eq, gt, expected, end {
+    hex.add_mul 0, x, y, bh
+    hex.cmp 3, s, expected, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  bh: hex.hex 2
+  expected: hex.vec 3, 0x751
+  end:
+    stl.output '\n'
+}
+
+// dirty the multiply-carry (to 0xf); clear it if `clear`; then carry = 0 * 0 + the multiply-carry == expected.
+def test_mul_clear_carry clear, expected @ f, carry, zero, lt, eq, gt, expected_carry, end {
+    dirty_mul_carry f
+    rep(clear, i) hex.mul.clear_carry
+    hex.add_mul carry, zero
+    hex.cmp 1, carry, expected_carry, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  f: hex.hex 0xf
+  carry: hex.hex
+  zero: hex.hex
+  expected_carry: hex.hex expected
+  end:
+    stl.output '\n'
+}
+
+// dirty the multiply-carry (to 0xf); hex.add_mul 0; then carry = 0 * 0 + the multiply-carry == 0.
+def test_add_mul_n0_dirty @ f, carry, zero, lt, eq, gt, expected_carry, end {
+    dirty_mul_carry f
+    hex.add_mul 0, carry, zero, zero
+    hex.add_mul carry, zero
+    hex.cmp 1, carry, expected_carry, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  f: hex.hex 0xf
+  carry: hex.hex
+  zero: hex.hex
+  expected_carry: hex.hex 0
+  end:
+    stl.output '\n'
+}
+
+// a single hex.add_mul of 0xf * 0xf into 0xf: leaves the multiply-carry at 0xf.
+def dirty_mul_carry f @ y, end < hex.mul.dst {
+    hex.xor hex.mul.dst, f
+    hex.add_mul y, f
+    hex.xor hex.mul.dst, f
+    ;end
+  y: hex.hex 0xf
+  end:
+}

@@ -2,6 +2,23 @@
 dw   = 2 * w    // double word size
 dbit = w + #w   // the bit-distance from the variable's start, to the bit/hex value (w + dw-width)
 
+ns hex {
+    ns pointers {
+        // The bits a pointed-to cell holds. ptr_init lays a 2^PTR_CELL_BITS-entry decoder table at op 2^PTR_CELL_BITS.
+        // It must be a multiple of 4, at least 8, and keep dbit+PTR_CELL_BITS below dw.
+        // Set it per build with:  fj ... -D hex.pointers.PTR_CELL_BITS=16
+        PTR_CELL_BITS = 8
+
+        // The bits hex.read_cell / hex.write_cell move, through a second, wider decoder table at op 2^PTR_WIDE_BITS.
+        // 0 means no second table. The other pointer macros keep the narrow table (and its lower cost).
+        // The same rules as PTR_CELL_BITS, and larger than it.
+        PTR_WIDE_BITS = 0
+
+        // The width hex.read_cell / hex.write_cell move.
+        PTR_WIDE = .PTR_WIDE_BITS > 0 ? .PTR_WIDE_BITS : .PTR_CELL_BITS
+    }
+}
+
 
 // More info about the FlipJump input / output in: https://esolangs.org/wiki/FlipJump#Input_/_Output
 
@@ -25,7 +42,7 @@ ns stl {
         ;0             // 2w;3w : sets the io_handler to address 0 (good for a future wflip)
     }
 
-    // Complexity: 2.5w+265
+    // Complexity: 2.5w+265, plus the pad to op 2^PTR_CELL_BITS (256) before the pointers' table
     // startup Macro - Should be the first piece of code in your program.
     //                 Inits the IO variable, and the pointers globals.
     //                 Jumps to the next instruction.
@@ -34,7 +51,7 @@ ns stl {
       code_start:
     }
 
-    // Complexity: 2.5w+265
+    // Complexity: 2.5w+265, plus the pad to op 2^PTR_CELL_BITS (256) before the pointers' table
     // startup Macro - Should be the first piece of code in your program.
     //                 Inits the IO variable, and the pointers globals.
     //                 Jumps to the given code_start.
@@ -44,14 +61,15 @@ ns stl {
         stl.ptr_init
     }
 
-    // Complexity: ~7000  (7026 for w=64, 6894 for w=16)
+    // Complexity: ~8700  (8686 for w=64, 8654 for w=32; ~2600 of them are alignment pads)
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
+    // It does not fit w=16: the init alone is ~8600 ops, and a w=16 memory holds 2048.
     def startup_and_init_all {
         .startup_and_init_all 100
     }
 
-    // Complexity: 6725 + 2.75w+@ + n
+    // Complexity: 5814 + 2.75w + n, plus ~2600 ops of alignment pads
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     // stack_bit_size is the size of the global-stack (will hold this number of hexes / return-addresses).
@@ -60,7 +78,7 @@ ns stl {
       code_start:
     }
 
-    // Complexity: 6725 + 2.75w+@ + n
+    // Complexity: 5814 + 2.75w + n, plus ~2600 ops of alignment pads
     // startup Macro - Should be the first piece of code in your program.
     //                 Initialize anything needed for the standard library.
     // stack_bit_size is the size of the global-stack (will hold this number of hexes / return-addresses).
@@ -162,6 +180,7 @@ ns stl {
 
     // Complexity: 8 * string_length
     // str is a constant. The macro outputs the bytes of it (from lsB to msB) until it becomes all zeros.
+    // string_length is that many bytes: ((#str)+7)/8.
     def output str {
         rep(((#str)+7)>>3, i) .output_char (str>>(8*i))&0xff
     }

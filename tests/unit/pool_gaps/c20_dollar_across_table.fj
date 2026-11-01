@@ -1,0 +1,22 @@
+// C20: a `$`-relative jump over a moved table's place. OffsetGuard does not check an operand that names no
+// label ("an offset from `$` is a number too"), so it jumps 15 ops on in both programs - to different code.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;$ + 15*dw
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+  e:
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

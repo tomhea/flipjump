@@ -2,77 +2,85 @@
 
 
 ns hex {
-    //  Time Complexity: 9@+14
-    // Space Complexity: w(0.375@ + 3.25)  + 5@+55
+    //  Time Complexity: 7@+29
+    // Space Complexity: w(0.375@ + 3.25)  + 3@+55
     //   Like:  sp++
+    // @requires hex.add.init (or hex.init) and stl.stack_init (or stl.startup_and_init_all).
     def sp_inc < hex.pointers.sp {
         .ptr_inc hex.pointers.sp
     }
 
-    //  Time Complexity: 9@+23
-    // Space Complexity: w(0.375@ + 3.25)  + 5@+67
+    //  Time Complexity: 7@+37
+    // Space Complexity: w(0.375@ + 3.25)  + 3@+67
     //   Like:  sp--
+    // @requires hex.sub.init (or hex.init) and stl.stack_init (or stl.startup_and_init_all).
     def sp_dec < hex.pointers.sp {
         .ptr_dec hex.pointers.sp
     }
 
-    //  Time Complexity: 13@+26
-    // Space Complexity: w(0.375@ + 3.25) + 7.5@+94
+    //  Time Complexity: 10@+43
+    // Space Complexity: w(0.375@ + 3.25) + 4.5@+96
     //   Like:  sp += value
+    // @requires hex.add.init (or hex.init) and stl.stack_init (or stl.startup_and_init_all).
     def sp_add value < hex.pointers.sp {
         .ptr_add hex.pointers.sp, value
     }
 
-    //  Time Complexity: 13@+35
-    // Space Complexity: w(0.375@ + 3.25)  + 7.5@+106
+    //  Time Complexity: 10@+51
+    // Space Complexity: w(0.375@ + 3.25)  + 4.5@+108
     //   Like:  sp -= value
+    // @requires hex.sub.init (or hex.init) and stl.stack_init (or stl.startup_and_init_all).
     def sp_sub value < hex.pointers.sp {
         .ptr_sub hex.pointers.sp, value
     }
 
-    //  Time Complexity: w(2.25@+10) +  9@+ 51
-    // Space Complexity: w(2.62@+49) + 20@+231
+    //  Time Complexity: w(2@+11) + 20@+ 78
+    // Space Complexity: w(2.38@+50) + 16@+247
     //   Like:  stack[++sp] = return_address
     //   Pushes the given return_address to the next cell in the stack. Increments sp.
     // Note: the pushed returned address must be popd out afterwards with pop_ret_address.
     // return_address is a fj-op address, so we assume is dw-aligned.
+    // @requires hex.add.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def push_ret_address return_address < hex.pointers.sp {
         .sp_inc
-        .zero_ptr hex.pointers.sp
+        .zero_byte hex.pointers.sp
         .ptr_wflip_2nd_word hex.pointers.sp, return_address
     }
 
-    //  Time Complexity: w(  1.5@+ 5) + 9@+23
-    // Space Complexity: w(1.875@+20) + 5@+67
+    //  Time Complexity: w(  1.5@+ 7) + 7@+37
+    // Space Complexity: w(1.875@+28) + 3@+67
     //   Like:  stack[sp--] = 0
     //   Pops the given return_address from the current cell in the stack (assumes it has the value of the return_address). Decrements sp.
     // return_address is a fj-op address, so we assume is dw-aligned.
+    // @requires hex.sub.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def pop_ret_address return_address < hex.pointers.sp {
         .ptr_wflip_2nd_word hex.pointers.sp, return_address
         .sp_dec
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 20@+ 39
-    // Space Complexity: w(1.13@+32) + 16@+167
+    //  Time Complexity: w( 0.5@+ 4) + 16@+ 66
+    // Space Complexity: w(0.88@+25) + 12@+183
     //   Like:  stack[++sp] = hex
     //   Pushes the given hex to the next cell in the stack. Increments sp.
+    // @requires hex.add.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def push_hex hex < hex.pointers.sp {
         .sp_inc
         .write_hex hex.pointers.sp, hex
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 26@+ 51
-    // Space Complexity: w(1.13@+32) + 22@+255
+    //  Time Complexity: w( 0.5@+ 4) + 22@+ 78
+    // Space Complexity: w(0.88@+25) + 18@+271
     //   Like:  stack[++sp] = byte[:2]
     //   Pushes the given byte to the next cell in the stack. Increments sp.
     // byte is a hex[:2].
+    // @requires hex.add.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def push_byte byte < hex.pointers.sp {
         .sp_inc
         .write_byte hex.pointers.sp, byte
     }
 
-    //  Time Complexity: n(w(0.38@+ 3) + 13@+ 25)
-    // Space Complexity: n(w(0.56@+16) + 11@+128)
+    //  Time Complexity: n(w(0.25@+ 2) + 11@+ 39)
+    // Space Complexity: n(w(0.44@+13) + 9@+136)
     //   Like:  stack[sp+1:][:M] = hex[:n];  sp += n.
     //   Pushes the given hex[:n] to the next M cells in the stack. Increments sp by M.
     // M is (n+1)/2, which is because the function pushes the entire parameter as bytes.
@@ -82,33 +90,36 @@ ns hex {
     // Note: The push/pop usage must be coordinated, and every push X must be untangled by a pop X (or a sp_sub (X+1)/2)
     //  For example: "push 3; push 3" can't be read with a "pop 6". That's because each "push 3" takes 2 stack cells,
     //               while the "pop 6" only pops out 3 stack cells (so there is another cell that needs to be popped.
+    // @requires hex.add.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def push n, hex {
         rep(n/2, i) .push_byte hex+2*i*dw
         rep(n%2, i) .push_hex hex+(n-1)*dw
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 16@+ 36
-    // Space Complexity: w(1.13@+32) + 12@+115
+    //  Time Complexity: w( 0.5@+ 4) + 12@+ 62
+    // Space Complexity: w(0.88@+25) + 8@+131
     //   Like:  hex = stack[sp--]
     //   Pops the current stack cell (only the least-significant-hex of it) into the given hex. Decrements sp.
     // hex is only an output parameter.
+    // @requires hex.sub.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def pop_hex hex < hex.pointers.sp {
         .read_hex hex, hex.pointers.sp
         .sp_dec
     }
 
-    //  Time Complexity: w(0.75@+ 5) + 18@+ 36
-    // Space Complexity: w(1.13@+32) + 14@+139
+    //  Time Complexity: w( 0.5@+ 4) + 14@+ 62
+    // Space Complexity: w(0.88@+25) + 10@+155
     //   Like:  byte[:2] = stack[sp--]
     //   Pops the current stack cell into the given byte. Decrements sp.
     // byte is hex[:2], and it's only an output parameter.
+    // @requires hex.sub.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def pop_byte byte < hex.pointers.sp {
         .read_byte byte, hex.pointers.sp
         .sp_dec
     }
 
-    //  Time Complexity: n(w(0.38@+ 3) + 9@+18)
-    // Space Complexity: n(w(0.56@+16) + 7@+70)
+    //  Time Complexity: n(w(0.25@+ 2) + 7@+31)
+    // Space Complexity: n(w(0.44@+13) + 5@+78)
     //   Like:  sp -= M
     //          hex[:n] = stack[sp+1:][:M]
     //   Pops multiple stack cell into the given hex[:n]. Decrements sp by M.
@@ -121,6 +132,7 @@ ns hex {
     //  For example: "push 3; push 3" can't be read with a "pop 6". That's because each "push 3" takes 2 stack cells,
     //               while the "pop 6" only pops out 3 stack cells (so there is another cell that needs to be popped.
     // hex[:n] is only an output parameter.
+    // @requires hex.sub.init (or hex.init), stl.ptr_init and stl.stack_init (or stl.startup_and_init_all).
     def pop n, hex {
         rep(n%2, i) .pop_hex hex+(n-1)*dw
         rep(n/2, i) .pop_byte hex+(n-n%2-2*(i+1))*dw

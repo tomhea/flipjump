@@ -1,0 +1,18 @@
+// C1: bit.xor_from_ptr reads a hex variable's word RAW (it flips an address into it at runtime
+// and jumps through it). x is also the source of hex.xor, so BlockPool pins x's word.
+// RAW_READERS lists only hex.pointers.read_cell_from_inners_ptrs, so nothing refuses this.
+stl.startup
+    hex.xor y, x
+    bit.zero r
+    bit.xor_from_ptr r, p
+    bit.if r, z, o
+z:  stl.output '0'
+    stl.loop
+o:  stl.output '1'
+    stl.loop
+
+p:  bit.vec w, x
+x:  hex.hex 1
+y:  hex.hex 0
+r:  bit.bit 0
+bit.pointers.ptr_init

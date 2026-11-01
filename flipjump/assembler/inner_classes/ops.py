@@ -16,7 +16,7 @@ from flipjump.utils.exceptions import FlipJumpExprException
 from flipjump.assembler.inner_classes.expr import Expr
 
 
-@dataclass
+@dataclass(slots=True)
 class CodePosition:
     """
     A position in the .fj files.
@@ -41,9 +41,12 @@ class MacroName:
     Unique for every macro definition.
     """
 
+    __slots__ = ('name', 'parameter_num', '_hash')
+
     def __init__(self, name: str, parameter_num: int = 0):
         self.name = name
         self.parameter_num = parameter_num
+        self._hash = hash((name, parameter_num))
 
     def __str__(self) -> str:
         if 0 == self.parameter_num:
@@ -54,13 +57,28 @@ class MacroName:
         return self.name, self.parameter_num
 
     def __hash__(self) -> int:
-        return hash(self.to_tuple())
+        return self._hash
 
     def __eq__(self, other: Any) -> bool:
-        return isinstance(other, MacroName) and self.to_tuple() == other.to_tuple()
+        if isinstance(other, MacroName):
+            return self.name == other.name and self.parameter_num == other.parameter_num
+        return False
 
     def __repr__(self) -> str:
         return str(self)
+
+
+# one MacroName per (name, parameter_num): a program has millions of macro calls
+_macro_names: Dict[Tuple[str, int], MacroName] = {}
+
+
+def shared_macro_name(name: str, parameter_num: int) -> MacroName:
+    """the shared MacroName for (name, parameter_num)"""
+    key = (name, parameter_num)
+    shared = _macro_names.get(key)
+    if shared is None:
+        shared = _macro_names[key] = MacroName(name, parameter_num)
+    return shared
 
 
 # The macro that holds the ops that are outside any macro.
@@ -73,6 +91,8 @@ class FlipJump:
     """
     The python representation of the "flip; jump" fj-assembly op.
     """
+
+    __slots__ = ('flip', 'jump', 'code_position')
 
     def __init__(self, flip: Expr, jump: Expr, code_position: CodePosition):
         self.flip = flip
@@ -102,6 +122,8 @@ class WordFlip:
     """
     The python representation of the "wflip address, value [, return_address]" fj-assembly op.
     """
+
+    __slots__ = ('word_address', 'flip_value', 'return_address', 'code_position')
 
     def __init__(self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition):
         self.word_address = word_address
@@ -149,6 +171,8 @@ class Pad:
     The python representation of the "pad ops_alignment" fj-assembly op.
     """
 
+    __slots__ = ('ops_alignment', 'code_position')
+
     def __init__(self, ops_alignment: Expr, code_position: CodePosition):
         self.ops_alignment = ops_alignment
         self.code_position = code_position
@@ -173,6 +197,8 @@ class Segment:
     """
     The python representation of the "segment start_address" fj-assembly op.
     """
+
+    __slots__ = ('start_address', 'code_position')
 
     def __init__(self, start_address: Expr, code_position: CodePosition):
         self.start_address = start_address
@@ -199,6 +225,8 @@ class Reserve:
     The python representation of the "reserve bit_size" fj-assembly op.
     """
 
+    __slots__ = ('reserved_bit_size', 'code_position')
+
     def __init__(self, reserved_bit_size: Expr, code_position: CodePosition):
         self.reserved_bit_size = reserved_bit_size
         self.code_position = code_position
@@ -224,8 +252,10 @@ class MacroCall:
     The python representation of the "macro-call [args...]" fj-assembly op.
     """
 
+    __slots__ = ('macro_name', 'arguments', 'code_position')
+
     def __init__(self, macro_name: str, arguments: List[Expr], code_position: CodePosition):
-        self.macro_name = MacroName(macro_name, len(arguments))
+        self.macro_name = shared_macro_name(macro_name, len(arguments))
         self.arguments = arguments
         self.code_position = code_position
 
@@ -249,6 +279,17 @@ class RepCall:
     The python representation of the "rep(n, i) macro_call [args...]" fj-assembly op.
     """
 
+    # current_index and source_iterator_name are assigned outside __init__
+    __slots__ = (
+        'current_index',
+        'repeat_times',
+        'iterator_name',
+        'source_iterator_name',
+        'macro_name',
+        'arguments',
+        'code_position',
+    )
+
     def __init__(
         self,
         repeat_times: Expr,
@@ -262,7 +303,7 @@ class RepCall:
         self.iterator_name = iterator_name
         # the user-visible iterator name, kept for error traces even after a hygienic rename
         self.source_iterator_name = iterator_name
-        self.macro_name = MacroName(macro_name, len(arguments))
+        self.macro_name = shared_macro_name(macro_name, len(arguments))
         self.arguments = arguments
         self.code_position = code_position
 
@@ -344,6 +385,8 @@ class Label:
     The python representation of the "label:" fj-assembly op.
     """
 
+    __slots__ = ('name', 'code_position')
+
     def __init__(self, name: str, code_position: CodePosition):
         self.name = name
         self.code_position = code_position
@@ -390,6 +433,14 @@ class Macro:
     namespace: str
     code_position: CodePosition
 
+    # [(namespace.name, name)] of every param, built once per macro, not per expansion
+    namespaced_params: List[Tuple[str, str]] = dataclasses.field(init=False, repr=False, default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.namespace:
+            namespace = self.namespace
+            self.namespaced_params = [(f'{namespace}.{name}', name) for name in (*self.params, *self.local_params)]
+
     def __repr__(self) -> str:
         return f'{self.namespace}.MACRO({", ".join(self.params)})  ({repr(self.code_position)})'
 
@@ -402,6 +453,8 @@ class NewSegment:
     The python expressions-resolved (all compilation data is known) representation
      of the "segment start_address" fj-assembly op.
     """
+
+    __slots__ = ('start_address', 'wflip_start_address')
 
     def __init__(self, start_address: int):
         """
@@ -419,6 +472,8 @@ class ReserveBits:
      of the "reserve bit_size" fj-assembly op.
     """
 
+    __slots__ = ('first_address_after_reserved',)
+
     def __init__(self, first_address_after_reserved: int):
         """
         @param first_address_after_reserved: the address right after the reserved "segment".
@@ -431,6 +486,8 @@ class Padding:
     The python expressions-resolved (all compilation data is known) representation
      of the "pad ops_alignment" fj-assembly op.
     """
+
+    __slots__ = ('ops_count',)
 
     def __init__(self, ops_count: int):
         """

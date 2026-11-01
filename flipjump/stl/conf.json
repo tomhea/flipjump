@@ -36,6 +36,8 @@
     "hex/pointers/stack",
     "hex/pointers/pointer_arithmetics",
 
-    "hex/strings"
+    "hex/strings",
+
+    "screen"
   ]
 }

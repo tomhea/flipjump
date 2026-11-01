@@ -1,0 +1,26 @@
+// C33: the same arm made bit by bit (`x+w+i;`, bit 9 only): the word is unpinned, as in C32.
+def bitflip a, b {
+    rep(b, j) flip1 a
+}
+def flip1 a @ next {
+    a;next
+  next:
+}
+stl.startup
+    ;start
+    pad 8
+T:
+    ;o0
+    ;o1
+start:
+    hex.xor z, x
+    rep(w, i) bitflip x+w+i, (T >> i) & 1
+    ;x
+o0: wflip x+w, T, p0
+o1: wflip x+w, T, p1
+p0: stl.output '0'
+    stl.loop
+p1: stl.output '1'
+    stl.loop
+x:  hex.hex 1
+z:  hex.hex 0

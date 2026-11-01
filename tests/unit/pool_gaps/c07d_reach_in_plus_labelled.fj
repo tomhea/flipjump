@@ -1,0 +1,22 @@
+// C7d: C7c with the plain `T + dw` reach-in (the proof compares it).
+// that differs is the outside reach-in `(T + dw) | 0`.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+    ;T + dw
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+  after:
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

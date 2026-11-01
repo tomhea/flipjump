@@ -1,0 +1,406 @@
+// Tests the chained n-hex table ops (hex.add/sub/or/and n, hex.add_shifted/sub_shifted), n = 1, 2, 3, 4, 7, 8, 16.
+// Every n gets a random case, a carry through every nibble (0xf..f + 1), a borrow through every nibble
+//   (0 - 1), and a random case entered with a set carry (the ops must clear it, before and after). And n = 0.
+// Generated with python's random (seed 20261023); each line prints '=' when the result is right.
+stl.startup
+
+// hex.add n
+test_add 1, 0x8, 0x8, 0
+test_add 1, 0xf, 0x1, 0
+test_add 1, 0x0, 0x1, 0
+test_add 1, 0x6, 0xb, 1
+test_add 2, 0x7b, 0xbb, 0
+test_add 2, 0xff, 0x1, 0
+test_add 2, 0x0, 0x1, 0
+test_add 2, 0xb, 0xd0, 1
+test_add 3, 0x276, 0xcc0, 0
+test_add 3, 0xfff, 0x1, 0
+test_add 3, 0x0, 0x1, 0
+test_add 3, 0x689, 0x9fb, 1
+test_add 4, 0xb159, 0x9796, 0
+test_add 4, 0xffff, 0x1, 0
+test_add 4, 0x0, 0x1, 0
+test_add 4, 0x84df, 0xb5d0, 1
+test_add 7, 0x16226d8, 0xce77191, 0
+test_add 7, 0xfffffff, 0x1, 0
+test_add 7, 0x0, 0x1, 0
+test_add 7, 0xa2564d, 0x49cbb08, 1
+test_add 8, 0xd01f3e8d, 0x25d96136, 0
+test_add 8, 0xffffffff, 0x1, 0
+test_add 8, 0x0, 0x1, 0
+test_add 8, 0xdde9198, 0x686d5cd8, 1
+test_add 16, 0xc757d13ad794d7d8, 0x542efa58b5cc3189, 0
+test_add 16, 0xffffffffffffffff, 0x1, 0
+test_add 16, 0x0, 0x1, 0
+test_add 16, 0xf0d269f2d9303773, 0xabb2db42f509c351, 1
+// hex.sub n
+test_sub 1, 0xa, 0x8, 0
+test_sub 1, 0xf, 0x1, 0
+test_sub 1, 0x0, 0x1, 0
+test_sub 1, 0x9, 0xb, 1
+test_sub 2, 0xa, 0x8f, 0
+test_sub 2, 0xff, 0x1, 0
+test_sub 2, 0x0, 0x1, 0
+test_sub 2, 0x4c, 0x8a, 1
+test_sub 3, 0x743, 0x635, 0
+test_sub 3, 0xfff, 0x1, 0
+test_sub 3, 0x0, 0x1, 0
+test_sub 3, 0x316, 0x12c, 1
+test_sub 4, 0xa1bc, 0x4f71, 0
+test_sub 4, 0xffff, 0x1, 0
+test_sub 4, 0x0, 0x1, 0
+test_sub 4, 0x14ae, 0x5d4a, 1
+test_sub 7, 0x4c3868, 0x789b0ce, 0
+test_sub 7, 0xfffffff, 0x1, 0
+test_sub 7, 0x0, 0x1, 0
+test_sub 7, 0x2a8cfcb, 0x459a47b, 1
+test_sub 8, 0x53caf7ab, 0xb76222ce, 0
+test_sub 8, 0xffffffff, 0x1, 0
+test_sub 8, 0x0, 0x1, 0
+test_sub 8, 0xac6597e, 0x67b5056c, 1
+test_sub 16, 0x82f32f5764e45c8c, 0x2509432850c719dd, 0
+test_sub 16, 0xffffffffffffffff, 0x1, 0
+test_sub 16, 0x0, 0x1, 0
+test_sub 16, 0x418247a277d9fdfa, 0x30d73b2bb0e41550, 1
+// hex.or n
+test_or 1, 0xf, 0x7
+test_or 1, 0xf, 0x1
+test_or 1, 0x0, 0x1
+test_or 1, 0x9, 0x0
+test_or 2, 0x7d, 0x51
+test_or 2, 0xff, 0x1
+test_or 2, 0x0, 0x1
+test_or 2, 0xa2, 0xe9
+test_or 3, 0x52f, 0xb45
+test_or 3, 0xfff, 0x1
+test_or 3, 0x0, 0x1
+test_or 3, 0xec8, 0x27b
+test_or 4, 0x70f4, 0xbaf0
+test_or 4, 0xffff, 0x1
+test_or 4, 0x0, 0x1
+test_or 4, 0x5342, 0xbd85
+test_or 7, 0xe57cb85, 0x1286e0c
+test_or 7, 0xfffffff, 0x1
+test_or 7, 0x0, 0x1
+test_or 7, 0x110f4e9, 0xd747fbc
+test_or 8, 0x7bf9d49c, 0x80c63104
+test_or 8, 0xffffffff, 0x1
+test_or 8, 0x0, 0x1
+test_or 8, 0xf2eb606c, 0x9076c5df
+test_or 16, 0x188551f1c6a90b7d, 0xda36dbc8412303fd
+test_or 16, 0xffffffffffffffff, 0x1
+test_or 16, 0x0, 0x1
+test_or 16, 0x4f9546b2f1215f6d, 0xb46084545001105c
+// hex.and n
+test_and 1, 0x5, 0x8
+test_and 1, 0xf, 0x1
+test_and 1, 0x0, 0x1
+test_and 1, 0xb, 0x7
+test_and 2, 0x2c, 0x5c
+test_and 2, 0xff, 0x1
+test_and 2, 0x0, 0x1
+test_and 2, 0x22, 0x6d
+test_and 3, 0x86b, 0x39f
+test_and 3, 0xfff, 0x1
+test_and 3, 0x0, 0x1
+test_and 3, 0x5c3, 0x2af
+test_and 4, 0xc7a2, 0xbb45
+test_and 4, 0xffff, 0x1
+test_and 4, 0x0, 0x1
+test_and 4, 0xde9, 0x1af5
+test_and 7, 0x54b178e, 0x65eb4b5
+test_and 7, 0xfffffff, 0x1
+test_and 7, 0x0, 0x1
+test_and 7, 0x6e20820, 0x1ce8add
+test_and 8, 0x3bee9a4b, 0x9e102600
+test_and 8, 0xffffffff, 0x1
+test_and 8, 0x0, 0x1
+test_and 8, 0x55434f9, 0xaec69e93
+test_and 16, 0xeda7a4077147a091, 0x767c4342781e713f
+test_and 16, 0xffffffffffffffff, 0x1
+test_and 16, 0x0, 0x1
+test_and 16, 0x33f9d8415e6d857a, 0xcbbe28477ce8d50b
+// hex.add_shifted n+2, n, ..., 1
+test_add_shifted 1, 0x506, 0xa, 0
+test_add_shifted 1, 0xfff, 0x1, 0
+test_add_shifted 1, 0x0, 0x1, 0
+test_add_shifted 1, 0xb84, 0x3, 1
+test_add_shifted 2, 0xefe5, 0x4f, 0
+test_add_shifted 2, 0xffff, 0x1, 0
+test_add_shifted 2, 0x0, 0x1, 0
+test_add_shifted 2, 0x3cd0, 0xba, 1
+test_add_shifted 3, 0x8539f, 0xa81, 0
+test_add_shifted 3, 0xfffff, 0x1, 0
+test_add_shifted 3, 0x0, 0x1, 0
+test_add_shifted 3, 0xe7d84, 0xe97, 1
+test_add_shifted 4, 0x840a43, 0x1c1b, 0
+test_add_shifted 4, 0xffffff, 0x1, 0
+test_add_shifted 4, 0x0, 0x1, 0
+test_add_shifted 4, 0x1eae41, 0x459a, 1
+test_add_shifted 7, 0xcfd63a5ee, 0x438d102, 0
+test_add_shifted 7, 0xfffffffff, 0x1, 0
+test_add_shifted 7, 0x0, 0x1, 0
+test_add_shifted 7, 0x96d803418, 0xb4fd5aa, 1
+test_add_shifted 8, 0xc7c53fb344, 0x4df92bef, 0
+test_add_shifted 8, 0xffffffffff, 0x1, 0
+test_add_shifted 8, 0x0, 0x1, 0
+test_add_shifted 8, 0xc9b282a260, 0x6dba9c0f, 1
+test_add_shifted 16, 0xb58d47f734a01e3fd9, 0x9f00bdd565c1c979, 0
+test_add_shifted 16, 0xffffffffffffffffff, 0x1, 0
+test_add_shifted 16, 0x0, 0x1, 0
+test_add_shifted 16, 0x687eecb9f9d95f2800, 0x1f3dfe0486c36832, 1
+// hex.sub_shifted n+2, n, ..., 1
+test_sub_shifted 1, 0x70e, 0x8, 0
+test_sub_shifted 1, 0xfff, 0x1, 0
+test_sub_shifted 1, 0x0, 0x1, 0
+test_sub_shifted 1, 0x3cc, 0x8, 1
+test_sub_shifted 2, 0xc1e, 0x34, 0
+test_sub_shifted 2, 0xffff, 0x1, 0
+test_sub_shifted 2, 0x0, 0x1, 0
+test_sub_shifted 2, 0x580f, 0xda, 1
+test_sub_shifted 3, 0xe2643, 0x896, 0
+test_sub_shifted 3, 0xfffff, 0x1, 0
+test_sub_shifted 3, 0x0, 0x1, 0
+test_sub_shifted 3, 0xc18d3, 0x351, 1
+test_sub_shifted 4, 0x2be20d, 0xb611, 0
+test_sub_shifted 4, 0xffffff, 0x1, 0
+test_sub_shifted 4, 0x0, 0x1, 0
+test_sub_shifted 4, 0xa6ae42, 0x3514, 1
+test_sub_shifted 7, 0xc1a821be1, 0xf83ecbf, 0
+test_sub_shifted 7, 0xfffffffff, 0x1, 0
+test_sub_shifted 7, 0x0, 0x1, 0
+test_sub_shifted 7, 0x5732bf41a, 0x75b5f6c, 1
+test_sub_shifted 8, 0x17fbb32483, 0xf78b7d40, 0
+test_sub_shifted 8, 0xffffffffff, 0x1, 0
+test_sub_shifted 8, 0x0, 0x1, 0
+test_sub_shifted 8, 0xfb6201ccc5, 0xe273c463, 1
+test_sub_shifted 16, 0xd6c50b3b5b83de3dcd, 0xfd98be49bc8a18dd, 0
+test_sub_shifted 16, 0xffffffffffffffffff, 0x1, 0
+test_sub_shifted 16, 0x0, 0x1, 0
+test_sub_shifted 16, 0x6ec796a60e410f2a4f, 0x12ed6ef8a1b802d7, 1
+// n = 0 (src_n = 0) is a no-op: neither x nor the hex before it changes
+test_n0_add
+test_n0_sub
+test_n0_or
+test_n0_and
+test_n0_add_shifted
+test_n0_sub_shifted
+// n = 0 (src_n = 0) entered with a dirty carry: the op clears it, as n >= 1 does (else 'c' before the '=')
+test_n0_dirty_add
+test_n0_dirty_sub
+test_n0_dirty_add_shifted
+test_n0_dirty_sub_shifted
+// the control: a dirty carry with no op between is seen ('c')
+test_dirty_carry_control_add
+test_dirty_carry_control_sub
+
+stl.loop
+
+
+hex.init
+
+
+def test_add n, a, b, dirty @ x, y, end {
+    rep(dirty, i) hex.add.set_carry
+    hex.add n, x, y
+    check_add_carry
+    check n, x, a + b
+    ;end
+  x: hex.vec n, a
+  y: hex.vec n, b
+  end:
+}
+
+def test_sub n, a, b, dirty @ x, y, end {
+    rep(dirty, i) hex.sub.set_carry
+    hex.sub n, x, y
+    check_sub_carry
+    check n, x, a - b + (1 << (4*n))
+    ;end
+  x: hex.vec n, a
+  y: hex.vec n, b
+  end:
+}
+
+def test_or n, a, b @ x, y, end {
+    hex.or n, x, y
+    check n, x, a | b
+    ;end
+  x: hex.vec n, a
+  y: hex.vec n, b
+  end:
+}
+
+def test_and n, a, b @ x, y, end {
+    hex.and n, x, y
+    check n, x, a & b
+    ;end
+  x: hex.vec n, a
+  y: hex.vec n, b
+  end:
+}
+
+def test_add_shifted n, a, b, dirty @ x, y, end {
+    rep(dirty, i) hex.add.set_carry
+    hex.add_shifted n+2, n, x, y, 1
+    check_add_carry
+    check n+2, x, a + (b << 4)
+    ;end
+  x: hex.vec n+2, a
+  y: hex.vec n, b
+  end:
+}
+
+def test_sub_shifted n, a, b, dirty @ x, y, end {
+    rep(dirty, i) hex.sub.set_carry
+    hex.sub_shifted n+2, n, x, y, 1
+    check_sub_carry
+    check n+2, x, a - (b << 4) + (1 << (4*(n+2)))
+    ;end
+  x: hex.vec n+2, a
+  y: hex.vec n, b
+  end:
+}
+
+// n = 0: s (the hex before x) = 1, x = 5 (then 7), y = 3 - and after the op, still s:x = 0x751.
+def test_n0_add @ s, x, y, end {
+    hex.add 0, x, y
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_sub @ s, x, y, end {
+    hex.sub 0, x, y
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_or @ s, x, y, end {
+    hex.or 0, x, y
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_and @ s, x, y, end {
+    hex.and 0, x, y
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_add_shifted @ s, x, y, end {
+    hex.add_shifted 2, 0, x, y, 0
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_sub_shifted @ s, x, y, end {
+    hex.sub_shifted 2, 0, x, y, 0
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+
+// n = 0 with a dirty carry: no 'c' (the carry was cleared), then s:x is unchanged.
+def test_n0_dirty_add @ s, x, y, end {
+    hex.add.set_carry
+    hex.add 0, x, y
+    check_add_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_dirty_sub @ s, x, y, end {
+    hex.sub.set_carry
+    hex.sub 0, x, y
+    check_sub_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_dirty_add_shifted @ s, x, y, end {
+    hex.add.set_carry
+    hex.add_shifted 2, 0, x, y, 0
+    check_add_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_n0_dirty_sub_shifted @ s, x, y, end {
+    hex.sub.set_carry
+    hex.sub_shifted 2, 0, x, y, 0
+    check_sub_carry
+    check 3, s, 0x751
+    ;end
+  s: hex.hex 1
+  x: hex.vec 2, 0x75
+  y: hex.hex 3
+  end:
+}
+def test_dirty_carry_control_add {
+    hex.add.set_carry
+    check_add_carry
+    stl.output '\n'
+}
+def test_dirty_carry_control_sub {
+    hex.sub.set_carry
+    check_sub_carry
+    stl.output '\n'
+}
+
+// prints 'c' if the add / sub carry is set (the n-hex ops must leave it clear).
+def check_add_carry @ set, clear {
+    hex.add.clear_carry clear, set
+  set:
+    stl.output 'c'
+  clear:
+}
+def check_sub_carry @ set, clear {
+    hex.sub.clear_carry clear, set
+  set:
+    stl.output 'c'
+  clear:
+}
+
+// prints '=' if x[:n] == expected (mod 16^n), else '<' / '>'. Then a new line.
+def check n, x, expected @ lt, eq, gt, expected_x, end {
+    hex.cmp n, x, expected_x, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  expected_x: hex.vec n, expected
+  end:
+    stl.output '\n'
+}

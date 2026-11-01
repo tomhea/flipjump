@@ -10,8 +10,10 @@ The project has a CI tests suit, that runs on each pull-request:
    - The results are printed as a table in the workflow summery ([for example](https://github.com/tomhea/flipjump/actions/runs/7170673166/attempts/1#summary-19523946921)).
 4. `pytest --unit-tests` (the [assembler/interpreter unit-tests](#the-unit-tests)) in parallel.
    - Runs on the latest supported python, on ubuntu, as its own job - in parallel with the program tests.
+   - The native engine is built in place first (`python setup.py build_ext --inplace`), and the job fails if it is not active.
+5. The pygame window tests (`test_screen_window.py`, `test_pygame_ce.py`, `test_devices_e2e.py`), with the `io` extra installed.
 
-Any PR to the main branch must succeed in all of these tests, in order to be merged.
+Any PR to the main branch (or to a `1.*` release branch) must succeed in all of these tests, in order to be merged.
 
 ## Run the Linters
 - `tox` - will run anything: all the linters + `pytest --regular` for all python versions + the full `pytest --all` + the [unit-tests](#the-unit-tests).
@@ -92,9 +94,13 @@ Using the next filters together will take the union of the relevant tests.
 
 Alongside the program tests above (which compile and run whole .fj programs end-to-end), the
 [unit/](unit) directory holds focused unit-tests for the assembler and interpreter internals.
-They are plain, pure-python pytest functions (no .csv catalog), and the whole suite runs in ~1s.
+They are plain pytest functions (no .csv catalog); the whole suite takes about 8 minutes in one process.
 
 Run them with `pytest --unit-tests` (add `-n auto` to parallelize, as the `test_parallel` script does).
+The longest ones are marked `slow` and run only with `--slow` (the flag that also selects the slow program tests),
+e.g. `pytest tests/unit --unit-tests --slow`.
+The native engine's tests need `_fjcore` built in the checkout: run `python setup.py build_ext --inplace`
+(again after changing `_fjcore.c` - a stale build still loads, and fails its newer tests).
 
 In summary, they check:
 
@@ -108,7 +114,7 @@ In summary, they check:
 | [test_io_devices.py](unit/test_io_devices.py)   | the IO devices: `FixedIO` bit-ordering/EOF/incomplete-output, and `BrokenIO`                                     |
 | [test_interpreter.py](unit/test_interpreter.py) | the run-loop: each termination cause, the input/EOF path, and the last-ops debugging deque                       |
 | [test_utils.py](unit/test_utils.py)             | the shared utilities: debug-label round-trip, file helpers, and the run-statistics counters                     |
-| [test_cli.py](unit/test_cli.py)                 | the command-line entry-point, and the .fjm-version defaulting/validation                                         |
+| [test_cli.py](unit/test_cli.py)                 | the command-line entry-point, the .fjm-version defaulting/validation, `-D`, the flat window, `--pool-tables`     |
 | [test_quickstart.py](unit/test_quickstart.py)   | the high-level API end-to-end: `assemble_and_run` across the versions and memory-widths                         |
 | [test_fast_run.py](unit/test_fast_run.py)       | the pure-python fast loop matches the featured loop                                                              |
 | [test_native_memory.py](unit/test_native_memory.py) | the native engine memory: lazy footprint, the flat-storage limit knobs, and `storage_mode`                  |
@@ -116,10 +122,28 @@ In summary, they check:
 | [test_breakpoints.py](unit/test_breakpoints.py) | the debugger machinery: breakpoint resolution, debug actions, memory/variable reading, and an E2E break          |
 | [test_cli_debugger.py](unit/test_cli_debugger.py) | the terminal prompts of the debugger (messages, text answers, choice picking)                                  |
 | [test_device_memory.py](unit/test_device_memory.py) | the device<->memory hook over both engines                                                                  |
-| [test_keyboard_io.py](unit/test_keyboard_io.py) | the keyboard device: the status-hex protocol and scripted event files                                            |
-| [test_screen_io.py](unit/test_screen_io.py)     | the headless screen device: the command stream, palettes, PNGs, and frame hashes                                 |
-| [test_screen_window.py](unit/test_screen_window.py) | the interactive screen window (headless via the SDL dummy driver): presenting, live keys, fullscreen, closing |
+| [test_keyboard_io.py](unit/test_keyboard_io.py) | the keyboard device: the status-hex protocol, scripted event files, and the keycodes (io_devices/README.md)     |
+| [test_screen_io.py](unit/test_screen_io.py)     | the headless screen (io_devices/README.md): the opcodes, formats, palettes, life cycle, PNGs, hashes            |
+| [test_screen_collines.py](unit/test_screen_collines.py) | `draw_collines`: the field widths, KEEP / COPY / END, the README's example, a random round trip         |
+| [test_screen_errors.py](unit/test_screen_errors.py) | every row of the README's error table, with the exact message                                               |
+| [test_screen_window.py](unit/test_screen_window.py) | the interactive window (SDL dummy driver): life cycle, title, icon, keys, fullscreen, max fps               |
 | [test_devices_e2e.py](unit/test_devices_e2e.py) | .fj programs driving the screen/keyboard devices end-to-end, and the complete `PcIO` device      |
+| [test_native_read_byte.py](unit/test_native_read_byte.py) | the native engine's byte input: the same streams as bit by bit, bytes only on a boundary |
+| [test_native_write_byte.py](unit/test_native_write_byte.py) | the native engine's byte output: the same stream as bit by bit, unaligned bits too |
+| [test_run_flags.py](unit/test_run_flags.py) | the .fjm's run flags and io mode, the CLI's flat window, and the lean native load |
+| [test_run_defaults.py](unit/test_run_defaults.py) | the python API's run defaults: the compiled io mode and flat window, the assemble_and_* helpers |
+| [test_progress.py](unit/test_progress.py) | the progress bars: their output on and off a terminal, and their hooks |
+| [test_op_stream.py](unit/test_op_stream.py) | the assembler's compact op stream and positions: the same values, binary and errors |
+| [test_table_pool.py](unit/test_table_pool.py) | the table placement: BlockPool, the declared tables, the pin resolver |
+| [test_pool_gaps.py](unit/test_pool_gaps.py) | the table pool on crafted programs (unit/pool_gaps): runs the same, or is refused |
+| [test_pool_fuzz.py](unit/test_pool_fuzz.py) | the table pool's differential fuzzer (unit/pool_fuzzer.py) and its two controls |
+| [test_relocation_proof.py](unit/test_relocation_proof.py) | the relocation proof (unit/relocation_proof.py): every test-table program with a pool, and what it catches |
+| [test_pool_golden.py](unit/test_pool_golden.py) | the pool's golden digests on fjdoom's shipped knob set, and their negative controls |
+| [test_ptr_cell_bits.py](unit/test_ptr_cell_bits.py) | `hex.pointers.PTR_CELL_BITS` / `PTR_WIDE_BITS`: the pointer programs at every width |
+| [test_stl_chain.py](unit/test_stl_chain.py) | the stl's chained table dances: return labels 128 ops apart |
+| [test_stl_n_cell_ops.py](unit/test_stl_n_cell_ops.py) | the stl's n-cell pointer ops refuse n < 1 |
+| [test_stl_devices.py](unit/test_stl_devices.py) | the stl's screen and keyboard macros, through the real devices |
+| [test_pygame_ce.py](unit/test_pygame_ce.py) | the pygame-ce import guard, and the indexed blit |
 
 To add a unit-test, just add a `test_*` function to the relevant file (or a new `test_*.py` module)
 under [unit/](unit) - the shared helpers live in [unit_utils.py](unit/unit_utils.py).
@@ -148,9 +172,9 @@ Then add a new line to the relevant compile-csv and run-csv files, according to 
 
 (files with the next format: ```tests_tables/test_compile_*.csv```)
 
-| test name    | .fj paths                                                   | out .fjm path                | memory width | version | flags | use stl | treat warnings as errors |
-|--------------|-------------------------------------------------------------|------------------------------|--------------|---------|-------|---------|--------------------------|
-| example_test | path/to/example_1.fj &#124; ... &#124; path/to/example_n.fj | path/to/compiled/example.fjm | 64           | 1       | 0     | True    | True                     |
+| test name    | .fj paths                                                   | out .fjm path                | memory width | version | run flags | use stl | treat warnings as errors |
+|--------------|-------------------------------------------------------------|------------------------------|--------------|---------|-----------|---------|--------------------------|
+| example_test | path/to/example_1.fj &#124; ... &#124; path/to/example_n.fj | path/to/compiled/example.fjm | 64           | 1       | 0         | True    | True                     |
 
 Every line in this file will cause the compilation of the specified .fj files into the .fjm file, with the given compilation parameters.
 

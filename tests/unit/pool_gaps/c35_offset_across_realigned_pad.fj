@@ -1,0 +1,13 @@
+// C35: `L + 7*dw` across a plain `pad 8` (no declared table in between) names `tgt` without the
+// pool. hex.xor's table moves out BEFORE L, by ops that are no multiple of 8, so the pad pads to another op and
+// `L + 7*dw` no longer lands on `tgt`.
+stl.startup
+    hex.xor y, x
+L:
+    ;L + 7*dw
+    pad 8
+tgt:
+    stl.output 'T'
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

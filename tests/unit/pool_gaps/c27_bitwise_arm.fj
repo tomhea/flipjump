@@ -1,0 +1,27 @@
+// C27: a pinned word armed by single-bit flips (`x+w+i;` ops, one per set bit of T) instead of a wflip.
+// Only wflips are rewritten for the block base. (T is an inline table, declared first so `rep` can read it.)
+def bitflip a, b {
+    rep(b, j) flip1 a
+}
+def flip1 a @ next {
+    a;next
+  next:
+}
+stl.startup
+    ;start
+    pad 16
+T:
+    ;o0
+    ;o1
+start:
+    hex.xor z, x
+    rep(w, i) bitflip x+w+i, (T >> i) & 1
+    ;x
+o0: wflip x+w, T, p0
+o1: wflip x+w, T, p1
+p0: stl.output '0'
+    stl.loop
+p1: stl.output '1'
+    stl.loop
+x:  hex.hex 1
+z:  hex.hex 0
