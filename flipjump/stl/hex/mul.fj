@@ -261,7 +261,7 @@ ns hex {
     //   res[:n] = a[:n] * b[:n]    (the low n hexes of the product, like hex.mul)
     //
     // Row j adds a[:n-j] * b[j] into res[j:n], and is skipped when b[j] is 0. The n rows are unrolled (no loop),
-    //   so the time depends only on how many hexes of b are zero.
+    //   so the time depends on which hexes of b are zero (row j costs (n-j)(3@+38)), not on b's on-bits.
     // res,a,b are hex[:n]; res must not alias a or b.
     // @requires hex.add.init & hex.mul.init (or hex.init)
     def mul_low n, res, a, b {

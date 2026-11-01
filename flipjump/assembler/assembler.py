@@ -506,7 +506,7 @@ def _deferred_value(
     guard: Optional[OffsetGuard],
     is_address: bool = True,
 ) -> int:
-    """Return a deferred operand's value (its slot holds ~ref), checked by the pool's guard if there is one (see
+    """Return a deferred operand's value (its slot holds ~encoded), checked by the pool's guard if there is one (see
     check_expr)."""
     ref = stream.refs[encoded >> 2]
     tag = encoded & 3

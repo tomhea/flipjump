@@ -169,9 +169,9 @@ class OffsetGuard:
     - an inline label plus a constant must stay inside its piece;
     - labels whose distance is taken must lie in one piece;
     - an address computed from labels must not land in the pool.
-    `$` counts as an inline label at the next op, and an op that falls through (`a;`) reaches the next op. A label that
-    is scaled or inside another operation (`2 * L`, `(L >> 6) & 15`) is an address used as a number: no offset from it
-    is checked.
+    `$` counts as an inline label at the next op, and an op that falls through (`a;`) reaches the next op. Inside
+    another operation, each +/- sum is checked on its own (`L + 15*dw` in `(L + 15*dw) | 0`). An inline label times a
+    number other than 1 (`2 * L`) is an address used as a number, and is not checked; a moved table's label is refused.
 
     The preprocessor checks the operands whose labels it knows; labels-resolve checks the rest. An operand that reaches
     past the code emitted so far is pending: a table about to move out of a place it reaches over stays inline
@@ -774,8 +774,9 @@ class BlockPool:
         return _cheapest_order(slots)[rank]
 
     def _bucket_layout(self, group: str) -> Tuple[Dict[int, Tuple[int, int, int]], int]:
-        """Lay out a group's block: one sub-block per table width, biggest first, each aligned to its size (so
-        `base + offset == base ^ offset`). Returns: `({width: (offset, slots, tables)}, block size in bits)`."""
+        """Lay out a group's block: one sub-block per power-of-two table width, biggest first, each aligned to its
+        size (so `base + offset == base ^ offset`).
+        Returns: `({width: (offset, slots, tables)}, block size in bits)`."""
         cached = self._layout_cache.get(group)
         if cached is not None:
             return cached
@@ -823,7 +824,8 @@ class BlockPool:
 
     def pinned_words(self) -> Dict[Expr, int]:
         """Return the jump words to pin, `{word: block base}`. Skip groups whose tables didn't all fit in their block,
-        unless `pin_incomplete_groups` is set or the group is hot."""
+        unless `pin_incomplete_groups` is set or the group is hot (an inline table at `A` is then armed with
+        `A ^ base`: slower, still right)."""
         pinned: Dict[Expr, int] = {}
         for group, (base, expr) in self.groups.items():
             if expr is not None and (

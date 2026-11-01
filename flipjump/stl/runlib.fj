@@ -42,7 +42,7 @@ ns stl {
         ;0             // 2w;3w : sets the io_handler to address 0 (good for a future wflip)
     }
 
-    // Complexity: 2.5w+265
+    // Complexity: 2.5w+265, plus the pad to op 256 before the pointers' table
     // startup Macro - Should be the first piece of code in your program.
     //                 Inits the IO variable, and the pointers globals.
     //                 Jumps to the next instruction.
@@ -51,7 +51,7 @@ ns stl {
       code_start:
     }
 
-    // Complexity: 2.5w+265
+    // Complexity: 2.5w+265, plus the pad to op 256 before the pointers' table
     // startup Macro - Should be the first piece of code in your program.
     //                 Inits the IO variable, and the pointers globals.
     //                 Jumps to the given code_start.

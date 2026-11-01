@@ -160,7 +160,8 @@ ns hex {
 
 
 ns hex {
-    //  Time Complexity: n^2(68@+232)    (hex.idiv's line, for a 2n-hex dividend and an n-hex divisor)
+    //  Time Complexity: n^2(68@+232)    (hex.idiv's line, for a 2n-hex dividend and an n-hex divisor:
+    //                                    every compare full, every subtract taken)
     // Space Complexity: n(54.5@+799)
     //   if b==0: goto div0
     //   dst[:n] = (a[:n] << 4f) / b[:n]    (signed fixed-point divide, truncated toward zero)

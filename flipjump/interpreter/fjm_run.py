@@ -290,7 +290,8 @@ def _load_native(
     """
     Load the .fjm straight into a native _fjcore.Memory: add its segments, choose its storage (so the words go
     straight into the flat array), then copy in the words from the raw data bytes.
-    @param header: the .fjm's header, from read_fjm_header (loading fails if the file changed since)
+    @param header: the .fjm's header, from read_fjm_header (the data is read under it: a changed header or segment
+    table fails the load)
     @return: the loaded core
     """
     assert _fjcore is not None
