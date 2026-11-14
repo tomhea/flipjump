@@ -372,6 +372,8 @@ def resolve_into(
         offset_guard.resolving(lambda: _resolved_op_place(binary_data, offset_guard))
     _resolve_ops(ops, labels, binary_data, fjm_writer, offset_guard, on_progress)
     binary_data.close_and_add_segment(fjm_writer)
+    if offset_guard is not None:
+        offset_guard.resolved()
 
 
 def _first_segment(ops: OpStream) -> NewSegment:
@@ -513,7 +515,7 @@ def assert_first_op_assembled(fjm_writer: Writer) -> None:
         )
 
 
-def _writer_of(fjm_writer: Optional[Writer], memory_width: Optional[int]) -> Writer:
+def _validated_writer(fjm_writer: Optional[Writer], memory_width: Optional[int]) -> Writer:
     """Return the writer assemble() got, checked: it is required, and `memory_width`, if given, must be its width."""
     if fjm_writer is None:
         raise TypeError('assemble() needs fjm_writer, the .fjm writer to assemble into')
@@ -542,9 +544,10 @@ def _defines_as_a_file(defines: Optional[Mapping[str, Union[int, str]]]) -> Iter
 def _no_cyclic_gc() -> Iterator[None]:
     """For the block, switch python's cyclic garbage collector off (and back on after, if it was on).
     The collector only finds objects that refer to each other in a cycle, by walking every live object again and
-    again. The pipeline builds millions of long-lived objects with no cycles, so it would cost time and free nothing.
-    It costs no memory: every object is still freed the moment nothing refers to it (reference counting), so an
-    assembly peaks at the same memory with the collector on or off."""
+    again. The pipeline builds millions of long-lived objects, and none of its data is in a cycle (the preprocessor
+    unlinks its one, see resolve_macros), so the collector would cost time and free nothing. Switching it off costs
+    no memory: every object is still freed the moment nothing refers to it (reference counting), so an assembly
+    peaks at the same memory with the collector on or off."""
     was_enabled = gc.isenabled()
     gc.disable()
     try:
@@ -554,7 +557,7 @@ def _no_cyclic_gc() -> Iterator[None]:
             gc.enable()
 
 
-def _expand(
+def _parse_and_resolve_macros(
     input_files: List[Tuple[str, Path]],
     memory_width: int,
     defines_file: Optional[Path],
@@ -567,8 +570,11 @@ def _expand(
     max_recursion_depth: int,
 ) -> Tuple[OpStream, Dict[str, int]]:
     """The first two stages: parse the files into the macro tree, and expand it into the op stream and the labels.
-    The macro tree is this function's own, so it is freed when the function returns (the op stream keeps what it
-    still needs of it: label names, positions, the odd Expr)."""
+    The defines, if any, are parsed first (before the stl), so they override the stl's constants too.
+    The program's macro tree is this function's own, so it is freed when the function returns (the op stream keeps
+    what it still needs of it: label names, positions, the odd Expr; the parsed stl stays in the parser's cache)."""
+    if defines_file is not None:
+        input_files = [('d1', defines_file), *input_files]
     with ProgressBar('  parsing:         ', show_progress=show_progress) as progress:
         macros = parse_macro_tree(
             input_files, memory_width, warning_as_errors, defines_file, progress.get_active_update_function()
@@ -601,9 +607,10 @@ def _assemble_into(
     """The first three stages - parsing, macro resolve, labels resolve - which fill `fjm_writer` with the program's
     segments. Return the labels. `debugging` asks for the labels only the debugging file reads (each macro's start,
     each wflip-chain op).
-    Each stage's input is freed when the stage ends: the macro tree is _expand's own, and the op stream is this
+    Each stage's input is freed when the stage ends: the program's macro tree is _parse_and_resolve_macros's own,
+    and the op stream is this
     function's, so neither is alive while the binary is packed and compressed."""
-    ops, labels = _expand(
+    ops, labels = _parse_and_resolve_macros(
         input_files,
         fjm_writer.word_size,
         defines_file,
@@ -672,10 +679,8 @@ def assemble(
     file needs (`...---:start:` for each macro use, `:wflips:N` for each wflip-chain op).
     """
     show_progress = show_progress if print_time is None else print_time
-    fjm_writer = _writer_of(fjm_writer, memory_width)
+    fjm_writer = _validated_writer(fjm_writer, memory_width)
     with _defines_as_a_file(defines) as defines_file, _no_cyclic_gc():
-        if defines_file is not None:  # parsed before the stl, so the defines override the stl's constants too
-            input_files = [('d1', defines_file), *input_files]
         try:
             labels = _assemble_into(
                 fjm_writer,

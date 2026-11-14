@@ -19,17 +19,18 @@ _MIN_BAR_WIDTH = 10
 # what follows the bar at its longest, ` 100%  999:59 left`, and one free column (some terminals wrap at the last one)
 _AFTER_BAR_WIDTH = len(' 100%  999:59 left') + 1
 
-_shown_bar: Optional['ProgressBar'] = None
+_shown_stage: Optional['ProgressBar'] = None  # the stage whose line is on screen now
 
 
 def safe_print(*values: Any, **print_options: Any) -> None:
-    """print(), also while a progress bar is on screen: the bar's line is erased first, and drawn again after."""
-    bar = _shown_bar
-    if bar is not None:
-        bar.clear()
+    """print(), also while a stage's line is on screen: the line is freed first, and the stage is shown again
+    after."""
+    stage = _shown_stage
+    if stage is not None:
+        stage.free_the_line()
     print(*values, **print_options)
-    if bar is not None:
-        bar.redraw()
+    if stage is not None:
+        stage.show_again()
 
 
 class ProgressBar:
@@ -46,25 +47,25 @@ class ProgressBar:
         self.active = show_progress and sys.stdout.isatty() and self._bar_width >= _MIN_BAR_WIDTH
         self._start_time = 0.0
         self._last_draw = 0.0
-        self._drawn_width = 0
+        self._drawn_width = 0  # how much of the line is drawn (on a terminal)
         self._fraction = 0.0  # the last progress reported
 
     def __enter__(self) -> 'ProgressBar':
-        global _shown_bar
+        global _shown_stage
         self._start_time = time()
         if self.show_progress:
             print(self.init_message, end='', flush=True)
-        if self.active:
-            _shown_bar = self
+            self._drawn_width = len(self.init_message)
+            _shown_stage = self
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        global _shown_bar
+        global _shown_stage
         if not self.show_progress:
             return
+        _shown_stage = None
         elapsed = f'{time() - self._start_time:.3f}s'
         if self.active:
-            _shown_bar = None
             elapsed = '\r' + (self.init_message + elapsed).ljust(self._drawn_width)
         print(elapsed, flush=True)
 
@@ -96,8 +97,23 @@ class ProgressBar:
         self._drawn_width = len(line)
 
     def clear(self) -> None:
-        """erase the bar's line (it is drawn again at the next update)"""
-        if self._drawn_width:
+        """On a terminal, erase the stage's line (it is drawn again at the next update)."""
+        if self.active and self._drawn_width:
             sys.stdout.write('\r' + ' ' * self._drawn_width + '\r')
             sys.stdout.flush()
             self._drawn_width = 0
+
+    def free_the_line(self) -> None:
+        """Make the stage's line free for other output: erase it on a terminal; elsewhere, where nothing can be
+        erased, end it."""
+        if self.active:
+            self.clear()
+        else:
+            print(flush=True)
+
+    def show_again(self) -> None:
+        """Show the stage again after other output: the bar on a terminal, the stage's name elsewhere."""
+        if self.active:
+            self.redraw()
+        else:
+            print(self.init_message, end='', flush=True)

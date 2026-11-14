@@ -12,6 +12,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.utils.exceptions import (
+    FlipJumpException,
     FlipJumpAssemblerException,
     FlipJumpParsingException,
     FlipJumpPreprocessorException,
@@ -188,3 +189,50 @@ def test_a_pad_of_too_many_ops_is_refused_by_name(tmp_path: Path, memory_width: 
     fj_path.write_text(';\n;\n;\npad 1 << 70\n;0\n')
     with pytest.raises(FlipJumpPreprocessorException, match=message):
         assemble([fj_path], tmp_path / 'pad.fjm', memory_width=memory_width, print_time=False, use_stl=False)
+
+
+# a program whose constant N a define may override
+DEFINABLE_PROGRAM = MINIMAL_STARTUP + '\nN = 3\nstartup\nloop:\n    ;loop + N - N\n'
+
+
+@pytest.mark.parametrize(
+    'defines, error',
+    [
+        ({'N': 'undefined_name'}, 'Error in the define of "N" (-D N=...):\n  can\'t evaluate its value'),
+        ({'N': '1 +'}, 'Syntax Error in the -D defines, at "N = 1 +"'),
+        ({'N': '5 $ 6'}, 'the -D defines, at "N = 5 $ 6"'),
+        ({'M': 7}, 'Error in the define of "M" (-D M=...):\n  override of non-defined constant "M"'),
+    ],
+    ids=['a value with no value', 'a syntax error', 'a bad token', 'an unused define'],
+)
+def test_an_error_in_a_define_names_the_define_and_never_the_defines_file(
+    tmp_path: Path, defines: dict, error: str  # type: ignore[type-arg]
+) -> None:
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text(DEFINABLE_PROGRAM)
+    with pytest.raises(FlipJumpException) as raised:
+        assemble([fj_path], tmp_path / 'p.fjm', memory_width=64, print_time=False, use_stl=False, defines=defines)
+    message = str(raised.value)
+    assert error in message and 'Errors found in the -D defines.' in message
+    assert '_defines.fj' not in message and str(tmp_path) not in message
+
+
+def test_a_pooled_assembly_leaves_none_of_its_data_to_the_cyclic_collector(tmp_path: Path) -> None:
+    """assemble() runs with the cyclic collector off, so what it builds must be freed without it. (The lexer library
+    leaves a few closures per parse; nothing that grows with the program.)"""
+    import gc
+
+    from flipjump.assembler.inner_classes.table_pool import BlockPool
+
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text('stl.startup\n    hex.xor x, y\n    stl.loop\nx: hex.hex 3\ny: hex.hex 5\n')
+    gc.collect()
+    gc.set_debug(gc.DEBUG_SAVEALL)  # keep what a collection finds, in gc.garbage
+    try:
+        assemble([fj_path], tmp_path / 'p.fjm', memory_width=64, print_time=False, table_pool=BlockPool(64))
+        gc.collect()
+        left = {type(found).__name__ for found in gc.garbage}
+    finally:
+        gc.set_debug(0)
+        gc.garbage.clear()
+    assert not left & {'PreprocessorData', 'TableMover', 'OpStream', 'OffsetGuard', 'Macro'}, left

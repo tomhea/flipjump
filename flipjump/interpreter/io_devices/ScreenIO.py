@@ -410,7 +410,9 @@ class InMemoryScreen(IODevice):
         x: Optional[int] = None
         cursor = 0
 
-        def refusal(reason: Optional[str] = None) -> IODeviceException:  # names the column and cursor once x is read
+        def collines_exception(
+            reason: Optional[str] = None,
+        ) -> IODeviceException:  # names the column and cursor once x is read
             return self._scr_exception(reason, '' if x is None else f', column {x:,}, cursor {cursor:,}')
 
         try:
@@ -424,11 +426,11 @@ class InMemoryScreen(IODevice):
                     self._scr_acc, self._scr_nacc = acc, nacc
                     return
                 if column == reserved_column:
-                    raise refusal(
+                    raise collines_exception(
                         f'x = 0x{column:0{column_bits // 4}X} is the reserved column token (2^C - 2, C = {column_bits})'
                     )
                 if column >= width:
-                    raise refusal(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
+                    raise collines_exception(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
                 x, cursor = column, 0
                 while True:  # only END closes a column, also once the cursor reached h
                     while nacc < row_bits:
@@ -440,7 +442,7 @@ class InMemoryScreen(IODevice):
                     field = 'y2'
                     if token == keep or token == copy:
                         if token == copy and x == 0:
-                            raise refusal('COPY copies column x - 1, and column 0 has none')
+                            raise collines_exception('COPY copies column x - 1, and column 0 has none')
                         field = 'y'
                         while nacc < row_bits:
                             acc |= (yield) << nacc
@@ -449,11 +451,13 @@ class InMemoryScreen(IODevice):
                     else:
                         row = token
                     if row == reserved_row:
-                        raise refusal(f'0x{row:0{row_bits // 4}X} is the reserved row token (2^R - 4, R = {row_bits})')
+                        raise collines_exception(
+                            f'0x{row:0{row_bits // 4}X} is the reserved row token (2^R - 4, R = {row_bits})'
+                        )
                     if row > height:
-                        raise refusal(f'{field} = {row:,} is past the screen (rows end at h = {height:,})')
+                        raise collines_exception(f'{field} = {row:,} is past the screen (rows end at h = {height:,})')
                     if row < cursor:  # row == cursor: an item of zero rows, which paints nothing
-                        raise refusal(
+                        raise collines_exception(
                             f'{field} = {row:,} is behind the cursor (need {cursor:,} <= {field} <= {height:,})'
                         )
                     start, stop = cursor * width + x, row * width + x
@@ -467,7 +471,7 @@ class InMemoryScreen(IODevice):
                         picture[start:stop:width] = [colour] * (row - cursor)
                     cursor = row
         except _OutputEnded:
-            raise refusal() from None
+            raise collines_exception() from None
 
     def _scr_cmd_present(self) -> Generator[None, int, None]:
         self._present()

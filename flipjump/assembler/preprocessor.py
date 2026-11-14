@@ -712,4 +712,8 @@ def resolve_macros(
     resolve_macro_aux(preprocessor_data, INITIAL_MACRO_NAME, INITIAL_ARGS, INITIAL_LABELS_PREFIX, top_level)
 
     preprocessor_data.finish(show_statistics)
-    return preprocessor_data.get_result_ops_and_labels()
+    result = preprocessor_data.get_result_ops_and_labels()
+    # The mover refers back to the data. Unlinked, both are freed by reference counting alone (the assembler runs
+    # with the cyclic collector off).
+    preprocessor_data.mover = None
+    return result

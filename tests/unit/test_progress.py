@@ -38,7 +38,12 @@ def _terminal(monkeypatch: pytest.MonkeyPatch) -> _Terminal:
     stream = _Terminal()
     monkeypatch.setattr('sys.stdout', stream)
     monkeypatch.setattr(progress_module, '_REDRAW_SECONDS', 0)  # draw every update
+    _terminal_width(monkeypatch, 120)  # (not the width of the terminal the tests run in)
     return stream
+
+
+def _terminal_width(monkeypatch: pytest.MonkeyPatch, columns: int) -> None:
+    monkeypatch.setattr(shutil, 'get_terminal_size', lambda: os.terminal_size((columns, 24)))
 
 
 def _screen_row(output: str) -> str:
@@ -94,23 +99,47 @@ def test_safe_print_erases_the_bar_prints_and_draws_it_again(monkeypatch: pytest
         rows = terminal.getvalue().split('\n')
         assert _screen_row(rows[0]).rstrip() == 'a warning'  # on the bar's row, with nothing of the bar left
         assert _screen_row(rows[1]).startswith('  parsing:  ###############---------------  50%')  # drawn again below
-    assert progress_module._shown_bar is None
+    assert progress_module._shown_stage is None
     progress_module.safe_print('no bar is shown')  # with no bar, it is print()
     assert terminal.getvalue().endswith('no bar is shown\n')
 
 
-def test_a_terminal_too_narrow_for_a_bar_shows_only_the_time(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_safe_print_before_the_first_update_frees_the_stage_name_too(monkeypatch: pytest.MonkeyPatch) -> None:
     terminal = _terminal(monkeypatch)
-    monkeypatch.setattr(shutil, 'get_terminal_size', lambda: os.terminal_size((30, 24)))
+    with ProgressBar('  labels resolve:  '):
+        progress_module.safe_print('a warning')
+        rows = terminal.getvalue().split('\n')
+        assert _screen_row(rows[0]).rstrip() == 'a warning'  # the stage's name is erased from that row
+        assert _screen_row(rows[1]).startswith('  labels resolve:  ------------------------------   0%')
+    assert re.fullmatch(r'  labels resolve:  \d+\.\d{3}s *', _screen_row(terminal.getvalue().split('\n')[1]))
+
+
+def test_off_a_terminal_safe_print_ends_the_stage_line_and_names_the_stage_again(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with ProgressBar('  labels resolve:  '):
+        progress_module.safe_print('a warning')
+    assert re.fullmatch(r'  labels resolve:  \na warning\n  labels resolve:  \d+\.\d{3}s\n', capsys.readouterr().out)
+
+
+@pytest.mark.parametrize('columns, bar_width', [(120, 30), (60, 22), (48, 10), (47, 0), (30, 0)])
+def test_the_bar_is_as_wide_as_the_terminal_has_room_for(
+    monkeypatch: pytest.MonkeyPatch, columns: int, bar_width: int
+) -> None:
+    """the longest line (`100%  999:59 left`) leaves the last column free; under 10 columns of bar, no bar"""
+    terminal = _terminal(monkeypatch)
+    _terminal_width(monkeypatch, columns)
     with ProgressBar('  loading memory:  ') as bar:
-        assert not bar.active and bar.get_active_update_function() is None
+        assert bar.active == (bar_width > 0) and (bar.get_active_update_function() is None) == (bar_width == 0)
+        bar._start_time -= 10_000_000  # so long that the time left is at its longest, 999:59
         bar.update(0.5)
-    assert '#' not in terminal.getvalue() and terminal.getvalue().startswith('  loading memory:  ')
-    monkeypatch.setattr(shutil, 'get_terminal_size', lambda: os.terminal_size((60, 24)))
-    with ProgressBar('  loading memory:  ') as bar:  # 60 columns: a 22-column bar, and the line still fits
-        assert bar.get_active_update_function() == bar.update
-        bar.update(0.5)
-        assert len(_screen_row(terminal.getvalue().split('\n')[-1])) < 60
+        row = _screen_row(terminal.getvalue().split('\n')[-1])
+    if bar_width:
+        half = bar_width // 2
+        assert row == '  loading memory:  ' + '#' * half + '-' * (bar_width - half) + '  50%  999:59 left'
+        assert len(row) <= columns - 1
+    else:
+        assert '#' not in terminal.getvalue() and terminal.getvalue().startswith('  loading memory:  ')
 
 
 class _Recorder:
@@ -236,3 +265,18 @@ def test_labels_resolve_reports_its_share_of_ops_resolved(tmp_path: Path, monkey
     flipjump_quickstart.assemble([CAT_PROGRAM], tmp_path / 'cat.fjm', show_progress=False)
     _assert_moves_forward_within_0_1(recorder.values)
     assert len(recorder.values) > 10 and recorder.values[0] < 0.5 and recorder.values[-1] == 1.0
+
+
+def test_a_warning_during_a_stage_gets_its_own_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """the pins are resolved inside the labels-resolve stage, and may warn there (off a terminal here)"""
+    from flipjump.assembler.inner_classes.table_pool import BlockPool
+
+    fj_path = tmp_path / 'p.fj'
+    fj_path.write_text('stl.startup\n    hex.xor x, y\n    stl.loop\nx: hex.hex 3\ny: hex.hex 5\n')
+    pool = BlockPool(64, pin_all_but=['nowhere'])
+    flipjump_quickstart.assemble(
+        [fj_path], tmp_path / 'p.fjm', memory_width=64, warning_as_errors=False, show_progress=True, table_pool=pool
+    )
+    out = capsys.readouterr().out
+    warning = r'Warning: pin_all_but names labels the program does not define: nowhere'
+    assert re.search(rf'^  labels resolve:  \n{warning}\n  labels resolve:  \d+\.\d{{3}}s$', out, re.MULTILINE), out

@@ -72,6 +72,10 @@ def reached_the_pool_exception(address: int, pool_start: int) -> FlipJumpPreproc
     )
 
 
+def _nowhere() -> str:
+    return ''
+
+
 class OffsetGuard:
     """A guard that keeps every operand pointing at the same place once the tables move.
 
@@ -107,7 +111,7 @@ class OffsetGuard:
         inline_end: int,
         labels: LabelsDict,
         *,
-        where: Callable[[], str] = lambda: '',
+        where: Callable[[], str] = _nowhere,
         emitting: Optional[Callable[[], int]] = None,
     ):
         """
@@ -139,6 +143,11 @@ class OffsetGuard:
         """Start the labels-resolve phase. Every table has moved by now, so nothing is pending any more."""
         self.where = where
         self.emitting = None
+
+    def resolved(self) -> None:
+        """End the labels-resolve phase: forget where its ops are (the function that says so refers to the binary
+        being built, and back to this guard)."""
+        self.where = _nowhere
 
     def watch(self, label: str) -> None:
         """Check `label` even where it is used with no offset (a `$` label)."""
