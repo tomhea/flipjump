@@ -24,7 +24,7 @@ from flipjump.assembler.inner_classes.table_pool import (
     KEPT_TOO_WIDE,
     heat_key,
 )
-from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
+from flipjump.fjm.fjm_consts import FJMVersion, HEADER_BASE_SIZE
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.fjm_run import TerminationStatistics
@@ -195,7 +195,7 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
 
 # the table pool's controls switch its safety rules off through these public seams only, so the pool's insides can
 # change freely: every operand refusal goes through OffsetGuard.refuse, every keep-inline decision through
-# OffsetGuard.may_move, every dropped pin through pins.unpin
+# OffsetGuard.why_stay_inline, every dropped pin through pins.unpin
 
 
 def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,17 +205,7 @@ def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def every_table_moves(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the table pool's OffsetGuard keeps no table inline"""
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
-
-
-def merged_census(pool: BlockPool) -> Dict[str, Dict[int, int]]:
-    """the pool's census, {group: {table width: how many}}, with the groups that share a block counted as one"""
-    merged: Dict[str, Dict[int, int]] = {}
-    for group, census in pool.census.items():
-        widths = merged.setdefault(pool.alias.get(group, group), {})
-        for width, count in census.widths.items():
-            widths[width] = widths.get(width, 0) + count
-    return merged
+    monkeypatch.setattr(OffsetGuard, 'why_stay_inline', lambda self, anchor: None)
 
 
 def kept_by_the_guard(pool: BlockPool) -> Dict[str, int]:
@@ -226,7 +216,7 @@ def kept_by_the_guard(pool: BlockPool) -> Dict[str, int]:
 
 def pool_stats(pool: BlockPool) -> Dict[str, Any]:
     """what a pool did, counted from what it keeps: its table_sites, blocks, census and kept_inline"""
-    raw = pool.reads_words_raw and pool.pin_all_but is None  # its tables went to cheap addresses, in no block
+    raw = pool.pins_no_word()  # its tables went to cheap addresses, in no block
     placed = [site for site in pool.table_sites if site.address]
     in_blocks = len(placed) if raw else sum(sum(block.taken.values()) for block in pool.blocks.values())
     blocked = {group for group, block in pool.blocks.items() if block.base is not None}
@@ -237,7 +227,7 @@ def pool_stats(pool: BlockPool) -> Dict[str, Any]:
         if listed is not None:
             matched += listed[0] == site.slot_ops
             width_changed += listed[0] != site.slot_ops
-    group_keys = {heat_key(group) for group in merged_census(pool)}
+    group_keys = {heat_key(group) for group in pool.merged_census()}
     return {
         'allocated': in_blocks,  # tables placed in a block
         'deferred': len(placed),  # tables moved
@@ -312,7 +302,7 @@ def high_segment_program(top: int) -> str:
 def patch_run_header(fjm_path: Path, *, run_flags: int = 0, io_mode: int = 0) -> None:
     """rewrite the run flags and the io mode in the .fjm's header."""
     raw = bytearray(fjm_path.read_bytes())
-    struct.pack_into('<LL', raw, _header_base_size, run_flags, io_mode)
+    struct.pack_into('<LL', raw, HEADER_BASE_SIZE, run_flags, io_mode)
     fjm_path.write_bytes(bytes(raw))
 
 

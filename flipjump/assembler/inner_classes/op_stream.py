@@ -36,7 +36,7 @@ PAD = 3  # ops_count
 OBJ = 4  # ref to a NewSegment / ReserveBits (mutable: NewSegment's wflip address is patched later)
 # flip << PACKED_JUMP_BITS | jump, both literal: the common op, in one slot instead of two. It packs by the values'
 # size, not by the memory width: any op whose jump is below 2**32 and whose flip is below 2**31 fits the slot's 63
-# bits (at w=32 that is every op; at any other width, every op of a program under 4 Gbit). Other ops take two slots.
+# bits (at any width, that is every op of a program under 2 Gbit). Other ops take two slots.
 FJ_PACKED = 5
 
 PACKED_JUMP_BITS = 32
@@ -192,7 +192,7 @@ class OpStream:
                 return False
         elif value.__class__ is str:
             if self.guard is not None and value in self.guard.watched:
-                self.guard.check_label(value, 0)
+                self.guard.validate_label(value, 0)
             known = self.labels.get(value)
             if known is not None and 0 <= known <= LITERAL_MAX:
                 vals.append(known)
@@ -208,7 +208,7 @@ class OpStream:
                 if name is not None and self._label_plus(name, const):
                     return name not in self.labels
             if self.guard is not None:
-                self.guard.check_emitted(expr, is_address)
+                self.guard.validate_emitted(expr, is_address)
         refs = self.refs
         vals.append(~(len(refs) << 2 | TAG_EXPR))
         refs.append(expr)
@@ -218,7 +218,7 @@ class OpStream:
         """Append the slots of `labels[name] + const`. Return False, appending nothing, if it does not fit in a slot."""
         vals = self.vals
         if self.guard is not None and (const or name in self.guard.watched):
-            self.guard.check_label(name, const)
+            self.guard.validate_label(name, const)
         known = self.labels.get(name)
         if known is not None:
             if 0 <= known + const <= LITERAL_MAX:
@@ -278,7 +278,7 @@ class OpStream:
                 return self._operand(expr.eval_new(params), is_address)
             name = label
         if self.guard is not None and (const or name in self.guard.watched):
-            self.guard.check_label(name, const)
+            self.guard.validate_label(name, const)
         known = self.labels.get(name)
         if known is not None:
             known += const
@@ -347,20 +347,18 @@ class OpStream:
         `eval_new(params)`, but faster: it mostly skips building the substituted expressions."""
         self._operand_with_params(word_address, params)
         if self.guard is not None:
-            self._value(flip_value.eval_new(params))
+            self._unfolded_value(flip_value.eval_new(params), self.guard)
         else:
             self._operand_with_params(flip_value, params, False)
         self._operand_with_params(return_address, params)
         self._end_word_flip(code_position)
 
-    def _value(self, expr: Expr) -> None:
-        """Append a wflip value's slots when there is a guard: a value that names a label is never folded into a
-        literal."""
+    def _unfolded_value(self, expr: Expr, guard: OffsetGuard) -> None:
+        """Append a wflip value's slots for a table pool: a value that names a label is never folded into a literal."""
         if not expr.all_unknown_labels():
             self._operand(expr)
             return
-        if self.guard is not None:
-            self.guard.check_emitted(expr)
+        guard.validate_emitted(expr)
         refs = self.refs
         if isinstance(expr.value, str):
             self.vals.append(~(len(refs) << 2 | TAG_LABEL))
@@ -378,19 +376,6 @@ class OpStream:
         self.vals.append(len(self.refs))
         self.refs.append(op)
 
-    def append(self, op: Any) -> None:
-        """append any last-phase op object (the deque-compatible entry point)"""
-        if isinstance(op, FlipJump):
-            self.add_flip_jump(op.flip, op.jump, op.code_position)
-        elif isinstance(op, WordFlip):
-            self.add_word_flip(op.word_address, op.flip_value, op.return_address, op.code_position)
-        elif isinstance(op, Padding):
-            self.add_padding(op.ops_count)
-        elif isinstance(op, (NewSegment, ReserveBits)):
-            self.add_object(op)
-        else:
-            raise TypeError(f"not a last-phase op: {op!r}")
-
     def extend_slice(self, other: OpStream, op_start: int, val_start: int, op_end: int, val_end: int) -> None:
         """Append `other`'s ops [op_start, op_end), whose slots are other.vals[val_start:val_end]. Both streams must
         share `refs`."""
@@ -406,6 +391,12 @@ class OpStream:
             return None
         return self.refs[self.vals[0]]
 
+    def read_value(self, next_slot: Callable[[], int], labels: Dict[str, int]) -> int:
+        """Read an operand from `next_slot` and return its value. (The loops that read every op write these two
+        lines out in place, for speed.)"""
+        slot = next_slot()
+        return slot if slot >= 0 else self.deferred_value(~slot, next_slot, labels)
+
     def deferred_value(
         self,
         encoded: int,
@@ -416,7 +407,7 @@ class OpStream:
     ) -> int:
         """Return the value of a deferred operand (its slot holds ~encoded), now that every label is in `labels`.
         `next_slot` reads the operand's second slot, if it has one. A table pool's `guard`, if given, checks the
-        operand (see OffsetGuard.check_expr)."""
+        operand (see OffsetGuard.validate_expr)."""
         ref = self.refs[encoded >> 2]
         tag = encoded & 3
         if tag == TAG_LABEL:
@@ -424,7 +415,7 @@ class OpStream:
             if value is None:
                 return Expr(ref).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
             if guard is not None and ref in guard.stranded:
-                guard.check(ref, value, 0)
+                guard.validate_offset(ref, value, 0)
             return value
         if tag == TAG_LABEL_PLUS:
             const = next_slot()
@@ -432,11 +423,11 @@ class OpStream:
             if value is None:
                 return Expr(ref).exact_eval(labels) + const  # raises, as above
             if guard is not None:
-                guard.check(ref, value, const)
+                guard.validate_offset(ref, value, const)
             return value + const
         value = ref.exact_eval(labels)
         if guard is not None:
-            guard.check_expr(ref, value, is_address)
+            guard.validate_expr(ref, value, is_address)
         return value  # type: ignore[no-any-return]
 
     def value_kind(self, encoded: int) -> int:
@@ -506,6 +497,3 @@ class OpStream:
     def op_at(self, index: int) -> Any:
         """the op at `index`, rebuilt (slow: decodes the stream up to it)"""
         return next(self.iter_ops(index))
-
-    def __iter__(self) -> Iterator[Any]:
-        return self.iter_ops()

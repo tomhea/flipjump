@@ -15,8 +15,14 @@ from typing import Dict, FrozenSet, Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
-from flipjump.assembler.inner_classes.table_pool import AFTER_PROGRAM, BlockPool, UnpinnedCell
+from flipjump.assembler.inner_classes.table_pool import (
+    AFTER_PROGRAM,
+    DEFAULT_MAX_SLOT_OPS,
+    BlockPool,
+    UnpinnedCell,
+)
 from flipjump.fjm.fjm_consts import (
+    DEFAULT_MEMORY_WIDTH,
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
     IO_MODE_NAMES,
@@ -27,6 +33,7 @@ from flipjump.fjm.fjm_consts import (
     is_supported_memory_width,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
+from flipjump.interpreter.fjm_run import NATIVE_MAX_MEMORY_WIDTH
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter.io_devices.cli_devices import IO_MODES, make_io_device, split_io_mode
 from flipjump.utils.constants import (
@@ -161,16 +168,26 @@ def parse_unpinned_cells(text: str, error_func: ErrorFunc) -> List[UnpinnedCell]
     """Parse --pin-all-but's value: `a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but). An empty value is no
     cell: every word is pinned."""
     cells: List[UnpinnedCell] = []
-    for item in (part.strip() for part in text.split(',')) if text.strip() else ():
-        # A macro's own label holds colons too (`f1:l3:go---d`): what follows its last colon holds the `---`.
-        label, colon, ops = item.rpartition(':')
-        if colon and label and ops.isascii() and ops.isdecimal() and int(ops) > 0:
-            cells.append((label, int(ops)))
-        elif item and (not colon or MACRO_SEPARATOR_STRING in ops):
-            cells.append(item)
+    if not text.strip():
+        return cells
+    for item in text.split(','):
+        cell = _parse_unpinned_cell(item.strip())
+        if cell is None:
+            error_func(f'--pin-all-but expects LABEL or LABEL:OPS (OPS a positive number), got {item.strip()!r}')
         else:
-            error_func(f'--pin-all-but expects LABEL or LABEL:OPS (OPS a positive number), got {item!r}')
+            cells.append(cell)
     return cells
+
+
+def _parse_unpinned_cell(item: str) -> Optional[UnpinnedCell]:
+    """Parse one cell of --pin-all-but: `LABEL` or `LABEL:OPS`. Return None if it is neither."""
+    label, colon, ops = item.rpartition(':')
+    if colon and label and ops.isascii() and ops.isdecimal() and int(ops) > 0:
+        return label, int(ops)
+    # A macro's own label holds colons too (`f1:l3:go---d`): what follows its last colon holds the `---`.
+    if item and (not colon or MACRO_SEPARATOR_STRING in ops):
+        return item
+    return None
 
 
 # the pool's flags: {argparse dest: BlockPool's keyword}
@@ -263,8 +280,19 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        moved, base, pinned = table_pool.moved, hex(table_pool.pool_base), len(table_pool.pinned)
-        print(f'  table pool:      {moved} tables moved, from {base}; {pinned} words pinned')
+        print_table_pool_summary(table_pool)
+
+
+def print_table_pool_summary(table_pool: BlockPool) -> None:
+    """Print what the pool did: the tables it moved and the words it pinned, then what it left as it was, by why."""
+    if table_pool.moved:
+        moved = f'{table_pool.moved} tables moved, from {hex(table_pool.pool_base)}'
+    else:
+        moved = 'no table moved'
+    print(f'  table pool:      {moved}; {len(table_pool.pinned)} words pinned')
+    for what, reasons in (('tables kept in place', table_pool.kept_inline), ('words not pinned', table_pool.unpins)):
+        for why, count in reasons.items():
+            print(f'    {what}: {count} - {why}')
 
 
 def get_fjm_file_path(args: argparse.Namespace, error_func: ErrorFunc, temp_dir_name: str) -> Path:
@@ -425,7 +453,8 @@ def add_table_pool_arguments(group: argparse._ArgumentGroup) -> None:
         '--pool-max-slot-ops',
         type=int,
         metavar='N',
-        help="with --pool-tables: the widest table, in ops, the pool moves (default 32); wider ones stay in place",
+        help=f"with --pool-tables: the widest table, in ops, the pool moves (default {DEFAULT_MAX_SLOT_OPS}); "
+        f"wider ones stay in place",
     )
     group.add_argument(
         '--pool-spread-factor',
@@ -451,8 +480,9 @@ def add_table_pool_arguments(group: argparse._ArgumentGroup) -> None:
         '--pin-all-but',
         metavar='LABEL[:OPS],...',
         help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
-        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong "
-        "(an empty list, \"\", pins every word). Without it, a program that uses pointers pins nothing",
+        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, and every cell whose "
+        "dispatch word is jumped through while no table is armed in it, or it runs wrong (an empty list, \"\", pins "
+        "every word). Without it, a program that uses pointers pins nothing",
     )
 
 
@@ -475,10 +505,11 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         '-w',
         '--width',
         type=_memory_width,
-        default=64,
+        default=DEFAULT_MEMORY_WIDTH,
         metavar='WIDTH',
-        help=f"specify memory-width: {SUPPORTED_MEMORY_WIDTHS_TEXT}. 64 by default; the native engine runs the widths "
-        f"up to 64, and wider programs run on the much slower python engine",
+        help=f"specify memory-width: {SUPPORTED_MEMORY_WIDTHS_TEXT}. {DEFAULT_MEMORY_WIDTH} by default; the native "
+        f"engine runs the widths up to {NATIVE_MAX_MEMORY_WIDTH}, and wider programs run on the much slower python "
+        f"engine",
     )
 
     supported_versions = ', '.join(f"{version}: {name}" for version, name in SUPPORTED_VERSIONS_NAMES.items())

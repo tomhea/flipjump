@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 import pytest
 
 from flipjump.fjm import fjm_reader
-from flipjump.fjm.fjm_consts import FJ_MAGIC, FJMVersion, _header_base_size, _header_extension_size
+from flipjump.fjm.fjm_consts import FJ_MAGIC, FJMVersion, HEADER_BASE_SIZE, HEADER_EXTENSION_SIZE
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.utils.exceptions import (
@@ -315,8 +315,8 @@ def _write_segments(path: Path, memory_width: int, version: FJMVersion, segment_
 
 def _v4_table_end(path: Path) -> int:
     """the file offset where version 4's compressed segment table ends (and the data stream starts)"""
-    stored_size: int = struct.unpack_from('<Q', path.read_bytes(), _header_base_size + _header_extension_size)[0]
-    return _header_base_size + _header_extension_size + 8 + stored_size
+    stored_size: int = struct.unpack_from('<Q', path.read_bytes(), HEADER_BASE_SIZE + HEADER_EXTENSION_SIZE)[0]
+    return HEADER_BASE_SIZE + HEADER_EXTENSION_SIZE + 8 + stored_size
 
 
 @pytest.mark.parametrize('segment_count', SEGMENT_COUNTS)
@@ -345,14 +345,14 @@ def test_v4_header_read_decompresses_only_the_segment_table(tmp_path: Path, monk
     decompressed = []
     real = fjm_reader._decompress_in_chunks
 
-    def spy(file_data: bytes, *args: Any) -> bytearray:
+    def spy(file_data: bytes, *args: Any, **options: Any) -> bytearray:
         decompressed.append(len(file_data))
-        return real(file_data, *args)
+        return real(file_data, *args, **options)
 
     monkeypatch.setattr(fjm_reader, '_decompress_in_chunks', spy)
     header = fjm_reader.read_fjm_header(path)
     assert header.segments == [(4 * i, 2, 2 * i, 2) for i in range(50)]
-    assert decompressed == [table_end - _header_base_size - _header_extension_size - 8]  # the table's stream only
+    assert decompressed == [table_end - HEADER_BASE_SIZE - HEADER_EXTENSION_SIZE - 8]  # the table's stream only
     with pytest.raises(
         FlipJumpReadFjmException, match='^Error: The compressed data is damaged; Unable to decompress.$'
     ):
@@ -362,7 +362,7 @@ def test_v4_header_read_decompresses_only_the_segment_table(tmp_path: Path, monk
 def test_v3_keeps_its_raw_segment_table(tmp_path: Path) -> None:
     path = tmp_path / 'v3.fjm'
     _write_segments(path, 32, FJMVersion.CompressedVersion, 2)
-    table = path.read_bytes()[_header_base_size + _header_extension_size :][: 2 * 32]  # noqa: E203
+    table = path.read_bytes()[HEADER_BASE_SIZE + HEADER_EXTENSION_SIZE :][: 2 * 32]  # noqa: E203
     assert list(struct.iter_unpack('<QQQQ', table)) == [(0, 2, 0, 2), (4, 2, 2, 2)]
     assert Reader(path).memory == _write_segments(tmp_path / 'again.fjm', 32, FJMVersion.CompressedVersion, 2)
 
@@ -371,7 +371,7 @@ def _v4_damaged(tmp_path: Path, damage: str) -> Path:
     path = tmp_path / 'v4.fjm'
     _write_segments(path, 32, V4, 50)
     raw = bytearray(path.read_bytes())
-    stream_start = _header_base_size + _header_extension_size + 8
+    stream_start = HEADER_BASE_SIZE + HEADER_EXTENSION_SIZE + 8
     table_end = _v4_table_end(path)
     if damage == 'truncated':
         raw = raw[: (stream_start + table_end) // 2]
@@ -391,7 +391,7 @@ def _v4_damaged(tmp_path: Path, damage: str) -> Path:
         ('truncated', "can't unpack", 'the segment table needs '),
         ('size past the end', "can't unpack", 'the segment table needs '),
         ('garbage stream', '^Error: The compressed segment table is damaged; Unable to decompress.$', None),
-        ('one segment fewer', '^Error: the segment table is 1600 bytes; 49 segments take 1568.$', None),
+        ('one segment fewer', '^Error: the segment table is more than 1568 bytes; 49 segments take 1568.$', None),
     ],
 )
 def test_a_damaged_v4_segment_table_is_rejected(tmp_path: Path, damage: str, message: str, cause: str) -> None:
@@ -401,3 +401,37 @@ def test_a_damaged_v4_segment_table_is_rejected(tmp_path: Path, damage: str, mes
             read(path)
         if cause is not None:
             assert str(error.value.__cause__).startswith(cause)
+
+
+def test_a_segment_table_that_decompresses_to_far_more_than_its_segments_is_not_decompressed(tmp_path: Path) -> None:
+    """a small damaged file must not make the header reader allocate what its table stream expands to"""
+    import tracemalloc
+
+    path = tmp_path / 'v4.fjm'
+    _write_segments(path, 64, V4, 1)
+    raw = path.read_bytes()
+    stream_start, table_end = HEADER_BASE_SIZE + HEADER_EXTENSION_SIZE + 8, _v4_table_end(path)
+    huge = lzma.compress(bytes(1 << 26), format=lzma.FORMAT_RAW, filters=[{"id": lzma.FILTER_LZMA2}])
+    path.write_bytes(raw[: stream_start - 8] + struct.pack('<Q', len(huge)) + huge + raw[table_end:])
+    tracemalloc.start()
+    try:
+        with pytest.raises(
+            FlipJumpReadFjmException, match='the segment table is more than 32 bytes; 1 segments take 32'
+        ):
+            fjm_reader.read_fjm_header(path)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 1 << 24, peak  # the decoder's own 8 MiB dictionary, not the 64 MiB the stream holds
+
+
+@pytest.mark.parametrize('segment_num', [1 << 58, (1 << 63) + 1])
+def test_a_v4_file_that_claims_too_many_segments_is_rejected(tmp_path: Path, segment_num: int) -> None:
+    path = tmp_path / 'v4.fjm'
+    _write_segments(path, 64, V4, 1)
+    raw = bytearray(path.read_bytes())
+    struct.pack_into('<Q', raw, 12, segment_num)  # segment_num: a u64 after magic, width and version
+    path.write_bytes(bytes(raw))
+    for read in (Reader, fjm_reader.read_fjm_header, fjm_reader.read_fjm_raw):
+        with pytest.raises(FlipJumpReadFjmException, match='the segment table is 32 bytes'):
+            read(path)

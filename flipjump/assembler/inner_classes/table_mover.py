@@ -98,8 +98,11 @@ class TableMover:
         return self.data.curr_address if self.resume is None else self.resume[0]
 
     def validate_not_reaching_the_pool(self, address: int) -> None:
-        """Refuse a program whose code reaches `address`, if that is inside the pool (labels-resolve checks the wflip
-        areas)."""
+        """Refuse a program whose code reaches `address`, if that is inside the pool or past the memory
+        (labels-resolve checks the wflip areas)."""
+        memory_width = self.data.memory_width
+        if address > 1 << memory_width:  # (a pool that has placed no table yet starts at the top of the memory)
+            raise FlipJumpPreprocessorException(f'Not enough space with the {memory_width}-bits memory-width.')
         if address > self.pool.pool_start():
             raise reached_the_pool_exception(address, self.pool.pool_start())
 
@@ -124,17 +127,17 @@ class TableMover:
         if in_sum:
             name = f'{labels_prefix}{MACRO_SEPARATOR_STRING}$:{op_index}' if labels_prefix else f'$:{op_index}'
             data.insert_label(name, code_position)
-            self.guard.watched.add(name)
+            self.guard.watch(name)
             params_dict['$'] = Expr(name)
         else:
-            self.guard.falls_to = data.curr_address
+            self.guard.fell_through(data.curr_address)
 
-    def check_number(self, expr: Expr, value: int, what: str) -> None:
+    def validate_number(self, expr: Expr, value: int, what: str) -> None:
         """Check a number the expansion evaluated from labels: `what` says what it is and where (`the count of the rep
-        at ...`). A table pool must not change it (OffsetGuard.check_number)."""
+        at ...`). A table pool must not change it (OffsetGuard.validate_number)."""
         self._evaluating = what
         try:
-            self.guard.check_number(expr, value)
+            self.guard.validate_number(expr, value)
         finally:
             self._evaluating = ''
 
@@ -154,6 +157,9 @@ class TableMover:
         address: the same address with or without the pool."""
         start = self.data.curr_address
         self.validate_not_reaching_the_pool(previous_end)
+        memory_width = self.data.memory_width
+        if start >= 1 << memory_width:
+            raise FlipJumpPreprocessorException(f'Not enough space with the {memory_width}-bits memory-width.')
         if start >= self.pool.pool_start():
             raise reached_the_pool_exception(start, self.pool.pool_start())
         self.code_end = max(self.code_end, previous_end)
@@ -183,12 +189,12 @@ class TableMover:
         self, group: Optional[str], word: Optional[Expr], ops_alignment: int, table_ops: int
     ) -> Optional[str]:
         """Return why the table the expansion reached stays inline, or None if it moves."""
-        unsafe = self.guard.may_move(self.data.curr_address)
+        unsafe = self.guard.why_stay_inline(self.data.curr_address)
         if unsafe is not None:
             return unsafe
         if word is not None and self._is_runtime_word(word):
             return KEPT_RUNTIME_WORD
-        return self.pool.defer(group, word, ops_alignment, table_ops)
+        return self.pool.count_table(group, word, ops_alignment, table_ops)
 
     def _is_runtime_word(self, word: Expr) -> bool:
         """Is `word` one of the runtime's words? Those are declared before the code, so they resolve already (see
@@ -211,7 +217,7 @@ class TableMover:
         self.shift = plain_start + table_ops - data.curr_address // op_bits
         self.guard.table_moved(data.curr_address, table, self.shift * op_bits, plain_start * op_bits)
         self.table_starts.append((len(self.table_ops), len(self.table_ops.vals)))
-        self.table_ops.append(segment)
+        self.table_ops.add_object(segment)
         self.resume = data.curr_address, data.emit_target
         data.emit_target = self.table_ops
         data.curr_address = 0

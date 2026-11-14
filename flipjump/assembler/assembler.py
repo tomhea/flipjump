@@ -30,7 +30,7 @@ from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
 from flipjump.assembler.inner_classes.table_pool import BlockPool
-from flipjump.assembler.pins import pins
+from flipjump.assembler.pins import pins_that_hold
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -46,6 +46,17 @@ def validate_addresses(memory_width: int, first_address: int, last_address: int)
 
     assert_address_in_memory(memory_width, first_address)
     assert_address_in_memory(memory_width, last_address - 1)
+
+
+def validate_words_fit(memory_width: int, first_address: int, words: MutableSequence[int]) -> None:
+    """Check that each word of the segment at `first_address` fits the memory width. Only a list of python ints
+    can hold one that does not: a typed array (the widths up to 64) refuses such a word as it is inserted (see
+    _resolve_ops)."""
+    if isinstance(words, list) and words and not 0 <= min(words) <= max(words) < 1 << memory_width:
+        raise FlipJumpAssemblerException(
+            f'Not enough space with the {memory_width}-bits memory-width: a word of the segment at '
+            f'{hex(first_address)} does not fit in {memory_width} bits.'
+        )
 
 
 def add_segment_to_fjm(
@@ -67,13 +78,8 @@ def add_segment_to_fjm(
     if first_address == last_address:
         return
     validate_addresses(memory_width, first_address, last_address)
-    for words in (fj_words, wflip_words):
-        if isinstance(words, list) and words and not 0 <= min(words) <= max(words) < 1 << memory_width:
-            # (a typed array, at w <= 64, refuses such a word as it is inserted: see _resolve_ops)
-            raise FlipJumpAssemblerException(
-                f'Not enough space with the {memory_width}-bits memory-width: a word of the segment at '
-                f'{hex(first_address)} does not fit in {memory_width} bits.'
-            )
+    validate_words_fit(memory_width, first_address, fj_words)
+    validate_words_fit(memory_width, first_address, wflip_words)
 
     # Two appends instead of `fj_words + wflip_words`, which would copy every word. The data stays contiguous.
     # measured before add_data, since a writer that takes fj_words appends to it
@@ -320,10 +326,10 @@ def labels_resolve(
     @param save_wflip_labels: record a `:wflips:N` debugging label for each generated wflip-chain op
     @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction resolved so far
     @param table_pool: the pool the preprocessor laid out, if any. Now that every label is known, the words it pins
-    are resolved to addresses (pins.pins).
+    are resolved to addresses (pins.pins_that_hold).
     @param warning_as_errors: treat warnings as errors (a pin_all_but label the program does not define)
     """
-    pinned = None if table_pool is None else pins(ops, labels, memory_width, table_pool, warning_as_errors)
+    pinned = None if table_pool is None else pins_that_hold(ops, labels, table_pool, warning_as_errors)
     resolve_into(
         ops,
         labels,
@@ -363,7 +369,7 @@ def resolve_into(
         wflips_at=wflips_at,
     )
     if offset_guard is not None:
-        offset_guard.resolving(lambda: _where(binary_data, offset_guard))
+        offset_guard.resolving(lambda: _resolved_op_place(binary_data, offset_guard))
     _resolve_ops(ops, labels, binary_data, fjm_writer, offset_guard, on_progress)
     binary_data.close_and_add_segment(fjm_writer)
 
@@ -377,7 +383,7 @@ def _first_segment(ops: OpStream) -> NewSegment:
     return first_segment
 
 
-def _where(binary_data: BinaryData, guard: OffsetGuard) -> str:
+def _resolved_op_place(binary_data: BinaryData, guard: OffsetGuard) -> str:
     """Return where the op being resolved is, for the guard's refusals: its address, and the label nearest it."""
     address = binary_data.first_address + len(binary_data.fj_words) * binary_data.memory_width
     return f' of the op at {hex(address)} (after the label {guard.label_below(address)})'
@@ -392,7 +398,7 @@ def _resolve_ops(
     on_progress: Optional[Callable[[float], None]],
 ) -> None:
     """Resolve every op after the first NewSegment into `binary_data`, in stream order. The literal ops (most of
-    them) are inserted right here, with no function call."""
+    them) are inserted right here, with no `_resolve_*` call."""
     insert_fj_op = binary_data.insert_fj_op
     kinds = ops.kinds
     refs = ops.refs
@@ -444,7 +450,9 @@ def _resolve_flip_jump(
     binary_data: BinaryData,
     guard: Optional[OffsetGuard],
 ) -> None:
-    """Resolve an `a;b` op that has a deferred operand: read its slots, and insert it."""
+    """Resolve an `a;b` op that has a deferred operand: read its slots, and insert it. (Each operand is read in
+    place, here and in _resolve_word_flip, not through OpStream.read_value: these run for a big share of the
+    ops.)"""
     flip = next_slot()
     if flip < 0:
         flip = ops.deferred_value(~flip, next_slot, labels, guard)

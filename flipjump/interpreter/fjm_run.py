@@ -5,7 +5,7 @@ routing input/output through an IODevice, handling breakpoints, detecting termin
 and collecting run statistics (returned as TerminationStatistics).
 
 three run-loops (engines) are implemented:
-- the native engine (the default when built): the _fjcore C-extension - segment-aware paged
+- the native engine (the default when built, for memory widths up to 64): the _fjcore C-extension - segment-aware paged
   memory and the fetch-flipjump loop in C, calling back into python only for IO. ~500x
   faster than the featured loop. disable it with the FLIPJUMP_NO_NATIVE=1 environment variable.
 - the fast loop (the default otherwise): pure-python, the memory accesses and IO/termination
@@ -220,12 +220,6 @@ def run(
     statistics = RunStatistics(header.memory_width, last_ops_debugging_list_length)
     # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
     native = not use_featured_loop and is_native_engine_active() and header.memory_width <= NATIVE_MAX_MEMORY_WIDTH
-    if flat_required and not native and header.memory_width > NATIVE_MAX_MEMORY_WIDTH:
-        raise FlipJumpFlatMemoryException(
-            f'flat memory is the native engine\'s, which runs memory widths up to {NATIVE_MAX_MEMORY_WIDTH}; '
-            f'this program is w={header.memory_width}',
-            header.span_words,
-        )
     try:
         with ProgressBar('  loading memory:  ', show_progress=show_progress) as progress:
             if native:
@@ -305,7 +299,7 @@ def _load_native(
     @return: the loaded core
     """
     assert _fjcore is not None
-    fjm_reader.validate_segments(header.segments, data_words=1 << 64)  # the data pool is checked later, with the data
+    fjm_reader.validate_segments(header.segments, data_words=None)  # the data pool is checked later, with the data
     core = _fjcore.Memory(
         header.memory_width, flat_max_words=flat_max_words if flat_max_words else 0, flat_required=flat_required
     )

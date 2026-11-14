@@ -443,7 +443,3 @@ class Padding:
     """
 
     ops_count: int  # the number of fj-ops to pad
-
-
-# The input to the labels-resolve
-LastPhaseOp = Union[FlipJump, WordFlip, Padding, NewSegment, ReserveBits]

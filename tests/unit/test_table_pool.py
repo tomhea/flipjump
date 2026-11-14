@@ -206,7 +206,7 @@ def _laid_out(width_hist: Dict[str, Dict[int, int]], **kwargs: Any) -> BlockPool
     pool = BlockPool(W, POOL_BASE, **kwargs)
     for group, hist in width_hist.items():
         pool.census[group] = GroupCensus(Expr(group), dict(hist))  # the group's word, as the expansion records it
-    pool._lay_out_blocks({group: dict(hist) for group, hist in width_hist.items()})
+    pool.lay_out_blocks({group: dict(hist) for group, hist in width_hist.items()})
     return pool
 
 
@@ -319,14 +319,14 @@ def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path) ->
 
 def test_a_moved_table_holds_the_ops_its_declaration_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """a declared table holds only labels and `a;b` ops, so its expansion is the ops relocatable_call counts
-    (TableMover.end asserts it; it was a refusal no program could reach). The control: a miscount is caught."""
+    (TableMover.end asserts it). The control: a miscount is caught."""
     labels = expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
     assert any(address >= POOL_BASE for address in labels.values())
     counted = preprocessor.relocatable_call
 
     def miscounted(*args: Any) -> Any:
         table = counted(*args)
-        return None if table is None else (table[0], table[1] + 1, *table[2:])
+        return None if table is None else table._replace(table_ops=table.table_ops + 1)
 
     monkeypatch.setattr(preprocessor, 'relocatable_call', miscounted)
     with pytest.raises(AssertionError):
@@ -385,38 +385,47 @@ def test_the_runtimes_words_are_reserved_at_every_width(memory_width: int) -> No
 
 
 def test_resolve_pinned_leaves_a_raw_word_unpinned() -> None:
-    pinned, _ = resolve_pinned({Expr('a'): 1, Expr('b'): 2}, {'a': 4096, 'b': 8192}, 32, unpinned_words={8192})
-    assert pinned == {4096: 1}
+    words = {Expr('a'): 1, Expr('b'): 2, Expr('c'): 3}
+    labels = {'a': 4096, 'b': 8192, 'c': 8192 + 4 * W}
+    pinned, _ = resolve_pinned(
+        words, labels, W, unpinned_cells=[(0, 64), (8192, 8192 + 4 * W)]
+    )  # c starts where b ends
+    assert pinned == {4096: 1, 8192 + 4 * W: 3}
 
 
-def test_unpinned_words_are_every_word_of_each_cell() -> None:
-    # a label alone runs to the next label (the last one: its own op); (label, ops) runs `ops` ops; a label the
-    # program does not define is skipped and listed
+def test_the_unpinned_cells_are_address_ranges() -> None:
+    # a label alone runs to the next label (the last one: to the pool); (label, ops) runs `ops` ops; cells that
+    # overlap are joined; a label the program does not define is skipped and listed
     labels = {'a': 4096, 'b': 4096 + 3 * W, 'c': 8192, 'z': 1 << 20}
-    pool = BlockPool(W, POOL_BASE, pin_all_but=['a', ('c', 2), 'z', 'missing'])
-    words, missing = pool.unpinned_words(labels)
-    assert words == {
-        *range(4096, 4096 + 3 * W, W),
-        *range(8192, 8192 + 4 * W, W),
-        *range(1 << 20, (1 << 20) + 2 * W, W),
-    }
+    pool = BlockPool(W, POOL_BASE, pin_all_but=['a', ('c', 2), ('c', 1), 'z', 'missing'])
+    cells, missing = pool.unpinned_cells(labels)
+    assert cells == [(4096, 4096 + 3 * W), (8192, 8192 + 4 * W), (1 << 20, POOL_BASE)]
     assert missing == ['missing']
     assert (
-        BlockPool(W, POOL_BASE).unpinned_words(labels)
-        == (set(), [])
-        == BlockPool(W, POOL_BASE, pin_all_but=[]).unpinned_words(labels)
+        BlockPool(W, POOL_BASE).unpinned_cells(labels)
+        == ([], [])
+        == BlockPool(W, POOL_BASE, pin_all_but=[]).unpinned_cells(labels)
     )
+
+
+def test_a_huge_raw_cell_costs_no_memory() -> None:
+    labels = {'buffer': 4096, 'after': 4096 + (1 << 40)}
+    cells, _ = BlockPool(64, 1 << 50, pin_all_but=['buffer']).unpinned_cells(labels)
+    assert cells == [(4096, 4096 + (1 << 40))]
+    words = {Expr('inside'): 1 << 50, Expr('after'): 1 << 50}
+    labels['inside'] = 4096 + (1 << 39)
+    assert resolve_pinned(words, labels, 64, cells) == ({4096 + (1 << 40): 1 << 50}, 0)
 
 
 # --- BlockPool, on synthetic tables ---
 
 
-def test_defer_counts_the_census_and_keeps_a_too_wide_table_inline() -> None:
+def test_a_counted_table_joins_the_census_and_a_too_wide_one_stays_inline() -> None:
     pool = BlockPool(W, POOL_BASE)
     word = Expr('g')
-    assert [pool.defer('g', word, 16, width) for width in (16, 16, 31)] == [None] * 3  # they leave the stream
-    assert pool.defer('g', word, 16, 40) == table_pool.KEPT_TOO_WIDE  # wider than max_slot_ops (32)
-    assert pool.defer(None, None, 16, 16) == table_pool.KEPT_NO_JUMP_WORD
+    assert [pool.count_table('g', word, 16, width) for width in (16, 16, 31)] == [None] * 3  # they leave the stream
+    assert pool.count_table('g', word, 16, 40) == table_pool.KEPT_TOO_WIDE  # wider than max_slot_ops (32)
+    assert pool.count_table(None, None, 16, 16) == table_pool.KEPT_NO_JUMP_WORD
     assert pool.census == {'g': GroupCensus(word, {16: 2, 31: 1, 40: 1})}
 
 
@@ -428,8 +437,8 @@ def test_a_block_hands_out_slots_and_pins_the_word() -> None:
 
 
 def test_a_table_too_wide_for_any_slot_declines_and_breaks_the_group() -> None:
-    pool = _laid_out({'g': {16: 2, 40: 1}})  # the 40-op table is counted in the widest (32-op) bucket, laid out first
-    assert _reserve(pool) == POOL_BASE + 32 * OP_BITS
+    pool = _laid_out({'g': {16: 2, 40: 1}})  # the 40-op table is too wide for a slot: the block keeps none for it
+    assert pool.blocks['g'].sub_blocks == {16: (0, 2)} and _reserve(pool) == POOL_BASE
     assert _reserve(pool, 40) is None and pool.blocks['g'].broken
     assert pool.pinned_words() == {}  # a broken group is never pinned...
     pool.pin_incomplete_groups = True
@@ -551,7 +560,7 @@ def test_occurrences_count_the_tables_that_decline() -> None:
     # the census saw both tables, so the heat list numbers the 16-op one as occurrence 1
     pool = _laid_out({'g': {40: 1, 16: 1}}, heat={'g': [('site', 1, 16)]})
     assert _reserve(pool, 40, site='f1:l1:site') is None  # too wide
-    assert _reserve(pool, 16, site='f1:l2:site') == POOL_BASE + 32 * OP_BITS  # after the 32-op bucket: its rank's
+    assert _reserve(pool, 16, site='f1:l2:site') == POOL_BASE  # its listed rank's index; the wide table took none
 
 
 def test_a_listed_site_the_program_lost_pushes_no_table_out() -> None:
@@ -822,7 +831,7 @@ def test_the_pool_merges_the_groups_of_one_word(tmp_path: Path) -> None:
     assert set(pool.blocks) == set(pool.census) - set(pool.alias)  # a group that shares a block has none of its own
 
 
-def test_the_aliases_a_pool_cannot_resolve_are_counted(tmp_path: Path) -> None:
+def test_words_with_no_address_before_the_pool_is_placed_share_no_block(tmp_path: Path) -> None:
     reference, _, _ = build_and_run(ALIAS_DEFERRED_PROGRAM, tmp_path, None, name='inline')
     pool = BlockPool(W, POOL_BASE)
     output, _, _ = build_and_run(ALIAS_DEFERRED_PROGRAM, tmp_path, pool)
@@ -868,8 +877,7 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
 
 
 def test_the_pool_is_importable_from_the_preprocessor_too() -> None:
-    for name in ('BlockPool', 'heat_key'):
-        assert getattr(preprocessor, name) is getattr(table_pool, name), name
+    assert getattr(preprocessor, 'BlockPool') is table_pool.BlockPool
 
 
 # --- the edges of the memory, and what a pool is asked ---
@@ -988,3 +996,303 @@ def _run_fjm(fjm_path: Path) -> bytes:
     io_device = FixedIO(b'')
     fjm_run.run(fjm_path, io_device=io_device, print_time=False)
     return io_device.get_output()
+
+
+# --- what a tool reads from a pool ---
+
+
+def test_a_fresh_pool_lays_out_a_saved_census_as_the_assembly_did(tmp_path: Path) -> None:
+    """a tool gets a build's block layout from its census alone: merged_census of the assembled pool, then
+    lay_out_blocks on a fresh pool with the same options"""
+    options: Dict[str, Any] = {'spread_factor': 2, 'spread_min_tables': 2}
+    assembled = BlockPool(W, POOL_BASE, **options)
+    build_and_run(CMP_PROGRAM, tmp_path, assembled)
+    census = assembled.merged_census()
+    fresh = BlockPool(W, POOL_BASE, **options)
+    blocks_end = fresh.lay_out_blocks(census)
+
+    def layout(pool: BlockPool) -> Dict[str, Any]:
+        return {group: (block.base, block.bits, block.sub_blocks) for group, block in pool.blocks.items()}
+
+    assert len(census) > 1 and layout(fresh) == layout(assembled)
+    assert blocks_end == max(block.base + block.bits for block in fresh.blocks.values() if block.base is not None)
+
+
+def test_a_table_takes_the_slot_of_the_next_power_of_two() -> None:
+    assert [BlockPool.slot_ops(width) for width in (1, 2, 3, 16, 17, 32, 33, 500)] == [1, 2, 4, 16, 32, 32, 64, 512]
+
+
+def test_a_group_of_tables_too_wide_to_move_gets_an_empty_block_that_takes_no_place() -> None:
+    pool = _laid_out({'wide': {40: 3}, 'g': {16: 2}})
+    assert pool.blocks['wide'].bits == 0 and pool.blocks['wide'].sub_blocks == {}
+    assert pool.blocks['g'].base == POOL_BASE  # the empty block moves no other block
+    assert _reserve(pool, 40, group='wide') is None and pool.pinned_words() == {}
+
+
+# a function is called and returns through `ret`, which a `hex.zero` also dispatches through: a jump word that an
+# `a;b` op (stl.fret's) jumps through, after stl.fcall armed it
+FCALL_PROGRAM = """
+stl.startup
+    hex.zero ret
+    stl.fcall func, ret
+    stl.output 'B'
+    stl.loop
+func:
+    stl.output 'A'
+    stl.fret ret
+ret: hex.hex
+"""
+
+
+def test_a_word_an_op_jumps_through_stays_pinned_only_with_pin_all_but(tmp_path: Path) -> None:
+    """pin_all_but names the cells that are jumped through at rest, so with it a jump through any other word comes
+    after an arm; without it the pool cannot tell, and unpins the word"""
+    reference, _, _ = build_and_run(FCALL_PROGRAM, tmp_path, None, name='plain')
+    cautious, vouched = BlockPool(W, POOL_BASE), BlockPool(W, POOL_BASE, pin_all_but=[])
+    outputs = [
+        build_and_run(FCALL_PROGRAM, tmp_path, pool, name=name)[0] for name, pool in (('a', cautious), ('b', vouched))
+    ]
+    assert outputs == [reference, reference] and reference == b'AB'
+    assert cautious.unpins == {'an op jumps through it without arming it': 1} and not cautious.pinned
+    assert not vouched.unpins and len(vouched.pinned) == 1
+
+
+# --- refusals and reasons that name what to do ---
+
+
+@pytest.mark.parametrize(
+    'pool, advice',
+    [
+        (lambda: BlockPool(W, (1 << W) - 8 * W), 'Lower pool_base'),
+        (lambda: BlockPool(W, POOL_BASE, pool_end=POOL_BASE + 8 * W), 'Raise pool_end'),
+    ],
+    ids=['base at the top', 'a tiny span'],
+)
+def test_a_pool_with_no_room_says_what_to_change(tmp_path: Path, pool: Any, advice: str) -> None:
+    with pytest.raises(FlipJumpPreprocessorException, match=f'has no room for its tables. {advice}'):
+        build_and_run(XOR_PROGRAM, tmp_path, pool())
+
+
+def test_tables_too_wide_to_move_need_no_room_in_the_pool(tmp_path: Path) -> None:
+    """every table of XOR_PROGRAM is wider than the pool's slots, so they all stay inline: a pool with no room at
+    all still assembles it"""
+    reference, _, _ = build_and_run(XOR_PROGRAM, tmp_path, None, name='plain')
+    pool = BlockPool(W, POOL_BASE, max_slot_ops=8, pool_end=POOL_BASE + 2 * W)
+    assert build_and_run(XOR_PROGRAM, tmp_path, pool)[0] == reference
+    assert pool.moved == 0 and set(pool.kept_inline) == {table_pool.KEPT_TOO_WIDE}
+
+
+# a wflip at an address that is no word's start flips bits of two words: x's jump word, and the one after it
+SPLIT_WFLIP_PROGRAM = """
+stl.startup
+    hex.xor y, x
+    wflip x+w+8, 1
+    wflip x+w+8, 1
+    hex.print_as_digit y, 0
+    stl.loop
+x: hex.hex 3
+y: hex.hex 5
+"""
+
+
+def test_a_word_that_a_wflip_across_two_words_flips_is_not_pinned(tmp_path: Path) -> None:
+    reference, _, _ = build_and_run(SPLIT_WFLIP_PROGRAM, tmp_path, None, name='plain')
+    pool = BlockPool(W, POOL_BASE)
+    assert build_and_run(SPLIT_WFLIP_PROGRAM, tmp_path, pool)[0] == reference == b'6'
+    assert pool.moved and pool.unpins == {'a wflip across two words': 1} and not pool.pinned
+
+
+# no stl. The op at `go` falls through (`;`) to the declared table after it
+FALL_THROUGH_TO_A_TABLE = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+    }
+  }
+}
+    ;go
+    ;0
+go:
+    ;
+    pad 1
+    my.__relocatable__.table T
+    wflip x+w, T
+x:  ;x
+"""
+
+
+def test_a_table_the_op_before_it_falls_through_to_stays_inline(tmp_path: Path) -> None:
+    fj_path = tmp_path / 'fall.fj'
+    fj_path.write_text(FALL_THROUGH_TO_A_TABLE)
+    pool = BlockPool(W, POOL_BASE)
+    assemble([fj_path], tmp_path / 'fall.fjm', memory_width=W, print_time=False, use_stl=False, table_pool=pool)
+    assert pool.moved == 0 and pool.kept_inline == {'the op before it falls through to it': 1}
+
+
+# no stl, w=16 (a memory of 2048 ops): the code is ~155 ops, and its wflips need ~2100 ops of wflip area
+WFLIP_AREA_OVERFLOW = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+    }
+  }
+}
+def flip_many < x {
+    wflip x+w, 0xfffe
+}
+    ;go
+    ;0
+x:  ;x
+go:
+    rep(150, i) flip_many
+    ;skip
+    pad 1
+    my.__relocatable__.table T
+skip:
+    wflip x+w, T
+end:
+    ;end
+"""
+
+
+def test_a_wflip_area_that_does_not_fit_after_the_pool_says_where_it_is(tmp_path: Path) -> None:
+    fj_path = tmp_path / 'area.fj'
+    fj_path.write_text(WFLIP_AREA_OVERFLOW)
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width') as plain:
+        assemble([fj_path], tmp_path / 'plain.fjm', memory_width=16, print_time=False, use_stl=False)
+    assert 'after the table pool' not in str(plain.value)
+    with pytest.raises(FlipJumpException, match='The wflip areas come after the table pool'):
+        assemble(
+            [fj_path],
+            tmp_path / 'pooled.fjm',
+            memory_width=16,
+            print_time=False,
+            use_stl=False,
+            table_pool=BlockPool(16),
+        )
+
+
+# no stl. A declared table T moves out of its place before `after`, so L (after it) and go / io (before it) are in
+# different pieces. {LINE} is an op that the guard refuses
+REFUSED_OPERAND_PROGRAM = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+    }
+  }
+}
+def nop {
+    ;$
+}
+    ;go
+io: ;0
+go:
+    ;after
+    pad 1
+    my.__relocatable__.table T
+after:
+    wflip x+w, T
+L:
+{LINE}
+x:  ;x
+"""
+REFUSED_OPERANDS = {
+    'a count that has no value without the pool': (
+        '    rep(1 / (5 - L / (2*w)), i) nop',
+        'has no value without the pool and is 1 with it',
+    ),
+    'a sum that names a place which moved otherwise': (
+        '    ;2*go - io',
+        'does not land where the place it names moved to',
+    ),
+    'a moved label mixed with others': (
+        '    ;L - T',
+        "computes from T, a moved table's label, and labels outside that table",
+    ),
+    'a moved label as a number': ('    ;2 * T', "uses T, a moved table's label, as a number"),
+    'an inline label plus a constant that lands in the pool': (
+        '    ;L + (1 << 26)',
+        'lands at 0x4000100, in the table pool, and is not one of its labels plus a constant',
+    ),
+}
+
+
+@pytest.mark.parametrize('case', sorted(REFUSED_OPERANDS))
+def test_an_operand_the_guard_refuses_says_why(tmp_path: Path, case: str) -> None:
+    line, why = REFUSED_OPERANDS[case]
+    fj_path = tmp_path / 'refused.fj'
+    fj_path.write_text(REFUSED_OPERAND_PROGRAM.replace('{LINE}', line))
+    with pytest.raises(FlipJumpException, match=re.escape(why)):
+        assemble(
+            [fj_path],
+            tmp_path / 'p.fjm',
+            memory_width=W,
+            print_time=False,
+            use_stl=False,
+            table_pool=BlockPool(W, POOL_BASE),
+        )
+
+
+# no stl, w=8: 16 ops, the whole memory. The table has no room after the program
+NO_ROOM_AFTER_THE_PROGRAM = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+        ;start
+        ;start
+    }
+  }
+}
+def nop {
+    ;$
+}
+    ;go
+    ;0
+x:  ;x
+go:
+    ;after
+    pad 1
+    my.__relocatable__.table T
+after:
+    wflip x+w, T
+    rep(7, i) nop
+end:
+    ;end
+"""
+
+
+def test_a_pool_after_a_program_that_fills_the_memory_says_to_move_fewer_tables(tmp_path: Path) -> None:
+    fj_path = tmp_path / 'full.fj'
+    fj_path.write_text(NO_ROOM_AFTER_THE_PROGRAM)
+    assemble([fj_path], tmp_path / 'plain.fjm', memory_width=8, print_time=False, use_stl=False)
+    with pytest.raises(FlipJumpPreprocessorException, match=r'move fewer tables \(max_slot_ops\)'):
+        assemble(
+            [fj_path], tmp_path / 'p.fjm', memory_width=8, print_time=False, use_stl=False, table_pool=BlockPool(8)
+        )
+
+
+def test_a_program_that_outgrows_the_memory_is_told_so_with_a_pool_too(tmp_path: Path) -> None:
+    """a pool that has placed no table yet is nowhere: the program has not reached it"""
+    fj_path = tmp_path / 'big.fj'
+    fj_path.write_text('def nop {\n    ;$\n}\n    rep(2049, i) nop\n')
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width'):
+        assemble(
+            [fj_path], tmp_path / 'p.fjm', memory_width=16, print_time=False, use_stl=False, table_pool=BlockPool(16)
+        )
+
+
+def test_a_segment_that_starts_past_the_memory_is_told_so_with_a_pool_too(tmp_path: Path) -> None:
+    fj_path = tmp_path / 'far.fj'
+    fj_path.write_text('    ;0\nsegment 0x10000\n    ;0\n')
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width'):
+        assemble(
+            [fj_path], tmp_path / 'p.fjm', memory_width=16, print_time=False, use_stl=False, table_pool=BlockPool(16)
+        )

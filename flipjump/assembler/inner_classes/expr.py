@@ -12,6 +12,7 @@ from operator import mul, add, sub, floordiv, lshift, rshift, mod, xor, or_, and
 from typing import Union, Tuple, Set, Dict, Callable
 
 from flipjump.utils.exceptions import FlipJumpExprException
+from flipjump.utils.functions import readable_int
 
 # dictionary from a math-op string, to its pythonic function.
 # @note: if changed, update Expr.__str__().
@@ -84,7 +85,7 @@ class Expr:
         returns a minimal Expr: replaces every string it can with its dictionary value, and
         evaluates any op it can.
         Expr objects are immutable, so unchanged (sub)expressions are returned as-is and may
-        be shared between trees - the dominant assemble-time cost used to be cloning them.
+        be shared between trees (no clone is made).
         @param params_dict: the label->ExprValue dictionary to be used
         @raise FlipJumpExprException if math op failed
         @return: this Expr if nothing was substituted, else a new minimal Expr
@@ -164,7 +165,7 @@ class Expr:
         if isinstance(self.value, str):
             return self.value
         if isinstance(self.value, int):
-            return str(self.value)
+            return readable_int(self.value, separators=False)
         raise FlipJumpExprException(f'bad expression: {self.value} (of type {type(self.value)})')
 
     def __repr__(self) -> str:
