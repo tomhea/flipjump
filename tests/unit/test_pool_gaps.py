@@ -68,7 +68,8 @@ GUARD_C35 = (
     r'to another op once a table before it moved out'
 )
 GUARD_C37 = (
-    r'the operand `\(\(end - start\) / 64\)` .* takes the distance across the place of the table '
+    r'the operand `\(\(end - start\) / 64\)`, the count of the rep at file .*c37_rep_count_across_table.fj \(line 7\) '
+    r'\(in the top level\), takes the distance across the place of the table '
     r'f1:l5:hex.xor\(2\)---s16:l12:hex.exact_xor\(5\)---switch'
 )
 GUARD_C38 = (

@@ -202,13 +202,10 @@ class PreprocessorData:
         return self.result_ops, self.labels
 
     def insert_segment(self, next_segment_start: int) -> None:
-        self.labels[f'{wflip_start_label}{self.curr_segment_index}'] = self.curr_address
+        previous_end = self.curr_address
+        self.labels[f'{wflip_start_label}{self.curr_segment_index}'] = previous_end
         self._label_positions.append(None)
         self.curr_segment_index += 1
-        if self.mover is not None:
-            self.mover.segment_ends(next_segment_start)
-        self.aligned(next_segment_start, 0)
-
         self.patch_last_wflip_address()
 
         new_segment = NewSegment(next_segment_start)
@@ -216,6 +213,9 @@ class PreprocessorData:
         self.result_ops.append(new_segment)
 
         self.curr_address = next_segment_start
+        if self.mover is not None:
+            self.mover.segment_started(previous_end)
+        self.aligned(next_segment_start, 0)
 
     def insert_reserve(self, reserved_bits_size: int) -> None:
         self.curr_address += reserved_bits_size
@@ -302,10 +302,11 @@ class PreprocessorData:
             pads = self.mover.guard.pads
             pads[address] = max(pads.get(address, 0), bits)
 
-    def check_evaluated(self, expr: Expr, value: int, is_address: bool = False) -> None:
-        """Check an expression the expansion evaluates (a rep count, a pad, a reserve, a segment) as an operand."""
+    def check_evaluated(self, expr: Expr, value: int, what: str) -> None:
+        """Check a number the expansion evaluated from labels: `what` says what it is and where. A table pool must not
+        change it (OffsetGuard.check_number)."""
         if self.mover is not None and expr.all_unknown_labels():
-            self.mover.guard.check_expr(expr, value, is_address)
+            self.mover.check_number(expr, value, what)
 
 
 def get_rep_times(op: RepCall, preprocessor_data: PreprocessorData) -> int:
@@ -530,7 +531,9 @@ def _expand_pad(
     assert isinstance(pad, Pad)
     pad = pad.eval_new(params_dict)
     ops_alignment = get_pad_ops_alignment(pad, preprocessor_data)
-    preprocessor_data.check_evaluated(pad.ops_alignment, ops_alignment)
+    preprocessor_data.check_evaluated(
+        pad.ops_alignment, ops_alignment, f'the alignment of the pad at {pad.code_position}'
+    )
     mover = preprocessor_data.mover
     table = None
     if mover is not None:
@@ -545,7 +548,8 @@ def _expand_macro_call(
     preprocessor_data: PreprocessorData, op: MacroCall, params_dict: Dict[str, Expr], labels_prefix: str, padded: bool
 ) -> None:
     """Expand a macro call. `padded` says a `pad` right before it found it to be a relocatable table's call."""
-    if preprocessor_data.mover is not None and not padded and is_relocatable(op.macro_name):
+    declared = op.macro_name in preprocessor_data.macros  # (if not, prepare_macro_call says so)
+    if preprocessor_data.mover is not None and declared and not padded and is_relocatable(op.macro_name):
         _refuse_relocatable(
             preprocessor_data, op, 'needs a `pad` right before its call: the pool places it at that alignment'
         )
@@ -572,7 +576,7 @@ def _expand_rep(
     op = op.eval_new(params_dict)
     times = op.repeat_times  # (get_rep_times replaces it with its value)
     rep_times = get_rep_times(op, preprocessor_data)
-    preprocessor_data.check_evaluated(times, rep_times)
+    preprocessor_data.check_evaluated(times, rep_times, f'the count of the rep at {op.code_position}')
     if rep_times == 0:
         return
     next_macro_path = _sub_path(labels_prefix, f"{op.code_position.short_str()}:rep{{}}:{op.macro_name}")
@@ -584,13 +588,17 @@ def _expand_rep(
 
 def _expand_segment(preprocessor_data: PreprocessorData, op: Segment) -> None:
     next_segment_start = get_next_segment_start(op, preprocessor_data)
+    preprocessor_data.check_evaluated(
+        op.start_address, next_segment_start, f'the address of the segment at {op.code_position}'
+    )
     preprocessor_data.insert_segment(next_segment_start)
-    preprocessor_data.check_evaluated(op.start_address, next_segment_start, True)
 
 
 def _expand_reserve(preprocessor_data: PreprocessorData, op: Reserve) -> None:
     reserved_bits_size = get_reserved_bits_size(op, preprocessor_data)
-    preprocessor_data.check_evaluated(op.reserved_bit_size, reserved_bits_size)
+    preprocessor_data.check_evaluated(
+        op.reserved_bit_size, reserved_bits_size, f'the size of the reserve at {op.code_position}'
+    )
     preprocessor_data.insert_reserve(reserved_bits_size)
 
 

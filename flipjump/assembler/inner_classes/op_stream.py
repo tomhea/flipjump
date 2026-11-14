@@ -100,7 +100,8 @@ LinearPart = Tuple[Dict[str, int], int]
 def linear_parts(expr: Expr) -> List[LinearPart]:
     """Return every maximal linear sum in `expr` (+, - and * by a number) that names a label.
     A linear `expr` like `b - a` is one part; otherwise its linear sub-sums are the parts, like `L + 15*dw` in
-    `(L + 15*dw) | 0`. A label whose coefficients cancel (`a - a`) is left out.
+    `(L + 15*dw) | 0`. A label whose coefficients cancel (`a - a`) is left out. `c ? a : b` whose condition is a number
+    is `a` or `b`: the other is never evaluated.
     Returns: `[({label: coefficient}, constant), ...]`"""
     parts: List[LinearPart] = []
 
@@ -115,6 +116,8 @@ def linear_parts(expr: Expr) -> List[LinearPart]:
         if value.__class__ is str:
             return {value: 1}, 0
         op, args = value
+        if op == '?:' and args[0].value.__class__ is int:
+            return linear(args[1] if args[0].value else args[2])
         if len(args) == 2 and op in ('+', '-', '*'):
             left, right = linear(args[0]), linear(args[1])
             if left is not None and right is not None:

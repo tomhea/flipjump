@@ -200,7 +200,7 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
 
 def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the table pool's OffsetGuard refuses no operand (its checks run, and let every one pass)"""
-    monkeypatch.setattr(OffsetGuard, 'refuse', lambda self, operand, why: None)
+    monkeypatch.setattr(OffsetGuard, 'refuse', lambda self, operand, why, where=None: None)
 
 
 def every_table_moves(monkeypatch: pytest.MonkeyPatch) -> None:

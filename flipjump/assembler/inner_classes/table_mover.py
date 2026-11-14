@@ -74,6 +74,7 @@ class TableMover:
         self.code_end = 0  # the highest end of the code of the segments closed so far
         # id(macro) -> (its ops that name `$` (_dollar_ops), does it name POINTER_RUNTIME_LABELS)
         self._macro_facts: Dict[int, Tuple[Dict[int, bool], bool]] = {}
+        self._evaluating = ''  # while a number the expansion evaluates is checked: what it is, and where
 
     # ---- what a refusal needs to know ----
 
@@ -81,6 +82,8 @@ class TableMover:
         """Return where the op being expanded is, for the guard's refusals."""
         data = self.data
         path = ' > '.join(call.trace_str() for call in data.curr_tree) or 'the top level'
+        if self._evaluating:
+            return f', {self._evaluating} (in {path}),'
         if self.resume is not None:
             return f' of an op of a moved table (in {path})'
         return f' of the op at {hex(data.curr_address - 2 * data.memory_width)} (in {path})'
@@ -121,24 +124,35 @@ class TableMover:
         else:
             self.guard.falls_to = data.curr_address
 
+    def check_number(self, expr: Expr, value: int, what: str) -> None:
+        """Check a number the expansion evaluated from labels: `what` says what it is and where (`the count of the rep
+        at ...`). A table pool must not change it (OffsetGuard.check_number)."""
+        self._evaluating = what
+        try:
+            self.guard.check_number(expr, value)
+        finally:
+            self._evaluating = ''
+
     def padding(self, ops_alignment: int, ops_to_pad: int) -> None:
         """Note a `pad` at the current address that pads `ops_to_pad` ops. Without the pool it would start `shift`
         ops later, and may pad another number of ops: the guard then lets no operand reach across it."""
         data = self.data
-        plain_pad = (-(data.curr_address // (2 * data.memory_width) + self.shift)) % ops_alignment
+        op_bits = 2 * data.memory_width
+        plain_pad = (-(data.curr_address // op_bits + self.shift)) % ops_alignment
         if plain_pad != ops_to_pad:
-            self.guard.pad_realigned(data.curr_address, ops_alignment)
             self.shift += plain_pad - ops_to_pad
+            pad_end = data.curr_address + ops_to_pad * op_bits
+            self.guard.pad_realigned(data.curr_address, ops_alignment, self.shift * op_bits, pad_end)
 
-    def segment_ends(self, next_segment_start: int) -> None:
-        """Note that the current segment ends here, and the next starts at `next_segment_start`: the same address with
-        or without the pool."""
-        data = self.data
-        self.refuse_reaching_the_pool(data.curr_address)
-        self.refuse_reaching_the_pool(next_segment_start + 1)
-        self.code_end = max(self.code_end, data.curr_address)
+    def segment_started(self, previous_end: int) -> None:
+        """Note that the segment that was being emitted ended at `previous_end`, and a new one starts at the current
+        address: the same address with or without the pool."""
+        start = self.data.curr_address
+        self.refuse_reaching_the_pool(previous_end)
+        self.refuse_reaching_the_pool(start + 1)
+        self.code_end = max(self.code_end, previous_end)
         self.shift = 0
-        self.guard.segment_started(next_segment_start)
+        self.guard.segment_started(start, previous_end)
 
     # ---- taking a table out of the stream ----
 
@@ -182,12 +196,14 @@ class TableMover:
         """Start emitting the table just queued into table_ops, after its NewSegment, with addresses counted from
         0."""
         data = self.data
+        op_bits = 2 * data.memory_width
         segment = self.tables.segments[-1]
         assert segment is not None
-        self.guard.table_moved(data.curr_address, table)
-        # where the same program without the pool would be
-        plain = data.curr_address // (2 * data.memory_width) + self.shift
-        self.shift += (-plain) % ops_alignment + table_ops
+        # where the same program without the pool would be now, in ops, and where its `pad` would put the table
+        plain = data.curr_address // op_bits + self.shift
+        plain_start = plain + (-plain) % ops_alignment
+        self.shift = plain_start + table_ops - data.curr_address // op_bits
+        self.guard.table_moved(data.curr_address, table, self.shift * op_bits, plain_start * op_bits)
         self.table_starts.append((len(self.table_ops), len(self.table_ops.vals)))
         self.table_ops.append(segment)
         self.resume = data.curr_address, data.emit_target
