@@ -22,7 +22,7 @@ from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import MacroName, NewSegment
 from flipjump.assembler.preprocessor import PreprocessorData, is_relocatable, resolve_macros
-from flipjump.assembler.inner_classes.table_pool import RESERVED_BELOW, BlockPool, DeferredTables, HotSite, heat_key
+from flipjump.assembler.inner_classes.table_pool import BlockPool, DeferredTables, HotSite, heat_key, reserved_below
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
@@ -328,38 +328,42 @@ def test_a_declared_table_that_breaks_a_rule_is_refused_with_a_pool_on(tmp_path:
 
 
 def test_resolve_pinned_resolves_each_word_once_labels_are_known() -> None:
-    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, Expr('y'): 0x2000}, {'x': 4096, 'y': 8192})
+    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, Expr('y'): 0x2000}, {'x': 4096, 'y': 8192}, 32)
     assert pinned == {4128: 0x1000, 8192: 0x2000} and conflicts == 0
 
 
 def test_resolve_pinned_drops_both_pins_of_an_aliased_word() -> None:
     # `(x + 32)` and `(x + w)` are different expressions naming one word; either base is wrong
     # for the other block, so the word is left un-pinned (the full address is then written)
-    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, sum_expr('x', 'w'): 0x2000}, {'x': 4096, 'w': 32})
+    words = {sum_expr('x', 32): 0x1000, sum_expr('x', 'w'): 0x2000}
+    pinned, conflicts = resolve_pinned(words, {'x': 4096, 'w': 32}, 32)
     assert pinned == {} and conflicts == 1
 
 
 def test_resolve_pinned_keeps_an_alias_with_one_base() -> None:
-    pinned, conflicts = resolve_pinned({sum_expr('x', 32): 0x1000, sum_expr('x', 'w'): 0x1000}, {'x': 4096, 'w': 32})
+    words = {sum_expr('x', 32): 0x1000, sum_expr('x', 'w'): 0x1000}
+    pinned, conflicts = resolve_pinned(words, {'x': 4096, 'w': 32}, 32)
     assert pinned == {4128: 0x1000} and conflicts == 0
 
 
 def test_resolve_pinned_skips_the_runtime_words_and_unresolvable_ones() -> None:
-    pinned, _ = resolve_pinned({Expr(64): 0x1000, Expr('missing'): 0x2000, Expr('z'): 0x3000}, {'z': 1 << 20})
+    pinned, _ = resolve_pinned({Expr(64): 0x1000, Expr('missing'): 0x2000, Expr('z'): 0x3000}, {'z': 1 << 20}, 32)
     assert pinned == {1 << 20: 0x3000}
 
 
-@pytest.mark.parametrize('memory_width', [8, 16, 32, 64])
+@pytest.mark.parametrize('memory_width', [8, 16, 32, 64, 128, 1024])
 def test_the_runtimes_words_are_reserved_at_every_width(memory_width: int) -> None:
     # G3: stl.IO is op 1, bits [2w, 4w) - the output flips at 2w and 2w+1, the input bit at 3w+#w (fjm_run's
-    # _handle_output and _handle_input) - and RESERVED_BELOW covers it at every width
+    # _handle_output and _handle_input) - and reserved_below covers exactly the first op and it, at every width
     w = memory_width
     assert 2 * w <= 2 * w + 1 < 4 * w and 2 * w <= 3 * w + w.bit_length() < 4 * w
-    assert 4 * w <= RESERVED_BELOW
+    assert reserved_below(w) == 4 * w
+    words = {Expr(3 * w): 0x1000, Expr(5 * w): 0x2000}  # the IO op's jump word, and the next op's
+    assert resolve_pinned(words, {}, w) == ({5 * w: 0x2000}, 0)
 
 
 def test_resolve_pinned_leaves_a_raw_word_unpinned() -> None:
-    pinned, _ = resolve_pinned({Expr('a'): 1, Expr('b'): 2}, {'a': 4096, 'b': 8192}, unpinned_words={8192})
+    pinned, _ = resolve_pinned({Expr('a'): 1, Expr('b'): 2}, {'a': 4096, 'b': 8192}, 32, unpinned_words={8192})
     assert pinned == {4096: 1}
 
 

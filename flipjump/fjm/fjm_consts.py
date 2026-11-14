@@ -12,7 +12,7 @@ from typing import List, Dict, Optional, Union
 """
 struct {
     u16 fj_magic;   // 'F' + 'J'<<8  (0x4a46)
-    u16 word_size;  // number of bits in the memory / a memory-word. also called "w".
+    u16 word_size;  // number of bits in the memory / a memory-word. also called "w". a power of two, 8 or more.
     u64 version;
     u64 segment_num;
     { // for versions > 0
@@ -29,7 +29,7 @@ struct {
         u64 data_start;     // in the outer-struct.data words (w-bits)
         u64 data_length;    // in the outer-struct.data words (w-bits)
     } *segments;        // segments[segment_num] (lzma2-compressed in version 4)
-    u8* data;       // the data (might be compressed in some versions)
+    u8* data;       // the data: little-endian words of word_size/8 bytes (might be compressed in some versions)
 } fjm_file;     // FlipJump Memory file
 """
 
@@ -101,7 +101,19 @@ SUPPORTED_VERSIONS_NAMES = {
     FJMVersion.CompressedSegmentsVersion: 'CompressedSegments',
 }
 
-SUPPORTED_MEMORY_WIDTHS: frozenset[int] = frozenset({8, 16, 32, 64})
+# A memory width is a power of two (a bit address splits into a word address and a bit offset by a shift and a
+# mask), at least a byte, and fits the header's u16 word_size.
+MIN_MEMORY_WIDTH = 8
+MAX_MEMORY_WIDTH = 1 << 15
+SUPPORTED_MEMORY_WIDTHS_TEXT = f'a power of two from {MIN_MEMORY_WIDTH} to {MAX_MEMORY_WIDTH}'
+# the widths whose words fit a typed array (and the native engine); wider words are python ints
+ARRAY_TYPECODE_BY_WIDTH: Dict[int, str] = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
+# a segment's start and length are u64 fields, in words
+MAX_SEGMENT_END_WORDS = 1 << 64
+
+
+def is_supported_memory_width(memory_width: int) -> bool:
+    return MIN_MEMORY_WIDTH <= memory_width <= MAX_MEMORY_WIDTH and memory_width & (memory_width - 1) == 0
 
 
 _LZMA_FORMAT = lzma.FORMAT_RAW
@@ -114,8 +126,12 @@ _LZMA_MAX_DICT_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [
 ]
 
 
+_LZMA_MAX_NICE_LEN = 273  # the longest match length LZMA takes
+
+
 def _lzma_compression_filters(dw: int, preset: int) -> List[Dict[str, int]]:
-    return [{"id": lzma.FILTER_LZMA2, "preset": preset, "nice_len": dw}]
+    """The compression filters: `nice_len` is an op's length in bits (as far as LZMA allows), which packs ops well."""
+    return [{"id": lzma.FILTER_LZMA2, "preset": preset, "nice_len": min(dw, _LZMA_MAX_NICE_LEN)}]
 
 
 def _new_garbage_val() -> int:

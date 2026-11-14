@@ -272,7 +272,7 @@ def prove_relocation(
 
     # the pins the assembler keeps: the subject, judged below with none of its rules
     pinned, _ = resolve_pinned(
-        table_pool.pinned_words(), pooled_labels, unpinned_words=table_pool.unpinned_words(pooled_labels)
+        table_pool.pinned_words(), pooled_labels, memory_width, table_pool.unpinned_words(pooled_labels)
     )
     raw = table_pool.reads_words_raw and table_pool.pin_all_but is None
     if pinned:

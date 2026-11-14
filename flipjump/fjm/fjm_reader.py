@@ -8,12 +8,14 @@ import dataclasses
 import lzma
 import os
 import struct
+import sys
+from array import array
 from collections import defaultdict
 from enum import IntEnum
 from pathlib import Path
 from struct import unpack
 from time import sleep
-from typing import BinaryIO, Callable, Iterable, List, Tuple, Dict, Optional, Union
+from typing import BinaryIO, Callable, Iterable, List, Sequence, Tuple, Dict, Optional, Union
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -27,7 +29,9 @@ from flipjump.fjm.fjm_consts import (
     _segments_size_format,
     _segments_size_size,
     SUPPORTED_VERSIONS_NAMES,
-    SUPPORTED_MEMORY_WIDTHS,
+    SUPPORTED_MEMORY_WIDTHS_TEXT,
+    ARRAY_TYPECODE_BY_WIDTH,
+    is_supported_memory_width,
     _LZMA_FORMAT,
     _LZMA_DECOMPRESSION_FILTERS,
     _LZMA_MAX_DICT_DECOMPRESSION_FILTERS,
@@ -138,10 +142,10 @@ class Reader:
             raise FlipJumpReadFjmException(
                 f'Error: unsupported version ({self.version}, this program supports {str(SUPPORTED_VERSIONS_NAMES)}).'
             )
-        if self.memory_width not in SUPPORTED_MEMORY_WIDTHS:
+        if not is_supported_memory_width(self.memory_width):
             raise FlipJumpReadFjmException(
                 f'Error: unsupported memory width ({self.memory_width},'
-                f' this program supports {sorted(SUPPORTED_MEMORY_WIDTHS)}).'
+                f' this program supports {SUPPORTED_MEMORY_WIDTHS_TEXT}).'
             )
         if self.reserved != 0:
             raise FlipJumpReadFjmException(f'Error: bad reserved value ({self.reserved}, should be 0).')
@@ -153,25 +157,17 @@ class Reader:
     def _decompress_data(compressed_data: bytes) -> bytes:
         return bytes(_decompress_in_chunks(compressed_data, None))
 
-    def _read_decompressed_data(self, fjm_file: BinaryIO) -> List[int]:
+    def _read_decompressed_data(self, fjm_file: BinaryIO) -> Sequence[int]:
         """
         @param fjm_file: [in]: read from this file the data words.
-        @return: list of the data words (decompressed if it was compressed).
+        @return: the data words (decompressed if it was compressed).
         """
-        read_tag = '<' + {8: 'B', 16: 'H', 32: 'L', 64: 'Q'}[self.memory_width]
-        word_bytes_size = self.memory_width // 8
-
         file_data = fjm_file.read()
         if self.version in (FJMVersion.CompressedVersion, FJMVersion.CompressedSegmentsVersion):
             file_data = self._decompress_data(file_data)
+        return _unpack_words_little_endian(file_data, self.memory_width)
 
-        data = [
-            unpack(read_tag, file_data[i : i + word_bytes_size])[0]  # noqa: E203
-            for i in range(0, len(file_data), word_bytes_size)
-        ]
-        return data
-
-    def _init_memory(self, segments: List[Tuple[int, int, int, int]], data: List[int]) -> None:
+    def _init_memory(self, segments: List[Tuple[int, int, int, int]], data: Sequence[int]) -> None:
         validate_segments(segments, len(data))
         self.memory = {}
         self.zeros_boundaries = []
@@ -294,6 +290,22 @@ class Reader:
         Raise FlipJumpReadFjmException if no segment covers the first op.
         """
         _assert_first_op((seg.segment_start, seg.segment_length) for seg in self.memory_segments)
+
+
+def _unpack_words_little_endian(data: bytes, memory_width: int) -> Sequence[int]:
+    """Return the little-endian `memory_width`-bit words of `data`: a typed array where one fits the width, else a list
+    of ints."""
+    word_bytes = memory_width // 8
+    if len(data) % word_bytes != 0:
+        raise struct.error(f'the data is {len(data)} bytes, not a whole number of {memory_width}-bit words')
+    typecode = ARRAY_TYPECODE_BY_WIDTH.get(memory_width)
+    if typecode is None:
+        return [int.from_bytes(data[at : at + word_bytes], 'little') for at in range(0, len(data), word_bytes)]  # noqa
+    words = array(typecode)
+    words.frombytes(data)
+    if sys.byteorder != 'little':
+        words.byteswap()
+    return words
 
 
 def _assert_first_op(starts_and_lengths: Iterable[Tuple[int, int]]) -> None:

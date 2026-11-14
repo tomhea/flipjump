@@ -219,7 +219,13 @@ def run(
     header.assert_runnable()  # a program must hold its first op at address 0 (both engines)
     statistics = RunStatistics(header.memory_width, last_ops_debugging_list_length)
     # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
-    native = not use_featured_loop and is_native_engine_active()
+    native = not use_featured_loop and is_native_engine_active() and header.memory_width <= NATIVE_MAX_MEMORY_WIDTH
+    if flat_required and not native and header.memory_width > NATIVE_MAX_MEMORY_WIDTH:
+        raise FlipJumpFlatMemoryException(
+            f'flat memory is the native engine\'s, which runs memory widths up to {NATIVE_MAX_MEMORY_WIDTH}; '
+            f'this program is w={header.memory_width}',
+            header.span_words,
+        )
     try:
         with ProgressBar('  loading memory:  ', show_progress=show_progress) as progress:
             if native:
@@ -261,6 +267,10 @@ def _end_of_run(io_device: IODevice, termination: TerminationStatistics) -> Term
     if termination.termination_cause in _ENDED_BY_ITSELF:
         io_device.end_of_run()
     return termination
+
+
+# the native engine holds a word in a C uint64; a wider program runs on the python loops
+NATIVE_MAX_MEMORY_WIDTH = 64
 
 
 def is_native_engine_active() -> bool:
@@ -346,7 +356,7 @@ def _run_native(
     last_ops = statistics.last_ops_addresses
     statistics.detailed_statistics = False
     try:
-        cause, op_count, error_bit_address, native_last_ops, paused_seconds = core.run(
+        cause, op_count, error_bit_address, native_last_ops, _ = core.run(
             io_device.read_bit,
             io_device.write_bit,
             IOReadOnEOF,

@@ -49,7 +49,7 @@ from flipjump.assembler.inner_classes.table_pool import (
     DeferredTables,
     OffsetGuard,
     POINTER_RUNTIME_LABELS,
-    RESERVED_BELOW,
+    reserved_below,
     heat_key,
     reached_the_pool,
 )
@@ -301,9 +301,9 @@ class PreprocessorData:
 
     def _is_runtime_word(self, word: Expr) -> bool:
         """Is `word` one of the runtime's words? Those are declared before the code, so they resolve already (see
-        RESERVED_BELOW)."""
+        reserved_below)."""
         try:
-            return word.exact_eval(self.labels) < RESERVED_BELOW
+            return word.exact_eval(self.labels) < reserved_below(self.memory_width)
         except FlipJumpExprException:
             return False
 

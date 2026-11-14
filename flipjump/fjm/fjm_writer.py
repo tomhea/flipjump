@@ -11,7 +11,7 @@ import lzma
 import sys
 from pathlib import Path
 from struct import pack
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Iterable, List, MutableSequence, Optional, Sequence, Tuple, Union
 
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
@@ -21,7 +21,10 @@ from flipjump.fjm.fjm_consts import (
     _segments_size_format,
     IO_MODE_NUMBERS,
     SUPPORTED_VERSIONS_NAMES,
-    SUPPORTED_MEMORY_WIDTHS,
+    SUPPORTED_MEMORY_WIDTHS_TEXT,
+    ARRAY_TYPECODE_BY_WIDTH,
+    MAX_SEGMENT_END_WORDS,
+    is_supported_memory_width,
     _LZMA_FORMAT,
     _lzma_compression_filters,
     FJMVersion,
@@ -34,18 +37,28 @@ from flipjump.utils.exceptions import FlipJumpWriteFjmException
 # compressing it in one call (test_run_flags.py::test_chunked_compression_equals_one_shot).
 _COMPRESS_CHUNK = 1 << 20
 
-# the word array's typecode per memory-width (1, 2, 4 and 8 bytes on every supported platform)
-_ARRAY_TYPECODE = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
+WordBuffer = MutableSequence[int]
 
 
-def new_word_buffer(word_size: int) -> 'array.array[int]':
-    """Return an empty array of `word_size`-bit words. Fill it with extend(): `+=` takes only another array."""
-    return array.array(_ARRAY_TYPECODE[word_size])
+def new_word_buffer(word_size: int) -> WordBuffer:
+    """Return an empty buffer of `word_size`-bit words: a typed array where one fits the width (8, 16, 32, 64), else a
+    list of ints. Fill it with extend(): `+=` on an array takes only another array."""
+    typecode = ARRAY_TYPECODE_BY_WIDTH.get(word_size)
+    return [] if typecode is None else array.array(typecode)
 
 
-def _pack_words_little_endian(words: 'array.array[int]', word_size: int) -> 'bytes | memoryview':
-    """Return `words` as the bytes of little-endian `word_size`-bit words. On a little-endian machine this is a view of
-    the array's own bytes, not a copy."""
+def _same_buffer_type(data: Iterable[int], buffer: WordBuffer) -> bool:
+    if isinstance(buffer, array.array):
+        return isinstance(data, array.array) and data.typecode == buffer.typecode
+    return type(data) is list
+
+
+def _pack_words_little_endian(words: WordBuffer, word_size: int) -> 'bytes | memoryview':
+    """Return `words` as the bytes of little-endian `word_size`-bit words. For a typed array on a little-endian machine
+    this is a view of the array's own bytes, not a copy."""
+    if not isinstance(words, array.array):
+        word_bytes = word_size // 8
+        return b''.join(word.to_bytes(word_bytes, 'little') for word in words)
     if sys.byteorder != 'little':
         words = words[:]
         words.byteswap()
@@ -82,8 +95,8 @@ class Writer:
         (fjm_consts.IO_MODE_*); `fj --io` overrides it
         @param lzma_preset: the preset to be used when compressing the .fjm data
         """
-        if memory_width not in SUPPORTED_MEMORY_WIDTHS:
-            raise FlipJumpWriteFjmException(f"Word size {memory_width} is not in {sorted(SUPPORTED_MEMORY_WIDTHS)}.")
+        if not is_supported_memory_width(memory_width):
+            raise FlipJumpWriteFjmException(f"Word size {memory_width} is not {SUPPORTED_MEMORY_WIDTHS_TEXT}.")
         if version not in SUPPORTED_VERSIONS_NAMES:
             raise FlipJumpWriteFjmException(
                 f'Error: unsupported version ({version}, this program supports {str(SUPPORTED_VERSIONS_NAMES)}).'
@@ -272,6 +285,12 @@ class Writer:
                 f"segment-length must be at-least data-length " f"(in {segment_addresses_str})."
             )
 
+        if segment_start + segment_length > MAX_SEGMENT_END_WORDS:
+            raise FlipJumpWriteFjmException(
+                f"the .fjm format holds segments below word 2^64 (bit {hex(MAX_SEGMENT_END_WORDS * self.word_size)} "
+                f"at w={self.word_size}), and this one ends above it (in {segment_addresses_str})."
+            )
+
         if segment_start % 2 == 1 or segment_length % 2 == 1:
             raise FlipJumpWriteFjmException(
                 f"segment-start and segment-length must be 2*w (2 * memory-width) aligned "
@@ -299,13 +318,13 @@ class Writer:
         append the data to the current data
         @param data: [in]: the words
         @param take: the caller gives `data` away and won't use it again. If no data was added yet and `data` is a word
-        array of this writer's type, the writer keeps it instead of copying it. This saves copying the program's main
-        stream, which is added first and is most of the binary.
+        buffer of this writer's kind (new_word_buffer), the writer keeps it instead of copying it. This saves copying
+        the program's main stream, which is added first and is most of the binary.
         @return: the data start index
         """
         data_start = len(self.data)
-        if take and data_start == 0 and isinstance(data, array.array) and data.typecode == self.data.typecode:
-            self.data = data
+        if take and data_start == 0 and _same_buffer_type(data, self.data):
+            self.data = data  # type: ignore[assignment]
             return 0
         # `+=` on an array only accepts another array; extend() takes any iterable of ints.
         self.data.extend(data)

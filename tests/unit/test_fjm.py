@@ -25,7 +25,7 @@ from flipjump.utils.exceptions import (
 )
 
 ALL_VERSIONS = list(FJMVersion)
-ALL_WIDTHS = [8, 16, 32, 64]
+ALL_WIDTHS = [8, 16, 32, 64, 128, 1024]
 
 
 def _write(tmp_path: Path, memory_width: int, version: FJMVersion, segment_start: int, data: List[int]) -> Path:
@@ -197,7 +197,7 @@ def _v1_header(magic: int = FJ_MAGIC, word_size: int = 64, segment_num: int = 0)
     return struct.pack('<HHQQ', magic, word_size, 1, segment_num) + struct.pack('<QL', 0, 0)
 
 
-@pytest.mark.parametrize('bad_width', [0, 3, 7, 12, 24, 33, 128])
+@pytest.mark.parametrize('bad_width', [0, 1, 3, 4, 7, 12, 24, 33, 100, 65535])
 def test_read_unsupported_memory_width_raises(tmp_path: Path, bad_width: int) -> None:
     bad = tmp_path / 'bad_width.fjm'
     bad.write_bytes(_v1_header(word_size=bad_width))

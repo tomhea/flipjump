@@ -29,7 +29,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard, RESERVED_BELOW
+from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard, reserved_below
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -301,11 +301,15 @@ class BinaryData:
 
 
 def resolve_pinned(
-    pinned_exprs: Dict[Expr, int], labels: Dict[str, int], unpinned_words: AbstractSet[int] = frozenset()
+    pinned_exprs: Dict[Expr, int],
+    labels: Dict[str, int],
+    memory_width: int,
+    unpinned_words: AbstractSet[int] = frozenset(),
 ) -> Tuple[Dict[int, int], int]:
     """Resolve the pinned words' expressions to addresses. Skip a word that two groups pin with different bases
     (like `(x + 32)` and `(x + w)`), and a word of `unpinned_words` (the program reads it raw).
     Returns: ({jump-word address: block base}, how many addresses were skipped for having two bases)."""
+    runtime_end = reserved_below(memory_width)
     pinned: Dict[int, int] = {}
     conflicts = set()
     for expr, base in pinned_exprs.items():
@@ -313,7 +317,7 @@ def resolve_pinned(
             address = expr.exact_eval(labels)
         except FlipJumpExprException:
             continue  # an unresolvable word simply is not pinned
-        if address < RESERVED_BELOW:
+        if address < runtime_end:
             continue  # the runtime's word (stl.IO), not the program's
         if address in unpinned_words:
             continue  # the program reads this word raw
@@ -337,7 +341,7 @@ def pins(
     unpinned_words = pool.unpinned_words(labels)
     if pool.pin_all_but_missing:
         pin_all_but_warning(pool.pin_all_but_missing, warning_as_errors)
-    pinned, _ = resolve_pinned(pool.pinned_words(), labels, unpinned_words)
+    pinned, _ = resolve_pinned(pool.pinned_words(), labels, memory_width, unpinned_words)
     if pinned:
         unpin(ops, labels, memory_width, pinned, pool)
     pool.pinned = pinned
@@ -443,7 +447,7 @@ def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: D
         # The word's window: its low bits, below its base's alignment and below its widest armed table. A flip inside
         # the window changes a value or moves within the armed table, the same with or without the pool. Only an arm
         # may flip a bit above it.
-        top = (base & -base).bit_length() - 1 if base else 1 << 30
+        top = (base & -base).bit_length() - 1 if base else w
         if arms[word]:
             top = min(top, max(arms[word]))
         above = ~((1 << top) - 1)

@@ -58,8 +58,12 @@ LabelsDict = Dict[str, int]
 # A cell the program reads or writes raw: its label (the cell runs to the next label), or (label, length in ops).
 UnpinnedCell = Union[str, Tuple[str, int]]
 
-# The runtime's words (like stl.IO) lie below this bit address and are never pinned. 1024 covers any w <= 256.
-RESERVED_BELOW = 1024
+
+def reserved_below(memory_width: int) -> int:
+    """Return the bit address the runtime's words lie below: the first op and the IO op (stl.IO). They are never
+    pinned."""
+    return 4 * memory_width
+
 
 # A BlockPool pool_base that means: start the pool at the first power of two above the program.
 AFTER_PROGRAM = 'after_program'
@@ -119,18 +123,21 @@ DEFER_INLINE = 'inline'  # it stays inline: it has no group
 
 
 class DeferredTables:
-    """The tables the pool queued, in expansion order, kept as compact parallel arrays (a big program has ~10^5).
-    A moved table's labels wait here, as bit offsets from its start, until it is placed."""
+    """The tables the pool queued, in expansion order, kept as compact parallel columns (a big program has ~10^5).
+    A moved table's labels wait here, as bit offsets from its start, until it is placed.
+    None of the columns holds an address, so none depends on the memory width: `aligns` and `sizes` count ops (lists,
+    as a `pad` may be any size; the usual small numbers cost no object), and the label columns hold offsets inside
+    one table and label counts (64-bit arrays)."""
 
     def __init__(self) -> None:
         self.groups: List[str] = []
-        self.aligns = array('I')
-        self.sizes = array('I')
+        self.aligns: List[int] = []
+        self.sizes: List[int] = []
         self.segments: List[Optional[NewSegment]] = []  # None for a table that stayed inline
         self.sites: List[str] = []  # each one's heat key
         self.label_names: List[str] = []
-        self.label_offsets = array('I')
-        self.label_ends = array('I')  # table i's labels are label_names[label_ends[i-1]:label_ends[i]]
+        self.label_offsets = array('Q')
+        self.label_ends = array('Q')  # table i's labels are label_names[label_ends[i-1]:label_ends[i]]
 
     def add(self, group: str, ops_alignment: int, table_ops: int, site: str, segment: Optional[NewSegment]) -> None:
         self.groups.append(sys.intern(group))
@@ -274,7 +281,7 @@ class OffsetGuard:
 
     def table_at(self, address: int) -> Optional[Tuple[int, int, str]]:
         """the placed table that holds `address`, or None"""
-        index = bisect.bisect_right(self.tables, (address, 1 << 64)) - 1
+        index = bisect.bisect_right(self.tables, address, key=_table_start) - 1
         return self.tables[index] if index >= 0 and address < self.tables[index][1] else None
 
     def alignment(self, address: int) -> int:
@@ -395,6 +402,10 @@ class OffsetGuard:
             f'table-placement: the operand `{operand}`{self.where()} {why}. Address a moved table by its own labels, '
             f'or assemble without a table pool.'
         )
+
+
+def _table_start(table: Tuple[int, int, str]) -> int:
+    return table[0]
 
 
 def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
@@ -569,7 +580,7 @@ class BlockPool:
             self.counts, self.width_hist = counts, width_hist
             return self._place_cheapest(tables)
         self.lay_out(counts, width_hist)
-        addresses = array('Q', bytes(8 * len(tables.sizes)))  # 0 means the table stayed inline
+        addresses = [0] * len(tables.sizes)  # 0 means the table stayed inline
         overflow = []  # (slot bits, index) of the tables whose group got no block
         for index, group in enumerate(tables.groups):
             address = self._reserve(tables.aligns[index], tables.sizes[index], group, tables.sites[index])
@@ -641,7 +652,7 @@ class BlockPool:
                 break
         else:
             raise self._no_room()
-        addresses = array('Q', bytes(8 * len(tables.sizes)))
+        addresses = [0] * len(tables.sizes)
         for index, address in placed:
             addresses[index] = address
         self.allocated = len(placed)

@@ -23,6 +23,8 @@ from flipjump.fjm.fjm_consts import (
     IO_MODE_NUMBERS,
     IO_MODE_STANDARD,
     RUN_FLAG_FLAT_MEMORY,
+    SUPPORTED_MEMORY_WIDTHS_TEXT,
+    is_supported_memory_width,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.fjm.fjm_writer import Writer
@@ -396,6 +398,12 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     add the arguments that are usable in assemble time.
     @param parser: the parser
     """
+
+    def _memory_width(value: str) -> int:
+        if not value.isdecimal() or not is_supported_memory_width(int(value)):
+            raise argparse.ArgumentTypeError(f"{value} is not a memory-width ({SUPPORTED_MEMORY_WIDTHS_TEXT})")
+        return int(value)
+
     asm_arguments = parser.add_argument_group('assemble arguments', 'Ignored when using the --run option')
 
     asm_arguments.add_argument('-o', '--outfile', metavar='PATH', help="output assembled file")
@@ -403,11 +411,11 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument(
         '-w',
         '--width',
-        type=int,
+        type=_memory_width,
         default=64,
-        choices=[8, 16, 32, 64],
         metavar='WIDTH',
-        help="specify memory-width. 64 by default",
+        help=f"specify memory-width: {SUPPORTED_MEMORY_WIDTHS_TEXT}. 64 by default; the native engine runs the widths "
+        f"up to 64, and wider programs run on the much slower python engine",
     )
 
     supported_versions = ', '.join(f"{version}: {name}" for version, name in SUPPORTED_VERSIONS_NAMES.items())

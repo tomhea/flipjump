@@ -6,7 +6,6 @@ the parser's bounded sly position records, consume_main, and the fjm Writer taki
 Each representation must be invisible: the same values, the same binary, the same errors.
 """
 
-from array import array
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -21,7 +20,7 @@ from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.inner_classes.ops import INITIAL_MACRO_NAME, CodePosition, FlipJump, NewSegment, WordFlip
 from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.fjm.fjm_consts import FJMVersion
-from flipjump.fjm.fjm_writer import Writer
+from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpPreprocessorException
 from tests.unit.unit_utils import MINIMAL_STARTUP, assemble_to_path, sum_expr
 
@@ -189,11 +188,14 @@ def test_sly_keeps_one_position_not_one_per_reduction(tmp_path: Path, monkeypatc
     assert parsers and len(parsers[0]._line_positions) <= 1 and len(parsers[0]._index_positions) <= 1
 
 
-def test_the_writer_takes_a_word_array_instead_of_copying_it(tmp_path: Path) -> None:
-    writer = Writer(tmp_path / 'a.fjm', 32, FJMVersion.NormalVersion)
-    words = array(writer.data.typecode, [1, 2, 3, 4])
+@pytest.mark.parametrize('memory_width', [32, 64, 128])  # typed arrays, and (at 128) a list of ints
+def test_the_writer_takes_a_word_buffer_instead_of_copying_it(tmp_path: Path, memory_width: int) -> None:
+    writer = Writer(tmp_path / 'a.fjm', memory_width, FJMVersion.NormalVersion)
+    words = new_word_buffer(memory_width)
+    words.extend([1, 2, 3, 4])
     assert writer.add_data(words, take=True) == 0
     assert writer.data is words
-    more = array(writer.data.typecode, [5, 6])
+    more = new_word_buffer(memory_width)
+    more.extend([5, 6])
     assert writer.add_data(more, take=True) == 4  # only the first data can be taken
     assert list(writer.data) == [1, 2, 3, 4, 5, 6] and writer.data is words
