@@ -43,9 +43,7 @@ def test_the_fuzzer_reports_a_table_moved_one_op_below_its_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # the first table that left the stream: its labels one op (w=16) above its ops
-    labels_off_their_ops(
-        monkeypatch, 2 * 16, lambda pool, tables, addresses: next(i for i, a in enumerate(addresses) if a)
-    )
+    labels_off_their_ops(monkeypatch, 1, lambda pool, tables, addresses: next(i for i, a in enumerate(addresses) if a))
     findings = _findings(tmp_path)
     assert CONTROL_FINDING in findings, findings
 

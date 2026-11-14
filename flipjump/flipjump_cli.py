@@ -260,7 +260,7 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        moved, base, pinned = table_pool.deferred, hex(table_pool.pool_base), len(table_pool.pinned)
+        moved, base, pinned = table_pool.moved, hex(table_pool.pool_base), len(table_pool.pinned)
         print(f'  table pool:      {moved} tables moved, from {base}; {pinned} words pinned')
 
 

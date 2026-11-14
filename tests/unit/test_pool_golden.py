@@ -18,6 +18,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.table_pool import BlockPool, HotSite, heat_key
+from tests.unit.unit_utils import merged_census, pool_stats
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.functions import load_debugging_labels
@@ -174,22 +175,25 @@ def _heat(tmp_path: Path) -> Heat:
 def _digests(tmp_path: Path, heat: Heat, pool: Optional[BlockPool] = None, **knobs: Any) -> Dict[str, Any]:
     pool = _pool(heat, **knobs) if pool is None else pool
     fjm, labels = _assemble(tmp_path, 'golden', pool)
-    census = pool.census()
-    census_json = json.dumps([census.counts, census.widths, census.width_hist, census.alias])
+    census = merged_census(pool)
+    counts = {group: sum(widths.values()) for group, widths in census.items()}
+    widest = {group: max(widths) for group, widths in census.items()}
+    census_json = json.dumps([counts, widest, census, pool.alias])
+    stats = pool_stats(pool)
     return {
         'fjm': hashlib.sha256(fjm).hexdigest(),
         'labels': hashlib.sha256(json.dumps(sorted(labels.items())).encode()).hexdigest(),
         'census': hashlib.sha256(census_json.encode()).hexdigest(),
         'stats': {
-            'allocated': pool.allocated,
-            'deferred': pool.deferred,
-            'ungrouped': pool.ungrouped,
-            'declined': pool.declined,
-            'groups': len(pool.groups),
+            'allocated': stats['allocated'],
+            'deferred': stats['deferred'],
+            'ungrouped': stats['ungrouped'],
+            'declined': stats['declined'],
+            'groups': stats['groups'],
             'pinned_words': len(pool.pinned_words()),
-            'broken_groups': len(pool.broken_groups),
+            'broken_groups': stats['broken_groups'],
             'unpins': dict(sorted(pool.unpins.items())),
-            'heat': pool.heat_report(),
+            'heat': stats['heat'],
         },
     }
 
@@ -369,7 +373,7 @@ def test_golden_extra(tmp_path: Path, heat: Heat, config: str) -> None:
     make, golden = EXTRA[config]
     pool = make(heat)
     digests = _digests(tmp_path, heat, pool)
-    digests['stats']['overflowed'] = pool.overflowed
+    digests['stats']['overflowed'] = pool_stats(pool)['overflowed']
     digests['stats']['end'] = pool.end
     print(json.dumps(digests, indent=1))
     assert digests['stats']['allocated'] >= 200

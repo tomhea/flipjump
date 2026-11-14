@@ -74,7 +74,7 @@ def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str
     else:
         assert proof.mismatches == []
         assert len(proof.unchecked) <= UNCHECKED_CEILINGS.get(program[0], 0), proof.unchecked
-    if not pool.allocated:
+    if not pool.moved:
         pytest.skip('the program uses no relocatable table')
 
 

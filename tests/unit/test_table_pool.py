@@ -7,10 +7,11 @@ the property pinned throughout: a blocked program produces the SAME output as th
 is reached only by jump, so its address is free to choose.
 """
 
+import collections
 import re
 import tracemalloc
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 import pytest
 
@@ -22,13 +23,20 @@ from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import MacroName, NewSegment
 from flipjump.assembler.preprocessor import PreprocessorData, is_relocatable, resolve_macros
-from flipjump.assembler.inner_classes.table_pool import BlockPool, DeferredTables, HotSite, heat_key, reserved_below
+from flipjump.assembler.inner_classes.table_pool import (
+    BlockPool,
+    DeferredTables,
+    GroupCensus,
+    HotSite,
+    heat_key,
+    reserved_below,
+)
 from flipjump.fjm.fjm_reader import Reader
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import load_debugging_labels
 from flipjump.utils.functions import get_file_tuples
-from tests.unit.unit_utils import build_and_run, labels_off_their_ops, relocatable, sum_expr
+from tests.unit.unit_utils import build_and_run, labels_off_their_ops, pool_stats, relocatable, sum_expr
 
 W = 32
 OP_BITS = 2 * W
@@ -194,8 +202,21 @@ def _pool_segments(fjm_path: Path, memory_width: int = W) -> List[int]:
 def _laid_out(width_hist: Dict[str, Dict[int, int]], **kwargs: Any) -> BlockPool:
     """a pool with the blocks of this census laid out, as place_deferred lays them out"""
     pool = BlockPool(W, POOL_BASE, **kwargs)
-    pool.lay_out({group: sum(hist.values()) for group, hist in width_hist.items()}, width_hist)
+    for group, hist in width_hist.items():
+        pool.census[group] = GroupCensus(Expr(group), dict(hist))  # the group's word, as the expansion records it
+    pool._lay_out_blocks({group: dict(hist) for group, hist in width_hist.items()})
     return pool
+
+
+def _blocked(pool: BlockPool) -> Set[str]:
+    """the groups that got a block"""
+    return {group for group, block in pool.blocks.items() if block.base is not None}
+
+
+def _base(pool: BlockPool, group: str) -> int:
+    base = pool.blocks[group].base
+    assert base is not None
+    return base
 
 
 def _uniform(counts: Dict[str, int], **kwargs: Any) -> BlockPool:
@@ -204,13 +225,12 @@ def _uniform(counts: Dict[str, int], **kwargs: Any) -> BlockPool:
 
 
 def _reserve(pool: BlockPool, width: int = 16, group: str = 'g', site: str = '') -> Optional[int]:
-    pool.exprs.setdefault(group, Expr(group))  # the group's source word, as the expansion records it
-    return pool._reserve(16, width, group, site)
+    return pool._slot_in_block(group, max(width, 16), site)  # (every table here follows a `pad 16`)
 
 
 def _place(pool: BlockPool, sites: List[str], width: int = 16) -> Dict[str, int]:
     """{site path: slot index} for tables of `width` ops placed in this order, all in group 'g'"""
-    base = pool.groups['g'][0]
+    base = _base(pool, 'g')
     out = {}
     for site in sites:
         address = _reserve(pool, width, site=site)
@@ -372,15 +392,16 @@ def test_unpinned_words_are_every_word_of_each_cell() -> None:
     # program does not define is skipped and listed
     labels = {'a': 4096, 'b': 4096 + 3 * W, 'c': 8192, 'z': 1 << 20}
     pool = BlockPool(W, POOL_BASE, pin_all_but=['a', ('c', 2), 'z', 'missing'])
-    assert pool.unpinned_words(labels) == {
+    words, missing = pool.unpinned_words(labels)
+    assert words == {
         *range(4096, 4096 + 3 * W, W),
         *range(8192, 8192 + 4 * W, W),
         *range(1 << 20, (1 << 20) + 2 * W, W),
     }
-    assert pool.pin_all_but_missing == ['missing']
+    assert missing == ['missing']
     assert (
         BlockPool(W, POOL_BASE).unpinned_words(labels)
-        == set()
+        == (set(), [])
         == BlockPool(W, POOL_BASE, pin_all_but=[]).unpinned_words(labels)
     )
 
@@ -390,24 +411,24 @@ def test_unpinned_words_are_every_word_of_each_cell() -> None:
 
 def test_defer_counts_the_census_and_keeps_a_too_wide_table_inline() -> None:
     pool = BlockPool(W, POOL_BASE)
-    assert [pool._defer(16, width, Expr('g')) for width in (16, 16, 31)] == [table_pool.DEFER_OUT] * 3
-    assert pool._defer(16, 40, Expr('g')) == table_pool.DEFER_TOO_WIDE  # wider than max_slot_ops (32)
-    assert pool._defer(16, 16, None) == table_pool.DEFER_INLINE and pool.ungrouped == 1
-    assert pool.census().counts == {'g': 4} and pool.width_hist == {'g': {16: 2, 31: 1, 40: 1}} and pool.deferred == 3
-    assert pool.census().widths == {'g': 40}
+    word = Expr('g')
+    assert [pool.defer('g', word, 16, width) for width in (16, 16, 31)] == [table_pool.DEFER_OUT] * 3
+    assert pool.defer('g', word, 16, 40) == table_pool.DEFER_TOO_WIDE  # wider than max_slot_ops (32)
+    assert pool.defer(None, None, 16, 16) == table_pool.DEFER_INLINE
+    assert pool.census == {'g': GroupCensus(word, {16: 2, 31: 1, 40: 1})}
 
 
 def test_a_block_hands_out_slots_and_pins_the_word() -> None:
     pool = _uniform({'g': 3})
     assert [_reserve(pool) for _ in range(3)] == [POOL_BASE + i * 16 * OP_BITS for i in range(3)]
-    assert pool.allocated == 3 and pool.declined == 0
+    assert pool.blocks['g'].taken == {16: 3} and not pool.blocks['g'].broken
     assert pool.pinned_words() == {Expr('g'): POOL_BASE} or list(pool.pinned_words().values()) == [POOL_BASE]
 
 
 def test_a_table_too_wide_for_any_slot_declines_and_breaks_the_group() -> None:
     pool = _laid_out({'g': {16: 2, 40: 1}})  # the 40-op table is counted in the widest (32-op) bucket, laid out first
     assert _reserve(pool) == POOL_BASE + 32 * OP_BITS
-    assert _reserve(pool, 40) is None and pool.declined == 1 and pool.broken_groups == {'g'}
+    assert _reserve(pool, 40) is None and pool.blocks['g'].broken
     assert pool.pinned_words() == {}  # a broken group is never pinned...
     pool.pin_incomplete_groups = True
     assert list(pool.pinned_words().values()) == [POOL_BASE]  # ...unless the caller opts in
@@ -417,17 +438,17 @@ def test_where_the_blocks_do_not_fit_the_last_groups_get_none() -> None:
     # big (4 slots) and mid (3 tables, 4 slots) are laid out before small; in 8 slots of span only big keeps its
     # block: mid's 3 tables and small's 1 take 4 slots of the overflow region after it
     slot = 16 * OP_BITS
-    assert set(_uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 9 * slot).groups) == {
+    assert _blocked(_uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 9 * slot)) == {
         'big',
         'mid',
         'small',
     }
     pool = _uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 8 * slot)
-    assert set(pool.groups) == {'big'} and pool._used == 4 * slot
+    assert _blocked(pool) == {'big'} and _base(pool, 'big') == POOL_BASE and pool.blocks['big'].bits == 4 * slot
     assert _reserve(pool, group='mid') is None and _reserve(pool, group='big') == POOL_BASE  # mid: the overflow
     # a hot group always keeps its block (small: 2 slots, with its rank), laid out first: the others give theirs up
     hot = _uniform({'big': 4, 'mid': 3, 'small': 1}, pool_end=POOL_BASE + 9 * slot, heat={'small': [('h', 0, 16)]})
-    assert set(hot.groups) == {'small'}
+    assert _blocked(hot) == {'small'}
 
 
 def test_a_pool_too_small_for_its_tables_is_refused() -> None:
@@ -443,9 +464,9 @@ def test_the_runtime_words_are_never_relocated() -> None:
     data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
     data.labels['stl.IO'] = 64
     assert not data.begin_relocation(16, '', 16, sum_expr('stl.IO', 32), 'T')
-    assert pool.deferred == 0  # it stayed inline
+    assert pool.kept_inline == {table_pool.KEPT_RUNTIME_WORD: 1} and not pool.census  # it stayed inline
     assert data.begin_relocation(16, '', 16, sum_expr('x', 32), 'T')
-    assert pool.deferred == 1
+    assert len(pool.census) == 1 and len(pool.kept_inline) == 1
 
 
 def test_sparse_indices_use_the_cheapest_slots_of_a_spread_block() -> None:
@@ -455,17 +476,17 @@ def test_sparse_indices_use_the_cheapest_slots_of_a_spread_block() -> None:
 
 def test_width_buckets_give_each_width_its_own_sub_block() -> None:
     pool = _laid_out({'g': {16: 3, 64: 1}}, max_slot_ops=512)
-    layout, block_bits = pool._bucket_layout('g')
-    assert layout == {64: (0, 1, 1), 16: (64 * OP_BITS, 4, 3)}
-    assert block_bits == 2 * 64 * OP_BITS
+    block = pool.blocks['g']
+    assert block.sub_blocks == {64: (0, 1), 16: (64 * OP_BITS, 4)}
+    assert block.bits == 2 * 64 * OP_BITS
     assert _reserve(pool, 40) == POOL_BASE
     assert _reserve(pool, 16) == POOL_BASE + 64 * OP_BITS
-    assert _reserve(pool, 600) is None and pool.declined == 1
+    assert _reserve(pool, 600) is None and block.broken
 
 
 def test_blocks_are_laid_out_biggest_first() -> None:
     pool = _uniform({'small': 1, 'big': 8, 'mid': 2})
-    assert [pool.groups[g][0] - POOL_BASE for g in ('big', 'mid', 'small')] == [0, 8 * 16 * OP_BITS, 10 * 16 * OP_BITS]
+    assert [_base(pool, g) - POOL_BASE for g in ('big', 'mid', 'small')] == [0, 8 * 16 * OP_BITS, 10 * 16 * OP_BITS]
 
 
 # --- pin protection: BlockPool(heat=...) ---
@@ -484,7 +505,6 @@ def test_hot_sites_get_the_cheapest_indices_whatever_the_encounter_order() -> No
     placed = _place(hot, sites)
     assert placed['f1:l9:hot'] == 0  # its rank's index: popcount 0
     assert sorted(placed.values()) == [0, 1, 2, 3, 4, 5]  # the others take the next cheapest, once each
-    assert hot.hot_sites_matched == 1
 
 
 def test_hot_sites_rank_within_their_width_bucket() -> None:
@@ -522,15 +542,13 @@ def test_a_listed_site_whose_width_changed_is_placed_as_unlisted() -> None:
     }
     assert got['a'] == POOL_BASE + 64 * OP_BITS  # unlisted in its new width: after `c`'s rank
     assert got['c'] == POOL_BASE
-    assert pool.hot_sites_width_changed == 1 and pool.hot_sites_matched == 1
 
 
 def test_occurrences_count_the_tables_that_decline() -> None:
     # the census saw both tables, so the heat list numbers the 16-op one as occurrence 1
     pool = _laid_out({'g': {40: 1, 16: 1}}, heat={'g': [('site', 1, 16)]})
     assert _reserve(pool, 40, site='f1:l1:site') is None  # too wide
-    assert _reserve(pool, 16, site='f1:l2:site') == POOL_BASE + 32 * OP_BITS  # after the 32-op bucket
-    assert pool.hot_sites_matched == 1
+    assert _reserve(pool, 16, site='f1:l2:site') == POOL_BASE + 32 * OP_BITS  # after the 32-op bucket: its rank's
 
 
 def test_a_listed_site_the_program_lost_pushes_no_table_out() -> None:
@@ -538,7 +556,7 @@ def test_a_listed_site_the_program_lost_pushes_no_table_out() -> None:
     for heat in (None, {'g': [('gone', 0, 16)]}):
         pool = _uniform({'g': 4}, heat=heat)
         assert sorted(_place(pool, sites).values()) == ([0, 1, 2, 3] if heat is None else [1, 2, 3, 4])
-        assert pool.declined == 0 and not pool.broken_groups
+        assert not pool.blocks['g'].broken
 
 
 def test_a_hot_width_grows_only_when_its_ranks_do_not_fit() -> None:
@@ -547,16 +565,16 @@ def test_a_hot_width_grows_only_when_its_ranks_do_not_fit() -> None:
     heat = {'g': [(f's{i}', 0, 16) for i in range(300)]}
     plain = _uniform({'g': 300}, spread_factor=2, spread_min_tables=256)
     hot = _uniform({'g': 300}, spread_factor=2, spread_min_tables=256, heat=heat)
-    assert hot._block_bits('g') == plain._block_bits('g')
+    assert hot.blocks['g'].bits == plain.blocks['g'].bits
     # 4 tables own 4 slots: 3 more ranks do not fit, so the block doubles
     grown = _uniform({'g': 4}, heat={'g': [(s, 0, 16) for s in 'abc']})
-    assert grown._block_bits('g') == 2 * _uniform({'g': 4})._block_bits('g')
+    assert grown.blocks['g'].bits == 2 * _uniform({'g': 4}).blocks['g'].bits
 
 
 def test_hot_groups_are_placed_first_from_the_pool_base() -> None:
-    assert _uniform({'big': 8, 'small': 1}).groups['big'][0] == POOL_BASE  # biggest first
+    assert _base(_uniform({'big': 8, 'small': 1}), 'big') == POOL_BASE  # biggest first
     hot = _uniform({'big': 8, 'small': 1}, heat={'small': [('h', 0, 16)]})
-    assert hot.groups['small'][0] == POOL_BASE and hot.groups['big'][0] > POOL_BASE
+    assert _base(hot, 'small') == POOL_BASE and _base(hot, 'big') > POOL_BASE
 
 
 def test_sites_that_share_a_key_are_told_apart_by_occurrence() -> None:
@@ -570,22 +588,14 @@ def test_a_hot_group_is_pinned_even_when_it_breaks() -> None:
         pool = _laid_out({'g': {16: 2, 40: 1}}, heat=heat)
         _reserve(pool, 16, site='f1:l1:t')
         _reserve(pool, 40, site='f1:l2:t')  # too wide: the group breaks
-        assert pool.broken_groups == {'g'} and bool(pool.pinned_words()) == pinned
+        assert pool.blocks['g'].broken and bool(pool.pinned_words()) == pinned
 
 
 def test_heat_names_are_matched_without_coordinates_and_reported() -> None:
     heat = {'((x + 64) + 32)': [('h', 0, 16)], '(gone + 32)': [('h', 0, 16)], '(twice + 32)': [('h', 0, 16)]}
     pool = _uniform({'((f2:l7:x + 64) + 32)': 1, '(f1:l1:twice + 32)': 1, '(f1:l2:twice + 32)': 1}, heat=heat)
-    assert set(pool.hot_sites) == {'((f2:l7:x + 64) + 32)'}
-    assert pool.hot_missing == ['(gone + 32)'] and pool.hot_ambiguous == ['(twice + 32)']
-    assert pool.heat_report() == {
-        'hot_groups': 1,
-        'hot_groups_missing': 1,
-        'hot_groups_ambiguous': 1,
-        'hot_sites_listed': 1,
-        'hot_sites_matched': 0,
-        'hot_sites_width_changed': 0,
-    }
+    assert {group for group, block in pool.blocks.items() if block.hot is not None} == {'((f2:l7:x + 64) + 32)'}
+    assert pool.heat_unmatched == ['(gone + 32)', '(twice + 32)']  # in none of the program's groups, and in two
 
 
 def test_the_heat_list_may_not_name_a_site_twice() -> None:
@@ -606,13 +616,14 @@ def test_a_heat_ordered_program_is_the_same_program_in_fewer_ops(tmp_path: Path)
     recorder = BlockPool(W, POOL_BASE)
     reference, plain_ops, _ = build_and_run(XOR_PROGRAM, tmp_path, recorder, name='plain')
     # the busiest group's LAST table, which encounter order hands its dearest index
-    group = max(recorder.counts, key=lambda g: (recorder.counts[g], g))
+    counts = collections.Counter(table.group for table in recorder.table_sites)
+    group = max(counts, key=lambda g: (counts[g], g))
     last = [table for table in recorder.table_sites if table.group == group][-1]
     assert last.site.endswith('hex.exact_xor(5)') and last.address  # a real table's path, and where it went
     placing = BlockPool(W, POOL_BASE, heat={group: [HotSite(last.site, last.occurrence, 16)]})
     output, ops, _ = build_and_run(XOR_PROGRAM, tmp_path, placing, name='heat')
     assert output == reference
-    assert placing.hot_sites_matched == 1 and placing.pinned_words()
+    assert pool_stats(placing)['heat']['hot_sites_matched'] == 1 and placing.pinned_words()
     assert ops < plain_ops
 
 
@@ -631,7 +642,7 @@ def test_blocked_tables_leave_the_output_unchanged_and_cost_fewer_ops(
     pool = BlockPool(memory_width, POOL_BASE)
     output, ops, fjm_path = build_and_run(source, tmp_path, pool, memory_width=memory_width)
     assert output == reference
-    assert pool.allocated > 0 and pool.allocated == pool.deferred and pool.pinned_words()
+    assert pool.moved > 0 and pool_stats(pool)['allocated'] == pool.moved and pool.pinned_words()
     assert _pool_segments(fjm_path, memory_width) and ops < reference_ops
 
 
@@ -640,7 +651,7 @@ def test_the_shift_tables_are_tables_a_pool_can_see(tmp_path: Path) -> None:
     pool = BlockPool(W, POOL_BASE)
     output, _, _ = build_and_run(SHIFT_PROGRAM, tmp_path, pool)
     assert output == b'fdb97530eca864207f6e5d4c3b2a1908'
-    assert sum(pool.counts.values()) == pool.allocated == 32  # shl_bit 16 + shr_bit 16, one table per call
+    assert len(pool.table_sites) == pool.moved == 32  # shl_bit 16 + shr_bit 16, one table per call
 
 
 @pytest.mark.parametrize('memory_width', [32, 64])
@@ -649,7 +660,7 @@ def test_an_input_table_is_never_split(tmp_path: Path, memory_width: int) -> Non
     assert reference == b'0x41'
     pool = BlockPool(memory_width, POOL_BASE)
     output, _, _ = build_and_run(INPUT_PROGRAM, tmp_path, pool, fixed_input=b'A', memory_width=memory_width)
-    assert output == reference and pool.deferred > 0
+    assert output == reference and pool.moved > 0
 
 
 def test_a_pinned_word_read_through_a_pointer_needs_the_callers_exclusion(tmp_path: Path) -> None:
@@ -676,11 +687,11 @@ def test_a_pin_all_but_label_the_program_does_not_define_is_an_error_or_a_warnin
         assemble([source], tmp_path / 'e.fjm', memory_width=W, print_time=False, table_pool=_pin_all_but('dd'))
     pool = _pin_all_but('dd')
     assemble([source], tmp_path / 'w.fjm', memory_width=W, print_time=False, table_pool=pool, warning_as_errors=False)
-    assert pool.pin_all_but_missing == ['dd'] and 'Warning: pin_all_but names labels' in capsys.readouterr().out
+    assert 'Warning: pin_all_but names labels the program does not define: dd' in capsys.readouterr().out
     # the control: a label the program defines is no warning
     pool = _pin_all_but('d')
     assemble([source], tmp_path / 'd.fjm', memory_width=W, print_time=False, table_pool=pool)
-    assert pool.pin_all_but_missing == []
+    assert 'Warning' not in capsys.readouterr().out
 
 
 def test_the_pool_holds_the_words_it_pinned(tmp_path: Path) -> None:
@@ -699,7 +710,7 @@ def test_the_pool_holds_the_words_it_pinned(tmp_path: Path) -> None:
             table_pool=pool,
             debugging_file_path=debug,
         )
-        assert pool.deferred > 0
+        assert pool.moved > 0
         pins[name] = (pool.pinned, load_debugging_labels(debug)['d'] + W)
     pinned, d_jump = pins['all_but_d']
     assert pinned and d_jump not in pinned
@@ -715,7 +726,7 @@ def test_an_undeclared_table_stays_inline(tmp_path: Path) -> None:
     reference, _, _ = build_and_run(FALL_THROUGH_PROGRAM, tmp_path, None, name='inline')
     pool = BlockPool(W, POOL_BASE)
     output, _, _ = build_and_run(FALL_THROUGH_PROGRAM, tmp_path, pool)
-    assert output == reference and pool.deferred == 0
+    assert output == reference and pool.moved == 0
 
 
 def test_a_program_that_grows_into_the_pool_is_refused(tmp_path: Path) -> None:
@@ -731,18 +742,23 @@ def test_a_table_too_wide_for_any_slot_stays_inline_and_the_program_runs_the_sam
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
     pool = BlockPool(W, POOL_BASE, max_slot_ops=16, pin_incomplete_groups=pin_incomplete)
     output, _, _ = build_and_run(CMP_PROGRAM, tmp_path, pool)
-    assert output == reference and pool.declined > 0 and pool.broken_groups
+    assert output == reference and pool_stats(pool)['declined'] > 0 and pool_stats(pool)['broken_groups']
     pinned = set(pool.pinned_words())
-    for group, (_, expr) in pool.groups.items():
-        assert (expr in pinned) == (expr is not None and (pin_incomplete or group not in pool.broken_groups))
+    for group, block in pool.blocks.items():
+        assert (pool.census[group].word in pinned) == bool(block.taken and (pin_incomplete or not block.broken))
 
 
 # a span too small for hex.cmp's blocks: the groups at the end of the layout order go to the overflow region
 NO_ROOM_SPAN = 0x30000
 
 
+def _unblocked(pool: BlockPool, group: str) -> bool:
+    """did the pool have no room for the group's block?"""
+    return pool.blocks[pool.alias.get(group, group)].base is None
+
+
 def _overflow_starts(pool: BlockPool, fjm_path: Path) -> List[int]:
-    blocks_end = POOL_BASE + pool._used
+    blocks_end = max(block.base + block.bits for block in pool.blocks.values() if block.base is not None)
     return [s.segment_start * W for s in Reader(fjm_path).memory_segments if s.segment_start * W >= blocks_end]
 
 
@@ -752,13 +768,14 @@ def test_what_gets_no_block_goes_to_the_overflow_region(tmp_path: Path, pin_inco
     pool = BlockPool(W, POOL_BASE, pool_end=POOL_BASE + NO_ROOM_SPAN, pin_incomplete_groups=pin_incomplete)
     output, _, fjm_path = build_and_run(CMP_PROGRAM, tmp_path, pool)
     assert output == reference
-    assert pool.overflowed > 0 and pool.allocated > 0 and pool.deferred == pool.allocated + pool.overflowed
+    stats = pool_stats(pool)
+    assert stats['overflowed'] > 0 and stats['allocated'] > 0
     starts = _overflow_starts(pool, fjm_path)
-    assert len(starts) == pool.overflowed and max(starts) < POOL_BASE + NO_ROOM_SPAN  # after the blocks, in the pool
-    unblocked = [group for group in pool.exprs if pool.alias.get(group, group) not in pool.groups]
     assert (
-        unblocked and pool.pinned_words() and not {pool.exprs[group] for group in unblocked} & set(pool.pinned_words())
-    )
+        len(starts) == stats['overflowed'] and max(starts) < POOL_BASE + NO_ROOM_SPAN
+    )  # after the blocks, in the pool
+    unblocked = {pool.census[group].word for group in pool.census if _unblocked(pool, group)}
+    assert unblocked and pool.pinned_words() and not unblocked & set(pool.pinned_words())
 
 
 def test_an_overflow_table_moved_off_its_labels_is_caught(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -766,10 +783,10 @@ def test_an_overflow_table_moved_off_its_labels_is_caught(tmp_path: Path, monkey
     reference, _, _ = build_and_run(CMP_PROGRAM, tmp_path, None, name='inline')
 
     def first_overflow(pool: BlockPool, tables: DeferredTables, addresses: Sequence[int]) -> int:
-        unblocked = [i for i, group in enumerate(tables.groups) if pool.alias.get(group, group) not in pool.groups]
+        unblocked = [i for i, group in enumerate(tables.groups) if _unblocked(pool, group)]
         return min((addresses[i], i) for i in unblocked if addresses[i])[1]
 
-    labels_off_their_ops(monkeypatch, 16 * OP_BITS, first_overflow)
+    labels_off_their_ops(monkeypatch, 16, first_overflow)
     try:
         output = build_and_run(CMP_PROGRAM, tmp_path, BlockPool(W, POOL_BASE, pool_end=POOL_BASE + NO_ROOM_SPAN))[0]
     except FlipJumpException:
@@ -799,8 +816,7 @@ def test_the_pool_merges_the_groups_of_one_word(tmp_path: Path) -> None:
     pool = BlockPool(W, POOL_BASE)
     output, _, _ = build_and_run(ALIAS_PROGRAM, tmp_path, pool)
     assert output == reference and pool.alias and pool.pinned_words()
-    census = pool.census()
-    assert set(census.counts) == set(pool.groups) and not set(pool.alias) & set(census.counts)
+    assert set(pool.blocks) == set(pool.census) - set(pool.alias)  # a group that shares a block has none of its own
 
 
 def test_the_aliases_a_pool_cannot_resolve_are_counted(tmp_path: Path) -> None:
@@ -808,7 +824,7 @@ def test_the_aliases_a_pool_cannot_resolve_are_counted(tmp_path: Path) -> None:
     pool = BlockPool(W, POOL_BASE)
     output, _, _ = build_and_run(ALIAS_DEFERRED_PROGRAM, tmp_path, pool)
     assert output == reference
-    assert pool.alias_unresolved == 2 and pool.alias == {}  # both words name ext_switch, unplaced then
+    assert pool.alias == {}  # both words name ext_switch, unplaced then: they have no address to share a block by
 
 
 @pytest.mark.parametrize('case', list(EXPANSION_TIME_CASES))
@@ -835,7 +851,7 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
         for i in range(count):
             tables.add(groups[i], 16, 16, sites[i], segments[i])
             for label in range(labels_per_table):
-                tables.add_label(names[i], label * 448)
+                tables.add_label(names[i], label * 7)
         cost = (tracemalloc.get_traced_memory()[0] - before) / count
         tracemalloc.stop()
         assert len(tables.sizes) == count

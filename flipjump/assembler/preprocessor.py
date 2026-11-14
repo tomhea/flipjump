@@ -42,16 +42,18 @@ from flipjump.assembler.inner_classes.ops import (
     get_used_labels,
 )
 from flipjump.assembler.inner_classes.op_stream import OpStream
+from flipjump.assembler.inner_classes.offset_guard import OffsetGuard, reached_the_pool
 from flipjump.assembler.inner_classes.table_pool import (
     BlockPool,
     DEFER_INLINE,
     DEFER_TOO_WIDE,
     DeferredTables,
-    OffsetGuard,
+    KEPT_NO_JUMP_WORD,
+    KEPT_RUNTIME_WORD,
+    KEPT_TOO_WIDE,
     POINTER_RUNTIME_LABELS,
     reserved_below,
     heat_key,
-    reached_the_pool,
 )
 
 CurrTree = Deque[Union[MacroCall, RepCall]]
@@ -235,15 +237,17 @@ class PreprocessorData:
         it is the runtime's, or it is declined)."""
         pool, guard = self.table_pool, self.offset_guard
         assert pool is not None and guard is not None
-        unsafe = guard.may_move(self.curr_address)
-        if unsafe is not None:
-            pool.unsafe_declines[unsafe] = pool.unsafe_declines.get(unsafe, 0) + 1
-            return False  # it stays inline: see OffsetGuard
-        if group_expr is not None and self._is_runtime_word(group_expr):
-            return False
+        kept = guard.may_move(self.curr_address)  # (it stays inline if moving it is unsafe: see OffsetGuard)
         group = None if group_expr is None else str(group_expr)
-        verdict = pool._defer(ops_alignment, table_ops, group_expr)
-        if verdict == DEFER_INLINE:
+        verdict = ''
+        if kept is None and group_expr is not None and self._is_runtime_word(group_expr):
+            kept = KEPT_RUNTIME_WORD
+        if kept is None:
+            verdict = pool.defer(group, group_expr, ops_alignment, table_ops)
+            kept = {DEFER_INLINE: KEPT_NO_JUMP_WORD, DEFER_TOO_WIDE: KEPT_TOO_WIDE}.get(verdict)
+        if kept is not None:
+            pool.kept_inline[kept] = pool.kept_inline.get(kept, 0) + 1
+        if kept is not None and verdict != DEFER_TOO_WIDE:
             return False
         site = sys.intern(heat_key(labels_prefix))
         # (a raw program's table may have no group: BlockPool._place_cheapest)
@@ -321,11 +325,11 @@ class PreprocessorData:
                 continue  # it stayed inline: its labels are in place already
             end = address + tables.sizes[index] * op_bits
             guard.tables.append((address, end, guard.moved_tables[len(moved)]))
-            for label, offset in tables.labels_of(index):
-                self.labels[label] = address + offset
+            for label, offset_ops in tables.labels_of(index):
+                self.labels[label] = address + offset_ops * op_bits
                 self._label_positions.append(self._deferred_label_positions.get(label))
                 if self.save_debug_labels:
-                    self.addresses_with_labels.add(address + offset)
+                    self.addresses_with_labels.add(address + offset_ops * op_bits)
             segment = tables.segments[index]
             assert segment is not None
             segment.start_address, segment.wflip_start_address = address, end  # a table has no wflips
@@ -411,7 +415,7 @@ class PreprocessorData:
         if self._resume is not None:
             # a deferred table's label: an offset now, an address once the table is placed
             self._deferred_label_positions[label] = code_position
-            self._deferred.add_label(label, address)
+            self._deferred.add_label(label, address // (2 * self.memory_width))
             return
         self.labels[label] = address
         self._label_positions.append(code_position)

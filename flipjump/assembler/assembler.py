@@ -29,7 +29,8 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
-from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard, reserved_below
+from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
+from flipjump.assembler.inner_classes.table_pool import BlockPool, reserved_below
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -338,9 +339,9 @@ def pins(
 ) -> Dict[int, int]:
     """Return the words to pin, {jump-word address: block base}: the pool's candidates resolved by `labels`, minus
     pin_all_but's words, words two groups pin with different bases, and pins that can't hold (see unpin)."""
-    unpinned_words = pool.unpinned_words(labels)
-    if pool.pin_all_but_missing:
-        pin_all_but_warning(pool.pin_all_but_missing, warning_as_errors)
+    unpinned_words, missing = pool.unpinned_words(labels)
+    if missing:
+        pin_all_but_warning(missing, warning_as_errors)
     pinned, _ = resolve_pinned(pool.pinned_words(), labels, memory_width, unpinned_words)
     if pinned:
         unpin(ops, labels, memory_width, pinned, pool)

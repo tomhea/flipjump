@@ -18,13 +18,21 @@ from flipjump.assembler import assembler
 from flipjump.assembler.fj_parser import parse_macro_tree
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
-from flipjump.assembler.inner_classes.table_pool import BlockPool, OffsetGuard
+from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
+from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.utils.functions import get_file_tuples, load_debugging_labels
 from flipjump.utils.exceptions import FlipJumpException
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from tests.unit.pool_fuzzer import pools, run
-from tests.unit.unit_utils import PROGRAMS_DIR, build_and_run, every_table_moves, no_refusals, relocatable
+from tests.unit.unit_utils import (
+    PROGRAMS_DIR,
+    build_and_run,
+    every_table_moves,
+    kept_by_the_guard,
+    no_refusals,
+    relocatable,
+)
 
 GAPS = Path(__file__).parent / 'pool_gaps'
 W = 32
@@ -168,8 +176,8 @@ def test_a_crafted_program_runs_the_same_with_the_pool_or_is_refused(
     assemble([source], pooled, memory_width=memory_width, print_time=False, table_pool=table_pool)
     expected = run(plain, 30)
     assert expected[1] != 'TIMEOUT' and run(pooled, 30) == expected  # two timeouts are not the same run
-    assert (table_pool.unsafe_declines, table_pool.unpins) == FALLBACKS.get((name, pool), ({}, {}))
-    assert table_pool.allocated or table_pool.unsafe_declines
+    assert (kept_by_the_guard(table_pool), table_pool.unpins) == FALLBACKS.get((name, pool), ({}, {}))
+    assert table_pool.moved or table_pool.kept_inline
 
 
 @pytest.mark.parametrize('pool', ['cli', 'half'])
@@ -185,7 +193,7 @@ def test_without_the_offset_guard_a_reach_into_a_moved_table_miscompiles(
     pooled = tmp_path / 'pooled.fjm'
     table_pool = _pool(pool, W, source, tmp_path)
     assemble([source], pooled, memory_width=W, print_time=False, table_pool=table_pool)
-    assert table_pool.allocated and run(pooled, 30) != run(plain, 30)
+    assert table_pool.moved and run(pooled, 30) != run(plain, 30)
 
 
 def _differs(source: Path, tmp_path: Path, pool: str) -> bool:
@@ -383,13 +391,13 @@ def test_an_offset_from_outside_into_a_moved_table_is_refused_wherever_it_is_see
     # the control: without the guard's refusal it is a miscompile
     no_refusals(monkeypatch)
     table_pool = _pool('half', W, path, tmp_path)
-    assert build_and_run(source, tmp_path, table_pool, name='unguarded')[0] != b'B' and table_pool.allocated
+    assert build_and_run(source, tmp_path, table_pool, name='unguarded')[0] != b'B' and table_pool.moved
 
 
 def test_a_table_an_earlier_offset_reaches_over_stays_inline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pool = BlockPool(W, 1 << (W - 1))
     assert build_and_run(PENDING, tmp_path, pool, name='pooled')[0] == b'B'
-    assert pool.unsafe_declines == {REACHES: 1} and pool.allocated == 0
+    assert kept_by_the_guard(pool) == {REACHES: 1} and pool.moved == 0
     # the control: moved, the program miscompiles
     every_table_moves(monkeypatch)
     assert build_and_run(PENDING, tmp_path, BlockPool(W, 1 << (W - 1)), name='moved')[0] != b'B'
@@ -460,7 +468,7 @@ def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: P
     pool = BlockPool(64)
     assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=pool)
     pooled = _ops(tmp_path / 'pooled.fjm')
-    assert pool.reads_words_raw and pool.allocated and not pool.groups and pool.pinned_words() == {}
+    assert pool.reads_words_raw and pool.moved and not pool.blocks and pool.pinned_words() == {}
     assert list(pool.unpins) == ['the pointer runtime'] and pooled[0] == plain[0] and pooled[1] < plain[1]
     # the control: in blocks with no word pinned (every cell named raw), the same tables run more ops. (The debugging
     # file's macro-start labels exist only in a build that writes one: here they are missing labels, a warning.)
@@ -474,7 +482,7 @@ def test_a_program_that_reads_words_raw_runs_fewer_ops_with_the_pool(tmp_path: P
         warning_as_errors=False,
     )
     blocked = _ops(tmp_path / 'blocked.fjm')
-    assert blocked_pool.groups and blocked[0] == plain[0] and blocked[1] > pooled[1]
+    assert blocked_pool.blocks and blocked[0] == plain[0] and blocked[1] > pooled[1]
 
 
 # the flat spec: fj --pool-tables's pool (BlockPool(w): AFTER_PROGRAM) sits at the first power of two above the
@@ -517,7 +525,7 @@ def test_the_default_flat_layout_is_compact(tmp_path: Path, memory_width: int) -
     plain, plain_span = _plain(tmp_path, text, memory_width)
     pool, pooled, span = _flat(tmp_path, text, memory_width)
     base = pool.pool_start()
-    assert pool.allocated and pooled == plain and base & (base - 1) == 0 and pool.wflips_at() == pool.end
+    assert pool.moved and pooled == plain and base & (base - 1) == 0 and pool.wflips_at() == pool.end
     assert base < 2 * plain_span * memory_width and span < 2 * plain_span
 
 
@@ -541,7 +549,7 @@ def test_the_cli_pool_gets_only_its_intended_arguments(tmp_path: Path, monkeypat
     (pool,) = _cli_pools(tmp_path, monkeypatch)
     assert pool.after_program and pool.pool_end is None and pool.pin_all_but is None
     assert (pool.max_slot_ops, pool.spread_factor, pool.spread_min_tables) == (32, 1, 256)
-    assert not (pool.pin_incomplete_groups or pool.heat) and pool.counts and not pool.alias
+    assert not (pool.pin_incomplete_groups or pool.heat) and pool.census and not pool.alias
 
 
 def test_the_cli_pool_flags_reach_the_pool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

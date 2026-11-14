@@ -25,7 +25,7 @@ from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, NewSegment, Padding, ReserveBits, WordFlip
 
 if TYPE_CHECKING:
-    from flipjump.assembler.inner_classes.table_pool import OffsetGuard  # for types only: it imports us
+    from flipjump.assembler.inner_classes.offset_guard import OffsetGuard  # for types only: it imports us
 
 # op kinds. Slots per kind:
 FJ = 0  # flip, jump - both literal
