@@ -194,6 +194,19 @@ The interpreter has three engines:
 - **The featured loop** - used for `--trace`/breakpoints, or with `--profile` for the full
   per-op statistics (flips/jumps percentages).
 
+Python code can drive the native engine itself with `flipjump.native`: its `Memory` loads words, runs them,
+and can be reset and run again (the import raises an ImportError where the engine is not built):
+
+```python
+from flipjump import native
+
+memory = native.Memory(64)       # the memory width, up to 64
+memory.add_segment(0, 8)         # the segment's first word, and its length in words
+memory.set_words(0, [256, 0])    # one op: it flips bit 256, and jumps to itself
+cause, op_count, *_ = memory.run(io_device.read_bit, io_device.write_bit, IOReadOnEOF)
+assert cause == native.TERM_LOOPING
+```
+
 Benchmark them yourself with `python tests/benchmarks/benchmark_interpreter.py` (results and the
 w=32-vs-w=64 recommendation are recorded in [tests/benchmarks/benchmark_results.md](tests/benchmarks/benchmark_results.md)).
 </details>
@@ -271,6 +284,7 @@ _You can also use the `flipjump.assemble_run_according_to_cmd_line_args(cmd_line
   - [fjm/](flipjump/fjm) - Tools for reading/writing .fjm (flipjump-memory) files.
   - [interpreter/fjm_run.py](flipjump/interpreter/fjm_run.py) - Interpreter + debugger for assembled fj files.
   - [interpreter/_fjcore.c](flipjump/interpreter/_fjcore.c) - The optional native engine: the run-loop in C (~100x faster than the pure-python loop).
+  - [native.py](flipjump/native.py) - The native engine's public names, for python code that drives it itself.
   - [assembler/](flipjump/assembler) - Components for assembling FlipJump code.
     - [fj_parser.py](flipjump/assembler/fj_parser.py) - Pythonic lex/yacc parser.
     - [preprocessor.py](flipjump/assembler/preprocessor.py) - Unwinds all macros and reps (repetitions).

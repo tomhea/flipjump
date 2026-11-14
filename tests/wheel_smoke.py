@@ -34,9 +34,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import flipjump
-from flipjump import assemble, is_native_engine_active
+from flipjump import assemble, is_native_engine_active, native
 from flipjump.interpreter import fjm_run
-from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.classes import TerminationCause
 
@@ -75,7 +74,7 @@ MIN_FJ_TO_C_RATIO = 0.01
 def measure_cpu_ops_per_sec() -> float:
     """L1 throughput micro-bench (same toolchain + bottleneck as the engine); fixed iterations so
     the checksum is pinnable across arches, while the elapsed time encodes this cpu's speed."""
-    result = _fjcore.cpu_calibrate(CALIB_ITERATIONS)
+    result = native.cpu_calibrate(CALIB_ITERATIONS)
     assert (
         result['checksum'] == GOLDEN_CALIB_CHECKSUM
     ), f"cpu_calibrate checksum 0x{result['checksum']:016X} != golden (calibration miscompiled?)"
