@@ -14,7 +14,7 @@ number, and maps every op of the plain program to the pooled one: a moved op by 
       An address computed on from one label (`(L | 0) + 15*dw`) is compared whole, as the plain address mapped;
       what the other sums compute beyond that (`(L >> 6) & 15` as a value) is listed as unchecked
       (RelocationProof.unchecked);
-    - (BlockPool) the pins the assembler keeps (assembler.unpin) can hold, judged from the plain program and the
+    - (BlockPool) the pins the assembler keeps (pins.unpin) can hold, judged from the plain program and the
       assembled words with none of the assembler's rules or helpers: every pinned word has an op that rests at its
       value xor its base; every wflip of it flips an address it is armed with xor the base, wflip chains included;
       and every other flip of it - a number, a value computed from labels, an `a;b` flip - stays inside its window
@@ -32,7 +32,8 @@ from array import array
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
-from flipjump.assembler.assembler import resolve_into, resolve_pinned, unpin
+from flipjump.assembler.assembler import resolve_into
+from flipjump.assembler.pins import resolve_pinned, unpin
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import FlipJump, Macro, MacroName, NewSegment, Padding, ReserveBits, WordFlip
 from flipjump.assembler.inner_classes.op_stream import OpStream, linear_parts, linear_sum

@@ -195,7 +195,7 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
 
 # the table pool's controls switch its safety rules off through these public seams only, so the pool's insides can
 # change freely: every operand refusal goes through OffsetGuard.refuse, every keep-inline decision through
-# OffsetGuard.may_move, every dropped pin through assembler.unpin
+# OffsetGuard.may_move, every dropped pin through pins.unpin
 
 
 def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:

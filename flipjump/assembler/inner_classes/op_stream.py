@@ -19,7 +19,7 @@ operand keeps its CodePosition, for labels-resolve's error messages.
 from __future__ import annotations
 
 from array import array
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, NewSegment, Padding, ReserveBits, WordFlip
@@ -33,19 +33,27 @@ FJ_POS = 1  # flip, jump (operands, at least one deferred), the ref of the op's 
 WFLIP = 2  # word_address, flip_value, return_address (operands), the ref of the op's CodePosition
 PAD = 3  # ops_count
 OBJ = 4  # ref to a NewSegment / ReserveBits (mutable: NewSegment's wflip address is patched later)
-# flip << 32 | jump, both literal: the common op, in one slot instead of two. Needs flip < 2**31 and jump < 2**32.
+# flip << PACKED_JUMP_BITS | jump, both literal: the common op, in one slot instead of two. It packs by the values'
+# size, not by the memory width: any op whose jump is below 2**32 and whose flip is below 2**31 fits the slot's 63
+# bits (at w=32 that is every op; at any other width, every op of a program under 4 Gbit). Other ops take two slots.
 FJ_PACKED = 5
 
-PACKED_FLIP_MAX = (1 << 31) - 1
-PACKED_JUMP_MAX = (1 << 32) - 1
+PACKED_JUMP_BITS = 32
+PACKED_JUMP_MAX = (1 << PACKED_JUMP_BITS) - 1
 PACKED_JUMP_MASK = PACKED_JUMP_MAX
+PACKED_FLIP_MAX = (1 << (63 - PACKED_JUMP_BITS)) - 1
 
 TAG_LABEL = 0
 TAG_LABEL_PLUS = 1
 TAG_EXPR = 2
 
+# a slot is a signed 64-bit number: a literal is a value below 2**63 (a bigger one is kept as an Expr, at any width)
 LITERAL_MAX = (1 << 63) - 1
 CONST_MIN = -(1 << 63)
+
+# The kinds of a wflip's value (see BinaryData.pinned_value): a number, an address (a label plus a constant), or a
+# value computed from labels.
+VALUE_NUMBER, VALUE_ADDRESS, VALUE_COMPUTED = 0, 1, 2
 
 _ADD_SUB = ('+', '-')
 
@@ -325,7 +333,7 @@ class OpStream:
         flip = vals[-2]
         if flip <= PACKED_FLIP_MAX and jump <= PACKED_JUMP_MAX:
             vals.pop()
-            vals[-1] = flip << 32 | jump
+            vals[-1] = flip << PACKED_JUMP_BITS | jump
             self.kinds.append(FJ_PACKED)
         else:
             self.kinds.append(FJ)
@@ -401,6 +409,59 @@ class OpStream:
             return None
         return self.refs[self.vals[0]]
 
+    def deferred_value(
+        self,
+        encoded: int,
+        next_slot: Callable[[], int],
+        labels: Dict[str, int],
+        guard: Optional[OffsetGuard] = None,
+        is_address: bool = True,
+    ) -> int:
+        """Return the value of a deferred operand (its slot holds ~encoded), now that every label is in `labels`.
+        `next_slot` reads the operand's second slot, if it has one. A table pool's `guard`, if given, checks the
+        operand (see OffsetGuard.check_expr)."""
+        ref = self.refs[encoded >> 2]
+        tag = encoded & 3
+        if tag == TAG_LABEL:
+            value = labels.get(ref)
+            if value is None:
+                return Expr(ref).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
+            if guard is not None and ref in guard.stranded:
+                guard.check(ref, value, 0)
+            return value
+        if tag == TAG_LABEL_PLUS:
+            const = next_slot()
+            value = labels.get(ref)
+            if value is None:
+                return Expr(ref).exact_eval(labels) + const  # raises, as above
+            if guard is not None:
+                guard.check(ref, value, const)
+            return value + const
+        value = ref.exact_eval(labels)
+        if guard is not None:
+            guard.check_expr(ref, value, is_address)
+        return value  # type: ignore[no-any-return]
+
+    def value_kind(self, encoded: int) -> int:
+        """Return the kind (a VALUE_*) of a wflip's deferred value (its slot holds ~encoded)."""
+        if encoded & 3 != TAG_EXPR:
+            return VALUE_ADDRESS
+        value: Expr = self.refs[encoded >> 2]
+        if not value.all_unknown_labels():
+            return VALUE_NUMBER
+        linear = linear_sum(value)
+        return VALUE_ADDRESS if linear is not None and linear[0] is not None else VALUE_COMPUTED
+
+    def label_address(self, encoded: int, labels: Dict[str, int]) -> int:
+        """Return the address of the label that a VALUE_ADDRESS operand (its slot holds ~encoded) names."""
+        ref = self.refs[encoded >> 2]
+        if encoded & 3 != TAG_EXPR:
+            return labels[ref]
+        linear = linear_sum(ref)
+        label = None if linear is None else linear[0]
+        assert label is not None  # a VALUE_ADDRESS expression is one label plus a constant
+        return labels[label]
+
     def rebuild_operand(self, slots: Iterator[int]) -> Expr:
         """Read the next operand's slots from `slots` and return its Expr (for messages and iteration)."""
         slot = next(slots)
@@ -423,7 +484,8 @@ class OpStream:
         for index, kind in enumerate(self.kinds):
             if kind == FJ_PACKED:
                 packed = next(slots)
-                op: Any = FlipJump(Expr(packed >> 32), Expr(packed & PACKED_JUMP_MASK), None)  # type: ignore[arg-type]
+                flip, jump = Expr(packed >> PACKED_JUMP_BITS), Expr(packed & PACKED_JUMP_MASK)
+                op: Any = FlipJump(flip, jump, None)  # type: ignore[arg-type]
             elif kind == FJ:
                 op = FlipJump(Expr(next(slots)), Expr(next(slots)), None)  # type: ignore[arg-type]
             elif kind == FJ_POS:

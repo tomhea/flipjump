@@ -14,7 +14,7 @@ import pytest
 from flipjump import assemble, assemble_run_according_to_cmd_line_args, flipjump_cli, flipjump_quickstart
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
-from flipjump.assembler import assembler
+from flipjump.assembler import pins
 from flipjump.assembler.fj_parser import parse_macro_tree
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
@@ -234,7 +234,7 @@ def test_without_unpinning_a_pin_that_cannot_hold_miscompiles(
 ) -> None:
     # the control: the word stays pinned. (c08's `T1 ^ T2` would hold pinned - the bases cancel - but a
     # value computed from labels is un-pinned whatever it computes)
-    monkeypatch.setattr(assembler, 'unpin', lambda *args, **kwargs: None)
+    monkeypatch.setattr(pins, 'unpin', lambda *args, **kwargs: None)
     assert _differs(GAPS / f'{name}.fj', tmp_path, pool)
 
 
@@ -278,7 +278,7 @@ def _address_alignment(self: OffsetGuard, address: int) -> int:
 
 def _keep_every_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the assembler drops no pin (and neither does the relocation proof's copy of it)"""
-    monkeypatch.setattr(assembler, 'unpin', lambda *args, **kwargs: None)
+    monkeypatch.setattr(pins, 'unpin', lambda *args, **kwargs: None)
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
 
 
@@ -326,7 +326,7 @@ def test_without_its_check_a_program_with_a_hidden_reach_miscompiles(
 def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # C34's check alone: with no table below the window (C32's check off), C34's numeric arm is still above the
     # moved table's window - unpinned, and the same; widened by T2's address, it is kept and miscompiles
-    monkeypatch.setattr(assembler, 'tables_armed_below', lambda pads, top, rest, flips: False)
+    monkeypatch.setattr(pins, 'tables_armed_below', lambda pads, top, rest, flips: False)
     source = GAPS / 'c34_numeric_arm_wide_window.fj'
     pool = _pool('cli', W, source, tmp_path)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)

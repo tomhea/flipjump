@@ -459,7 +459,7 @@ def test_cli_pool_tables_runs_the_same_program_in_fewer_ops(tmp_path: Path, prog
 
 
 def test_cli_pool_tables_runs_a_program_that_reads_through_pointers_the_same(tmp_path: Path) -> None:
-    # a pointer may read any word raw, so the pool pins none (assembler.unpin): the tables still move
+    # a pointer may read any word raw, so the pool pins none (pins.unpin): the tables still move
     files = [PROGRAMS_DIR / 'concept_checks' / 'hex_ptr.fj']
     plain, pooled = _cli_assemble(tmp_path, 'plain', files), _cli_assemble(tmp_path, 'pooled', files, '--pool-tables')
     assert pooled.read_bytes() != plain.read_bytes()

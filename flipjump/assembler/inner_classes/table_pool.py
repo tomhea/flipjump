@@ -3,7 +3,7 @@ The table pool: moves the stl's lookup tables (see preprocessor.relocatable_call
 is cheap.
 
 It never changes what the program does. A table whose move would change an operand stays inline (OffsetGuard, in
-offset_guard.py), a pin that cannot hold is dropped (assembler.unpin), and a program whose code runs into the pool
+offset_guard.py), a pin that cannot hold is dropped (pins.unpin), and a program whose code runs into the pool
 is refused.
 
 Words used here:
@@ -335,7 +335,7 @@ class BlockPool:
         self.table_sites: List[TableSite] = []  # every table met and queued, in expansion order
         self.pinned: Dict[int, int] = {}  # the words the assembly pinned: {jump-word address: block base}
         # what it left as it was, counted by why: tables kept inline (a KEPT_*, or why moving one would change an
-        # operand), and words left unpinned because a pin could not hold (assembler.unpin)
+        # operand), and words left unpinned because a pin could not hold (pins.unpin)
         self.kept_inline: Dict[str, int] = {}
         self.unpins: Dict[str, int] = {}
         self.heat_unmatched: List[str] = []  # the heat list's groups this program has none of, or several of

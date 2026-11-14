@@ -1,7 +1,7 @@
 """
 unit-tests for the assembler's table placement: BlockPool (group the tables dispatched through one jump word into an
 aligned block, so the arming wflip writes an index instead of an address), the declared tables (`__relocatable__`
-macros) and the pin resolver (assembler.resolve_pinned).
+macros) and the pin resolver (pins.resolve_pinned).
 
 the property pinned throughout: a blocked program produces the SAME output as the inline one, in fewer ops - a table
 is reached only by jump, so its address is free to choose.
@@ -18,7 +18,7 @@ import pytest
 import flipjump.assembler.preprocessor as preprocessor
 import flipjump.assembler.inner_classes.table_pool as table_pool
 from flipjump import assemble
-from flipjump.assembler.assembler import resolve_pinned
+from flipjump.assembler.pins import resolve_pinned
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import MacroName, NewSegment

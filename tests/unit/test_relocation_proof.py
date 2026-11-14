@@ -201,7 +201,7 @@ def test_the_correct_crafted_programs_pass_the_proof(name: str, pool: str) -> No
     ],
 )
 def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch, name: str, mismatch: str) -> None:
-    # the control: the assembler keeps every pin (assembler.unpin does nothing); the proof judges the pins from the
+    # the control: the assembler keeps every pin (pins.unpin does nothing); the proof judges the pins from the
     # plain program, not by the assembler's rules
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
     pool = _cli_pool(W)

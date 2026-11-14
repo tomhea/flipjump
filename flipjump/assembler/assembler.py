@@ -11,26 +11,25 @@ from array import array
 from collections import defaultdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import AbstractSet, Callable, List, Dict, Mapping, MutableSequence, Sequence, Set, Tuple, Optional, Union
+from typing import Callable, List, Dict, Mapping, MutableSequence, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.functions import save_debugging_labels, write_defines_file
-from flipjump.utils.progress import ProgressBar, clear_progress_line
+from flipjump.utils.progress import ProgressBar
 from flipjump.assembler.fj_parser import parse_macro_tree
 from flipjump.utils.exceptions import (
     FlipJumpAssemblerException,
     FlipJumpException,
-    FlipJumpExprException,
     FlipJumpWriteFjmException,
 )
 from flipjump.assembler.inner_classes.ops import NewSegment, ReserveBits
-from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
-from flipjump.assembler.inner_classes.table_pool import BlockPool, reserved_below
+from flipjump.assembler.inner_classes.table_pool import BlockPool
+from flipjump.assembler.pins import pins
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -226,7 +225,7 @@ class BinaryData:
         constant) is flipped as `V ^ base`; any other value is flipped as is (unpin kept only the pins where that is
         safe)."""
         base = self.pinned.get(word_address) if self.pinned else None
-        if not base or value_kind != VALUE_ADDRESS:
+        if not base or value_kind != op_stream.VALUE_ADDRESS:
             return flip_value
         return flip_value ^ base
 
@@ -301,239 +300,8 @@ class BinaryData:
         del self.padding_ops_indices[:]
 
 
-def resolve_pinned(
-    pinned_exprs: Dict[Expr, int],
-    labels: Dict[str, int],
-    memory_width: int,
-    unpinned_words: AbstractSet[int] = frozenset(),
-) -> Tuple[Dict[int, int], int]:
-    """Resolve the pinned words' expressions to addresses. Skip a word that two groups pin with different bases
-    (like `(x + 32)` and `(x + w)`), and a word of `unpinned_words` (the program reads it raw).
-    Returns: ({jump-word address: block base}, how many addresses were skipped for having two bases)."""
-    runtime_end = reserved_below(memory_width)
-    pinned: Dict[int, int] = {}
-    conflicts = set()
-    for expr, base in pinned_exprs.items():
-        try:
-            address = expr.exact_eval(labels)
-        except FlipJumpExprException:
-            continue  # an unresolvable word simply is not pinned
-        if address < runtime_end:
-            continue  # the runtime's word (stl.IO), not the program's
-        if address in unpinned_words:
-            continue  # the program reads this word raw
-        if address in pinned and pinned[address] != base:
-            conflicts.add(address)
-        pinned[address] = base
-    for address in conflicts:
-        del pinned[address]
-    return pinned, len(conflicts)
-
-
 # labels_resolve reports its progress once per this many ops
 _PROGRESS_CHUNK = 1 << 16
-
-
-def pins(
-    ops: OpStream, labels: Dict[str, int], memory_width: int, pool: BlockPool, warning_as_errors: bool
-) -> Dict[int, int]:
-    """Return the words to pin, {jump-word address: block base}: the pool's candidates resolved by `labels`, minus
-    pin_all_but's words, words two groups pin with different bases, and pins that can't hold (see unpin)."""
-    unpinned_words, missing = pool.unpinned_words(labels)
-    if missing:
-        pin_all_but_warning(missing, warning_as_errors)
-    pinned, _ = resolve_pinned(pool.pinned_words(), labels, memory_width, unpinned_words)
-    if pinned:
-        unpin(ops, labels, memory_width, pinned, pool)
-    pool.pinned = pinned
-    return pinned
-
-
-def pin_all_but_warning(missing: List[str], warning_as_errors: bool) -> None:
-    """Warn (or fail, with warnings as errors) when pin_all_but names labels the program doesn't define. A typo there
-    would leave a raw cell pinned."""
-    shown = ', '.join(missing[:5]) + (f' and {len(missing) - 5} more' if len(missing) > 5 else '')
-    message = f'pin_all_but names labels the program does not define: {shown}'
-    if warning_as_errors:
-        raise FlipJumpAssemblerException(message)
-    clear_progress_line()
-    print(f'Warning: {message}')
-
-
-def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: Dict[int, int], pool: BlockPool) -> None:
-    """Unpin each word of `pinned` whose pin can't hold, counting why in `pool.unpins`. Unpinning is always safe,
-    only slower.
-    A pin holds when the word has its own op, and every flip of it is an arm (a label plus a constant, flipped xor
-    the base) or stays inside the word's window. So these unpin it: a number or computed value above the window
-    (`wflip x+w, 0x4000`, `T1 ^ T2`), an `a;b` flip above it, or a wflip across two words. And when an op that is
-    not an arm jumps through the word, no flip may be able to point it into a table below its window
-    (tables_armed_below). With the pointer runtime and no pin_all_but, no pin holds."""
-    guard = pool.offset_guard
-    assert guard is not None  # a pool's preprocessor made it
-
-    def drop(word: int, reason: str) -> None:
-        if pinned.pop(word, None) is not None:
-            pool.unpins[reason] = pool.unpins.get(reason, 0) + 1
-
-    if pool.reads_words_raw and pool.pin_all_but is None:
-        for word in list(pinned):
-            drop(word, 'the pointer runtime')
-        return
-    w = memory_width
-    # word -> log2 of the alignment (in bits) of each table it is armed with
-    arms: Dict[int, List[int]] = {word: [] for word in pinned}
-    flipped_bits: Dict[int, int] = {}  # word -> the bits that `a;b` ops flip in it
-    numbers: Dict[int, int] = {}  # word -> the bits that wflips of plain numbers flip in it
-    computed: Dict[int, int] = {}  # word -> the bits that wflips of computed values (like `T1 ^ T2`) flip in it
-    rests: Dict[int, int] = {}  # word -> its initial value (the jump of its op)
-    jumped: Set[int] = set()  # words that an op jumps through without being one of their arms
-    address = 0
-    slots = iter(stream.vals)
-    next_slot = slots.__next__
-    FJ_POS, WFLIP, PAD, FJ_PACKED = op_stream.FJ_POS, op_stream.WFLIP, op_stream.PAD, op_stream.FJ_PACKED
-    for kind in stream.kinds:
-        if kind == WFLIP:
-            word = next_slot()
-            if word < 0:
-                word = _deferred_value(stream, ~word, next_slot, labels, None)
-            value = next_slot()
-            kind_of_value = VALUE_NUMBER
-            if value < 0:
-                kind_of_value = _deferred_value_kind(stream, ~value)
-                if kind_of_value == VALUE_ADDRESS and word in arms:
-                    arms[word].append(guard.alignment(_label_address(stream, ~value, labels)))
-                value = _deferred_value(stream, ~value, next_slot, labels, None)
-            return_address = next_slot()
-            if return_address < 0:
-                return_address = _deferred_value(stream, ~return_address, next_slot, labels, None)
-            next_slot()  # the position
-            if return_address + w in arms and (kind_of_value != VALUE_ADDRESS or word != return_address + w):
-                jumped.add(return_address + w)
-            if word % w:
-                for touched in (word - word % w, word - word % w + w):
-                    if touched in arms:
-                        drop(touched, 'a wflip across two words')
-            elif word in arms and kind_of_value != VALUE_ADDRESS:
-                into = numbers if kind_of_value == VALUE_NUMBER else computed
-                into[word] = into.get(word, 0) | value
-            address += 2 * w
-        elif kind == PAD:
-            address += next_slot() * 2 * w
-        elif kind == op_stream.OBJ:
-            obj = stream.refs[next(slots)]
-            address = obj.start_address if isinstance(obj, NewSegment) else obj.first_address_after_reserved
-        else:
-            if kind == FJ_PACKED:
-                packed = next_slot()
-                flip, jump = packed >> 32, packed & op_stream.PACKED_JUMP_MASK
-            else:
-                flip = next_slot()
-                if flip < 0:
-                    flip = _deferred_value(stream, ~flip, next_slot, labels, None)
-                jump = next_slot()
-                if jump < 0:
-                    jump = _deferred_value(stream, ~jump, next_slot, labels, None)
-                if kind == FJ_POS:
-                    next_slot()  # the position
-            if address + w in arms:
-                rests[address + w] = jump
-            if jump + w in arms:
-                jumped.add(jump + w)
-            word = flip - flip % w
-            if word in arms:
-                flipped_bits[word] = flipped_bits.get(word, 0) | 1 << (flip - word)
-            address += 2 * w
-    low = sorted(guard.pads.items())
-    for word, base in list(pinned.items()):
-        # The word's window: its low bits, below its base's alignment and below its widest armed table. A flip inside
-        # the window changes a value or moves within the armed table, the same with or without the pool. Only an arm
-        # may flip a bit above it.
-        top = (base & -base).bit_length() - 1 if base else w
-        if arms[word]:
-            top = min(top, max(arms[word]))
-        above = ~((1 << top) - 1)
-        if word not in rests:
-            drop(word, 'no op of its own')
-        elif flipped_bits.get(word, 0) & above:
-            drop(word, 'a bit flip above its window')
-        elif numbers.get(word, 0) & above:
-            drop(word, 'armed with a number')
-        elif computed.get(word, 0) & above:
-            drop(word, 'armed with a value computed from labels')
-        elif word in jumped and tables_armed_below(
-            low, top, rests.get(word, 0), flipped_bits.get(word, 0) | numbers.get(word, 0) | computed.get(word, 0)
-        ):
-            drop(word, 'a flip below its window could arm a table there')
-
-
-def tables_armed_below(pads: Sequence[Tuple[int, int]], top: int, rest: int, flips: int) -> bool:
-    """Could a word that starts at `rest`, flipped by some of the bits of `flips`, point into a table of `pads` below
-    2^top? (`pads` is [(table address, log2 of its alignment in bits)], ascending.)"""
-    for address, bits in pads:
-        if address >> top:
-            break
-        above = ~((1 << bits) - 1)  # the bits above the table's alignment (all its entries share them)
-        if address & flips & above and not address & ~(rest | flips) and not rest & ~flips & above & ~address:
-            return True
-    return False
-
-
-def _label_address(stream: OpStream, encoded: int, labels: Dict[str, int]) -> int:
-    ref = stream.refs[encoded >> 2]
-    if encoded & 3 != op_stream.TAG_EXPR:
-        return labels[ref]
-    linear = op_stream.linear_sum(ref)
-    label = None if linear is None else linear[0]
-    assert label is not None  # a VALUE_ADDRESS expression is one label plus a constant
-    return labels[label]
-
-
-# The kinds of wflip value (see BinaryData.pinned_value): a number, an address (a label plus a constant), or a
-# value computed from labels.
-VALUE_NUMBER, VALUE_ADDRESS, VALUE_COMPUTED = 0, 1, 2
-
-
-def _deferred_value_kind(stream: OpStream, encoded: int) -> int:
-    if encoded & 3 != op_stream.TAG_EXPR:
-        return VALUE_ADDRESS
-    value: Expr = stream.refs[encoded >> 2]
-    if not value.all_unknown_labels():
-        return VALUE_NUMBER
-    linear = op_stream.linear_sum(value)
-    return VALUE_ADDRESS if linear is not None and linear[0] is not None else VALUE_COMPUTED
-
-
-def _deferred_value(
-    stream: OpStream,
-    encoded: int,
-    next_slot: Callable[[], int],
-    labels: Dict[str, int],
-    guard: Optional[OffsetGuard],
-    is_address: bool = True,
-) -> int:
-    """Return a deferred operand's value (its slot holds ~encoded), checked by the pool's guard if there is one (see
-    check_expr)."""
-    ref = stream.refs[encoded >> 2]
-    tag = encoded & 3
-    if tag == op_stream.TAG_LABEL:
-        value = labels.get(ref)
-        if value is None:
-            return Expr(ref).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
-        if guard is not None and ref in guard.stranded:
-            guard.check(ref, value, 0)
-        return value
-    if tag == op_stream.TAG_LABEL_PLUS:
-        const = next_slot()
-        value = labels.get(ref)
-        if value is None:
-            return Expr(ref).exact_eval(labels) + const  # raises, as above
-        if guard is not None:
-            guard.check(ref, value, const)
-        return value + const
-    value = ref.exact_eval(labels)
-    if guard is not None:
-        guard.check_expr(ref, value, is_address)
-    return value  # type: ignore[no-any-return]
 
 
 def labels_resolve(
@@ -556,7 +324,7 @@ def labels_resolve(
     @param save_wflip_labels: record a `:wflips:N` debugging label for each generated wflip-chain op
     @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction resolved so far
     @param table_pool: the pool the preprocessor laid out, if any
-    @param pinned: the words it pins (assembler.pins)
+    @param pinned: the words it pins (pins.pins)
     """
     resolve_into(
         ops,
@@ -587,94 +355,137 @@ def resolve_into(
 ) -> None:
     """labels_resolve, with the pool's parts passed one by one: `pinned`, `pool_start` and `wflips_at` (see
     BinaryData), and `offset_guard`, which checks the operands that had to wait for a label."""
-    first_segment = ops.first_object()
-    if not isinstance(first_segment, NewSegment):
-        raise FlipJumpAssemblerException(
-            f"The first op must be of type NewSegment (and not {ops.op_at(0) if ops else None})."
-        )
     binary_data = BinaryData(
         memory_width,
-        first_segment,
+        _first_segment(ops),
         labels,
         save_wflip_labels=save_wflip_labels,
         pinned=pinned,
         pool_start=pool_start,
         wflips_at=wflips_at,
     )
-    guard = offset_guard
-    if guard is not None:  # a refusal says where the op is: its address, and the label nearest it
-        label_below = guard.label_below
+    if offset_guard is not None:
+        offset_guard.resolving(lambda: _where(binary_data, offset_guard))
+    _resolve_ops(ops, labels, binary_data, fjm_writer, offset_guard, on_progress)
+    binary_data.close_and_add_segment(fjm_writer)
 
-        def where() -> str:
-            address = binary_data.first_address + len(binary_data.fj_words) * memory_width
-            return f' of the op at {hex(address)} (after the label {label_below(address)})'
 
-        guard.resolving(where)
+def _first_segment(ops: OpStream) -> NewSegment:
+    first_segment = ops.first_object()
+    if not isinstance(first_segment, NewSegment):
+        raise FlipJumpAssemblerException(
+            f"The first op must be of type NewSegment (and not {ops.op_at(0) if ops else None})."
+        )
+    return first_segment
 
+
+def _where(binary_data: BinaryData, guard: OffsetGuard) -> str:
+    """Return where the op being resolved is, for the guard's refusals: its address, and the label nearest it."""
+    address = binary_data.first_address + len(binary_data.fj_words) * binary_data.memory_width
+    return f' of the op at {hex(address)} (after the label {guard.label_below(address)})'
+
+
+def _resolve_ops(
+    ops: OpStream,
+    labels: Dict[str, int],
+    binary_data: BinaryData,
+    fjm_writer: Writer,
+    guard: Optional[OffsetGuard],
+    on_progress: Optional[Callable[[float], None]],
+) -> None:
+    """Resolve every op after the first NewSegment into `binary_data`, in stream order. The literal ops (most of
+    them) are inserted right here, with no function call."""
     insert_fj_op = binary_data.insert_fj_op
-    insert_wflip_ops = binary_data.insert_wflip_ops
     kinds = ops.kinds
     refs = ops.refs
-    slots = iter(ops.vals)
-    next_slot = slots.__next__
-    next(slots)  # the first op is the first NewSegment
+    next_slot = iter(ops.vals).__next__
+    next_slot()  # the first op is the first NewSegment
     op_index = 1
     FJ, FJ_POS, WFLIP, PAD = op_stream.FJ, op_stream.FJ_POS, op_stream.WFLIP, op_stream.PAD
-    FJ_PACKED, PACKED_JUMP_MASK = op_stream.FJ_PACKED, op_stream.PACKED_JUMP_MASK
+    FJ_PACKED, PACKED_JUMP_BITS, PACKED_JUMP_MASK = (
+        op_stream.FJ_PACKED,
+        op_stream.PACKED_JUMP_BITS,
+        op_stream.PACKED_JUMP_MASK,
+    )
     while op_index < len(kinds):
         chunk_end = min(op_index + _PROGRESS_CHUNK, len(kinds))
         for kind in kinds[op_index:chunk_end]:
             if kind == FJ_PACKED:
                 packed = next_slot()
-                insert_fj_op(packed >> 32, packed & PACKED_JUMP_MASK)
+                insert_fj_op(packed >> PACKED_JUMP_BITS, packed & PACKED_JUMP_MASK)
             elif kind == FJ:
                 insert_fj_op(next_slot(), next_slot())
-            elif kind == FJ_POS:
+            elif kind == FJ_POS or kind == WFLIP:
                 try:
-                    flip = next_slot()
-                    if flip < 0:
-                        flip = _deferred_value(ops, ~flip, next_slot, labels, guard)
-                    jump = next_slot()
-                    if jump < 0:
-                        jump = _deferred_value(ops, ~jump, next_slot, labels, guard)
-                    next_slot()  # the position
-                    insert_fj_op(flip, jump)
-                except FlipJumpException as e:
-                    raise FlipJumpAssemblerException(f"{e} in op {ops.op_at(op_index)}.")
-            elif kind == WFLIP:
-                try:
-                    word_address = next_slot()
-                    if word_address < 0:
-                        word_address = _deferred_value(ops, ~word_address, next_slot, labels, guard)
-                    flip_value = next_slot()
-                    kind_of_value = VALUE_NUMBER
-                    if flip_value < 0:
-                        if pinned:
-                            kind_of_value = _deferred_value_kind(ops, ~flip_value)
-                        flip_value = _deferred_value(ops, ~flip_value, next_slot, labels, guard, False)
-                    return_address = next_slot()
-                    if return_address < 0:
-                        return_address = _deferred_value(ops, ~return_address, next_slot, labels, guard)
-                    next_slot()  # the position
-                    if pinned:
-                        flip_value = binary_data.pinned_value(word_address, flip_value, kind_of_value)
-                    insert_wflip_ops(word_address, flip_value, return_address)
+                    if kind == FJ_POS:
+                        _resolve_flip_jump(ops, next_slot, labels, binary_data, guard)
+                    else:
+                        _resolve_word_flip(ops, next_slot, labels, binary_data, guard)
                 except FlipJumpException as e:
                     raise FlipJumpAssemblerException(f"{e} in op {ops.op_at(op_index)}.")
             elif kind == PAD:
                 binary_data.insert_padding(next_slot())
             else:
-                op = refs[next(slots)]
-                if isinstance(op, NewSegment):
-                    binary_data.insert_new_segment(fjm_writer, op.start_address, op.wflip_start_address)
-                elif isinstance(op, ReserveBits):
-                    binary_data.insert_reserve_bits(fjm_writer, op.first_address_after_reserved)
-                else:
-                    raise FlipJumpAssemblerException(f"Can't resolve/assemble the next opcode - {str(op)}")
+                _resolve_object(refs[next_slot()], binary_data, fjm_writer)
             op_index += 1
         if on_progress is not None:
             on_progress(op_index / len(kinds))
-    binary_data.close_and_add_segment(fjm_writer)
+
+
+def _resolve_flip_jump(
+    ops: OpStream,
+    next_slot: Callable[[], int],
+    labels: Dict[str, int],
+    binary_data: BinaryData,
+    guard: Optional[OffsetGuard],
+) -> None:
+    """Resolve an `a;b` op that has a deferred operand: read its slots, and insert it."""
+    flip = next_slot()
+    if flip < 0:
+        flip = ops.deferred_value(~flip, next_slot, labels, guard)
+    jump = next_slot()
+    if jump < 0:
+        jump = ops.deferred_value(~jump, next_slot, labels, guard)
+    next_slot()  # the position
+    binary_data.insert_fj_op(flip, jump)
+
+
+def _resolve_word_flip(
+    ops: OpStream,
+    next_slot: Callable[[], int],
+    labels: Dict[str, int],
+    binary_data: BinaryData,
+    guard: Optional[OffsetGuard],
+) -> None:
+    """Resolve a wflip op: read its slots, and insert its chain of ops. Into a pinned word, an address is flipped xor
+    the word's base (BinaryData.pinned_value)."""
+    pinned = binary_data.pinned
+    word_address = next_slot()
+    if word_address < 0:
+        word_address = ops.deferred_value(~word_address, next_slot, labels, guard)
+    flip_value = next_slot()
+    value_kind = op_stream.VALUE_NUMBER
+    if flip_value < 0:
+        if pinned:
+            value_kind = ops.value_kind(~flip_value)
+        flip_value = ops.deferred_value(~flip_value, next_slot, labels, guard, False)
+    return_address = next_slot()
+    if return_address < 0:
+        return_address = ops.deferred_value(~return_address, next_slot, labels, guard)
+    next_slot()  # the position
+    if pinned:
+        flip_value = binary_data.pinned_value(word_address, flip_value, value_kind)
+    binary_data.insert_wflip_ops(word_address, flip_value, return_address)
+
+
+def _resolve_object(op: Union[NewSegment, ReserveBits], binary_data: BinaryData, fjm_writer: Writer) -> None:
+    """Resolve a NewSegment or a ReserveBits: close what was gathered so far into a segment, and start anew."""
+    if isinstance(op, NewSegment):
+        binary_data.insert_new_segment(fjm_writer, op.start_address, op.wflip_start_address)
+    elif isinstance(op, ReserveBits):
+        binary_data.insert_reserve_bits(fjm_writer, op.first_address_after_reserved)
+    else:
+        raise FlipJumpAssemblerException(f"Can't resolve/assemble the next opcode - {str(op)}")
 
 
 def assert_first_op_assembled(fjm_writer: Writer) -> None:
