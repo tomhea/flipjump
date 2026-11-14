@@ -11,7 +11,7 @@ from operator import itemgetter
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException
-from flipjump.utils.progress import clear_progress_line
+from flipjump.utils.progress import safe_print
 from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
@@ -47,8 +47,7 @@ def pin_all_but_warning(missing: List[str], warning_as_errors: bool) -> None:
     message = f'pin_all_but names labels the program does not define: {shown}'
     if warning_as_errors:
         raise FlipJumpAssemblerException(message)
-    clear_progress_line()
-    print(f'Warning: {message}')
+    safe_print(f'Warning: {message}')
 
 
 def resolve_pinned(

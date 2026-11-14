@@ -243,7 +243,7 @@ class InMemoryScreen(IODevice):
         self._scr_nacc -= count
         return value
 
-    def _scr_error(self, reason: Optional[str] = None, at: str = '') -> IODeviceException:
+    def _scr_exception(self, reason: Optional[str] = None, at: str = '') -> IODeviceException:
         """Return the current command's error, at the place `at` inside it. With no `reason`, the error is that
         the output ended inside the command."""
         assert self._scr_command is not None
@@ -272,28 +272,28 @@ class InMemoryScreen(IODevice):
                     continue
                 self._scr_command = (name, opcode, offset)
                 if opcode not in COMMAND_NAMES:
-                    raise self._scr_error(
+                    raise self._scr_exception(
                         f'opcode 0x{opcode:02X} is not a command (commands: 0x01-0x07, 0x10, 0x11, 0x1F)'
                         if opcode
                         else 'opcode 0x00 is reserved (a stray zero byte?)'
                     )
                 if opcode != 0x01 and self.width == 0:
-                    raise self._scr_error(
+                    raise self._scr_exception(
                         f'{name} (0x{opcode:02X}) before init_screen: the first command must be init_screen (0x01)'
                     )
                 if name in PALETTE_COMMANDS and self.bpp == FORMAT_RGB:
-                    raise self._scr_error(
+                    raise self._scr_exception(
                         f'{name} (0x{opcode:02X}) in format 24 (direct RGB): palettes exist only in formats 1-16'
                     )
                 try:
                     yield from handlers[opcode]()
                 except _OutputEnded:
-                    raise self._scr_error() from None
+                    raise self._scr_exception() from None
 
                 padding_bits, padding = self._scr_nacc, self._scr_acc
                 self._scr_acc = self._scr_nacc = 0
                 if padding:
-                    raise self._scr_error(
+                    raise self._scr_exception(
                         f'the padding bits after the command are 0b{padding:0{padding_bits}b}, '
                         'not zero (the stream is probably misaligned)'
                     )
@@ -309,11 +309,11 @@ class InMemoryScreen(IODevice):
         height = yield from self._scr_bits(16)
         bpp = yield from self._scr_bits(8)
         if not 1 <= width <= MAX_WIDTH:
-            raise self._scr_error(f'w = {width:,}: must be 1..{MAX_WIDTH:,}')
+            raise self._scr_exception(f'w = {width:,}: must be 1..{MAX_WIDTH:,}')
         if not 1 <= height <= MAX_HEIGHT:
-            raise self._scr_error(f'h = {height:,}: must be 1..{MAX_HEIGHT:,}')
+            raise self._scr_exception(f'h = {height:,}: must be 1..{MAX_HEIGHT:,}')
         if not 1 <= bpp <= 16 and bpp != FORMAT_RGB:
-            raise self._scr_error(f'format = {bpp}: must be 1-16 or 24')
+            raise self._scr_exception(f'format = {bpp}: must be 1-16 or 24')
         self._init_screen(width, height, bpp)
 
     def _init_screen(self, width: int, height: int, bpp: int) -> None:
@@ -330,7 +330,7 @@ class InMemoryScreen(IODevice):
         first = yield from self._scr_bits(self.bpp)
         last = yield from self._scr_bits(self.bpp)
         if first > last:
-            raise self._scr_error(f'first = {first:,} > last = {last:,}')
+            raise self._scr_exception(f'first = {first:,} > last = {last:,}')
         entries = []
         for _ in range(last - first + 1):
             entries.append(rgb_of((yield from self._scr_bits(24))))  # R:8 G:8 B:8, R first: a format-24 value
@@ -349,7 +349,7 @@ class InMemoryScreen(IODevice):
         try:
             text = title.decode('utf-8')
         except UnicodeDecodeError as bad:
-            raise self._scr_error(
+            raise self._scr_exception(
                 f'set_window_title: title byte {bad.start:,} (0x{title[bad.start]:02X}) is not valid UTF-8'
             ) from None
         self._set_window_title(text)
@@ -361,7 +361,7 @@ class InMemoryScreen(IODevice):
         width = yield from self._scr_bits(8)
         height = yield from self._scr_bits(8)
         if width == 0 or height == 0:
-            raise self._scr_error(f'set_window_icon: {"w" if width == 0 else "h"} = 0: must be 1..255')
+            raise self._scr_exception(f'set_window_icon: {"w" if width == 0 else "h"} = 0: must be 1..255')
         values = [0] * (width * height)
         yield from self._scr_colours(values, width)
         palette = [] if self.bpp == FORMAT_RGB else self.palettes[self.selected_slot]
@@ -377,7 +377,7 @@ class InMemoryScreen(IODevice):
         slot = yield from self._scr_bits(8)
         builtin_id = yield from self._scr_bits(8)
         if builtin_id > 4:
-            raise self._scr_error(f'id = {builtin_id}: the built-ins are 0..4')
+            raise self._scr_exception(f'id = {builtin_id}: the built-ins are 0..4')
         self.palettes[slot] = list(builtin_palette(builtin_id, self.bpp))
 
     def _scr_cmd_draw_raw(self) -> Generator[None, int, None]:
@@ -397,7 +397,7 @@ class InMemoryScreen(IODevice):
                     nacc += 8
                 values[index], acc, nacc = acc & mask, acc >> bits, nacc - bits
         except _OutputEnded:
-            raise self._scr_error(at=f', pixel ({index % width:,}, {index // width:,})') from None
+            raise self._scr_exception(at=f', pixel ({index % width:,}, {index // width:,})') from None
         self._scr_acc, self._scr_nacc = acc, nacc
 
     def _scr_cmd_draw_collines(self) -> Generator[None, int, None]:
@@ -410,8 +410,10 @@ class InMemoryScreen(IODevice):
         x: Optional[int] = None
         cursor = 0
 
-        def refuse(reason: Optional[str] = None) -> IODeviceException:  # names the column and cursor once x is read
-            return self._scr_error(reason, '' if x is None else f', column {x:,}, cursor {cursor:,}')
+        def collines_exception(
+            reason: Optional[str] = None,
+        ) -> IODeviceException:  # names the column and cursor once x is read
+            return self._scr_exception(reason, '' if x is None else f', column {x:,}, cursor {cursor:,}')
 
         try:
             while True:
@@ -424,11 +426,11 @@ class InMemoryScreen(IODevice):
                     self._scr_acc, self._scr_nacc = acc, nacc
                     return
                 if column == reserved_column:
-                    raise refuse(
+                    raise collines_exception(
                         f'x = 0x{column:0{column_bits // 4}X} is the reserved column token (2^C - 2, C = {column_bits})'
                     )
                 if column >= width:
-                    raise refuse(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
+                    raise collines_exception(f'x = {column:,}: the screen has columns 0..{width - 1:,} (w = {width:,})')
                 x, cursor = column, 0
                 while True:  # only END closes a column, also once the cursor reached h
                     while nacc < row_bits:
@@ -440,7 +442,7 @@ class InMemoryScreen(IODevice):
                     field = 'y2'
                     if token == keep or token == copy:
                         if token == copy and x == 0:
-                            raise refuse('COPY copies column x - 1, and column 0 has none')
+                            raise collines_exception('COPY copies column x - 1, and column 0 has none')
                         field = 'y'
                         while nacc < row_bits:
                             acc |= (yield) << nacc
@@ -449,11 +451,13 @@ class InMemoryScreen(IODevice):
                     else:
                         row = token
                     if row == reserved_row:
-                        raise refuse(f'0x{row:0{row_bits // 4}X} is the reserved row token (2^R - 4, R = {row_bits})')
+                        raise collines_exception(
+                            f'0x{row:0{row_bits // 4}X} is the reserved row token (2^R - 4, R = {row_bits})'
+                        )
                     if row > height:
-                        raise refuse(f'{field} = {row:,} is past the screen (rows end at h = {height:,})')
+                        raise collines_exception(f'{field} = {row:,} is past the screen (rows end at h = {height:,})')
                     if row < cursor:  # row == cursor: an item of zero rows, which paints nothing
-                        raise refuse(
+                        raise collines_exception(
                             f'{field} = {row:,} is behind the cursor (need {cursor:,} <= {field} <= {height:,})'
                         )
                     start, stop = cursor * width + x, row * width + x
@@ -467,7 +471,7 @@ class InMemoryScreen(IODevice):
                         picture[start:stop:width] = [colour] * (row - cursor)
                     cursor = row
         except _OutputEnded:
-            raise refuse() from None
+            raise collines_exception() from None
 
     def _scr_cmd_present(self) -> Generator[None, int, None]:
         self._present()

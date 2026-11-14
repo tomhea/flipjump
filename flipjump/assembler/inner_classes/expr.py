@@ -7,6 +7,7 @@ known/resolved.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from operator import mul, add, sub, floordiv, lshift, rshift, mod, xor, or_, and_
 from typing import Union, Tuple, Set, Dict, Callable
 
@@ -53,15 +54,13 @@ op_string_to_function: Dict[str, Union[UNARY_TYPE, BINARY_TYPE, TRINARY_TYPE]] =
 }
 
 
+@dataclass(slots=True, eq=False)
 class Expr:
     """
     The python representation of a .fj expression (from labels, consts and math-ops)
     """
 
-    __slots__ = ('value',)
-
-    def __init__(self, expr: Union[int, str, Tuple[str, Tuple[Expr, ...]]]):
-        self.value = expr
+    value: Union[int, str, Tuple[str, Tuple[Expr, ...]]]  # a number, a name, or (op, its arguments)
 
     def is_int(self) -> bool:
         return isinstance(self.value, int)

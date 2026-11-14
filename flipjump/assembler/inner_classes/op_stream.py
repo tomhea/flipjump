@@ -1,6 +1,6 @@
 """
 The compact op stream: the ops the preprocessor (macro resolve) emits and labels-resolve reads, in ~17-60 bytes an
-op instead of ~250 for an op object and its Expr trees.
+op.
 
     kinds: bytearray        - one byte per op: its kind (FJ, FJ_POS, WFLIP, PAD, OBJ, FJ_PACKED below)
     vals:  array('q')       - the ops' slots, in order (each kind below lists its slots)
@@ -19,6 +19,7 @@ operand keeps its CodePosition, for labels-resolve's error messages.
 from __future__ import annotations
 
 from array import array
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 from flipjump.assembler.inner_classes.expr import Expr
@@ -162,24 +163,18 @@ def _linear_memo(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
     return linear  # type: ignore[no-any-return]
 
 
+@dataclass(slots=True, eq=False)
 class OpStream:
     """an ordered stream of last-phase ops, stored compactly (see the module docstring)"""
 
-    __slots__ = ('kinds', 'vals', 'refs', 'labels', 'guard')
-
-    def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Optional[OffsetGuard] = None):
-        """
-        @param refs: the reference list, shared by every stream of one preprocessor
-        @param labels: the preprocessor's labels. An operand that names a declared label is folded into a literal.
-        @param guard: the table pool's OffsetGuard, or None if there is no pool. It checks every operand folded here
-            that names a label. With a guard, a wflip value that names a label is never folded, so the pool can still
-            tell an address from a number.
-        """
-        self.kinds = bytearray()
-        self.vals = array('q')
-        self.refs = refs
-        self.labels = labels
-        self.guard = guard
+    refs: List[Any]  # the reference list, shared by every stream of one preprocessor
+    labels: Dict[str, int]  # the preprocessor's labels. An operand that names a declared label is folded into a literal
+    # The table pool's OffsetGuard, or None if there is no pool. It checks every operand folded here that names a label.
+    # With a guard, a wflip value that names a label is never folded, so the pool can still tell an address from a
+    # number.
+    guard: Optional[OffsetGuard] = None
+    kinds: bytearray = field(default_factory=bytearray, init=False)
+    vals: 'array[int]' = field(default_factory=lambda: array('q'), init=False)
 
     def __len__(self) -> int:
         return len(self.kinds)

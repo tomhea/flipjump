@@ -9,9 +9,10 @@ import dataclasses
 import gc
 from array import array
 from collections import defaultdict
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, List, Dict, Mapping, MutableSequence, Tuple, Optional, Union
+from typing import Callable, Iterator, List, Dict, Mapping, MutableSequence, Tuple, Optional, Union
 
 from flipjump.fjm.fjm_writer import Writer, new_word_buffer
 from flipjump.utils.constants import WFLIP_LABEL_PREFIX, DEFAULT_MAX_MACRO_RECURSION_DEPTH
@@ -113,21 +114,7 @@ class WFlipSpot:
 
 
 class BinaryData:
-    __slots__ = (
-        'memory_width',
-        'first_address',
-        'next_wflip_address',
-        'labels',
-        'wflips_so_far',
-        'save_wflip_labels',
-        'fj_words',
-        'wflip_words',
-        'padding_ops_indices',
-        'wflips_dict',
-        'pinned',
-        'pool_start',
-        'wflips_at',
-    )
+    """The words of the program being resolved: the segment gathered so far, and its wflip area."""
 
     def __init__(
         self,
@@ -328,7 +315,7 @@ def labels_resolve(
     save_wflip_labels: bool = True,
     on_progress: Optional[Callable[[float], None]] = None,
     table_pool: Optional[BlockPool] = None,
-    pinned: Optional[Dict[int, int]] = None,
+    warning_as_errors: bool = True,
 ) -> None:
     """
     resolve the labels and expressions to get the list of fj ops, and add all the data and segments into the fjm_writer.
@@ -338,9 +325,11 @@ def labels_resolve(
     @param fjm_writer: [out]: the .fjm file writer
     @param save_wflip_labels: record a `:wflips:N` debugging label for each generated wflip-chain op
     @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction resolved so far
-    @param table_pool: the pool the preprocessor laid out, if any
-    @param pinned: the words it pins (pins.pins_that_hold)
+    @param table_pool: the pool the preprocessor laid out, if any. Now that every label is known, the words it pins
+    are resolved to addresses (pins.pins_that_hold).
+    @param warning_as_errors: treat warnings as errors (a pin_all_but label the program does not define)
     """
+    pinned = None if table_pool is None else pins_that_hold(ops, labels, table_pool, warning_as_errors)
     resolve_into(
         ops,
         labels,
@@ -383,6 +372,8 @@ def resolve_into(
         offset_guard.resolving(lambda: _resolved_op_place(binary_data, offset_guard))
     _resolve_ops(ops, labels, binary_data, fjm_writer, offset_guard, on_progress)
     binary_data.close_and_add_segment(fjm_writer)
+    if offset_guard is not None:
+        offset_guard.resolved()
 
 
 def _first_segment(ops: OpStream) -> NewSegment:
@@ -524,6 +515,136 @@ def assert_first_op_assembled(fjm_writer: Writer) -> None:
         )
 
 
+def _validated_writer(fjm_writer: Optional[Writer], memory_width: Optional[int]) -> Writer:
+    """Return the writer assemble() got, checked: it is required, and `memory_width`, if given, must be its width."""
+    if fjm_writer is None:
+        raise TypeError('assemble() needs fjm_writer, the .fjm writer to assemble into')
+    if memory_width is not None and memory_width != fjm_writer.word_size:
+        raise FlipJumpAssemblerException(
+            f"memory_width {memory_width} differs from the writer's memory-width {fjm_writer.word_size}: "
+            "give one of them (the writer's is enough)"
+        )
+    return fjm_writer
+
+
+@contextmanager
+def _defines_as_a_file(defines: Optional[Mapping[str, Union[int, str]]]) -> Iterator[Optional[Path]]:
+    """For the block, write the defines as a temporary .fj file of constants, and yield its path (None if there are
+    no defines)."""
+    if not defines:
+        yield None
+        return
+    with TemporaryDirectory(suffix='__defines') as directory:
+        defines_file = Path(directory) / '_defines.fj'
+        write_defines_file(defines, defines_file)
+        yield defines_file
+
+
+@contextmanager
+def _no_cyclic_gc() -> Iterator[None]:
+    """For the block, switch python's cyclic garbage collector off (and back on after, if it was on).
+    The collector only finds objects that refer to each other in a cycle, by walking every live object again and
+    again. The pipeline builds millions of long-lived objects, and none of its data is in a cycle (the preprocessor
+    unlinks its one, see resolve_macros), so the collector would cost time and free nothing. Switching it off costs
+    no memory: every object is still freed the moment nothing refers to it (reference counting), so an assembly
+    peaks at the same memory with the collector on or off."""
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
+def _parse_and_resolve_macros(
+    input_files: List[Tuple[str, Path]],
+    memory_width: int,
+    defines_file: Optional[Path],
+    table_pool: Optional[BlockPool],
+    *,
+    warning_as_errors: bool,
+    save_debug_labels: bool,
+    show_statistics: bool,
+    show_progress: bool,
+    max_recursion_depth: int,
+) -> Tuple[OpStream, Dict[str, int]]:
+    """The first two stages: parse the files into the macro tree, and expand it into the op stream and the labels.
+    The defines, if any, are parsed first (before the stl), so they override the stl's constants too.
+    The program's macro tree is this function's own, so it is freed when the function returns (the op stream keeps
+    what it still needs of it: label names, positions, the odd Expr; the parsed stl stays in the parser's cache)."""
+    if defines_file is not None:
+        input_files = [('d1', defines_file), *input_files]
+    with ProgressBar('  parsing:         ', show_progress=show_progress) as progress:
+        macros = parse_macro_tree(
+            input_files, memory_width, warning_as_errors, defines_file, progress.get_active_update_function()
+        )
+    with ProgressBar('  macro resolve:   ', show_progress=show_progress) as progress:
+        return resolve_macros(
+            memory_width,
+            macros,
+            table_pool=table_pool,
+            show_statistics=show_statistics,
+            max_recursion_depth=max_recursion_depth,
+            save_debug_labels=save_debug_labels,
+            on_progress=progress.get_active_update_function(),
+            consume_main=True,  # the macro tree is not read again
+        )
+
+
+def _assemble_into(
+    fjm_writer: Writer,
+    input_files: List[Tuple[str, Path]],
+    defines_file: Optional[Path],
+    table_pool: Optional[BlockPool],
+    *,
+    warning_as_errors: bool,
+    debugging: bool,
+    show_statistics: bool,
+    show_progress: bool,
+    max_recursion_depth: int,
+) -> Dict[str, int]:
+    """The first three stages - parsing, macro resolve, labels resolve - which fill `fjm_writer` with the program's
+    segments. Return the labels. `debugging` asks for the labels only the debugging file reads (each macro's start,
+    each wflip-chain op).
+    Each stage's input is freed when the stage ends: the program's macro tree is _parse_and_resolve_macros's own,
+    and the op stream is this
+    function's, so neither is alive while the binary is packed and compressed."""
+    ops, labels = _parse_and_resolve_macros(
+        input_files,
+        fjm_writer.word_size,
+        defines_file,
+        table_pool,
+        warning_as_errors=warning_as_errors,
+        save_debug_labels=debugging,
+        show_statistics=show_statistics,
+        show_progress=show_progress,
+        max_recursion_depth=max_recursion_depth,
+    )
+    with ProgressBar('  labels resolve:  ', show_progress=show_progress) as progress:
+        labels_resolve(
+            ops,
+            labels,
+            fjm_writer.word_size,
+            fjm_writer,
+            save_wflip_labels=debugging,
+            on_progress=progress.get_active_update_function(),
+            table_pool=table_pool,
+            warning_as_errors=warning_as_errors,
+        )
+    assert_first_op_assembled(fjm_writer)
+    return labels
+
+
+def _write(
+    fjm_writer: Writer, labels: Dict[str, int], debugging_file_path: Optional[Path], show_progress: bool
+) -> None:
+    """The last stage: write the .fjm, and the debugging file if asked."""
+    with ProgressBar('  create binary:   ', show_progress=show_progress) as progress:
+        fjm_writer.write_to_file(progress.get_active_update_function())
+        save_debugging_labels(debugging_file_path, labels)
+
+
 def assemble(
     input_files: List[Tuple[str, Path]],
     memory_width: Optional[int] = None,
@@ -558,87 +679,25 @@ def assemble(
     file needs (`...---:start:` for each macro use, `:wflips:N` for each wflip-chain op).
     """
     show_progress = show_progress if print_time is None else print_time
-    if fjm_writer is None:
-        raise TypeError('assemble() needs fjm_writer, the .fjm writer to assemble into')
-    if memory_width is not None and memory_width != fjm_writer.word_size:
-        raise FlipJumpAssemblerException(
-            f"memory_width {memory_width} differs from the writer's memory-width {fjm_writer.word_size}: "
-            "give one of them (the writer's is enough)"
-        )
-    memory_width = fjm_writer.word_size
-    defines_dir: Optional['TemporaryDirectory[str]'] = None
-    defines_file: Optional[Path] = None
-    if defines:
-        # the defines, as a .fj file parsed before the stl (so they override the stl's constants too); deleted when done
-        directory = TemporaryDirectory(suffix='__defines')
-        file = Path(directory.name) / '_defines.fj'
+    fjm_writer = _validated_writer(fjm_writer, memory_width)
+    with _defines_as_a_file(defines) as defines_file, _no_cyclic_gc():
         try:
-            write_defines_file(defines, file)
-        except ValueError:
-            directory.cleanup()
-            raise
-        input_files = [('d1', file), *input_files]
-        defines_dir, defines_file = directory, file
-    # Disable the cyclic gc: the pipeline builds a huge graph with no cycles, which gc would only re-walk.
-    # (Re-enabled in finally.)
-    gc_was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        with ProgressBar('  parsing:         ', show_progress=show_progress) as progress:
-            macros = parse_macro_tree(
-                input_files, memory_width, warning_as_errors, defines_file, progress.update if progress.active else None
-            )
-
-        with ProgressBar('  macro resolve:   ', show_progress=show_progress) as progress:
-            ops, labels = resolve_macros(
-                memory_width,
-                macros,
-                table_pool=table_pool,
-                show_statistics=show_statistics,
-                max_recursion_depth=max_recursion_depth,
-                # only the debugging file needs the macro-start labels
-                save_debug_labels=debugging_file_path is not None,
-                on_progress=progress.update if progress.active else None,
-                consume_main=True,  # we own the macro tree, and free it right below
-            )
-        # MEMORY: the macro tree is not read again - free it before labels-resolve builds the binary.
-        # (The op stream keeps what it still needs of it: label names, positions, the odd Expr.)
-        del macros
-
-        # now that every label is known, resolve the pool's pinned words to addresses
-        pinned = {} if table_pool is None else pins_that_hold(ops, labels, table_pool, warning_as_errors)
-
-        with ProgressBar('  labels resolve:  ', show_progress=show_progress) as progress:
-            # the `:wflips:N` labels are read only by the debugging file
-            labels_resolve(
-                ops,
-                labels,
-                memory_width,
+            labels = _assemble_into(
                 fjm_writer,
-                save_wflip_labels=debugging_file_path is not None,
-                on_progress=progress.update if progress.active else None,
-                table_pool=table_pool,
-                pinned=pinned,
+                input_files,
+                defines_file,
+                table_pool,
+                warning_as_errors=warning_as_errors,
+                debugging=debugging_file_path is not None,
+                show_statistics=show_statistics,
+                show_progress=show_progress,
+                max_recursion_depth=max_recursion_depth,
             )
-        # MEMORY: every op is in the writer now. Drop the stream (labels-resolve only read it), or it would stay alive
-        # through the binary's packing and compression.
-        del ops
-
-        assert_first_op_assembled(fjm_writer)
-
-        with ProgressBar('  create binary:   ', show_progress=show_progress) as progress:
-            fjm_writer.write_to_file(progress.update if progress.active else None)
-            save_debugging_labels(debugging_file_path, labels)
-        return labels
-
-    except FlipJumpException as fj_exception:
-        raise fj_exception
-    except Exception as unknown_exception:
-        raise FlipJumpAssemblerException(
-            "Unknown exception during assembling the .fj files, please report this bug"
-        ) from unknown_exception
-    finally:
-        if gc_was_enabled:
-            gc.enable()
-        if defines_dir is not None:
-            defines_dir.cleanup()
+            _write(fjm_writer, labels, debugging_file_path, show_progress)
+            return labels
+        except FlipJumpException as fj_exception:
+            raise fj_exception
+        except Exception as unknown_exception:
+            raise FlipJumpAssemblerException(
+                "Unknown exception during assembling the .fj files, please report this bug"
+            ) from unknown_exception
