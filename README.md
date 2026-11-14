@@ -158,15 +158,22 @@ room in the memory. So is a `rep` count, a `pad`, a `reserve` size or a `segment
 address of code after a moved table: it would be another number. With it, `__relocatable__` is a reserved namespace:
 a macro whose innermost namespace has that name is a table the pool may move.
 
-Three things a pool does not follow, so a program that depends on them may run differently with it: an address used
-as a number beyond a sum of labels and constants (`(L >> 6) & 15` printed, say - storing a pointer or retargeting a
-jump that way is fine), a number used as an address (`;0x280` names no label), and what the padding ops of a `pad`
-hold.
+What a pool does not follow, so a program that depends on it may run differently with the pool:
+- an address used as a number beyond a sum of labels and constants (`(L >> 6) & 15` printed, say - storing a pointer
+  or retargeting a jump that way is fine);
+- a number used as an address (`;0x280` names no label);
+- what the padding ops of a `pad` hold;
+- a flip of a dispatch word at or above the `pad` alignment of the table armed in it;
+- a dispatch word that is armed without a jump, and jumped through by the wflip that disarms it.
 
 A program that reads or writes cells raw through pointers (`hex.pointers`) gets its tables moved but nothing pinned,
 unless `--pin-all-but LABEL[:OPS],...` names those cells: then every other dispatch word is pinned too, which saves
-more ops (`--pin-all-but d0,d1:1` - a label alone runs to the next label). Leaving such a cell out makes the program
-run wrong.
+more ops (`--pin-all-but d0,d1:1` - a label alone runs to the next label). A cell whose dispatch word is jumped
+through while no table is armed in it is raw too. Leaving such a cell out makes the program run wrong. Without
+`--pin-all-but`, a dispatch word that an `a;b` op jumps through is left unpinned.
+
+The `table pool:` line says how many tables moved and how many words were pinned; the lines under it say what stayed
+as it was, and why.
 
 The pool's layout, each flag with `--pool-tables`:
 - `--pool-base ADDRESS`, `--pool-end ADDRESS`: where the pool lies (default: from the first power of two above the

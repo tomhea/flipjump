@@ -13,7 +13,7 @@ from typing import Dict, List, Mapping, Optional, Set, Union
 from flipjump.assembler import assembler
 from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.interpreter.debugging.breakpoints import get_breakpoint_handler
-from flipjump.fjm.fjm_consts import IO_MODE_NAMES, RUN_FLAG_FLAT_MEMORY, FJMVersion
+from flipjump.fjm.fjm_consts import DEFAULT_MEMORY_WIDTH, IO_MODE_NAMES, RUN_FLAG_FLAT_MEMORY, FJMVersion
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
@@ -35,7 +35,7 @@ def assemble(
     fj_file_paths: List[Path],
     output_fjm_path: Path,
     *,
-    memory_width: int = 64,
+    memory_width: int = DEFAULT_MEMORY_WIDTH,
     use_stl: bool = True,
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
@@ -313,7 +313,7 @@ def run_test_output(
 def assemble_and_run(
     fj_file_paths: List[Path],
     *,
-    memory_width: int = 64,
+    memory_width: int = DEFAULT_MEMORY_WIDTH,
     use_stl: bool = True,
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
@@ -367,7 +367,7 @@ def assemble_and_run(
 def assemble_and_debug(
     fj_file_paths: List[Path],
     *,
-    memory_width: int = 64,
+    memory_width: int = DEFAULT_MEMORY_WIDTH,
     use_stl: bool = True,
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,
@@ -444,7 +444,7 @@ def assemble_and_run_test_output(
     fixed_input: bytes,
     expected_output: bytes,
     *,
-    memory_width: int = 64,
+    memory_width: int = DEFAULT_MEMORY_WIDTH,
     use_stl: bool = True,
     fjm_version: FJMVersion = FJMVersion.CompressedSegmentsVersion,
     warning_as_errors: bool = True,

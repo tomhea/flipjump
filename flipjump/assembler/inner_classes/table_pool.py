@@ -45,7 +45,6 @@ from typing import (
     NamedTuple,
     Optional,
     Sequence,
-    Set,
     Tuple,
     Union,
 )
@@ -69,6 +68,9 @@ def reserved_below(memory_width: int) -> int:
 
 # A BlockPool pool_base that means: start the pool at the first power of two above the program.
 AFTER_PROGRAM = 'after_program'
+DEFAULT_MAX_SLOT_OPS = 32  # the widest table a slot holds, in ops
+# A raw program's tables go to a region with 2**_CHEAP_SPREAD_BITS times the slots they need (_place_cheapest).
+_CHEAP_SPREAD_BITS = 8
 
 # A macro that names one of these reads or writes words raw, through a pointer. If one expands and pin_all_but is
 # not given, no word is pinned.
@@ -154,7 +156,7 @@ class DeferredTables:
 
 
 def _written_in_source(label: str) -> bool:
-    """Is `label` one the program's source declares? Not one the assembler adds, whose own name has a `:` (a macro's
+    """Is `label` one the program's source declares? Not one the expansion adds, whose own name has a `:` (a macro's
     `:start:` label for the debugging file, a `$:` label)."""
     return ':' not in label.rpartition(MACRO_SEPARATOR_STRING)[2]
 
@@ -168,9 +170,26 @@ def _align_up(value: int, alignment: int) -> int:
     return -(-value // alignment) * alignment
 
 
+def _joined_ranges(ranges: Iterable[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """Return the (start, end) ranges sorted, with the ones that overlap or touch joined into one."""
+    joined: List[Tuple[int, int]] = []
+    for start, end in sorted(ranges):
+        if joined and start <= joined[-1][1]:
+            joined[-1] = (joined[-1][0], max(joined[-1][1], end))
+        else:
+            joined.append((start, end))
+    return joined
+
+
+_ADDRESS_ARRAY_TYPECODE = 'Q'  # a u64 holds an address of a memory up to 64 bits wide
+_ADDRESS_ARRAY_ITEM_BYTES = 8
+
+
 def _zero_addresses(memory_width: int, length: int) -> MutableSequence[int]:
-    """Return `length` zero addresses: a 64-bit array where an address fits one (w <= 64), else a list of ints."""
-    return array('Q', bytes(8 * length)) if memory_width <= 64 else [0] * length
+    """Return `length` zero addresses: an array of u64 where an address fits one, else a list of ints."""
+    if memory_width > 8 * _ADDRESS_ARRAY_ITEM_BYTES:
+        return [0] * length
+    return array(_ADDRESS_ARRAY_TYPECODE, bytes(_ADDRESS_ARRAY_ITEM_BYTES * length))
 
 
 def _cheapest(bits: int) -> Iterator[int]:
@@ -272,12 +291,13 @@ class BlockPool:
     """A pool that gives each group a block, so that arming a jump word flips only the table's index.
 
     `wflip src+w, switch` arms a hex variable's jump word. If the word is pinned at a block base B and its tables live
-    in that block, every wflip of the word flips `value ^ B` instead of `value` (assembler.BinaryData.pinned_value);
-    for an arm, that is just the table's index. A pinned word holds `B ^ value`, so a raw word (POINTER_RUNTIME_LABELS)
-    must not be pinned: `pin_all_but` names the cells to leave out.
+    in that block, every wflip of an address into the word flips `address ^ B` instead
+    (assembler.BinaryData.pinned_value); for an arm, that is just the table's index. A pinned word holds `B ^ value`,
+    so a raw word (POINTER_RUNTIME_LABELS) must not be pinned: `pin_all_but` names the cells to leave out.
 
-    One pass: the preprocessor takes each table out of the op stream (`defer`), and once the expansion is done the
-    pool places them all (`place_deferred`), sizing the blocks from its census. A block has one sub-block per table
+    One pass: the preprocessor takes each table out of the op stream (TableMover; `count_table` counts it), and once
+    the expansion is done the pool places them all (`place_deferred`), sizing the blocks from its census. A block has
+    one sub-block per table
     width (Block). Groups whose jump words resolve to one address share a block. If the blocks do not all fit, the
     last groups go to the overflow region. A `heat` list (pin protection) lays the hot groups out first, always pins
     them, and gives each width's k-th listed site the k-th cheapest index (HotGroup).
@@ -291,7 +311,7 @@ class BlockPool:
         pool_base: Union[int, str] = AFTER_PROGRAM,
         *,
         pool_end: Optional[int] = None,
-        max_slot_ops: int = 32,
+        max_slot_ops: int = DEFAULT_MAX_SLOT_OPS,
         spread_factor: int = 1,
         spread_min_tables: int = 256,
         pin_incomplete_groups: bool = False,
@@ -302,7 +322,7 @@ class BlockPool:
         @param pool_base: the address of the pool's first block, or AFTER_PROGRAM: the first power of two above the
             program. With AFTER_PROGRAM the wflip areas go after the pool.
         @param pool_end: the pool ends below this address. None means the top of memory.
-        @param max_slot_ops: the widest table a slot holds (32 fits the stl's widest, `hex.cmp`'s 31 ops)
+        @param max_slot_ops: the widest table a slot holds (the default fits the stl's widest, `hex.cmp`'s 31 ops)
         @param spread_factor: a group of at least `spread_min_tables` tables gets this many times the slots it needs,
             and uses the cheapest indices
         @param pin_incomplete_groups: pin a broken group's word too (see pinned_words)
@@ -310,11 +330,11 @@ class BlockPool:
             profile of `table_sites`; groups and sites are matched by heat_key. The listed tables get their group's
             cheapest indices.
         @param pin_all_but: pin every word except the words of these cells. List every cell the program reads or
-            writes raw (through a pointer, or by jumping through its word), as a label (the cell runs to the next
-            label) or as (label, length in ops). Leaving such a cell out makes the program run WRONG, not slower.
-            [] pins every word. None (the default) means the cells are not known: a program that uses the pointer
-            runtime then pins no word (its tables still go to cheap addresses). A label the program does not define
-            is skipped (unpinned_words returns it, and the assembler warns).
+            writes raw (through a pointer, or by jumping through its word while no table is armed in it), as a
+            label (the cell runs to the next label) or as (label, length in ops). Leaving such a cell out makes the
+            program run WRONG, not slower. [] pins every word. None (the default) means the cells are not known: a
+            program that uses the pointer runtime then pins no word (its tables still go to cheap addresses). A
+            label the program does not define is skipped (unpinned_cells returns it, and the assembler warns).
         """
         if isinstance(pool_base, str) and pool_base != AFTER_PROGRAM:
             raise FlipJumpPreprocessorException(f'pool_base is an address or {AFTER_PROGRAM!r}, not {pool_base!r}')
@@ -342,7 +362,7 @@ class BlockPool:
         self.table_sites: List[TableSite] = []  # every table met and queued, in expansion order
         self.pinned: Dict[int, int] = {}  # the words the assembly pinned: {jump-word address: block base}
         # what it left as it was, counted by why: tables kept inline (a KEPT_*, or why moving one would change an
-        # operand), and words left unpinned because a pin could not hold (pins.unpin)
+        # operand), and words left unpinned because a pin could not hold (pins.unpin). The cli prints both.
         self.kept_inline: Dict[str, int] = {}
         self.unpins: Dict[str, int] = {}
         self.heat_unmatched: List[str] = []  # the heat list's groups this program has none of, or several of
@@ -356,27 +376,30 @@ class BlockPool:
         """how many tables the pool moved"""
         return sum(1 for site in self.table_sites if site.address)
 
-    def _raw(self) -> bool:
-        """Return whether the program reads words raw and no pin_all_but says which. Then no word is pinned
-        (_place_cheapest)."""
+    def pins_no_word(self) -> bool:
+        """Return whether no word can be pinned: the program reads words raw, and no pin_all_but says which. Its
+        tables then go to cheap addresses, in no block (_place_cheapest)."""
         return self.reads_words_raw and self.pin_all_but is None
 
     # ---- while the expansion runs ----
 
-    def defer(self, group: Optional[str], word: Optional[Expr], ops_alignment: int, table_ops: int) -> Optional[str]:
-        """Count a table the expansion reached (at its pad) in the census. Return None if it leaves the op stream (it
-        is placed once the expansion is done), else why it stays inline: KEPT_NO_JUMP_WORD or KEPT_TOO_WIDE.
-        `group` is the text of `word`, its group's jump word; both are None for a table with no group."""
+    def count_table(
+        self, group: Optional[str], word: Optional[Expr], ops_alignment: int, table_ops: int
+    ) -> Optional[str]:
+        """Count a table the expansion reached (at its pad) in the census. Return None if the pool can move it, else
+        why it stays inline: KEPT_NO_JUMP_WORD or KEPT_TOO_WIDE. `word` is its group's jump word and `group` its
+        text, which the caller has already (a big program has ~10^5 tables); both are None for a table with no
+        group."""
         width = max(table_ops, ops_alignment)
-        raw = self._raw()
+        no_pins = self.pins_no_word()
         if group is not None and word is not None:
             census = self.census.get(group)
             if census is None:
                 census = self.census[group] = GroupCensus(word, {})
             census.widths[width] = census.widths.get(width, 0) + 1
-        elif not raw:  # (a raw program's tables need no group: see _place_cheapest)
+        elif not no_pins:  # (with no word to pin, a table needs no group: see _place_cheapest)
             return KEPT_NO_JUMP_WORD
-        if width > self.max_slot_ops and not raw:
+        if width > self.max_slot_ops and not no_pins:
             return KEPT_TOO_WIDE
         return None
 
@@ -390,8 +413,10 @@ class BlockPool:
         self._choose_base(end)
         self.alias = self._groups_sharing_a_word(labels)
         groups = self.merged_census()
-        if self._raw():
-            addresses = self._place_cheapest(tables, len(groups))
+        if self.pins_no_word():
+            addresses = self._place_cheapest(tables)
+            if groups:
+                self.unpins['the pointer runtime'] = len(groups)  # the words a block would have pinned
         else:
             blocks_end = self.lay_out_blocks(groups)
             addresses = self._place_in_blocks(tables, blocks_end)
@@ -450,7 +475,9 @@ class BlockPool:
         """Give each group of a census (as merged_census returns it) a block, aligned to its size: the hot groups
         first, then biggest first. Where they do not all fit, the last groups get none (their tables go to the
         overflow region). Return where the blocks end.
-        A tool can call this on a fresh pool, to get the blocks an assembly gave a saved census (`blocks`)."""
+        A tool can call this on a fresh pool, to get the blocks (`blocks`) an assembly gave a saved census: a pool
+        with the assembly's options, and its pool_base as an address (an AFTER_PROGRAM pool has no base before it
+        places tables)."""
         hot = self._hot_groups(groups)
         blocks = {group: self._block(widths, hot.get(group)) for group, widths in groups.items()}
         order = list(hot) + sorted((group for group in groups if group not in hot), key=lambda g: (-blocks[g].bits, g))
@@ -479,27 +506,37 @@ class BlockPool:
 
     def _block(self, widths: Dict[int, int], hot: Optional[HotGroup]) -> Block:
         """Size a group's block from its tables' widths: one sub-block per slot width, the biggest sub-block first."""
-        tables = sum(widths.values())
-        spread = self.spread_factor if tables >= self.spread_min_tables else 1
-        counts: Dict[int, int] = {}  # slot width -> tables
+        spread = self.spread_factor if sum(widths.values()) >= self.spread_min_tables else 1
+        slots = self._slots_by_width(widths, spread, hot)
+        sub_blocks, bits = self._sub_blocks(slots)
+        return Block(sub_blocks, bits, spread > 1, hot)
+
+    def _slots_by_width(self, widths: Dict[int, int], spread: int, hot: Optional[HotGroup]) -> Dict[int, int]:
+        """Return {slot width: how many slots a block keeps of it}, for a group's {table width: how many}: a power of
+        two that holds the tables of that slot width, times `spread`."""
+        tables: Dict[int, int] = {}  # slot width -> tables
         for width, count in widths.items():
             slot_ops = self.slot_ops(width)
-            counts[slot_ops] = counts.get(slot_ops, 0) + count
-        sizes: Dict[int, Tuple[int, int]] = {}  # slot width -> (slots, the sub-block's bits)
-        for slot_ops, count in counts.items():
-            slots = _pow2_ceil(count) * spread
+            tables[slot_ops] = tables.get(slot_ops, 0) + count
+        slots: Dict[int, int] = {}
+        for slot_ops, count in tables.items():
+            slots[slot_ops] = _pow2_ceil(count) * spread
             # a hot width also needs room for the ranks its listed sites reserve
-            while hot is not None and slots < count + hot.listed.get(slot_ops, 0):
-                slots *= 2
-            sizes[slot_ops] = (slots, slots * slot_ops * self.op_bits)
+            while hot is not None and slots[slot_ops] < count + hot.listed.get(slot_ops, 0):
+                slots[slot_ops] *= 2
+        return slots
+
+    def _sub_blocks(self, slots: Dict[int, int]) -> Tuple[Dict[int, Tuple[int, int]], int]:
+        """Lay out a block's sub-blocks, the biggest first, each aligned to its own size. Return
+        ({slot width: (the sub-block's bit offset, its slots)}, the block's size in bits)."""
+        bits = {slot_ops: count * slot_ops * self.op_bits for slot_ops, count in slots.items()}
         sub_blocks: Dict[int, Tuple[int, int]] = {}
         offset = 0
-        for slot_ops in sorted(sizes, key=lambda k: (-sizes[k][1], -k)):
-            slots, bits = sizes[slot_ops]
-            offset = _align_up(offset, bits)
-            sub_blocks[slot_ops] = (offset, slots)
-            offset += bits
-        return Block(sub_blocks, _pow2_ceil(offset), spread > 1, hot)
+        for slot_ops in sorted(slots, key=lambda k: (-bits[k], -k)):
+            offset = _align_up(offset, bits[slot_ops])
+            sub_blocks[slot_ops] = (offset, slots[slot_ops])
+            offset += bits[slot_ops]
+        return sub_blocks, _pow2_ceil(offset)
 
     def _block_ends(self, order: Sequence[str]) -> List[int]:
         """Return where the first k blocks of `order` end, for every k: each block is aligned to its own size."""
@@ -514,35 +551,44 @@ class BlockPool:
     ) -> int:
         """Return how many of the first groups of `order` get a block: as many as leave room in the pool, after
         their blocks, for the tables of all the others (widest slot first). A hot group always gets one."""
-        # of the groups from k on: the widest slot they need, and the bits all their slots take
+        # of the groups from k on: the widest slot their movable tables need, and the bits all those slots take
         widest, room = [1] * (len(order) + 1), [0] * (len(order) + 1)
         for k in range(len(order) - 1, -1, -1):
-            widths = groups[order[k]]
-            widest[k] = max([widest[k + 1]] + [self._slot_bits(width) for width in widths])
-            room[k] = room[k + 1] + sum(self._slot_bits(width) * count for width, count in widths.items())
+            # (a table too wide for a slot stays inline: it needs no room)
+            movable = {width: count for width, count in groups[order[k]].items() if width <= self.max_slot_ops}
+            widest[k] = max([widest[k + 1]] + [self._slot_bits(width) for width in movable])
+            room[k] = room[k + 1] + sum(self._slot_bits(width) * count for width, count in movable.items())
         limit = self._pool_limit()
         for k in range(len(order), hot_groups - 1, -1):
             if _align_up(ends[k], widest[k]) + room[k] <= limit:
                 return k
-        raise self._no_room()
+        raise self._no_room_exception()
 
     def _place_in_blocks(self, tables: DeferredTables, blocks_end: int) -> Sequence[int]:
         """Return every table's address: a slot of its group's block, or a place in the overflow region (from
         `blocks_end` on) if its group has no block. 0 for a table that stays inline."""
         addresses = _zero_addresses(self.memory_width, len(tables.sizes))
-        overflow: List[Tuple[int, int]] = []  # (slot bits, index) of the tables whose group has no block
+        overflow: List[int] = []  # the tables whose group has no block
         alias = self.alias
         for index, group in enumerate(tables.groups):
             address = self._slot_in_block(alias.get(group, group), tables.width(index), tables.sites[index])
             if address is not None:
                 addresses[index] = address
             elif tables.segments[index] is not None:
-                overflow.append((self._slot_bits(tables.width(index)), index))
-        cursor = blocks_end
-        for slot_bits, index in sorted(overflow, key=lambda entry: -entry[0]):  # widest slot first
-            addresses[index] = cursor = _align_up(cursor, slot_bits)
-            cursor += slot_bits
+                overflow.append(index)
+        self._place_in_the_overflow_region(tables, overflow, blocks_end, addresses)
         return addresses
+
+    def _place_in_the_overflow_region(
+        self, tables: DeferredTables, overflow: Sequence[int], start: int, addresses: MutableSequence[int]
+    ) -> None:
+        """Give the tables `overflow` their addresses, from `start` on: the widest slot first, each aligned to its
+        slot."""
+        slot_bits = {index: self._slot_bits(tables.width(index)) for index in overflow}
+        cursor = start
+        for index in sorted(overflow, key=lambda table: -slot_bits[table]):
+            addresses[index] = cursor = _align_up(cursor, slot_bits[index])
+            cursor += slot_bits[index]
 
     def _slot_in_block(self, group: str, width: int, site: str) -> Optional[int]:
         """Return the address of a slot in the group's block, for a table `width` ops wide. None if the group has no
@@ -559,34 +605,39 @@ class BlockPool:
 
     # ---- placing a raw program's tables ----
 
-    def _place_cheapest(self, tables: DeferredTables, groups: int) -> Sequence[int]:
-        """Place the tables of a raw program (_raw), whose words cannot be pinned, at cheap addresses. Each width's
-        tables take the offsets with the fewest set bits in a region with 256 times the slots they need, or just the
-        slots they need if the pool cannot hold that. `groups` is how many words a block would have pinned."""
+    def _place_cheapest(self, tables: DeferredTables) -> Sequence[int]:
+        """Place the tables of a program with no word to pin (pins_no_word) at cheap addresses. Each width's tables
+        take the offsets with the fewest set bits in a region with 2**_CHEAP_SPREAD_BITS times the slots they need,
+        or just the slots they need if the pool cannot hold that."""
         by_slot: Dict[int, List[int]] = {}  # slot bits -> the tables that take such a slot
         for index, segment in enumerate(tables.segments):
             if segment is not None:
                 by_slot.setdefault(self._slot_bits(tables.width(index)), []).append(index)
-        for spread_bits in (8, 0):
-            cursor, placed = self.pool_base, []
-            for slot_bits in sorted(by_slot, reverse=True):
-                indices = by_slot[slot_bits]
-                index_bits = (len(indices) - 1).bit_length() + spread_bits
-                base = _align_up(cursor, slot_bits << index_bits)
-                placed += [(i, base + offset * slot_bits) for i, offset in zip(indices, _cheapest(index_bits))]
-                cursor = base + (slot_bits << index_bits)
-            if cursor <= self._pool_limit():
+        for spread_bits in (_CHEAP_SPREAD_BITS, 0):
+            placed, end = self._cheap_places(by_slot, spread_bits)
+            if end <= self._pool_limit():
                 break
         else:
-            raise self._no_room()
+            raise self._no_room_exception()
         addresses = _zero_addresses(self.memory_width, len(tables.sizes))
         for index, address in placed:
             addresses[index] = address
-        if groups:
-            self.unpins['the pointer runtime'] = groups
         return addresses
 
-    def _no_room(self) -> FlipJumpPreprocessorException:
+    def _cheap_places(self, by_slot: Dict[int, List[int]], spread_bits: int) -> Tuple[List[Tuple[int, int]], int]:
+        """Lay out a region per slot width (the widest first), each with 2**spread_bits times the slots its tables
+        need. Return ([(table, its address)], where the last region ends)."""
+        cursor = self.pool_base
+        placed: List[Tuple[int, int]] = []
+        for slot_bits in sorted(by_slot, reverse=True):
+            tables = by_slot[slot_bits]
+            index_bits = (len(tables) - 1).bit_length() + spread_bits
+            base = _align_up(cursor, slot_bits << index_bits)
+            placed += [(table, base + offset * slot_bits) for table, offset in zip(tables, _cheapest(index_bits))]
+            cursor = base + (slot_bits << index_bits)
+        return placed, cursor
+
+    def _no_room_exception(self) -> FlipJumpPreprocessorException:
         if self.pool_end is not None and self.pool_end < 1 << self.memory_width:
             advice = 'Raise pool_end'
         elif self.after_program:
@@ -633,14 +684,15 @@ class BlockPool:
                     pinned[self.census[group].word] = block.base
         return pinned
 
-    def unpinned_words(self, labels: LabelsDict) -> Tuple[Set[int], List[str]]:
-        """Return the addresses of the words in pin_all_but's cells (the words the assembler must not pin), and the
-        labels pin_all_but names that the program does not define. A cell named by its label alone runs to the next
-        label the source declares in the program's own code (not in a moved table)."""
-        words: Set[int] = set()
+    def unpinned_cells(self, labels: LabelsDict) -> Tuple[List[Tuple[int, int]], List[str]]:
+        """Return pin_all_but's cells as address ranges [(start, end)] - sorted, and joined where they overlap (the
+        assembler must not pin a word in one) - and the labels pin_all_but names that the program does not define. A
+        cell named by its label alone runs to the next label the source declares in the program's own code (not in a
+        moved table); the last label's cell runs to the pool."""
+        cells: List[Tuple[int, int]] = []
         missing: List[str] = []
         if not self.pin_all_but:
-            return words, missing
+            return cells, missing
         pool_start = self.pool_start()
         addresses = sorted({a for label, a in labels.items() if a < pool_start and _written_in_source(label)})
         for cell in self.pin_all_but:
@@ -651,8 +703,8 @@ class BlockPool:
             start = labels[label]
             if ops is None:
                 after = bisect.bisect_right(addresses, start)
-                end = addresses[after] if after < len(addresses) else start + self.op_bits
+                end = addresses[after] if after < len(addresses) else max(pool_start, start + self.op_bits)
             else:
                 end = start + ops * self.op_bits
-            words.update(range(start, end, self.memory_width))
-        return words, missing
+            cells.append((start, end))
+        return _joined_ranges(cells), missing

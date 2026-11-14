@@ -30,7 +30,7 @@ import bisect
 import dataclasses
 from array import array
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from flipjump.assembler.assembler import resolve_into
 from flipjump.assembler.pins import resolve_pinned, unpin
@@ -67,20 +67,30 @@ def resolve_macros(
     data.result_ops.labels = {}
     if data.mover is not None:
         data.mover.table_ops.labels = {}
-    if pads is not None:  # record every address a `pad` aligns (or a segment starts at), as OffsetGuard.pads does
+    if pads is not None:  # record every address a `pad` aligns (as OffsetGuard.pads does), or a segment starts at
+        insert_segment = data.insert_segment
 
-        def aligned(address: int, bits: int) -> None:
+        def record_alignment(address: int, bits: int) -> None:
             if address:
                 pads[address] = max(pads.get(address, 0), bits)
 
-        data.aligned = aligned  # type: ignore[method-assign]
+        def insert_segment_recording(next_segment_start: int) -> None:
+            insert_segment(next_segment_start)
+            record_alignment(next_segment_start, 0)
+
+        data.record_alignment = record_alignment  # type: ignore[method-assign]
+        data.insert_segment = insert_segment_recording  # type: ignore[method-assign]
     expand = preprocessor.resolve_macro_aux
 
     def expand_recording(
-        preprocessor_data: PreprocessorData, macro_name: MacroName, args: Iterable[Expr], labels_prefix: str
+        preprocessor_data: PreprocessorData,
+        macro_name: MacroName,
+        args: Iterable[Expr],
+        labels_prefix: str,
+        top_level: Any = None,
     ) -> None:
         start = preprocessor_data.curr_address
-        expand(preprocessor_data, macro_name, args, labels_prefix)
+        expand(preprocessor_data, macro_name, args, labels_prefix, top_level)
         if relocatable_extents is not None and is_relocatable(macro_name):
             relocatable_extents.append((start, preprocessor_data.curr_address))
 
@@ -278,13 +288,16 @@ def prove_relocation(
             return {value}
         return {value + delta for delta in deltas_at[label_addresses[index]]}
 
-    # the pins the assembler keeps: the subject, judged below with none of its rules
+    # the pins the assembler keeps: the subject, judged below from the plain program. The proof takes as given
+    # what pins.unpin does not check: `wflip word, table, word's op` is an arm, and with pin_all_but an `a;b` op
+    # that jumps through a word finds it armed
     pinned, _ = resolve_pinned(
-        table_pool.pinned_words(), pooled_labels, memory_width, table_pool.unpinned_words(pooled_labels)[0]
+        table_pool.pinned_words(), pooled_labels, memory_width, table_pool.unpinned_cells(pooled_labels)[0]
     )
+    # (spelled out, not asked of the pool: the proof judges the pool, so it takes none of its answers)
     raw = table_pool.reads_words_raw and table_pool.pin_all_but is None
     if pinned:
-        unpin(pooled_stream, pooled_labels, memory_width, pinned, table_pool)
+        unpin(pooled_stream, pooled_labels, pinned, table_pool)
 
     def arm_alignment(plain_address: int) -> int:
         """the bits the table a word is armed with (at `plain_address` without the pool) is aligned to: a declared
@@ -323,11 +336,13 @@ def prove_relocation(
             pairs.append((op, pooled_address, pooled_op))
         if pinned:  # an op that jumps to a pinned word's op, and is no arm of it: it jumps through the word
             target = _operands(pooled_op)[-1].exact_eval(pooled_labels) + memory_width
-            if target in pinned and not (
+            is_arm = (
                 isinstance(op, WordFlip)
                 and _is_one_address(op.flip_value)
                 and pooled_op.word_address.exact_eval(pooled_labels) == target  # type: ignore[union-attr]
-            ):
+            )
+            follows_an_arm = isinstance(op, FlipJump) and table_pool.pin_all_but is not None
+            if target in pinned and not is_arm and not follows_an_arm:
                 jumped.add(target)
         for index, (plain_operand, pooled_operand) in enumerate(zip(_operands(op), _operands(pooled_op))):
             plain_operand, pooled_operand = _selected(plain_operand), _selected(pooled_operand)

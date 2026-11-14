@@ -63,7 +63,7 @@ OPERANDS: List[Expr] = [
 def _stream_values(stream: OpStream, labels: Dict[str, int]) -> List[List[int]]:
     """every op's operand values, read back the way labels-resolve reads them"""
     values = []
-    for op in stream:
+    for op in stream.iter_ops():
         if isinstance(op, FlipJump):
             values.append([op.flip.exact_eval(labels), op.jump.exact_eval(labels)])
         elif isinstance(op, WordFlip):
@@ -129,9 +129,14 @@ def test_labels_resolve_reads_a_stream_like_the_op_objects(tmp_path: Path) -> No
         labels_resolve(ops, labels, 64, writer, save_wflip_labels=False)
         return list(writer.data)
 
-    objects = OpStream([], labels)  # the same ops, appended as objects
-    for op in stream:
-        objects.append(op)
+    objects = OpStream([], labels)  # the same ops, added again from their op objects
+    for op in stream.iter_ops():
+        if isinstance(op, FlipJump):
+            objects.add_flip_jump(op.flip, op.jump, POSITION)
+        elif isinstance(op, WordFlip):
+            objects.add_word_flip(op.word_address, op.flip_value, op.return_address, POSITION)
+        else:
+            objects.append(op)
     assert build(stream, 'stream.fjm') == build(objects, 'objects.fjm')
 
 

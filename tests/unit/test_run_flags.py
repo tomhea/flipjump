@@ -25,7 +25,7 @@ from flipjump.fjm.fjm_consts import (
     IO_MODE_STANDARD,
     RUN_FLAG_FLAT_MEMORY,
     LZMA_FORMAT,
-    _lzma_compression_filters,
+    lzma_compression_filters,
     HEADER_BASE_SIZE,
 )
 from flipjump.fjm.fjm_reader import Reader, read_fjm_header
@@ -369,7 +369,7 @@ def test_streams_and_junk_after_the_compressed_data_decode_like_lzma_decompress(
     from flipjump.fjm.fjm_reader import _decompress_in_chunks
 
     payload = bytes(range(256)) * 9000  # > 2 chunks
-    stream = lzma.compress(payload, format=LZMA_FORMAT, filters=_lzma_compression_filters(64, 6))
+    stream = lzma.compress(payload, format=LZMA_FORMAT, filters=lzma_compression_filters(64, 6))
     for data in (stream, stream + stream, stream + b'junk' * 300_000, stream + stream + b'\x00junk'):
         assert _decompress_in_chunks(data, None) == lzma.decompress(
             data, format=LZMA_FORMAT, filters=[{"id": lzma.FILTER_LZMA2}]
@@ -463,7 +463,7 @@ def test_chunked_compression_equals_one_shot(tmp_path: Path, size: int) -> None:
     data = bytes((i * 2654435761 >> 13) & 0xFF if i % 7 else 0 for i in range(size))
     writer = Writer(tmp_path / 'x.fjm', 32, FJMVersion.CompressedVersion)
     chunked = writer._compress_data(data)
-    one_shot = lzma.compress(data, format=LZMA_FORMAT, filters=_lzma_compression_filters(64, writer.lzma_preset))
+    one_shot = lzma.compress(data, format=LZMA_FORMAT, filters=lzma_compression_filters(64, writer.lzma_preset))
     assert chunked == one_shot
 
 
@@ -552,7 +552,7 @@ def test_a_damaged_later_stream_contributes_nothing() -> None:
     # CHUNK compressed, so the damage is met after part of it was already decoded - else nothing tests it.
     from flipjump.fjm.fjm_reader import _DECOMPRESS_CHUNK, _decompress_in_chunks
 
-    filters = _lzma_compression_filters(64, 0)
+    filters = lzma_compression_filters(64, 0)
     first = lzma.compress(b'first' * 30, format=LZMA_FORMAT, filters=filters)
     second = bytearray(lzma.compress(_random_letters(6_000_000), format=LZMA_FORMAT, filters=filters))
     assert len(second) > _DECOMPRESS_CHUNK
@@ -574,7 +574,7 @@ def test_a_huge_data_offset_is_rejected_without_allocating_it(tmp_path: Path, da
     from flipjump.fjm.fjm_reader import _DECOMPRESS_CHUNK, read_fjm_raw
 
     data = _random_letters(6_000_000)
-    stream = lzma.compress(data, format=LZMA_FORMAT, filters=_lzma_compression_filters(128, 0))
+    stream = lzma.compress(data, format=LZMA_FORMAT, filters=lzma_compression_filters(128, 0))
     assert len(stream) > _DECOMPRESS_CHUNK
     path = tmp_path / 'x.fjm'
     path.write_bytes(_raw_fjm(64, [(0, 2, 0, 2), (100, 2, data_start_words, 2)], stream, version=3))
@@ -628,7 +628,7 @@ def test_the_decompression_buffer_grows_with_highly_compressible_data() -> None:
     from flipjump.fjm.fjm_reader import _decompress_in_chunks
 
     data = bytes(50_000_000)
-    stream = lzma.compress(data, format=LZMA_FORMAT, filters=_lzma_compression_filters(64, 6))
+    stream = lzma.compress(data, format=LZMA_FORMAT, filters=lzma_compression_filters(64, 6))
     assert len(stream) * 16 < len(data)
     tracemalloc.start()
     try:

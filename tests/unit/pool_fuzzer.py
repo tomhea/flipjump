@@ -188,7 +188,7 @@ class Generator:
         return '\n'.join(lines) + '\n'
 
 
-def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], BlockPool]]:
+def pools(memory_width: int, rng: random.Random) -> Dict[str, Callable[[], BlockPool]]:
     """name -> a factory, called in order: `fj --pool-tables`'s pool, one based at half the memory, one with spread
     blocks and width buckets, and one with too small a span (the overflow region)"""
     base = 1 << (memory_width - 1)
@@ -199,7 +199,8 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
         return made['cli']
 
     def tight() -> BlockPool:
-        used = getattr(made['cli'], '_used', 0) or 64 * 2 * memory_width
+        cli_pool = made['cli']  # (it ran first: its extent says how much room the tables take)
+        used = cli_pool.end - cli_pool.pool_base if cli_pool.end else 64 * 2 * memory_width
         span = max(32 * memory_width, int(used * rng.uniform(0.3, 0.95)) // (2 * memory_width) * 2 * memory_width)
         return BlockPool(memory_width, base, pool_end=base + span, pin_incomplete_groups=rng.random() < 0.5)
 
@@ -230,7 +231,7 @@ def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0
         pytest.skip(f'{seed} w={memory_width}: the plain run timed out - inconclusive')
     findings: List[str] = []
     cli_same: Optional[bool] = None
-    for name, make in pools(memory_width, rng, source, scratch).items():
+    for name, make in pools(memory_width, rng).items():
         pooled = scratch / f'{name}.fjm'
         try:
             assemble([source], pooled, memory_width=memory_width, print_time=False, table_pool=make())

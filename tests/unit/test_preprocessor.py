@@ -34,7 +34,7 @@ def _macro(params: List[str], local_params: List[str], namespace: str) -> Macro:
 
 def test_get_params_dictionary_binds_positional_and_local_params() -> None:
     macro = _macro(['x', 'y'], ['z'], '')
-    params_dict = get_params_dictionary(macro, [Expr(10), Expr(20)], '', 'PREFIX')
+    params_dict = get_params_dictionary(macro, [Expr(10), Expr(20)], 'PREFIX')
 
     assert int(params_dict['x']) == 10
     assert int(params_dict['y']) == 20
@@ -43,7 +43,7 @@ def test_get_params_dictionary_binds_positional_and_local_params() -> None:
 
 def test_get_params_dictionary_adds_namespaced_duplicates() -> None:
     macro = _macro(['x'], ['z'], 'ns')
-    params_dict = get_params_dictionary(macro, [Expr(10)], 'ns', 'PREFIX')
+    params_dict = get_params_dictionary(macro, [Expr(10)], 'PREFIX')
 
     assert int(params_dict['ns.x']) == 10
     assert params_dict['ns.z'].value == params_dict['z'].value

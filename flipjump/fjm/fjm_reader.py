@@ -37,11 +37,13 @@ from flipjump.fjm.fjm_consts import (
     LZMA_DECOMPRESSION_FILTERS,
     _LZMA_MAX_DICT_DECOMPRESSION_FILTERS,
     _new_garbage_val,
+    unpack_ints,
     FJMVersion,
     bad_io_mode_message,
     bad_run_flags_message,
 )
 from flipjump.utils.exceptions import FlipJumpReadFjmException, FlipJumpRuntimeMemoryException
+from flipjump.utils.functions import readable_int
 
 
 class GarbageHandling(IntEnum):
@@ -117,7 +119,7 @@ class Reader:
     def _init_segments(self, fjm_file: BinaryIO) -> List[Tuple[int, int, int, int]]:
         # read the whole table at once (a read per segment is slow on some file systems), but never more than the rest
         # of the file, so a damaged segment_num can't make it allocate more memory than the file's size.
-        segment_size = SEGMENT_FIELDS * segment_field_size(self.version, self.memory_width)
+        segment_size = SEGMENT_FIELDS * segment_field_size(self.memory_width)
         table_size = self.segment_num * segment_size
         stored_size = table_size
         if FJMVersion.CompressedSegmentsVersion == self.version:
@@ -130,12 +132,13 @@ class Reader:
         if len(table) != stored_size:
             raise struct.error(f'the segment table needs {stored_size} bytes, the file has {len(table)} left')
         if FJMVersion.CompressedSegmentsVersion == self.version:
-            table = bytes(_decompress_in_chunks(table, None, table_size, 'segment table'))
+            table = bytes(_decompress_in_chunks(table, None, table_size, 'segment table', max_size=table_size))
             if len(table) != table_size:
+                actual = len(table) if len(table) < table_size else f'more than {table_size}'
                 raise FlipJumpReadFjmException(
-                    f'Error: the segment table is {len(table)} bytes; {self.segment_num} segments take {table_size}.'
+                    f'Error: the segment table is {actual} bytes; {self.segment_num} segments take {table_size}.'
                 )
-        return unpack_segments(table, self.version, self.memory_width)
+        return unpack_segments(table, self.memory_width)
 
     def _validate_header(self) -> None:
         if self.magic != FJ_MAGIC:
@@ -302,7 +305,7 @@ def _unpack_words_little_endian(data: bytes, memory_width: int) -> Sequence[int]
         raise struct.error(f'the data is {len(data)} bytes, not a whole number of {memory_width}-bit words')
     typecode = ARRAY_TYPECODE_BY_WIDTH.get(memory_width)
     if typecode is None:
-        return [int.from_bytes(data[at : at + word_bytes], 'little') for at in range(0, len(data), word_bytes)]  # noqa
+        return unpack_ints(data, word_bytes)
     words = array(typecode)
     words.frombytes(data)
     if sys.byteorder != 'little':
@@ -410,7 +413,11 @@ def read_fjm_raw(
 
 
 def _decompress_in_chunks(
-    file_data: bytes, on_progress: Optional[Callable[[float], None]], expected_size: int = 0, stream: str = 'data'
+    file_data: bytes,
+    on_progress: Optional[Callable[[float], None]],
+    expected_size: int = 0,
+    stream: str = 'data',
+    max_size: Optional[int] = None,
 ) -> bytearray:
     """
     Return lzma.decompress(file_data, format=LZMA_FORMAT, filters=...), but feed it in chunks so its progress can be
@@ -419,6 +426,8 @@ def _decompress_in_chunks(
     The output is allocated once at `expected_size`, and grows past it if needed. `expected_size` comes from segments
     that are not validated yet, so it is trusted only up to _INITIAL_EXPANSION x the compressed size.
     @param stream: what the stream holds, for the error message (the data, or version 4's segment table)
+    @param max_size: if given, stop once the output is longer than this (and return it, one byte longer), so a
+    damaged stream does not make the reader allocate much more than it should
     """
     damaged = f'Error: The compressed {stream} is damaged; Unable to decompress.'
     output = bytearray(min(max(0, expected_size), _INITIAL_EXPANSION * len(file_data)))
@@ -429,7 +438,8 @@ def _decompress_in_chunks(
         position, stream_start = 0, size
         try:
             while position < len(remaining) and not decompressor.eof:
-                piece = decompressor.decompress(remaining[position : position + _DECOMPRESS_CHUNK])  # noqa: E203
+                room = -1 if max_size is None else max_size + 1 - size  # (-1: no limit)
+                piece = decompressor.decompress(remaining[position : position + _DECOMPRESS_CHUNK], room)  # noqa: E203
                 position += _DECOMPRESS_CHUNK
                 if size + len(piece) > len(output):
                     del output[size:]
@@ -438,6 +448,9 @@ def _decompress_in_chunks(
                     with memoryview(output) as view:
                         view[size : size + len(piece)] = piece  # noqa: E203 - in place, no copy of the piece
                 size += len(piece)
+                if max_size is not None and size > max_size:
+                    del output[size:]
+                    return output
                 if on_progress is not None:
                     on_progress(min(1.0, (len(file_data) - len(remaining) + position) / len(file_data)))
         except lzma.LZMAError as e:
@@ -467,16 +480,19 @@ def validate_segments(segments: List[Tuple[int, int, int, int]], data_words: int
     for segment_start, segment_length, data_start, data_length in segments:
         if data_length % 2 != 0:
             raise FlipJumpReadFjmException(
-                f"Bad .fjm file: segment data-length must be even (an integer number of ops), got {data_length}."
+                f"Bad .fjm file: segment data-length must be even (an integer number of ops), "
+                f"got {readable_int(data_length)}."
             )
         if data_start + data_length > data_words:
             raise FlipJumpReadFjmException(
-                f"Bad .fjm file: segment data range [{data_start}, {data_start + data_length})"
-                f" exceeds data pool length {data_words}."
+                f"Bad .fjm file: segment data range "
+                f"[{readable_int(data_start)}, {readable_int(data_start + data_length)})"
+                f" exceeds data pool length {readable_int(data_words)}."
             )
         if data_length > segment_length:
             raise FlipJumpReadFjmException(
-                f"Bad .fjm file: segment data-length {data_length} exceeds its segment-length {segment_length}."
+                f"Bad .fjm file: segment data-length {readable_int(data_length)} exceeds its segment-length "
+                f"{readable_int(segment_length)}."
             )
     ordered = sorted((start, start + length) for start, length, _, _ in segments)
     for (start, end), (next_start, _next_end) in zip(ordered, ordered[1:]):

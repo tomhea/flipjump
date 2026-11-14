@@ -69,9 +69,8 @@ v: hex.hex
 p: hex.vec w/4, d
 """
 
-# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9 and on the plain-comments
-# stl rewrite and its cost-line fixes, whose comment lines moved the call-site line numbers the labels carry - the
-# .fjm and census digests did not move)
+# each configuration's digests. A label carries its call site's line number, so a comment line added to the stl
+# moves the labels digest, and only it.
 GOLDEN: Dict[str, Dict[str, Any]] = {
     'shipped': {
         'fjm': 'dca7d91cc81896ec582654f2f52571dafb5782279fa640f0b98808c708cbc2c4',
@@ -124,10 +123,6 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
 Heat = Dict[str, List[HotSite]]
 
 
-def _slot_ops(width: int) -> int:
-    return 1 << (min(max(width, 1), MAX_SLOT_OPS) - 1).bit_length()
-
-
 # fjdoom's shipped knobs, and a narrow variant whose 32-op tables are too wide (declined, their groups broken)
 CONFIGS: Dict[str, Dict[str, Any]] = {
     'shipped': {'spread_factor': 2, 'max_slot_ops': MAX_SLOT_OPS, 'pin_incomplete_groups': True},
@@ -167,7 +162,7 @@ def _heat(tmp_path: Path) -> Heat:
     _assemble(tmp_path, 'record', recorder)
     sites: Heat = {}
     for table in recorder.table_sites:
-        sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, _slot_ops(table.slot_ops)))
+        sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, table.slot_ops))
     biggest = sorted(sites, key=lambda group: (-len(sites[group]), group))[:3]
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}
 
@@ -211,7 +206,7 @@ def test_golden(tmp_path: Path, heat: Heat, config: str) -> None:
     assert digests == GOLDEN[config]
 
 
-# more configurations, frozen on f55290d (before the second shrink round): {name: (the pool, its digests)} - the
+# more configurations: {name: (the pool, its digests)} - the
 # CLI's flat pool (with pin_all_but it lays blocks out above the program; without it the
 # pointer read makes the program raw: each table takes a cheap address), a raw program at POOL_BASE, a span too small
 # for every block (the overflow region) and the constructor's defaults

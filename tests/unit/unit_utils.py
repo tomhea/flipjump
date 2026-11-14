@@ -216,7 +216,7 @@ def kept_by_the_guard(pool: BlockPool) -> Dict[str, int]:
 
 def pool_stats(pool: BlockPool) -> Dict[str, Any]:
     """what a pool did, counted from what it keeps: its table_sites, blocks, census and kept_inline"""
-    raw = pool.reads_words_raw and pool.pin_all_but is None  # its tables went to cheap addresses, in no block
+    raw = pool.pins_no_word()  # its tables went to cheap addresses, in no block
     placed = [site for site in pool.table_sites if site.address]
     in_blocks = len(placed) if raw else sum(sum(block.taken.values()) for block in pool.blocks.values())
     blocked = {group for group, block in pool.blocks.items() if block.base is not None}

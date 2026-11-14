@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple
 from flipjump.utils.constants import MACRO_SEPARATOR_STRING
 from flipjump.utils.exceptions import FlipJumpExprException, FlipJumpPreprocessorException
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.inner_classes.offset_guard import OffsetGuard, reached_the_pool
+from flipjump.assembler.inner_classes.offset_guard import OffsetGuard, reached_the_pool_exception
 from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, Macro, NewSegment, WordFlip, get_used_labels
 from flipjump.assembler.inner_classes.table_pool import (
@@ -97,11 +97,11 @@ class TableMover:
         """Return the next inline address the expansion emits at."""
         return self.data.curr_address if self.resume is None else self.resume[0]
 
-    def refuse_reaching_the_pool(self, address: int) -> None:
+    def validate_not_reaching_the_pool(self, address: int) -> None:
         """Refuse a program whose code reaches `address`, if that is inside the pool (labels-resolve checks the wflip
         areas)."""
         if address > self.pool.pool_start():
-            raise reached_the_pool(address, self.pool.pool_start())
+            raise reached_the_pool_exception(address, self.pool.pool_start())
 
     # ---- as the expansion goes ----
 
@@ -124,17 +124,17 @@ class TableMover:
         if in_sum:
             name = f'{labels_prefix}{MACRO_SEPARATOR_STRING}$:{op_index}' if labels_prefix else f'$:{op_index}'
             data.insert_label(name, code_position)
-            self.guard.watched.add(name)
+            self.guard.watch(name)
             params_dict['$'] = Expr(name)
         else:
-            self.guard.falls_to = data.curr_address
+            self.guard.fell_through(data.curr_address)
 
-    def check_number(self, expr: Expr, value: int, what: str) -> None:
+    def validate_number(self, expr: Expr, value: int, what: str) -> None:
         """Check a number the expansion evaluated from labels: `what` says what it is and where (`the count of the rep
-        at ...`). A table pool must not change it (OffsetGuard.check_number)."""
+        at ...`). A table pool must not change it (OffsetGuard.validate_number)."""
         self._evaluating = what
         try:
-            self.guard.check_number(expr, value)
+            self.guard.validate_number(expr, value)
         finally:
             self._evaluating = ''
 
@@ -153,9 +153,9 @@ class TableMover:
         """Note that the segment that was being emitted ended at `previous_end`, and a new one starts at the current
         address: the same address with or without the pool."""
         start = self.data.curr_address
-        self.refuse_reaching_the_pool(previous_end)
+        self.validate_not_reaching_the_pool(previous_end)
         if start >= self.pool.pool_start():
-            raise reached_the_pool(start, self.pool.pool_start())
+            raise reached_the_pool_exception(start, self.pool.pool_start())
         self.code_end = max(self.code_end, previous_end)
         self.shift = 0
         self.guard.segment_started(start, previous_end)
@@ -188,7 +188,7 @@ class TableMover:
             return unsafe
         if word is not None and self._is_runtime_word(word):
             return KEPT_RUNTIME_WORD
-        return self.pool.defer(group, word, ops_alignment, table_ops)
+        return self.pool.count_table(group, word, ops_alignment, table_ops)
 
     def _is_runtime_word(self, word: Expr) -> bool:
         """Is `word` one of the runtime's words? Those are declared before the code, so they resolve already (see

@@ -17,6 +17,12 @@ from typing import List, Dict, Mapping, Tuple, Union, Optional
 from flipjump.utils.constants import DEBUG_JSON_ENCODING, DEBUG_JSON_LZMA_FORMAT, DEBUG_JSON_LZMA_FILTERS, STL_PATH
 
 
+def readable_int(value: int) -> str:
+    """Return a number as a message shows it: decimal with thousands separators, or hex if it does not fit 64 bits
+    (python refuses to print a number of more than 4300 decimal digits, and a wide memory has such addresses)."""
+    return f'{value:,}' if value.bit_length() <= 64 else hex(value)
+
+
 def get_stl_paths() -> List[Path]:
     """
     @return: list of the ordered standard-library paths

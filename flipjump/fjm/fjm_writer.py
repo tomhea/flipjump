@@ -24,10 +24,10 @@ from flipjump.fjm.fjm_consts import (
     SUPPORTED_VERSIONS_NAMES,
     SUPPORTED_MEMORY_WIDTHS_TEXT,
     ARRAY_TYPECODE_BY_WIDTH,
-    MAX_SEGMENT_END_WORDS,
     is_supported_memory_width,
     LZMA_FORMAT,
-    _lzma_compression_filters,
+    lzma_compression_filters,
+    pack_ints,
     FJMVersion,
     bad_io_mode_message,
     bad_run_flags_message,
@@ -58,8 +58,7 @@ def _pack_words_little_endian(words: WordBuffer, word_size: int) -> 'bytes | mem
     """Return `words` as the bytes of little-endian `word_size`-bit words. For a typed array on a little-endian machine
     this is a view of the array's own bytes, not a copy."""
     if not isinstance(words, array.array):
-        word_bytes = word_size // 8
-        return b''.join(word.to_bytes(word_bytes, 'little') for word in words)
+        return pack_ints(words, word_size // 8)
     if sys.byteorder != 'little':
         words = words[:]
         words.byteswap()
@@ -135,7 +134,7 @@ class Writer:
         try:
             compressor = lzma.LZMACompressor(
                 format=LZMA_FORMAT,
-                filters=_lzma_compression_filters(2 * self.word_size, self.lzma_preset),
+                filters=lzma_compression_filters(2 * self.word_size, self.lzma_preset),
             )
             parts = []
             for offset in range(0, len(data), _COMPRESS_CHUNK):
@@ -160,7 +159,7 @@ class Writer:
             if FJMVersion.BaseVersion != self.version:
                 f.write(pack(HEADER_EXTENSION_FORMAT, self.run_flags, self.io_mode, self.reserved))
 
-            segment_table = pack_segments(self.segments, self.version, self.word_size)
+            segment_table = pack_segments(self.segments, self.word_size)
             if FJMVersion.CompressedSegmentsVersion == self.version:
                 segment_table = self._compress_data(segment_table)
                 f.write(pack(SEGMENTS_SIZE_FORMAT, len(segment_table)))
@@ -265,6 +264,14 @@ class Writer:
             data[i] = (data[i] - subtrahend) & word_mask
             subtrahend += step
 
+    def _validate_segment_fits_its_fields(self, segment: Tuple[int, int, int, int], segment_addresses_str: str) -> None:
+        field_bits = 8 * segment_field_size(self.word_size)
+        if not all(0 <= field < 1 << field_bits for field in segment):
+            raise FlipJumpWriteFjmException(
+                f"a segment's addresses and lengths must be in [0, 2^{field_bits}), what the .fjm holds at "
+                f"w={self.word_size} (in {segment_addresses_str})."
+            )
+
     def add_segment(self, segment_start: int, segment_length: int, data_start: int, data_length: int) -> None:
         """
         inserts a new segment to the fjm file. checks that it doesn't overlap with any previously inserted segments.
@@ -286,13 +293,9 @@ class Writer:
                 f"segment-length must be at-least data-length " f"(in {segment_addresses_str})."
             )
 
-        u64_fields = segment_field_size(self.version, self.word_size) == 8
-        if u64_fields and segment_start + segment_length > MAX_SEGMENT_END_WORDS:
-            raise FlipJumpWriteFjmException(
-                f"version {self.version.value} of the .fjm format holds segments below word 2^64 (bit "
-                f"{hex(MAX_SEGMENT_END_WORDS * self.word_size)} at w={self.word_size}), and this one ends above it "
-                f"(in {segment_addresses_str}). Version {FJMVersion.CompressedSegmentsVersion.value} holds it."
-            )
+        self._validate_segment_fits_its_fields(
+            (segment_start, segment_length, data_start, data_length), segment_addresses_str
+        )
 
         if segment_start % 2 == 1 or segment_length % 2 == 1:
             raise FlipJumpWriteFjmException(

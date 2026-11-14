@@ -29,7 +29,7 @@ from flipjump.assembler.inner_classes.op_stream import OpStream
 from flipjump.assembler.preprocessor import resolve_macros
 from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
 from flipjump.assembler.inner_classes.table_pool import BlockPool
-from flipjump.assembler.pins import pins
+from flipjump.assembler.pins import pins_that_hold
 
 
 def assert_address_in_memory(memory_width: int, address: int) -> None:
@@ -45,6 +45,17 @@ def validate_addresses(memory_width: int, first_address: int, last_address: int)
 
     assert_address_in_memory(memory_width, first_address)
     assert_address_in_memory(memory_width, last_address - 1)
+
+
+def validate_words_fit(memory_width: int, first_address: int, words: MutableSequence[int]) -> None:
+    """Check that each word of the segment at `first_address` fits the memory width. Only a list of python ints
+    can hold one that does not: a typed array (the widths up to 64) refuses such a word as it is inserted (see
+    _resolve_ops)."""
+    if isinstance(words, list) and words and not 0 <= min(words) <= max(words) < 1 << memory_width:
+        raise FlipJumpAssemblerException(
+            f'Not enough space with the {memory_width}-bits memory-width: a word of the segment at '
+            f'{hex(first_address)} does not fit in {memory_width} bits.'
+        )
 
 
 def add_segment_to_fjm(
@@ -66,13 +77,8 @@ def add_segment_to_fjm(
     if first_address == last_address:
         return
     validate_addresses(memory_width, first_address, last_address)
-    for words in (fj_words, wflip_words):
-        if isinstance(words, list) and words and not 0 <= min(words) <= max(words) < 1 << memory_width:
-            # (a typed array, at w <= 64, refuses such a word as it is inserted: see _resolve_ops)
-            raise FlipJumpAssemblerException(
-                f'Not enough space with the {memory_width}-bits memory-width: a word of the segment at '
-                f'{hex(first_address)} does not fit in {memory_width} bits.'
-            )
+    validate_words_fit(memory_width, first_address, fj_words)
+    validate_words_fit(memory_width, first_address, wflip_words)
 
     # Two appends instead of `fj_words + wflip_words`, which would copy every word. The data stays contiguous.
     # measured before add_data, since a writer that takes fj_words appends to it
@@ -333,7 +339,7 @@ def labels_resolve(
     @param save_wflip_labels: record a `:wflips:N` debugging label for each generated wflip-chain op
     @param on_progress: if given, called every _PROGRESS_CHUNK ops with the fraction resolved so far
     @param table_pool: the pool the preprocessor laid out, if any
-    @param pinned: the words it pins (pins.pins)
+    @param pinned: the words it pins (pins.pins_that_hold)
     """
     resolve_into(
         ops,
@@ -403,7 +409,7 @@ def _resolve_ops(
     on_progress: Optional[Callable[[float], None]],
 ) -> None:
     """Resolve every op after the first NewSegment into `binary_data`, in stream order. The literal ops (most of
-    them) are inserted right here, with no function call."""
+    them) are inserted right here, with no `_resolve_*` call."""
     insert_fj_op = binary_data.insert_fj_op
     kinds = ops.kinds
     refs = ops.refs
@@ -455,7 +461,9 @@ def _resolve_flip_jump(
     binary_data: BinaryData,
     guard: Optional[OffsetGuard],
 ) -> None:
-    """Resolve an `a;b` op that has a deferred operand: read its slots, and insert it."""
+    """Resolve an `a;b` op that has a deferred operand: read its slots, and insert it. (Each operand is read in
+    place, here and in _resolve_word_flip, not through OpStream.read_value: these run for a big share of the
+    ops.)"""
     flip = next_slot()
     if flip < 0:
         flip = ops.deferred_value(~flip, next_slot, labels, guard)
@@ -598,7 +606,7 @@ def assemble(
         del macros
 
         # now that every label is known, resolve the pool's pinned words to addresses
-        pinned = {} if table_pool is None else pins(ops, labels, memory_width, table_pool, warning_as_errors)
+        pinned = {} if table_pool is None else pins_that_hold(ops, labels, table_pool, warning_as_errors)
 
         with ProgressBar('  labels resolve:  ', show_progress=show_progress) as progress:
             # the `:wflips:N` labels are read only by the debugging file

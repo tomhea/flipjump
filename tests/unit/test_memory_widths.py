@@ -17,16 +17,19 @@ from flipjump import assemble, run
 from flipjump.assembler.inner_classes.table_pool import BlockPool
 from flipjump.fjm.fjm_consts import (
     FJMVersion,
+    SUPPORTED_MEMORY_WIDTHS,
     is_supported_memory_width,
     pack_segments,
     segment_field_size,
     unpack_segments,
 )
-from flipjump.fjm.fjm_reader import Reader, read_fjm_header
+from flipjump.fjm.fjm_reader import Reader, read_fjm_header, read_fjm_raw
+from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.interpreter.io_devices.StandardIO import StandardIO
-from flipjump.utils.exceptions import FlipJumpException, FlipJumpFlatMemoryException
+from flipjump.utils.classes import TerminationCause
+from flipjump.utils.exceptions import FlipJumpException, FlipJumpReadFjmException, FlipJumpWriteFjmException
 from tests.unit.pool_fuzzer import fuzz_case
 from tests.unit.relocation_proof import prove_relocation
 from tests.unit.unit_utils import build_and_run, pool_stats
@@ -145,6 +148,15 @@ def test_a_memory_width_is_a_power_of_two_from_8_up_to_what_the_header_holds() -
     assert not is_supported_memory_width(1 << 16) and not is_supported_memory_width(4)
 
 
+@pytest.mark.parametrize('memory_width', sorted(SUPPORTED_MEMORY_WIDTHS))
+def test_the_smallest_program_assembles_and_runs_at_every_width(tmp_path: Path, memory_width: int) -> None:
+    # jump over the io word (the second op), to an op that jumps to itself
+    fjm_path = _assemble(tmp_path, '    ;start\n    ;0\nstart:\n    ;start\n', memory_width, use_stl=False)
+    assert read_fjm_header(fjm_path).memory_width == memory_width
+    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False)
+    assert statistics.termination_cause == TerminationCause.Looping and statistics.op_counter == 2
+
+
 @pytest.mark.parametrize('memory_width', WIDTHS + [32768])
 def test_a_program_runs_the_same_at_every_width(tmp_path: Path, memory_width: int) -> None:
     fjm_path = _assemble(tmp_path, XOR_PROGRAM, memory_width)
@@ -169,10 +181,12 @@ def test_the_native_engine_runs_the_widths_up_to_64_and_the_python_loops_the_res
         assert (statistics.storage_mode is not None) == native
 
 
-def test_flat_memory_is_refused_above_the_native_engines_widths(tmp_path: Path) -> None:
+def test_a_python_loop_run_ignores_a_request_for_flat_memory(tmp_path: Path) -> None:
+    """flat memory is the native engine's: a wider program runs on the python loops, whatever was asked"""
     fjm_path = _assemble(tmp_path, XOR_PROGRAM, 128)
-    with pytest.raises(FlipJumpFlatMemoryException, match='runs memory widths up to 64; this program is w=128'):
-        fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False, flat_required=True)
+    io_device = FixedIO(b'')
+    fjm_run.run(fjm_path, io_device=io_device, print_time=False, flat_required=True)
+    assert io_device.get_output() == b'5f'
 
 
 # --- the table pool at every width ---
@@ -228,7 +242,8 @@ def test_random_programs_run_the_same_with_every_pool_at_the_wide_widths(tmp_pat
 # --- addresses at the edges ---
 
 # (memory width, the high segment's address): above the packed slot's 32-bit jump, at the 63-bit slot's limit and
-# past it, near the top of a 64-bit memory, and - at the wide widths - past 2^64
+# past it, near the top of a 64-bit memory, and - at the wide widths - past 2^64 and past word 2^64, up to the
+# top of the memory
 HIGH_SEGMENTS = [
     (64, 1 << 40),
     (64, 1 << 62),
@@ -237,59 +252,71 @@ HIGH_SEGMENTS = [
     (128, 1 << 63),
     (128, 1 << 64),
     (128, 1 << 70),
-    (1024, 1 << 64),
-    (1024, 1 << 73),
-]
-
-
-@pytest.mark.parametrize('memory_width, high', HIGH_SEGMENTS, ids=_address_id)
-def test_a_segment_at_a_high_address(tmp_path: Path, memory_width: int, high: int) -> None:
-    fjm_path = _assemble(tmp_path, SEGMENT_PROGRAM.replace('HIGH', hex(high)), memory_width, use_stl=False)
-    starts = [start * memory_width for start, _, _, _ in read_fjm_header(fjm_path).segments]
-    assert high in starts and _output(fjm_path) == b'abc'
-
-
-# past word 2^64: a version 4 file holds these in w-bit segment fields
-SEGMENTS_PAST_WORD_2_64 = [
     (128, 1 << 71),
     (128, (1 << 128) - (1 << 20)),
+    (1024, 1 << 64),
+    (1024, 1 << 73),
     (1024, 1 << 74),
     (1024, 1 << 1000),
     (1024, (1 << 1024) - (1 << 20)),
 ]
 
 
-@pytest.mark.parametrize('memory_width, high', SEGMENTS_PAST_WORD_2_64, ids=_address_id)
-def test_version_4_holds_a_segment_anywhere_in_a_wide_memory(tmp_path: Path, memory_width: int, high: int) -> None:
-    fjm_path = _assemble(tmp_path, SEGMENT_PROGRAM.replace('HIGH', hex(high)), memory_width, use_stl=False)
+def _runs_with_a_segment_at(tmp_path: Path, memory_width: int, high: int, **options: object) -> bool:
+    fjm_path = _assemble(tmp_path, SEGMENT_PROGRAM.replace('HIGH', hex(high)), memory_width, use_stl=False, **options)
     starts = [start * memory_width for start, _, _, _ in read_fjm_header(fjm_path).segments]
-    assert high in starts and _output(fjm_path) == b'abc'
+    return high in starts and _output(fjm_path) == b'abc'
 
 
-@pytest.mark.parametrize('version', [version for version in FJMVersion if version.value < 4])
-def test_the_older_versions_refuse_a_segment_past_word_2_64_by_name(tmp_path: Path, version: FJMVersion) -> None:
-    source = SEGMENT_PROGRAM.replace('HIGH', hex(1 << 71))
-    with pytest.raises(FlipJumpException, match=r'version \d of the \.fjm format holds segments below word 2\^64'):
-        _assemble(tmp_path, source, 128, use_stl=False, fjm_version=version)
+@pytest.mark.parametrize('memory_width, high', HIGH_SEGMENTS, ids=_address_id)
+def test_a_segment_at_a_high_address(tmp_path: Path, memory_width: int, high: int) -> None:
+    assert _runs_with_a_segment_at(tmp_path, memory_width, high)
+
+
+@pytest.mark.parametrize('version', list(FJMVersion))
+def test_every_fjm_version_holds_a_segment_past_word_2_64(tmp_path: Path, version: FJMVersion) -> None:
+    assert _runs_with_a_segment_at(tmp_path, 128, 1 << 71, fjm_version=version)
 
 
 @pytest.mark.parametrize('memory_width, field_bytes', [(8, 8), (32, 8), (64, 8), (128, 16), (1024, 128)])
-def test_a_segment_field_is_a_u64_and_in_version_4_w_bits_above_w_64(memory_width: int, field_bytes: int) -> None:
-    for version in FJMVersion:
-        expected = field_bytes if version == FJMVersion.CompressedSegmentsVersion else 8
-        assert segment_field_size(version, memory_width) == expected
+def test_a_segment_field_is_a_u64_or_w_bits_above_w_64(memory_width: int, field_bytes: int) -> None:
+    assert segment_field_size(memory_width) == field_bytes
 
 
 @pytest.mark.parametrize('memory_width', [64, 128, 1024])
 def test_the_segment_table_packs_and_unpacks(memory_width: int) -> None:
-    version = FJMVersion.CompressedSegmentsVersion
     top_word = (1 << memory_width) // memory_width
     segments = [(0, 2, 0, 2), (top_word - 4, 4, 2, 2), (top_word // 2, 6, 4, 0)]
-    table = pack_segments(segments, version, memory_width)
-    assert len(table) == len(segments) * 4 * segment_field_size(version, memory_width)
-    assert unpack_segments(table, version, memory_width) == segments
-    if memory_width == 64:  # up to w=64 the table is four u64 a segment, in every version
+    table = pack_segments(segments, memory_width)
+    assert len(table) == len(segments) * 4 * segment_field_size(memory_width)
+    assert unpack_segments(table, memory_width) == segments
+    if memory_width == 64:  # up to w=64 the table is four u64 a segment
         assert table == b''.join(struct.pack('<QQQQ', *segment) for segment in segments)
+    with pytest.raises(struct.error, match='not a whole number of segments'):
+        unpack_segments(table[:-1], memory_width)
+
+
+@pytest.mark.parametrize('memory_width', [64, 128])
+def test_the_writer_refuses_a_segment_its_fields_cannot_hold(tmp_path: Path, memory_width: int) -> None:
+    top = 1 << max(64, memory_width)
+    for segment in ((top, 2, 0, 2), (0, top, 0, 2), (-2, 2, 0, 2)):
+        writer = Writer(tmp_path / 'w.fjm', memory_width, FJMVersion.CompressedSegmentsVersion)
+        writer.add_data([0, 0])
+        with pytest.raises(FlipJumpWriteFjmException, match='must be in'):
+            writer.add_segment(*segment)
+
+
+@pytest.mark.parametrize('memory_width', [128, 32768])
+def test_a_damaged_wide_segment_is_rejected_by_name(tmp_path: Path, memory_width: int) -> None:
+    """the message holds w-bit numbers: it must not need more decimal digits than python converts"""
+    fjm_path = tmp_path / 'damaged.fjm'
+    writer = Writer(fjm_path, memory_width, FJMVersion.NormalVersion)
+    writer.add_data([0, 0])
+    writer.segments.append((0, 1 << (memory_width - 1), 0, 1 << (memory_width - 2)))  # more data than the file has
+    writer.write_to_file()
+    for read in (Reader, read_fjm_raw):
+        with pytest.raises(FlipJumpReadFjmException, match='exceeds data pool length'):
+            read(fjm_path)
 
 
 # (memory width, pool_base): the pool's addresses (table places, block bases, pinned words' flips) at and past what a
@@ -347,6 +374,19 @@ def _cli(tmp_path: Path, memory_width: str, *options: str) -> Optional[bytes]:
     arguments: List[str] = [str(fj_path), '--asm', '-o', str(fjm_path), '-w', memory_width, '--silent', *options]
     assemble_run_according_to_cmd_line_args(cmd_line_args=arguments)
     return _output(fjm_path)
+
+
+def test_the_cli_runs_a_far_segment_of_a_wide_memory_with_no_outfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from flipjump import assemble_run_according_to_cmd_line_args
+
+    printed = io.StringIO()
+    monkeypatch.setattr(sys.modules[StandardIO.__module__], 'stdout', printed)  # where the program prints
+    fj_path = tmp_path / 'far.fj'
+    fj_path.write_text(SEGMENT_PROGRAM.replace('HIGH', hex(1 << 71)))
+    assemble_run_according_to_cmd_line_args(cmd_line_args=[str(fj_path), '-w', '128', '--no-stl', '--silent'])
+    assert printed.getvalue() == 'abc'
 
 
 @pytest.mark.parametrize('memory_width', ['8', '128', '1024'])

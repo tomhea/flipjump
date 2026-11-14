@@ -43,7 +43,7 @@ POOL_BASE = 1 << 26
 
 def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> BlockPool:
     """the fuzzer's pool `kind`: 'cli' (fj --pool-tables), 'half' (a BlockPool based at half the memory)"""
-    return pools(memory_width, random.Random(0), source, tmp_path)[kind]()  # nosec B311 - these pools draw nothing
+    return pools(memory_width, random.Random(0))[kind]()  # nosec B311 - these pools draw nothing
 
 
 SAME = None
@@ -598,6 +598,15 @@ def test_a_program_that_leaves_its_tables_no_room_is_refused(tmp_path: Path) -> 
 # --- the D cases: programs that reviews of the pool crafted, most of them without the stl ---
 
 # program: (memory width, with the stl, SAME or the words of its refusal)
+# what five of the programs share, assembled before each of them
+D_SCAFFOLD = 'd00_scaffold.fj'
+D_SCAFFOLD_USERS = {
+    'd01_segment_gap',
+    'd02_segment_back',
+    'd03_segment_far_between',
+    'd05_value_moves_with_label',
+    'd06_distance_in_one_piece',
+}
 D_CASES: Dict[str, Tuple[int, bool, Optional[str]]] = {
     # operands across segments that are not emitted in rising address order
     'd01_segment_gap': (
@@ -610,7 +619,7 @@ D_CASES: Dict[str, Tuple[int, bool, Optional[str]]] = {
     'd03_segment_far_between': (32, False, SAME),  # kept inline
     'd04_pad_slot_back': (32, False, r'the operand `M - 64` .* lands in the padding of the `pad 4` at 0x[0-9a-f]+'),
     'd05_value_moves_with_label': (32, False, SAME),  # kept inline
-    # operands that were refused for no reason
+    # operands that move nothing: no refusal
     'd06_distance_in_one_piece': (32, False, SAME),
     'd07_ternary_unselected': (32, False, SAME),
     # what a refusal says
@@ -672,10 +681,9 @@ def _build_both(tmp_path: Path, name: str, pool: BlockPool) -> Tuple[Path, Path]
     """assemble the D case `name` without a pool and with `pool`; return the two .fjm paths"""
     memory_width, use_stl, _ = D_CASES[name]
     plain, pooled = tmp_path / 'plain.fjm', tmp_path / 'pooled.fjm'
-    assemble([GAPS / f'{name}.fj'], plain, memory_width=memory_width, print_time=False, use_stl=use_stl)
-    assemble(
-        [GAPS / f'{name}.fj'], pooled, memory_width=memory_width, print_time=False, use_stl=use_stl, table_pool=pool
-    )
+    sources = ([GAPS / D_SCAFFOLD] if name in D_SCAFFOLD_USERS else []) + [GAPS / f'{name}.fj']
+    assemble(sources, plain, memory_width=memory_width, print_time=False, use_stl=use_stl)
+    assemble(sources, pooled, memory_width=memory_width, print_time=False, use_stl=use_stl, table_pool=pool)
     return plain, pooled
 
 

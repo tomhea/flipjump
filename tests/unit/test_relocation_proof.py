@@ -206,7 +206,7 @@ def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
     pool = _cli_pool(W)
     if mismatch == 'pointer runtime':  # a raw program's pool places its tables in no block - forced into blocks,
-        monkeypatch.setattr(BlockPool, '_raw', lambda self: False)  # its words are pinned
+        monkeypatch.setattr(BlockPool, 'pins_no_word', lambda self: False)  # its words are pinned
     mismatches = prove_relocation(W, _macros(_gap(name), W), pool).mismatches
     assert any(mismatch in found for found in mismatches), mismatches
 

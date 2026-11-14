@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from flipjump import assemble
 from flipjump.utils.exceptions import (
     FlipJumpAssemblerException,
     FlipJumpParsingException,
@@ -165,3 +166,25 @@ def test_assemble_rejects_program_not_starting_at_address_zero(tmp_path: Path) -
     source = 'segment 0x100\n;0\n'
     with pytest.raises(FlipJumpAssemblerException, match='no first op at address 0'):
         assemble_to_path(source, tmp_path, use_stl=False)
+
+
+@pytest.mark.parametrize('body', ['loop', 'rep(1, i) loop'], ids=['a call', 'a rep'])
+def test_endless_macro_recursion_is_refused_at_the_default_depth(tmp_path: Path, body: str) -> None:
+    """the default depth is far deeper than python's own recursion limit allows by default: the preprocessor's
+    limit must fire first, for a call and for a rep (each is more than one python call deep)"""
+    source = f'def loop {{\n    {body}\n}}\n    loop\n'
+    fj_path = tmp_path / 'loop.fj'
+    fj_path.write_text(source)
+    with pytest.raises(FlipJumpPreprocessorException, match='maximal macro-expansion recursive depth'):
+        assemble([fj_path], tmp_path / 'loop.fjm', memory_width=64, print_time=False, use_stl=False)
+
+
+@pytest.mark.parametrize(
+    'memory_width, message',
+    [(64, 'Not enough space with the 64-bits memory-width'), (128, 'too many to assemble')],
+)
+def test_a_pad_of_too_many_ops_is_refused_by_name(tmp_path: Path, memory_width: int, message: str) -> None:
+    fj_path = tmp_path / 'pad.fj'
+    fj_path.write_text(';\n;\n;\npad 1 << 70\n;0\n')
+    with pytest.raises(FlipJumpPreprocessorException, match=message):
+        assemble([fj_path], tmp_path / 'pad.fjm', memory_width=memory_width, print_time=False, use_stl=False)

@@ -345,9 +345,9 @@ def test_v4_header_read_decompresses_only_the_segment_table(tmp_path: Path, monk
     decompressed = []
     real = fjm_reader._decompress_in_chunks
 
-    def spy(file_data: bytes, *args: Any) -> bytearray:
+    def spy(file_data: bytes, *args: Any, **options: Any) -> bytearray:
         decompressed.append(len(file_data))
-        return real(file_data, *args)
+        return real(file_data, *args, **options)
 
     monkeypatch.setattr(fjm_reader, '_decompress_in_chunks', spy)
     header = fjm_reader.read_fjm_header(path)
@@ -391,7 +391,7 @@ def _v4_damaged(tmp_path: Path, damage: str) -> Path:
         ('truncated', "can't unpack", 'the segment table needs '),
         ('size past the end', "can't unpack", 'the segment table needs '),
         ('garbage stream', '^Error: The compressed segment table is damaged; Unable to decompress.$', None),
-        ('one segment fewer', '^Error: the segment table is 1600 bytes; 49 segments take 1568.$', None),
+        ('one segment fewer', '^Error: the segment table is more than 1568 bytes; 49 segments take 1568.$', None),
     ],
 )
 def test_a_damaged_v4_segment_table_is_rejected(tmp_path: Path, damage: str, message: str, cause: str) -> None:
@@ -401,3 +401,25 @@ def test_a_damaged_v4_segment_table_is_rejected(tmp_path: Path, damage: str, mes
             read(path)
         if cause is not None:
             assert str(error.value.__cause__).startswith(cause)
+
+
+def test_a_segment_table_that_decompresses_to_far_more_than_its_segments_is_not_decompressed(tmp_path: Path) -> None:
+    """a small damaged file must not make the header reader allocate what its table stream expands to"""
+    import tracemalloc
+
+    path = tmp_path / 'v4.fjm'
+    _write_segments(path, 64, V4, 1)
+    raw = path.read_bytes()
+    stream_start, table_end = HEADER_BASE_SIZE + HEADER_EXTENSION_SIZE + 8, _v4_table_end(path)
+    huge = lzma.compress(bytes(1 << 26), format=lzma.FORMAT_RAW, filters=[{"id": lzma.FILTER_LZMA2}])
+    path.write_bytes(raw[: stream_start - 8] + struct.pack('<Q', len(huge)) + huge + raw[table_end:])
+    tracemalloc.start()
+    try:
+        with pytest.raises(
+            FlipJumpReadFjmException, match='the segment table is more than 32 bytes; 1 segments take 32'
+        ):
+            fjm_reader.read_fjm_header(path)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 1 << 24, peak  # the decoder's own 8 MiB dictionary, not the 64 MiB the stream holds

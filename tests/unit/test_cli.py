@@ -507,3 +507,36 @@ def test_pin_all_but_refuses_a_cell_it_cannot_read(text: str) -> None:
     errors: List[str] = []
     flipjump_cli.parse_unpinned_cells(text, errors.append)
     assert errors and 'expects LABEL or LABEL:OPS' in errors[0]
+
+
+def _pool_summary(tmp_path: Path, capsys: pytest.CaptureFixture[str], source: str, *options: str) -> List[str]:
+    """the lines `fj --asm --pool-tables` prints about the pool, for a program"""
+    fj_path = tmp_path / 'pool.fj'
+    fj_path.write_text(source)
+    arguments = [str(fj_path), '--asm', '-o', str(tmp_path / 'pool.fjm'), '--pool-tables', *options]
+    assemble_run_according_to_cmd_line_args(cmd_line_args=arguments)
+    lines = capsys.readouterr().out.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith('  table pool:'))
+    return lines[start:]
+
+
+def test_cli_pool_summary_says_no_table_moved(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _pool_summary(tmp_path, capsys, '    ;0\n', '--no-stl') == [
+        '  table pool:      no table moved; 0 words pinned'
+    ]
+
+
+def test_cli_pool_summary_lists_what_stayed_as_it_was_and_why(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = (
+        'stl.startup\n    hex.zero ret\n    stl.fcall func, ret\n    stl.loop\nfunc:\n    stl.fret ret\nret: hex.hex\n'
+    )
+    summary = _pool_summary(tmp_path, capsys, source, '--pool-max-slot-ops', '8')
+    assert summary[0].startswith('  table pool:      no table moved; 0 words pinned')
+    assert summary[1:] == ['    tables kept in place: 1 - it is wider than any slot']
+    summary = _pool_summary(tmp_path, capsys, source)
+    assert summary[0].startswith('  table pool:      1 tables moved, from 0x') and summary[0].endswith(
+        '; 0 words pinned'
+    )
+    assert summary[1:] == ['    words not pinned: 1 - an op jumps through it without arming it']
