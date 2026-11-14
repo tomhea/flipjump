@@ -14,6 +14,7 @@ from typing import NamedTuple, Optional
 
 from flipjump.fjm.fjm_consts import RUN_FLAG_FLAT_MEMORY
 from flipjump.fjm.fjm_reader import FjmHeader
+from flipjump.utils.functions import readable_int
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException
 
 # when nothing chooses the window, a program spanning at most 2^24 words runs fully flat: the array takes at most
@@ -79,6 +80,6 @@ def flat_memory_failure_message(flat_error: FlipJumpFlatMemoryException, window:
     }.get(window.source, 'flat memory was asked for')
     fix = '\nRunning it with --no-flat-memory might fix that, at a cost of speed.' if window.required else ''
     return (
-        f"flipjump: {cause}: the whole program in one array of {flat_error.window_words:,} words, "
+        f"flipjump: {cause}: the whole program in one array of {readable_int(flat_error.window_words)} words, "
         f"and allocating it failed ({flat_error}).{fix}"
     )

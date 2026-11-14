@@ -157,13 +157,11 @@ class InMemoryScreen(IODevice):
         self.palettes: List[List[RGB]] = []
         self.selected_slot = 0
         self.palette: List[RGB] = []  # the palette of the slot selected at the last present
-        self.frame_count = 0
-        self.frame_hashes: List[Tuple[int, str]] = []  # (present-time ns, sha256 hexdigest)
+        self.frame_hashes: List[Tuple[int, str]] = []  # one per frame: (present-time ns, sha256 hexdigest)
         self.window_title: Optional[str] = None
         self.window_icon: Optional[Tuple[int, int, List[RGB]]] = None
         self.max_fps = 0
 
-        self._scr_row_bits = self._scr_column_bits = 0  # init_screen's field widths: R and C
         self._scr_default: List[RGB] = []  # init_screen's palette, the list every slot starts sharing
         self._scr_presented: Optional[Tuple[int, ...]] = None  # the last frame's colour values (RGB only when asked)
         self._scr_palette_bytes_cache: Optional[Tuple[List[RGB], bytes]] = None
@@ -175,6 +173,11 @@ class InMemoryScreen(IODevice):
         self._scr_in_extension = False  # inside an _extension_command's payload
         self._scr_parser: Parser = self._scr_parse()
         next(self._scr_parser)
+
+    @property
+    def frame_count(self) -> int:
+        """how many frames were presented"""
+        return len(self.frame_hashes)
 
     # ---------------------------------------------------------------- output stream
 
@@ -316,7 +319,6 @@ class InMemoryScreen(IODevice):
     def _init_screen(self, width: int, height: int, bpp: int) -> None:
         """Do init_screen: reset everything but the title, the icon, max fps and the frame count."""
         self.width, self.height, self.bpp = width, height, bpp
-        self._scr_row_bits, self._scr_column_bits = row_field_width(height), column_field_width(width)
         self.pixel_indices = [0] * (width * height)
         indexed = bpp != FORMAT_RGB
         self._scr_default = list(default_palette(bpp)) if indexed else []
@@ -400,7 +402,7 @@ class InMemoryScreen(IODevice):
 
     def _scr_cmd_draw_collines(self) -> Generator[None, int, None]:
         width, height, picture = self.width, self.height, self.pixel_indices
-        row_bits, column_bits, colour_bits = self._scr_row_bits, self._scr_column_bits, self.bpp
+        row_bits, column_bits, colour_bits = row_field_width(height), column_field_width(width), self.bpp
         row_mask, column_mask, colour_mask = (1 << row_bits) - 1, (1 << column_bits) - 1, (1 << colour_bits) - 1
         end_command, reserved_column = column_mask, column_mask - 1
         end, keep, copy, reserved_row = row_mask, row_mask - 1, row_mask - 2, row_mask - 3
@@ -486,7 +488,6 @@ class InMemoryScreen(IODevice):
             hashed = value_bytes + cached[1]
         self.palette = palette
         self._scr_presented = values
-        self.frame_count += 1
         self.frame_hashes.append((time.time_ns(), hashlib.sha256(hashed).hexdigest()))
 
         if self.frames_dir is not None:

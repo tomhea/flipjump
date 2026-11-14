@@ -15,22 +15,32 @@ from typing import Dict, FrozenSet, Tuple, List, Callable, Optional
 
 from flipjump import flipjump_quickstart
 from flipjump.assembler import assembler
-from flipjump.assembler.inner_classes.table_pool import AFTER_PROGRAM, BlockPool, UnpinnedCell
+from flipjump.assembler.inner_classes.table_pool import (
+    AFTER_PROGRAM,
+    DEFAULT_MAX_SLOT_OPS,
+    BlockPool,
+    UnpinnedCell,
+)
 from flipjump.fjm.fjm_consts import (
+    DEFAULT_MEMORY_WIDTH,
     FJMVersion,
     SUPPORTED_VERSIONS_NAMES,
     IO_MODE_NAMES,
     IO_MODE_NUMBERS,
     IO_MODE_STANDARD,
     RUN_FLAG_FLAT_MEMORY,
+    SUPPORTED_MEMORY_WIDTHS_TEXT,
+    is_supported_memory_width,
 )
 from flipjump.fjm.fjm_reader import read_fjm_header
+from flipjump.interpreter.fjm_run import NATIVE_MAX_MEMORY_WIDTH
 from flipjump.fjm.fjm_writer import Writer
 from flipjump.interpreter.io_devices.cli_devices import IO_MODES, make_io_device, split_io_mode
 from flipjump.utils.constants import (
     LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
     DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     FLIPJUMP_VERSION,
+    MACRO_SEPARATOR_STRING,
 )
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException, FlipJumpReadFjmException, IODeviceException
 from flipjump.utils.functions import bad_define_message, get_file_tuples, get_temp_directory_suffix
@@ -155,17 +165,29 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
 
 
 def parse_unpinned_cells(text: str, error_func: ErrorFunc) -> List[UnpinnedCell]:
-    """Parse --pin-all-but's value: `a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but)."""
+    """Parse --pin-all-but's value: `a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but). An empty value is no
+    cell: every word is pinned."""
     cells: List[UnpinnedCell] = []
-    for item in filter(None, (part.strip() for part in text.split(','))):
-        label, colon, ops = item.partition(':')
-        if not colon:
-            cells.append(label)
-        elif ops.isdigit() and int(ops) > 0:
-            cells.append((label, int(ops)))
+    if not text.strip():
+        return cells
+    for item in text.split(','):
+        cell = _parse_unpinned_cell(item.strip())
+        if cell is None:
+            error_func(f'--pin-all-but expects LABEL or LABEL:OPS (OPS a positive number), got {item.strip()!r}')
         else:
-            error_func(f'--pin-all-but expects LABEL or LABEL:OPS (OPS a positive number), got {item!r}')
+            cells.append(cell)
     return cells
+
+
+def _parse_unpinned_cell(item: str) -> Optional[UnpinnedCell]:
+    """Parse one cell of --pin-all-but: `LABEL` or `LABEL:OPS`. Return None if it is neither."""
+    label, colon, ops = item.rpartition(':')
+    if colon and label and ops.isascii() and ops.isdecimal() and int(ops) > 0:
+        return label, int(ops)
+    # A macro's own label holds colons too (`f1:l3:go---d`): what follows its last colon holds the `---`.
+    if item and (not colon or MACRO_SEPARATOR_STRING in ops):
+        return item
+    return None
 
 
 # the pool's flags: {argparse dest: BlockPool's keyword}
@@ -258,8 +280,19 @@ def assemble(
         table_pool=table_pool,
     )
     if table_pool is not None and not args.silent:
-        moved, base, pinned = table_pool.deferred, hex(table_pool.pool_base), len(table_pool.pinned)
-        print(f'  table pool:      {moved} tables moved, from {base}; {pinned} words pinned')
+        print_table_pool_summary(table_pool)
+
+
+def print_table_pool_summary(table_pool: BlockPool) -> None:
+    """Print what the pool did: the tables it moved and the words it pinned, then what it left as it was, by why."""
+    if table_pool.moved:
+        moved = f'{table_pool.moved} tables moved, from {hex(table_pool.pool_base)}'
+    else:
+        moved = 'no table moved'
+    print(f'  table pool:      {moved}; {len(table_pool.pinned)} words pinned')
+    for what, reasons in (('tables kept in place', table_pool.kept_inline), ('words not pinned', table_pool.unpins)):
+        for why, count in reasons.items():
+            print(f'    {what}: {count} - {why}')
 
 
 def get_fjm_file_path(args: argparse.Namespace, error_func: ErrorFunc, temp_dir_name: str) -> Path:
@@ -391,11 +424,79 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_table_pool_arguments(group: argparse._ArgumentGroup) -> None:
+    """
+    add --pool-tables and the flags of its pool (see make_table_pool) to the assemble arguments.
+    @param group: the assemble arguments' group
+    """
+    group.add_argument(
+        '--pool-tables',
+        action='store_true',
+        help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
+        "they are cheap to arm: fewer ops per table dispatch, the same program",
+    )
+
+    group.add_argument(
+        '--pool-base',
+        type=lambda text: int(text, 0),
+        metavar='ADDRESS',
+        help="with --pool-tables: the bit address of the pool's first block (default: the first power of two above "
+        "the program)",
+    )
+    group.add_argument(
+        '--pool-end',
+        type=lambda text: int(text, 0),
+        metavar='ADDRESS',
+        help="with --pool-tables: the pool ends below this bit address (default: the top of memory)",
+    )
+    group.add_argument(
+        '--pool-max-slot-ops',
+        type=int,
+        metavar='N',
+        help=f"with --pool-tables: the widest table, in ops, the pool moves (default {DEFAULT_MAX_SLOT_OPS}); "
+        f"wider ones stay in place",
+    )
+    group.add_argument(
+        '--pool-spread-factor',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: give each big group of tables N times the slots it needs, so its tables take the "
+        "cheapest ones (default 1)",
+    )
+    group.add_argument(
+        '--pool-spread-min-tables',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: a group of at least N tables is big, for --pool-spread-factor (default 256)",
+    )
+    group.add_argument(
+        '--pool-pin-incomplete-groups',
+        action='store_true',
+        help="with --pool-tables: pin a group's dispatch word even when some of its tables stayed in place (cheaper "
+        "for the moved ones, dearer for the others)",
+    )
+
+    group.add_argument(
+        '--pin-all-but',
+        metavar='LABEL[:OPS],...',
+        help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
+        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, and every cell whose "
+        "dispatch word is jumped through while no table is armed in it, or it runs wrong (an empty list, \"\", pins "
+        "every word). Without it, a program that uses pointers pins nothing",
+    )
+
+
 def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     """
     add the arguments that are usable in assemble time.
     @param parser: the parser
     """
+
+    def _memory_width(value: str) -> int:
+        if not value.isdecimal() or not is_supported_memory_width(int(value)):
+            raise argparse.ArgumentTypeError(f"{value} is not a memory-width ({SUPPORTED_MEMORY_WIDTHS_TEXT})")
+        return int(value)
+
     asm_arguments = parser.add_argument_group('assemble arguments', 'Ignored when using the --run option')
 
     asm_arguments.add_argument('-o', '--outfile', metavar='PATH', help="output assembled file")
@@ -403,11 +504,12 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     asm_arguments.add_argument(
         '-w',
         '--width',
-        type=int,
-        default=64,
-        choices=[8, 16, 32, 64],
+        type=_memory_width,
+        default=DEFAULT_MEMORY_WIDTH,
         metavar='WIDTH',
-        help="specify memory-width. 64 by default",
+        help=f"specify memory-width: {SUPPORTED_MEMORY_WIDTHS_TEXT}. {DEFAULT_MEMORY_WIDTH} by default; the native "
+        f"engine runs the widths up to {NATIVE_MAX_MEMORY_WIDTH}, and wider programs run on the much slower python "
+        f"engine",
     )
 
     supported_versions = ', '.join(f"{version}: {name}" for version, name in SUPPORTED_VERSIONS_NAMES.items())
@@ -443,59 +545,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         f"used by versions {FJMVersion.CompressedVersion.value} and {FJMVersion.CompressedSegmentsVersion.value}).",
     )
 
-    asm_arguments.add_argument(
-        '--pool-tables',
-        action='store_true',
-        help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
-        "they are cheap to arm: fewer ops per table dispatch, the same program",
-    )
-
-    asm_arguments.add_argument(
-        '--pool-base',
-        type=lambda text: int(text, 0),
-        metavar='ADDRESS',
-        help="with --pool-tables: the bit address of the pool's first block (default: the first power of two above "
-        "the program)",
-    )
-    asm_arguments.add_argument(
-        '--pool-end',
-        type=lambda text: int(text, 0),
-        metavar='ADDRESS',
-        help="with --pool-tables: the pool ends below this bit address (default: the top of memory)",
-    )
-    asm_arguments.add_argument(
-        '--pool-max-slot-ops',
-        type=int,
-        metavar='N',
-        help="with --pool-tables: the widest table, in ops, the pool moves (default 32); wider ones stay in place",
-    )
-    asm_arguments.add_argument(
-        '--pool-spread-factor',
-        type=int,
-        metavar='N',
-        help="with --pool-tables: give each big group of tables N times the slots it needs, so its tables take the "
-        "cheapest ones (default 1)",
-    )
-    asm_arguments.add_argument(
-        '--pool-spread-min-tables',
-        type=int,
-        metavar='N',
-        help="with --pool-tables: a group of at least N tables is big, for --pool-spread-factor (default 256)",
-    )
-    asm_arguments.add_argument(
-        '--pool-pin-incomplete-groups',
-        action='store_true',
-        help="with --pool-tables: pin a group's dispatch word even when some of its tables stayed in place (cheaper "
-        "for the moved ones, dearer for the others)",
-    )
-
-    asm_arguments.add_argument(
-        '--pin-all-but',
-        metavar='LABEL[:OPS],...',
-        help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
-        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong. "
-        "Without it, a program that uses pointers pins nothing",
-    )
+    add_table_pool_arguments(asm_arguments)
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')
     asm_arguments.add_argument(

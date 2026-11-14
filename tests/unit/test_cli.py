@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple
 
 import pytest
 
-from flipjump import assemble_run_according_to_cmd_line_args
+from flipjump import assemble_run_according_to_cmd_line_args, flipjump_cli
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpParsingException
 from flipjump.fjm.fjm_consts import FJMVersion
@@ -459,7 +459,7 @@ def test_cli_pool_tables_runs_the_same_program_in_fewer_ops(tmp_path: Path, prog
 
 
 def test_cli_pool_tables_runs_a_program_that_reads_through_pointers_the_same(tmp_path: Path) -> None:
-    # a pointer may read any word raw, so the pool pins none (assembler.unpin): the tables still move
+    # a pointer may read any word raw, so the pool pins none (pins.unpin): the tables still move
     files = [PROGRAMS_DIR / 'concept_checks' / 'hex_ptr.fj']
     plain, pooled = _cli_assemble(tmp_path, 'plain', files), _cli_assemble(tmp_path, 'pooled', files, '--pool-tables')
     assert pooled.read_bytes() != plain.read_bytes()
@@ -494,3 +494,49 @@ def test_cli_pool_tables_refuses_a_program_that_leaves_its_tables_no_room(tmp_pa
     # prime_sieve reserves the upper half of memory after its code: no room for its tables above the program
     with pytest.raises(FlipJumpException, match='has no room for'):
         _cli_assemble(tmp_path, 'pooled', [PROGRAMS_DIR / 'prime_sieve.fj'], '--pool-tables')
+
+
+def test_pin_all_but_cells_are_labels_and_labels_with_ops() -> None:
+    cells = flipjump_cli.parse_unpinned_cells('a, b:4,f1:l3:go---d,f1:l3:go---d:2', _no_error)
+    assert cells == ['a', ('b', 4), 'f1:l3:go---d', ('f1:l3:go---d', 2)]  # a macro's own label holds colons too
+    assert flipjump_cli.parse_unpinned_cells('', _no_error) == []  # no cell: pin every word
+
+
+@pytest.mark.parametrize('text', ['d0:x', 'x:\u00b2', 'x:0', ':2', 'a,,b', ',', 'a:'])
+def test_pin_all_but_refuses_a_cell_it_cannot_read(text: str) -> None:
+    errors: List[str] = []
+    flipjump_cli.parse_unpinned_cells(text, errors.append)
+    assert errors and 'expects LABEL or LABEL:OPS' in errors[0]
+
+
+def _pool_summary(tmp_path: Path, capsys: pytest.CaptureFixture[str], source: str, *options: str) -> List[str]:
+    """the lines `fj --asm --pool-tables` prints about the pool, for a program"""
+    fj_path = tmp_path / 'pool.fj'
+    fj_path.write_text(source)
+    arguments = [str(fj_path), '--asm', '-o', str(tmp_path / 'pool.fjm'), '--pool-tables', *options]
+    assemble_run_according_to_cmd_line_args(cmd_line_args=arguments)
+    lines = capsys.readouterr().out.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith('  table pool:'))
+    return lines[start:]
+
+
+def test_cli_pool_summary_says_no_table_moved(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _pool_summary(tmp_path, capsys, '    ;0\n', '--no-stl') == [
+        '  table pool:      no table moved; 0 words pinned'
+    ]
+
+
+def test_cli_pool_summary_lists_what_stayed_as_it_was_and_why(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = (
+        'stl.startup\n    hex.zero ret\n    stl.fcall func, ret\n    stl.loop\nfunc:\n    stl.fret ret\nret: hex.hex\n'
+    )
+    summary = _pool_summary(tmp_path, capsys, source, '--pool-max-slot-ops', '8')
+    assert summary[0].startswith('  table pool:      no table moved; 0 words pinned')
+    assert summary[1:] == ['    tables kept in place: 1 - it is wider than any slot']
+    summary = _pool_summary(tmp_path, capsys, source)
+    assert summary[0].startswith('  table pool:      1 tables moved, from 0x') and summary[0].endswith(
+        '; 0 words pinned'
+    )
+    assert summary[1:] == ['    words not pinned: 1 - an op jumps through it without arming it']

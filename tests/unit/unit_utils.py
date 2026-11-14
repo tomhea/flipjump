@@ -9,14 +9,22 @@ FixedIO - so the individual test files stay short and focused.
 import importlib
 import struct
 from pathlib import Path
-from typing import Any, Callable, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.expr import Expr
-from flipjump.assembler.inner_classes.table_pool import BlockPool, DeferredTables, OffsetGuard
-from flipjump.fjm.fjm_consts import FJMVersion, _header_base_size
+from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
+from flipjump.assembler.inner_classes.table_pool import (
+    BlockPool,
+    DeferredTables,
+    KEPT_NO_JUMP_WORD,
+    KEPT_RUNTIME_WORD,
+    KEPT_TOO_WIDE,
+    heat_key,
+)
+from flipjump.fjm.fjm_consts import FJMVersion, HEADER_BASE_SIZE
 from flipjump.fjm.fjm_reader import GarbageHandling, Reader
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.fjm_run import TerminationStatistics
@@ -187,24 +195,63 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
 
 # the table pool's controls switch its safety rules off through these public seams only, so the pool's insides can
 # change freely: every operand refusal goes through OffsetGuard.refuse, every keep-inline decision through
-# OffsetGuard.may_move, every dropped pin through assembler.unpin
+# OffsetGuard.why_stay_inline, every dropped pin through pins.unpin
 
 
 def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the table pool's OffsetGuard refuses no operand (its checks run, and let every one pass)"""
-    monkeypatch.setattr(OffsetGuard, 'refuse', lambda self, operand, why: None)
+    monkeypatch.setattr(OffsetGuard, 'refuse', lambda self, operand, why, where=None: None)
 
 
 def every_table_moves(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the table pool's OffsetGuard keeps no table inline"""
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
+    monkeypatch.setattr(OffsetGuard, 'why_stay_inline', lambda self, anchor: None)
+
+
+def kept_by_the_guard(pool: BlockPool) -> Dict[str, int]:
+    """the tables a pool kept inline because moving them would change an operand, counted by why"""
+    other = (KEPT_NO_JUMP_WORD, KEPT_RUNTIME_WORD, KEPT_TOO_WIDE)
+    return {why: count for why, count in pool.kept_inline.items() if why not in other}
+
+
+def pool_stats(pool: BlockPool) -> Dict[str, Any]:
+    """what a pool did, counted from what it keeps: its table_sites, blocks, census and kept_inline"""
+    raw = pool.pins_no_word()  # its tables went to cheap addresses, in no block
+    placed = [site for site in pool.table_sites if site.address]
+    in_blocks = len(placed) if raw else sum(sum(block.taken.values()) for block in pool.blocks.values())
+    blocked = {group for group, block in pool.blocks.items() if block.base is not None}
+    hot = {group: block.hot for group, block in pool.blocks.items() if block.hot is not None}
+    matched = width_changed = 0
+    for site in placed:
+        listed = hot[site.group].ranks.get((site.site, site.occurrence)) if site.group in hot else None
+        if listed is not None:
+            matched += listed[0] == site.slot_ops
+            width_changed += listed[0] != site.slot_ops
+    group_keys = {heat_key(group) for group in pool.merged_census()}
+    return {
+        'allocated': in_blocks,  # tables placed in a block
+        'deferred': len(placed),  # tables moved
+        'overflowed': len(placed) - in_blocks,  # tables placed in the overflow region
+        'ungrouped': pool.kept_inline.get(KEPT_NO_JUMP_WORD, 0),
+        'declined': sum(1 for site in pool.table_sites if not site.address and site.group in blocked),
+        'groups': len(blocked),
+        'broken_groups': sum(block.broken for block in pool.blocks.values()),
+        'heat': {
+            'hot_groups': len(hot),
+            'hot_groups_missing': sum(key not in group_keys for key in pool.heat_unmatched),
+            'hot_groups_ambiguous': sum(key in group_keys for key in pool.heat_unmatched),
+            'hot_sites_listed': sum(len(group.ranks) for group in hot.values()),
+            'hot_sites_matched': matched,
+            'hot_sites_width_changed': width_changed,
+        },
+    }
 
 
 def labels_off_their_ops(
-    monkeypatch: pytest.MonkeyPatch, delta: int, which: Callable[[BlockPool, DeferredTables, Sequence[int]], int]
+    monkeypatch: pytest.MonkeyPatch, delta_ops: int, which: Callable[[BlockPool, DeferredTables, Sequence[int]], int]
 ) -> None:
     """the control: a pool whose ops and labels disagree - the labels of one moved table (`which` picks its index from
-    the pool's placement: BlockPool.place_deferred) lie `delta` bits off its ops (DeferredTables.labels_of)"""
+    the pool's placement: BlockPool.place_deferred) lie `delta_ops` ops off its ops (DeferredTables.labels_of)"""
     place, labels_of = vars(BlockPool)['place_deferred'], vars(DeferredTables)['labels_of']  # the originals
 
     def placing(self: BlockPool, tables: DeferredTables, labels: Any, end: int) -> Sequence[int]:
@@ -214,7 +261,7 @@ def labels_off_their_ops(
 
     def shifted(self: DeferredTables, index: int) -> Iterator[Tuple[str, int]]:
         for label, offset in labels_of(self, index):
-            yield label, offset + (delta if index == getattr(self, 'shifted', -1) else 0)
+            yield label, offset + (delta_ops if index == getattr(self, 'shifted', -1) else 0)
 
     monkeypatch.setattr(BlockPool, 'place_deferred', placing)
     monkeypatch.setattr(DeferredTables, 'labels_of', shifted)
@@ -255,7 +302,7 @@ def high_segment_program(top: int) -> str:
 def patch_run_header(fjm_path: Path, *, run_flags: int = 0, io_mode: int = 0) -> None:
     """rewrite the run flags and the io mode in the .fjm's header."""
     raw = bytearray(fjm_path.read_bytes())
-    struct.pack_into('<LL', raw, _header_base_size, run_flags, io_mode)
+    struct.pack_into('<LL', raw, HEADER_BASE_SIZE, run_flags, io_mode)
     fjm_path.write_bytes(bytes(raw))
 
 

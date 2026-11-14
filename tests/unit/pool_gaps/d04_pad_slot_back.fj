@@ -1,0 +1,58 @@
+// D04: `M - dw` lands on the op before a `pad 4` without the pool, and on a padding op of that pad with it (the
+// pad pads one op once the table before it moved out): refused.
+dw = 2 * w
+def startup @ code_start > IO {
+    ;code_start
+  IO:
+    ;0
+  code_start:
+}
+def outbit b < IO {
+    IO + b;
+}
+def outc c {
+    rep(8, i) outbit (c >> i) & 1
+}
+def halt @ l {
+  l:
+    ;l
+}
+ns my {
+  ns __relocatable__ {
+    def table start, e0, e1, e2, e3 {
+      start:
+        ;e0
+        ;e1
+        ;e2
+        ;e3
+    }
+  }
+}
+def go x, e0, e1, e2, e3 @ T, end {
+    wflip x+w, T, x
+    pad 4
+    my.__relocatable__.table T, e0, e1, e2, e3
+  end:
+    wflip x+w, T
+}
+// a declared table nobody runs: `;skip` jumps over it
+def dead x @ T, skip, h {
+    ;skip
+    pad 4
+    my.__relocatable__.table T, h, h, h, h
+    wflip x+w, T
+  h:
+    ;h
+  skip:
+}
+startup
+    dead x
+    ;M - dw
+B:  ;rB
+    pad 4
+M:  ;rM
+rB: outc 'B'
+    halt
+rM: outc 'M'
+    halt
+x:  ;0

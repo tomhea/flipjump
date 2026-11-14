@@ -22,9 +22,13 @@ from flipjump.utils.functions import get_file_tuples
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # refusals that say why (any other refusal of a pooled build is a finding)
-# the refusals a random program may meet: a span too small, a program reaching the pool, and a label distance across
+# the refusals a random program may meet: a span too small, a program reaching the pool, a label distance across
 # a moved table's place (the `distance` op)
-KNOWN_REFUSALS = ('inside the table pool', 'Raise pool_end', 'cannot hold', 'takes the distance across the place')
+KNOWN_REFUSALS = (
+    'inside the table pool',
+    'has no room for its tables',
+    'takes the distance across the place',
+)
 
 _RUNNER = """
 import sys
@@ -184,7 +188,7 @@ class Generator:
         return '\n'.join(lines) + '\n'
 
 
-def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) -> Dict[str, Callable[[], BlockPool]]:
+def pools(memory_width: int, rng: random.Random) -> Dict[str, Callable[[], BlockPool]]:
     """name -> a factory, called in order: `fj --pool-tables`'s pool, one based at half the memory, one with spread
     blocks and width buckets, and one with too small a span (the overflow region)"""
     base = 1 << (memory_width - 1)
@@ -195,7 +199,8 @@ def pools(memory_width: int, rng: random.Random, source: Path, scratch: Path) ->
         return made['cli']
 
     def tight() -> BlockPool:
-        used = getattr(made['cli'], '_used', 0) or 64 * 2 * memory_width
+        cli_pool = made['cli']  # (it ran first: its extent says how much room the tables take)
+        used = cli_pool.end - cli_pool.pool_base if cli_pool.end else 64 * 2 * memory_width
         span = max(32 * memory_width, int(used * rng.uniform(0.3, 0.95)) // (2 * memory_width) * 2 * memory_width)
         return BlockPool(memory_width, base, pool_end=base + span, pin_incomplete_groups=rng.random() < 0.5)
 
@@ -226,7 +231,7 @@ def fuzz_case(seed: int, memory_width: int, scratch: Path, timeout: float = 30.0
         pytest.skip(f'{seed} w={memory_width}: the plain run timed out - inconclusive')
     findings: List[str] = []
     cli_same: Optional[bool] = None
-    for name, make in pools(memory_width, rng, source, scratch).items():
+    for name, make in pools(memory_width, rng).items():
         pooled = scratch / f'{name}.fjm'
         try:
             assemble([source], pooled, memory_width=memory_width, print_time=False, table_pool=make())

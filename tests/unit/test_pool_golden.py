@@ -18,6 +18,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.table_pool import BlockPool, HotSite, heat_key
+from tests.unit.unit_utils import pool_stats
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.functions import load_debugging_labels
@@ -68,9 +69,8 @@ v: hex.hex
 p: hex.vec w/4, d
 """
 
-# each configuration's digests (frozen on 1.6.0 = e44ff3f; the labels re-frozen on 2e78aa9 and on the plain-comments
-# stl rewrite and its cost-line fixes, whose comment lines moved the call-site line numbers the labels carry - the
-# .fjm and census digests did not move)
+# each configuration's digests. A label carries its call site's line number, so a comment line added to the stl
+# moves the labels digest, and only it.
 GOLDEN: Dict[str, Dict[str, Any]] = {
     'shipped': {
         'fjm': 'dca7d91cc81896ec582654f2f52571dafb5782279fa640f0b98808c708cbc2c4',
@@ -96,8 +96,8 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
         },
     },
     'narrow': {
-        'fjm': 'd56c6e1dc5e83425177b7fcf05285b46ce979e79a81f368b671aa7a0cc38d40b',
-        'labels': '694b580004088aea569d68417dcb7fffc8bb60f5a1b651a1266170a925356de7',
+        'fjm': '600b438f73607cde39a1755b63aea737f9c900933dc11898f86a322f34461b67',
+        'labels': 'baf137cf93304a14895d2d3cc825dc9cc35b9b26637d5768cf0a0e847da72dd2',
         'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
         'stats': {
             'allocated': 289,
@@ -121,10 +121,6 @@ GOLDEN: Dict[str, Dict[str, Any]] = {
 }
 
 Heat = Dict[str, List[HotSite]]
-
-
-def _slot_ops(width: int) -> int:
-    return 1 << (min(max(width, 1), MAX_SLOT_OPS) - 1).bit_length()
 
 
 # fjdoom's shipped knobs, and a narrow variant whose 32-op tables are too wide (declined, their groups broken)
@@ -166,7 +162,7 @@ def _heat(tmp_path: Path) -> Heat:
     _assemble(tmp_path, 'record', recorder)
     sites: Heat = {}
     for table in recorder.table_sites:
-        sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, _slot_ops(table.slot_ops)))
+        sites.setdefault(table.group, []).append(HotSite(table.site, table.occurrence, table.slot_ops))
     biggest = sorted(sites, key=lambda group: (-len(sites[group]), group))[:3]
     return {heat_key(group): sites[group][::-1][:3] for group in biggest}
 
@@ -174,22 +170,25 @@ def _heat(tmp_path: Path) -> Heat:
 def _digests(tmp_path: Path, heat: Heat, pool: Optional[BlockPool] = None, **knobs: Any) -> Dict[str, Any]:
     pool = _pool(heat, **knobs) if pool is None else pool
     fjm, labels = _assemble(tmp_path, 'golden', pool)
-    census = pool.census()
-    census_json = json.dumps([census.counts, census.widths, census.width_hist, census.alias])
+    census = pool.merged_census()
+    counts = {group: sum(widths.values()) for group, widths in census.items()}
+    widest = {group: max(widths) for group, widths in census.items()}
+    census_json = json.dumps([counts, widest, census, pool.alias])
+    stats = pool_stats(pool)
     return {
         'fjm': hashlib.sha256(fjm).hexdigest(),
         'labels': hashlib.sha256(json.dumps(sorted(labels.items())).encode()).hexdigest(),
         'census': hashlib.sha256(census_json.encode()).hexdigest(),
         'stats': {
-            'allocated': pool.allocated,
-            'deferred': pool.deferred,
-            'ungrouped': pool.ungrouped,
-            'declined': pool.declined,
-            'groups': len(pool.groups),
+            'allocated': stats['allocated'],
+            'deferred': stats['deferred'],
+            'ungrouped': stats['ungrouped'],
+            'declined': stats['declined'],
+            'groups': stats['groups'],
             'pinned_words': len(pool.pinned_words()),
-            'broken_groups': len(pool.broken_groups),
+            'broken_groups': stats['broken_groups'],
             'unpins': dict(sorted(pool.unpins.items())),
-            'heat': pool.heat_report(),
+            'heat': stats['heat'],
         },
     }
 
@@ -207,7 +206,7 @@ def test_golden(tmp_path: Path, heat: Heat, config: str) -> None:
     assert digests == GOLDEN[config]
 
 
-# more configurations, frozen on f55290d (before the second shrink round): {name: (the pool, its digests)} - the
+# more configurations: {name: (the pool, its digests)} - the
 # CLI's flat pool (with pin_all_but it lays blocks out above the program; without it the
 # pointer read makes the program raw: each table takes a cheap address), a raw program at POOL_BASE, a span too small
 # for every block (the overflow region) and the constructor's defaults
@@ -215,8 +214,8 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
     'flat': (
         lambda heat: BlockPool(W, pin_all_but=ALL_BUT_D),
         {
-            'fjm': 'bdc8e5dd8aa7a0d2923237d7e5c27793e5a67316598999733b739a8c57704a75',
-            'labels': 'b1fb4add98d514b00ce8ae88fa90865006afa087b58a69456354ba8111cada33',
+            'fjm': '3b25d9f82260d1985d07ee2508b454fd0c0b4a30ae546175754dc6493a02f5c7',
+            'labels': 'c0618ddbc7119cbac7d120c8c8fe2dba29eee8b7cd3caf1e0c50baa2df144479',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 400,
@@ -236,7 +235,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
                     'hot_sites_width_changed': 0,
                 },
                 'overflowed': 0,
-                'end': 2381824,
+                'end': 2349056,
             },
         },
     ),
@@ -336,8 +335,8 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
     'defaults': (
         lambda heat: BlockPool(W, POOL_BASE, pin_all_but=ALL_BUT_D),
         {
-            'fjm': '0e4a821802c1075e2eba8f89641f74b48bcea5d862befaab9ddfb3b1ab1a54ed',
-            'labels': '15d4923ee34242694f6549709b8e5c83a8952d76b2b3eb23c2053898537c65a2',
+            'fjm': 'eebaeed778db6c6c71186b334847fcd3b39ca51a72b0336dbc57b7236c3ddbbd',
+            'labels': '36174596224b12ae687ee0c11b9c481f7aa7c17fc1412c71c3e3cd1ff4aec671',
             'census': '20d6836eccf20d893928fb4207643af6cb391fb73d48d8b2d6934f42ff8214b3',
             'stats': {
                 'allocated': 400,
@@ -357,7 +356,7 @@ EXTRA: Dict[str, Tuple[Callable[[Heat], BlockPool], Dict[str, Any]]] = {
                     'hot_sites_width_changed': 0,
                 },
                 'overflowed': 0,
-                'end': 2148816896,
+                'end': 2148784128,
             },
         },
     ),
@@ -369,7 +368,7 @@ def test_golden_extra(tmp_path: Path, heat: Heat, config: str) -> None:
     make, golden = EXTRA[config]
     pool = make(heat)
     digests = _digests(tmp_path, heat, pool)
-    digests['stats']['overflowed'] = pool.overflowed
+    digests['stats']['overflowed'] = pool_stats(pool)['overflowed']
     digests['stats']['end'] = pool.end
     print(json.dumps(digests, indent=1))
     assert digests['stats']['allocated'] >= 200

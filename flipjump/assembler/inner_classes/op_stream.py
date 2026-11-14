@@ -19,13 +19,13 @@ operand keeps its CodePosition, for labels-resolve's error messages.
 from __future__ import annotations
 
 from array import array
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import CodePosition, FlipJump, NewSegment, Padding, ReserveBits, WordFlip
 
 if TYPE_CHECKING:
-    from flipjump.assembler.inner_classes.table_pool import OffsetGuard  # for types only: it imports us
+    from flipjump.assembler.inner_classes.offset_guard import OffsetGuard  # for types only: it imports us
 
 # op kinds. Slots per kind:
 FJ = 0  # flip, jump - both literal
@@ -33,19 +33,27 @@ FJ_POS = 1  # flip, jump (operands, at least one deferred), the ref of the op's 
 WFLIP = 2  # word_address, flip_value, return_address (operands), the ref of the op's CodePosition
 PAD = 3  # ops_count
 OBJ = 4  # ref to a NewSegment / ReserveBits (mutable: NewSegment's wflip address is patched later)
-# flip << 32 | jump, both literal: the common op, in one slot instead of two. Needs flip < 2**31 and jump < 2**32.
+# flip << PACKED_JUMP_BITS | jump, both literal: the common op, in one slot instead of two. It packs by the values'
+# size, not by the memory width: any op whose jump is below 2**32 and whose flip is below 2**31 fits the slot's 63
+# bits (at any width, that is every op of a program under 2 Gbit). Other ops take two slots.
 FJ_PACKED = 5
 
-PACKED_FLIP_MAX = (1 << 31) - 1
-PACKED_JUMP_MAX = (1 << 32) - 1
+PACKED_JUMP_BITS = 32
+PACKED_JUMP_MAX = (1 << PACKED_JUMP_BITS) - 1
 PACKED_JUMP_MASK = PACKED_JUMP_MAX
+PACKED_FLIP_MAX = (1 << (63 - PACKED_JUMP_BITS)) - 1
 
 TAG_LABEL = 0
 TAG_LABEL_PLUS = 1
 TAG_EXPR = 2
 
+# a slot is a signed 64-bit number: a literal is a value below 2**63 (a bigger one is kept as an Expr, at any width)
 LITERAL_MAX = (1 << 63) - 1
 CONST_MIN = -(1 << 63)
+
+# The kinds of a wflip's value (see BinaryData.pinned_value): a number, an address (a label plus a constant), or a
+# value computed from labels.
+VALUE_NUMBER, VALUE_ADDRESS, VALUE_COMPUTED = 0, 1, 2
 
 _ADD_SUB = ('+', '-')
 
@@ -92,7 +100,8 @@ LinearPart = Tuple[Dict[str, int], int]
 def linear_parts(expr: Expr) -> List[LinearPart]:
     """Return every maximal linear sum in `expr` (+, - and * by a number) that names a label.
     A linear `expr` like `b - a` is one part; otherwise its linear sub-sums are the parts, like `L + 15*dw` in
-    `(L + 15*dw) | 0`. A label whose coefficients cancel (`a - a`) is left out.
+    `(L + 15*dw) | 0`. A label whose coefficients cancel (`a - a`) is left out. `c ? a : b` whose condition is a number
+    is `a` or `b`: the other is never evaluated.
     Returns: `[({label: coefficient}, constant), ...]`"""
     parts: List[LinearPart] = []
 
@@ -107,6 +116,8 @@ def linear_parts(expr: Expr) -> List[LinearPart]:
         if value.__class__ is str:
             return {value: 1}, 0
         op, args = value
+        if op == '?:' and args[0].value.__class__ is int:
+            return linear(args[1] if args[0].value else args[2])
         if len(args) == 2 and op in ('+', '-', '*'):
             left, right = linear(args[0]), linear(args[1])
             if left is not None and right is not None:
@@ -154,7 +165,7 @@ def _linear_memo(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
 class OpStream:
     """an ordered stream of last-phase ops, stored compactly (see the module docstring)"""
 
-    __slots__ = ('kinds', 'vals', 'refs', 'labels', 'keep_label_values', 'guard')
+    __slots__ = ('kinds', 'vals', 'refs', 'labels', 'guard')
 
     def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Optional[OffsetGuard] = None):
         """
@@ -169,7 +180,6 @@ class OpStream:
         self.refs = refs
         self.labels = labels
         self.guard = guard
-        self.keep_label_values = guard is not None
 
     def __len__(self) -> int:
         return len(self.kinds)
@@ -187,7 +197,7 @@ class OpStream:
                 return False
         elif value.__class__ is str:
             if self.guard is not None and value in self.guard.watched:
-                self.guard.check_label(value, 0)
+                self.guard.validate_label(value, 0)
             known = self.labels.get(value)
             if known is not None and 0 <= known <= LITERAL_MAX:
                 vals.append(known)
@@ -203,7 +213,7 @@ class OpStream:
                 if name is not None and self._label_plus(name, const):
                     return name not in self.labels
             if self.guard is not None:
-                self.guard.check_emitted(expr, is_address)
+                self.guard.validate_emitted(expr, is_address)
         refs = self.refs
         vals.append(~(len(refs) << 2 | TAG_EXPR))
         refs.append(expr)
@@ -213,7 +223,7 @@ class OpStream:
         """Append the slots of `labels[name] + const`. Return False, appending nothing, if it does not fit in a slot."""
         vals = self.vals
         if self.guard is not None and (const or name in self.guard.watched):
-            self.guard.check_label(name, const)
+            self.guard.validate_label(name, const)
         known = self.labels.get(name)
         if known is not None:
             if 0 <= known + const <= LITERAL_MAX:
@@ -273,7 +283,7 @@ class OpStream:
                 return self._operand(expr.eval_new(params), is_address)
             name = label
         if self.guard is not None and (const or name in self.guard.watched):
-            self.guard.check_label(name, const)
+            self.guard.validate_label(name, const)
         known = self.labels.get(name)
         if known is not None:
             known += const
@@ -325,7 +335,7 @@ class OpStream:
         flip = vals[-2]
         if flip <= PACKED_FLIP_MAX and jump <= PACKED_JUMP_MAX:
             vals.pop()
-            vals[-1] = flip << 32 | jump
+            vals[-1] = flip << PACKED_JUMP_BITS | jump
             self.kinds.append(FJ_PACKED)
         else:
             self.kinds.append(FJ)
@@ -341,21 +351,19 @@ class OpStream:
         """Append a wflip op. With `params` (a macro's arguments), it is like `add_word_flip` with each operand's
         `eval_new(params)`, but faster: it mostly skips building the substituted expressions."""
         self._operand_with_params(word_address, params)
-        if self.keep_label_values:
-            self._value(flip_value.eval_new(params))
+        if self.guard is not None:
+            self._unfolded_value(flip_value.eval_new(params), self.guard)
         else:
             self._operand_with_params(flip_value, params, False)
         self._operand_with_params(return_address, params)
         self._end_word_flip(code_position)
 
-    def _value(self, expr: Expr) -> None:
-        """Append a wflip value's slots when keep_label_values is set: a value that names a label is never folded into a
-        literal."""
+    def _unfolded_value(self, expr: Expr, guard: OffsetGuard) -> None:
+        """Append a wflip value's slots for a table pool: a value that names a label is never folded into a literal."""
         if not expr.all_unknown_labels():
             self._operand(expr)
             return
-        if self.guard is not None:
-            self.guard.check_emitted(expr)
+        guard.validate_emitted(expr)
         refs = self.refs
         if isinstance(expr.value, str):
             self.vals.append(~(len(refs) << 2 | TAG_LABEL))
@@ -373,19 +381,6 @@ class OpStream:
         self.vals.append(len(self.refs))
         self.refs.append(op)
 
-    def append(self, op: Any) -> None:
-        """append any last-phase op object (the deque-compatible entry point)"""
-        if isinstance(op, FlipJump):
-            self.add_flip_jump(op.flip, op.jump, op.code_position)
-        elif isinstance(op, WordFlip):
-            self.add_word_flip(op.word_address, op.flip_value, op.return_address, op.code_position)
-        elif isinstance(op, Padding):
-            self.add_padding(op.ops_count)
-        elif isinstance(op, (NewSegment, ReserveBits)):
-            self.add_object(op)
-        else:
-            raise TypeError(f"not a last-phase op: {op!r}")
-
     def extend_slice(self, other: OpStream, op_start: int, val_start: int, op_end: int, val_end: int) -> None:
         """Append `other`'s ops [op_start, op_end), whose slots are other.vals[val_start:val_end]. Both streams must
         share `refs`."""
@@ -400,6 +395,67 @@ class OpStream:
         if not self.kinds or self.kinds[0] != OBJ:
             return None
         return self.refs[self.vals[0]]
+
+    def read_value(self, next_slot: Callable[[], int], labels: Dict[str, int]) -> int:
+        """Read an operand from `next_slot` and return its value. (The loops that read every op write these two
+        lines out in place, for speed.)"""
+        slot = next_slot()
+        return slot if slot >= 0 else self.deferred_value(~slot, next_slot, labels)
+
+    def deferred_value(
+        self,
+        encoded: int,
+        next_slot: Callable[[], int],
+        labels: Dict[str, int],
+        guard: Optional[OffsetGuard] = None,
+        is_address: bool = True,
+    ) -> int:
+        """Return the value of a deferred operand (its slot holds ~encoded), now that every label is in `labels`.
+        `next_slot` reads the operand's second slot, if it has one. A table pool's `guard`, if given, checks the
+        operand (see OffsetGuard.validate_expr)."""
+        ref = self.refs[encoded >> 2]
+        tag = encoded & 3
+        if tag == TAG_LABEL:
+            value = labels.get(ref)
+            if value is None:
+                return Expr(ref).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
+            if guard is not None and ref in guard.stranded:
+                guard.validate_offset(ref, value, 0)
+            return value
+        if tag == TAG_LABEL_PLUS:
+            const = next_slot()
+            value = labels.get(ref)
+            if value is None:
+                return Expr(ref).exact_eval(labels) + const  # raises, as above
+            if guard is not None:
+                guard.validate_offset(ref, value, const)
+            return value + const
+        value = ref.exact_eval(labels)
+        if guard is not None:
+            guard.validate_expr(ref, value, is_address)
+        return value  # type: ignore[no-any-return]
+
+    def value_kind(self, encoded: int) -> int:
+        """Return the kind (a VALUE_*) of a wflip's deferred value (its slot holds ~encoded)."""
+        if encoded & 3 != TAG_EXPR:
+            return VALUE_ADDRESS
+        value: Expr = self.refs[encoded >> 2]
+        if not value.all_unknown_labels():
+            return VALUE_NUMBER
+        linear = linear_sum(value)
+        return VALUE_ADDRESS if linear is not None and linear[0] is not None else VALUE_COMPUTED
+
+    def label_address(self, encoded: int, labels: Dict[str, int]) -> int:
+        """Return the address of the label that a VALUE_ADDRESS operand (its slot holds ~encoded) names."""
+        label = self.refs[encoded >> 2]
+        if encoded & 3 == TAG_EXPR:
+            linear = linear_sum(label)
+            label = None if linear is None else linear[0]
+            assert label is not None  # a VALUE_ADDRESS expression is one label plus a constant
+        address = labels.get(label)
+        if address is None:
+            return Expr(label).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
+        return address
 
     def rebuild_operand(self, slots: Iterator[int]) -> Expr:
         """Read the next operand's slots from `slots` and return its Expr (for messages and iteration)."""
@@ -423,7 +479,8 @@ class OpStream:
         for index, kind in enumerate(self.kinds):
             if kind == FJ_PACKED:
                 packed = next(slots)
-                op: Any = FlipJump(Expr(packed >> 32), Expr(packed & PACKED_JUMP_MASK), None)  # type: ignore[arg-type]
+                flip, jump = Expr(packed >> PACKED_JUMP_BITS), Expr(packed & PACKED_JUMP_MASK)
+                op: Any = FlipJump(flip, jump, None)  # type: ignore[arg-type]
             elif kind == FJ:
                 op = FlipJump(Expr(next(slots)), Expr(next(slots)), None)  # type: ignore[arg-type]
             elif kind == FJ_POS:
@@ -445,6 +502,3 @@ class OpStream:
     def op_at(self, index: int) -> Any:
         """the op at `index`, rebuilt (slow: decodes the stream up to it)"""
         return next(self.iter_ops(index))
-
-    def __iter__(self) -> Iterator[Any]:
-        return self.iter_ops()

@@ -1,0 +1,10 @@
+// D12: `rep((L / dw) & 7, ..)` counts from the address of code after a moved table: another number with the
+// pool, so it is refused.
+stl.startup
+    hex.xor y, x
+L:
+    rep((L / dw) & 7, i) stl.output 'A'
+    stl.output '\n'
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

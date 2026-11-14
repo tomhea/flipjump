@@ -5,7 +5,7 @@ routing input/output through an IODevice, handling breakpoints, detecting termin
 and collecting run statistics (returned as TerminationStatistics).
 
 three run-loops (engines) are implemented:
-- the native engine (the default when built): the _fjcore C-extension - segment-aware paged
+- the native engine (the default when built, for memory widths up to 64): the _fjcore C-extension - segment-aware paged
   memory and the fetch-flipjump loop in C, calling back into python only for IO. ~500x
   faster than the featured loop. disable it with the FLIPJUMP_NO_NATIVE=1 environment variable.
 - the fast loop (the default otherwise): pure-python, the memory accesses and IO/termination
@@ -219,7 +219,7 @@ def run(
     header.assert_runnable()  # a program must hold its first op at address 0 (both engines)
     statistics = RunStatistics(header.memory_width, last_ops_debugging_list_length)
     # the native engine loads the .fjm's words straight from its (decompressed) bytes: no python object per word
-    native = not use_featured_loop and is_native_engine_active()
+    native = not use_featured_loop and is_native_engine_active() and header.memory_width <= NATIVE_MAX_MEMORY_WIDTH
     try:
         with ProgressBar('  loading memory:  ', show_progress=show_progress) as progress:
             if native:
@@ -263,6 +263,10 @@ def _end_of_run(io_device: IODevice, termination: TerminationStatistics) -> Term
     return termination
 
 
+# the native engine holds a word in a C uint64; a wider program runs on the python loops
+NATIVE_MAX_MEMORY_WIDTH = 64
+
+
 def is_native_engine_active() -> bool:
     """
     is the native (C) engine present and enabled - i.e. will runs use it (for the programs it
@@ -295,7 +299,7 @@ def _load_native(
     @return: the loaded core
     """
     assert _fjcore is not None
-    fjm_reader.validate_segments(header.segments, data_words=1 << 64)  # the data pool is checked later, with the data
+    fjm_reader.validate_segments(header.segments, data_words=None)  # the data pool is checked later, with the data
     core = _fjcore.Memory(
         header.memory_width, flat_max_words=flat_max_words if flat_max_words else 0, flat_required=flat_required
     )
@@ -346,7 +350,7 @@ def _run_native(
     last_ops = statistics.last_ops_addresses
     statistics.detailed_statistics = False
     try:
-        cause, op_count, error_bit_address, native_last_ops, paused_seconds = core.run(
+        cause, op_count, error_bit_address, native_last_ops, _ = core.run(
             io_device.read_bit,
             io_device.write_bit,
             IOReadOnEOF,

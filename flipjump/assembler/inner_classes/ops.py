@@ -53,9 +53,6 @@ class MacroName:
             return self.name
         return f"{self.name}({self.parameter_num})"
 
-    def to_tuple(self) -> Tuple[str, int]:
-        return self.name, self.parameter_num
-
     def __hash__(self) -> int:
         return self._hash
 
@@ -111,12 +108,6 @@ class FlipJump:
     def all_unknown_labels(self) -> Set[str]:
         return {label for expr in (self.flip, self.jump) for label in expr.all_unknown_labels()}
 
-    def get_flip(self, labels: Dict[str, int]) -> int:
-        return self.flip.exact_eval(labels)
-
-    def get_jump(self, labels: Dict[str, int]) -> int:
-        return self.jump.exact_eval(labels)
-
 
 class WordFlip:
     """
@@ -155,15 +146,6 @@ class WordFlip:
             for expr in (self.word_address, self.flip_value, self.return_address)
             for label in expr.all_unknown_labels()
         }
-
-    def get_word_address(self, labels: Dict[str, int]) -> int:
-        return self.word_address.exact_eval(labels)
-
-    def get_flip_value(self, labels: Dict[str, int]) -> int:
-        return self.flip_value.exact_eval(labels)
-
-    def get_return_address(self, labels: Dict[str, int]) -> int:
-        return self.return_address.exact_eval(labels)
 
 
 class Pad:
@@ -349,12 +331,6 @@ class RepCall:
         arguments_labels = set(label for e in arguments for label in e.all_unknown_labels())
         return times.all_unknown_labels() | (arguments_labels - {self.iterator_name})
 
-    def get_times(self) -> int:
-        try:
-            return int(self.repeat_times)
-        except FlipJumpExprException as e:
-            raise FlipJumpExprException(f"Can't calculate rep times on {self.code_position}") from e
-
     def calculate_times(self, labels: Dict[str, int]) -> int:
         try:
             times = self.repeat_times.exact_eval(labels)
@@ -494,7 +470,3 @@ class Padding:
         @param ops_count: the number of fj-ops to pad.
         """
         self.ops_count = ops_count
-
-
-# The input to the labels-resolve
-LastPhaseOp = Union[FlipJump, WordFlip, Padding, NewSegment, ReserveBits]

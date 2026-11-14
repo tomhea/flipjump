@@ -1,0 +1,8 @@
+// D05: a wflip VALUE that moves with its label, `(B | 0) + 12*dw`, reaches over a table's place: it is an
+// address, checked whole like `B + 12*dw`, so the table stays inline.
+startup
+B:  wflip jv+w, (B | 0) + 12*dw, jv
+    dead x
+    rows
+jv: ;0
+x:  ;0

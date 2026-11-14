@@ -51,10 +51,6 @@ class FlipJumpFlatMemoryException(FlipJumpRuntimeException):
         self.window_words = window_words
 
 
-class FlipJumpMissingImportException(FlipJumpException):
-    pass
-
-
 class IODeviceException(IOError, FlipJumpException):
     pass
 

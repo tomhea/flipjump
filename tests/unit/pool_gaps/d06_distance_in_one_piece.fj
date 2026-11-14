@@ -1,0 +1,11 @@
+// D06: `A + 3*(p1 - p0)` adds a distance inside one piece to a label of another: no distance crosses the moved
+// table, so it is not refused, and runs the same.
+startup
+p0: ;go
+p1: ;go
+go:
+    dead x
+A:
+    ;A + 3*(p1 - p0)
+    rows
+x:  ;0

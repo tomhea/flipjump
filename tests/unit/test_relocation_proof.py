@@ -69,12 +69,12 @@ def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str
     try:
         proof = prove_relocation(memory_width, _macros(files, memory_width, use_stl), pool)
     except FlipJumpPreprocessorException as refused:
-        assert 'Raise pool_end' in str(refused)  # prime_sieve's reserve fills the memory above its tables
+        assert 'has no room for its tables' in str(refused)  # prime_sieve's reserve fills the memory above them
         pytest.skip('the program leaves its tables no room')
     else:
         assert proof.mismatches == []
         assert len(proof.unchecked) <= UNCHECKED_CEILINGS.get(program[0], 0), proof.unchecked
-    if not pool.allocated:
+    if not pool.moved:
         pytest.skip('the program uses no relocatable table')
 
 
@@ -201,12 +201,12 @@ def test_the_correct_crafted_programs_pass_the_proof(name: str, pool: str) -> No
     ],
 )
 def test_the_proof_fails_a_pin_that_cannot_hold(monkeypatch: pytest.MonkeyPatch, name: str, mismatch: str) -> None:
-    # the control: the assembler keeps every pin (assembler.unpin does nothing); the proof judges the pins from the
+    # the control: the assembler keeps every pin (pins.unpin does nothing); the proof judges the pins from the
     # plain program, not by the assembler's rules
     monkeypatch.setattr(relocation_proof, 'unpin', lambda *args, **kwargs: None)
     pool = _cli_pool(W)
     if mismatch == 'pointer runtime':  # a raw program's pool places its tables in no block - forced into blocks,
-        monkeypatch.setattr(BlockPool, '_raw', lambda self: False)  # its words are pinned
+        monkeypatch.setattr(BlockPool, 'pins_no_word', lambda self: False)  # its words are pinned
     mismatches = prove_relocation(W, _macros(_gap(name), W), pool).mismatches
     assert any(mismatch in found for found in mismatches), mismatches
 
