@@ -133,7 +133,7 @@ fj hello_world.fj
 ![Hello World in FlipJump](resources/hello.gif)
 
   - The --no-stl flag tells the assembler not to include the standard library. for example: `fj programs/print_tests/hello_no-stl.fj --no-stl`.
-  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default.
+  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default, and can be any power of two from 8 (8, 16, 32, 64, 128, ... 32768). The native engine runs the widths up to 64; a wider program runs on the much slower pure-Python engine.
   - You can use the `-o` flag to save the assembled file for later use too.
   - You can find all the different flags with `fj -h`.
 
@@ -154,8 +154,14 @@ of `hex.exact_xor` and its kin, and of the bit shifts) to blocks right above the
 above its end), where they are cheap to arm. The program runs the same: where moving a table would change an operand
 that names a label (an offset from another label into or across the table), the table stays where it is, or - if the
 operand comes too late for that - the program is refused with the reason, as is a program that leaves the tables no
-room in the memory. With it, `__relocatable__` is a reserved namespace: a macro whose innermost namespace has that
-name is a table the pool may move.
+room in the memory. So is a `rep` count, a `pad`, a `reserve` size or a `segment` address that is computed from the
+address of code after a moved table: it would be another number. With it, `__relocatable__` is a reserved namespace:
+a macro whose innermost namespace has that name is a table the pool may move.
+
+Three things a pool does not follow, so a program that depends on them may run differently with it: an address used
+as a number beyond a sum of labels and constants (`(L >> 6) & 15` printed, say - storing a pointer or retargeting a
+jump that way is fine), a number used as an address (`;0x280` names no label), and what the padding ops of a `pad`
+hold.
 
 A program that reads or writes cells raw through pointers (`hex.pointers`) gets its tables moved but nothing pinned,
 unless `--pin-all-but LABEL[:OPS],...` names those cells: then every other dispatch word is pinned too, which saves
