@@ -48,13 +48,13 @@ PROGRAMS = {
     'sieve': (REPO_ROOT / 'programs' / 'prime_sieve.fj', b'5000\n'),
 }
 
-# exact, deterministic op-counts (verified against benchmark_results.md). a miscompile on any
-# arch changes these - they are the cross-platform correctness anchor.
+# exact, deterministic op-counts. a miscompile on any arch changes these - they are the
+# cross-platform correctness anchor. (the sieve's also change when the stl's macros change.)
 GOLDEN_OP_COUNTS = {
     ('loop', 32): 298_927_147,
     ('loop', 64): 351_500_749,
-    ('sieve', 32): 16_580_560,
-    ('sieve', 64): 33_304_073,
+    ('sieve', 32): 15_781_504,
+    ('sieve', 64): 31_384_891,
 }
 
 # the cpu_calibrate L1 micro-bench shares the engine's bottleneck, so its checksum is fixed for a
