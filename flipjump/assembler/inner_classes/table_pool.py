@@ -202,8 +202,6 @@ class HotGroup:
     """A group the heat list names. Each width's k-th listed site takes that width's k-th cheapest index; the group's
     other tables take the indices after the listed ones."""
 
-    __slots__ = ('ranks', 'listed', 'seen', 'unlisted')
-
     def __init__(self, sites: Sequence[HotSite], group_key: str):
         # (site, occurrence) -> (its slot width, its rank among the listed sites of that width)
         self.ranks: Dict[Tuple[str, int], Tuple[int, int]] = {}

@@ -19,6 +19,7 @@ operand keeps its CodePosition, for labels-resolve's error messages.
 from __future__ import annotations
 
 from array import array
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 from flipjump.assembler.inner_classes.expr import Expr
@@ -162,25 +163,18 @@ def _linear_memo(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
     return linear  # type: ignore[no-any-return]
 
 
+@dataclass(slots=True, eq=False)
 class OpStream:
     """an ordered stream of last-phase ops, stored compactly (see the module docstring)"""
 
-    __slots__ = ('kinds', 'vals', 'refs', 'labels', 'keep_label_values', 'guard')
-
-    def __init__(self, refs: List[Any], labels: Dict[str, int], guard: Optional[OffsetGuard] = None):
-        """
-        @param refs: the reference list, shared by every stream of one preprocessor
-        @param labels: the preprocessor's labels. An operand that names a declared label is folded into a literal.
-        @param guard: the table pool's OffsetGuard, or None if there is no pool. It checks every operand folded here
-            that names a label. With a guard, a wflip value that names a label is never folded, so the pool can still
-            tell an address from a number.
-        """
-        self.kinds = bytearray()
-        self.vals = array('q')
-        self.refs = refs
-        self.labels = labels
-        self.guard = guard
-        self.keep_label_values = guard is not None
+    refs: List[Any]  # the reference list, shared by every stream of one preprocessor
+    labels: Dict[str, int]  # the preprocessor's labels. An operand that names a declared label is folded into a literal
+    # The table pool's OffsetGuard, or None if there is no pool. It checks every operand folded here that names a label.
+    # With a guard, a wflip value that names a label is never folded, so the pool can still tell an address from a
+    # number.
+    guard: Optional[OffsetGuard] = None
+    kinds: bytearray = field(default_factory=bytearray, init=False)
+    vals: 'array[int]' = field(default_factory=lambda: array('q'), init=False)
 
     def __len__(self) -> int:
         return len(self.kinds)
@@ -352,7 +346,7 @@ class OpStream:
         """Append a wflip op. With `params` (a macro's arguments), it is like `add_word_flip` with each operand's
         `eval_new(params)`, but faster: it mostly skips building the substituted expressions."""
         self._operand_with_params(word_address, params)
-        if self.keep_label_values:
+        if self.guard is not None:
             self._value(flip_value.eval_new(params))
         else:
             self._operand_with_params(flip_value, params, False)
@@ -360,7 +354,7 @@ class OpStream:
         self._end_word_flip(code_position)
 
     def _value(self, expr: Expr) -> None:
-        """Append a wflip value's slots when keep_label_values is set: a value that names a label is never folded into a
+        """Append a wflip value's slots when there is a guard: a value that names a label is never folded into a
         literal."""
         if not expr.all_unknown_labels():
             self._operand(expr)

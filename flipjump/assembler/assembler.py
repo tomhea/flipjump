@@ -107,21 +107,7 @@ class WFlipSpot:
 
 
 class BinaryData:
-    __slots__ = (
-        'memory_width',
-        'first_address',
-        'next_wflip_address',
-        'labels',
-        'wflips_so_far',
-        'save_wflip_labels',
-        'fj_words',
-        'wflip_words',
-        'padding_ops_indices',
-        'wflips_dict',
-        'pinned',
-        'pool_start',
-        'wflips_at',
-    )
+    """The words of the program being resolved: the segment gathered so far, and its wflip area."""
 
     def __init__(
         self,

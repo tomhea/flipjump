@@ -7,6 +7,7 @@ macro, and produces the flat op-list that the assembler then resolves into addre
 from __future__ import annotations
 
 import collections
+import dataclasses
 import sys
 from typing import Any, Dict, Tuple, Iterable, Union, Deque, Set, List, Optional, NoReturn, Callable
 
@@ -83,28 +84,14 @@ class PreprocessorData:
     @note should call finish before get_result...().
     """
 
+    @dataclasses.dataclass(slots=True, eq=False)
     class _PrepareMacroCall:
-        __slots__ = ('curr_tree', 'calling_op', 'macros', 'max_recursion_depth')
+        """Validates that the called macro exists, and that the macro depth is ok. Updates the curr_tree variable."""
 
-        def __init__(
-            self,
-            curr_tree: CurrTree,
-            calling_op: Union[MacroCall, RepCall],
-            macros: Dict[MacroName, Macro],
-            max_recursion_depth: int,
-        ):
-            """
-            Validates that the called macro exists, and that the macro depth is ok. Updates the curr_tree variable.
-            @param curr_tree: the ops in the macro-calling path to arrive in this macro (not including the calling op)
-            @param calling_op: the current macro call (either of type Macro or RepCall).
-            @param macros: parser's result; the dictionary from the macro names to the macro declaration
-            @param max_recursion_depth: The compiler supports macros that recursively uses other macros,
-            up to the specified recursion depth.
-            """
-            self.curr_tree = curr_tree
-            self.calling_op = calling_op
-            self.macros = macros
-            self.max_recursion_depth = max_recursion_depth
+        curr_tree: CurrTree  # the ops in the macro-calling path to arrive in this macro (not including the calling op)
+        calling_op: Union[MacroCall, RepCall]  # the current macro call
+        macros: Dict[MacroName, Macro]  # parser's result; the dictionary from the macro names to the macro declaration
+        max_recursion_depth: int  # macros may use other macros recursively, up to this depth
 
         def __enter__(self) -> None:
             macro_name = self.calling_op.macro_name
