@@ -112,8 +112,13 @@ ARRAY_TYPECODE_BY_WIDTH: Dict[int, str] = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
 MAX_SEGMENT_END_WORDS = 1 << 64
 
 
+SUPPORTED_MEMORY_WIDTHS: frozenset[int] = frozenset(
+    1 << bits for bits in range(MIN_MEMORY_WIDTH.bit_length() - 1, MAX_MEMORY_WIDTH.bit_length())
+)
+
+
 def is_supported_memory_width(memory_width: int) -> bool:
-    return MIN_MEMORY_WIDTH <= memory_width <= MAX_MEMORY_WIDTH and memory_width & (memory_width - 1) == 0
+    return memory_width in SUPPORTED_MEMORY_WIDTHS
 
 
 _LZMA_FORMAT = lzma.FORMAT_RAW

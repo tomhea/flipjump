@@ -51,6 +51,9 @@ LabelsDict = Dict[str, int]
 wflip_start_label = '_.wflip_area_start_'
 
 
+# a macro call is this many python calls deep: _expand_macro_call (or _expand_rep), and its resolve_macro_aux
+PYTHON_CALLS_PER_MACRO_CALL = 2
+
 # a macro whose innermost namespace is this declares a table a pool may move: see relocatable_call
 RELOCATABLE_NAMESPACE = '__relocatable__'
 
@@ -178,7 +181,10 @@ class PreprocessorData:
         # set python's recursion-limit so the preprocessor's own depth-check (at max_recursion_depth)
         #  triggers before python's RecursionError. Set it unconditionally - whether it's higher or lower than the
         #  current limit - so that raising max_recursion_depth actually allows deeper macro-recursion.
-        sys.setrecursionlimit(max_recursion_depth + GAP_BETWEEN_PYTHONS_AND_PREPROCESSOR_MACRO_RECURSION_DEPTH)
+        sys.setrecursionlimit(
+            PYTHON_CALLS_PER_MACRO_CALL * max_recursion_depth
+            + GAP_BETWEEN_PYTHONS_AND_PREPROCESSOR_MACRO_RECURSION_DEPTH
+        )
 
     def patch_last_wflip_address(self) -> None:
         self.last_new_segment.wflip_start_address = self.curr_address
