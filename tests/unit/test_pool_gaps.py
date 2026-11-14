@@ -41,7 +41,7 @@ OP_BITS = 2 * W
 POOL_BASE = 1 << 26
 
 
-def _pool(kind: str, memory_width: int, source: Path, tmp_path: Path) -> BlockPool:
+def _pool(kind: str, memory_width: int) -> BlockPool:
     """the fuzzer's pool `kind`: 'cli' (fj --pool-tables), 'half' (a BlockPool based at half the memory)"""
     return pools(memory_width, random.Random(0))[kind]()  # nosec B311 - these pools draw nothing
 
@@ -172,10 +172,10 @@ def test_a_crafted_program_runs_the_same_with_the_pool_or_is_refused(
                 pooled,
                 memory_width=memory_width,
                 print_time=False,
-                table_pool=_pool(pool, memory_width, source, tmp_path),
+                table_pool=_pool(pool, memory_width),
             )
         return
-    table_pool = _pool(pool, memory_width, source, tmp_path)
+    table_pool = _pool(pool, memory_width)
     assemble([source], pooled, memory_width=memory_width, print_time=False, table_pool=table_pool)
     expected = run(plain, 30)
     assert expected[1] != 'TIMEOUT' and run(pooled, 30) == expected  # two timeouts are not the same run
@@ -194,7 +194,7 @@ def test_without_the_offset_guard_a_reach_into_a_moved_table_miscompiles(
     plain = tmp_path / 'plain.fjm'
     assemble([source], plain, memory_width=W, print_time=False)
     pooled = tmp_path / 'pooled.fjm'
-    table_pool = _pool(pool, W, source, tmp_path)
+    table_pool = _pool(pool, W)
     assemble([source], pooled, memory_width=W, print_time=False, table_pool=table_pool)
     assert table_pool.moved and run(pooled, 30) != run(plain, 30)
 
@@ -204,7 +204,7 @@ def _differs(source: Path, tmp_path: Path, pool: str) -> bool:
     plain = tmp_path / 'plain.fjm'
     assemble([source], plain, memory_width=W, print_time=False)
     pooled = tmp_path / 'pooled.fjm'
-    assemble([source], pooled, memory_width=W, print_time=False, table_pool=_pool(pool, W, source, tmp_path))
+    assemble([source], pooled, memory_width=W, print_time=False, table_pool=_pool(pool, W))
     expected = run(plain, 30)
     assert expected[1] != 'TIMEOUT'  # two timeouts would be no difference, and no sameness either
     return run(pooled, 30) != expected
@@ -331,7 +331,7 @@ def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monke
     # no table's, so the arm is no arm and the word is unpinned. Taken for a table's, it would widen the word's window
     # over the numeric arm (0x4000), and - with the jump through the unarmed word let through too - miscompile.
     source = GAPS / 'c34_numeric_arm_wide_window.fj'
-    pool = _pool('cli', W, source, tmp_path)
+    pool = _pool('cli', W)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
     assert pool.unpins == {NO_TABLE: 1}
     assert not _differs(source, tmp_path, 'cli')
@@ -398,10 +398,10 @@ def test_an_offset_from_outside_into_a_moved_table_is_refused_wherever_it_is_see
     path = tmp_path / 'p.fj'
     path.write_text(source)
     with pytest.raises(FlipJumpException, match=refusal):
-        build_and_run(source, tmp_path, _pool('half', W, path, tmp_path), name='pooled')
+        build_and_run(source, tmp_path, _pool('half', W), name='pooled')
     # the control: without the guard's refusal it is a miscompile
     no_refusals(monkeypatch)
-    table_pool = _pool('half', W, path, tmp_path)
+    table_pool = _pool('half', W)
     assert build_and_run(source, tmp_path, table_pool, name='unguarded')[0] != b'B' and table_pool.moved
 
 
@@ -717,3 +717,13 @@ def test_an_undefined_relocatable_macro_says_so_with_a_pool_too(tmp_path: Path) 
     for pool in (None, BlockPool(W)):
         with pytest.raises(FlipJumpException, match=r"macro my.__relocatable__.table\(3\) is used but isn't defined"):
             assemble([source], tmp_path / 'p.fjm', memory_width=W, print_time=False, use_stl=False, table_pool=pool)
+
+
+def test_a_word_a_wflip_returns_through_without_arming_it_is_unpinned_with_pin_all_but_too(tmp_path: Path) -> None:
+    """pin_all_but vouches only for the `a;b` ops that jump through a word. d16's wflip flips a number into the word
+    and returns through it: no pin makes that right, whatever pin_all_but says"""
+    pool = BlockPool(W, pin_all_but=[])
+    plain, pooled = _build_both(tmp_path, 'd16_number_arm_of_unpadded_table', pool)
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT' and run(pooled, 30) == expected
+    assert pool.unpins == {JUMPED: 1}

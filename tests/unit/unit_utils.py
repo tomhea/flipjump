@@ -195,7 +195,7 @@ def relocatable(name: str, params: str, start: str, entries: str) -> str:
 
 # the table pool's controls switch its safety rules off through these public seams only, so the pool's insides can
 # change freely: every operand refusal goes through OffsetGuard.refuse, every keep-inline decision through
-# OffsetGuard.may_move, every dropped pin through pins.unpin
+# OffsetGuard.why_stay_inline, every dropped pin through pins.unpin
 
 
 def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,7 +205,7 @@ def no_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def every_table_moves(monkeypatch: pytest.MonkeyPatch) -> None:
     """the control: the table pool's OffsetGuard keeps no table inline"""
-    monkeypatch.setattr(OffsetGuard, 'may_move', lambda self, anchor: None)
+    monkeypatch.setattr(OffsetGuard, 'why_stay_inline', lambda self, anchor: None)
 
 
 def kept_by_the_guard(pool: BlockPool) -> Dict[str, int]:

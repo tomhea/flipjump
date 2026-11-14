@@ -34,7 +34,7 @@ from tests.unit.pool_fuzzer import fuzz_case
 from tests.unit.relocation_proof import prove_relocation
 from tests.unit.unit_utils import build_and_run, pool_stats
 from flipjump.assembler.fj_parser import parse_macro_tree
-from flipjump.utils.functions import get_file_tuples
+from flipjump.utils.functions import get_file_tuples, load_debugging_labels
 
 WIDTHS = [16, 32, 64, 128, 256, 1024]
 WIDE = [64, 128, 1024]  # the default width, the first one past the native engine, and a far one
@@ -423,3 +423,81 @@ def test_an_addition_runs_end_to_end_at_w_1024(tmp_path: Path, monkeypatch: pyte
     assert printed.getvalue() == hex((a + b) % (1 << 256))
     header = read_fjm_header(fjm_path)
     assert header.memory_width == 1024 and 1 << 200 in [start * 1024 for start, _, _, _ in header.segments]
+
+
+# --- numbers longer than python prints in decimal (more than 4300 digits), at the widest widths ---
+
+FAR = 1 << 20000
+
+
+def test_a_pad_at_the_widest_width_takes_a_long_alignment(tmp_path: Path) -> None:
+    fjm_path = _assemble(
+        tmp_path, f'pad {hex(FAR)}\n    ;0\n', 32768, use_stl=False
+    )  # (address 0 is aligned to anything)
+    assert read_fjm_header(fjm_path).memory_width == 32768
+
+
+def test_the_debugging_file_holds_a_long_address(tmp_path: Path) -> None:
+    debugging_file = tmp_path / 'p.fjd'
+    _assemble(
+        tmp_path,
+        f'    ;0\nsegment {hex(FAR)}\nfar:\n    ;far\n',
+        32768,
+        use_stl=False,
+        debugging_file_path=debugging_file,
+    )
+    assert load_debugging_labels(debugging_file)['far'] == FAR
+
+
+def test_an_error_about_a_long_number_still_says_what_is_wrong(tmp_path: Path) -> None:
+    with pytest.raises(FlipJumpException, match='nolabel') as error:
+        _assemble(tmp_path, f'    {hex(FAR)};nolabel\n', 32768, use_stl=False)
+    assert 'Unknown exception' not in str(error.value)
+
+
+# no stl: a declared table that a pool moves, then {LINE}
+LONG_NUMBER_WITH_A_POOL = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+    }
+  }
+}
+    ;go
+    ;0
+x:  ;x
+go:
+    ;after
+    pad 1
+    my.__relocatable__.table T
+after:
+    wflip x+w, T
+L:
+{LINE}
+"""
+
+
+def _assemble_with_a_pool(tmp_path: Path, line: str) -> BlockPool:
+    pool = BlockPool(32768)
+    _assemble(tmp_path, LONG_NUMBER_WITH_A_POOL.replace('{LINE}', line), 32768, use_stl=False, table_pool=pool)
+    return pool
+
+
+def test_a_pool_checks_an_operand_with_a_long_offset(tmp_path: Path) -> None:
+    assert _assemble_with_a_pool(tmp_path, f'    ;L + {hex(FAR)}*2*w').moved == 1
+
+
+@pytest.mark.parametrize(
+    'line, why',
+    [
+        (f'    pad {hex(FAR + 1)}\n    my.__relocatable__.table U', 'needs a power-of-two pad'),
+        (f'    reserve (L - go) * {hex(FAR)}', 'table-placement: the operand'),
+    ],
+    ids=['a pad', 'a reserve'],
+)
+def test_a_pool_refusal_about_a_long_number_says_why(tmp_path: Path, line: str, why: str) -> None:
+    with pytest.raises(FlipJumpException, match=why) as error:
+        _assemble_with_a_pool(tmp_path, line)
+    assert 'Unknown exception' not in str(error.value)

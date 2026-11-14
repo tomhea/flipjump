@@ -141,7 +141,7 @@ def unpack_ints(data: bytes, size: int) -> List[int]:
 def pack_segments(segments: Iterable[Tuple[int, int, int, int]], memory_width: int) -> bytes:
     """Return the bytes of the segment table: the four fields of each segment, little-endian."""
     field_size = segment_field_size(memory_width)
-    if field_size == _U64_BYTES:
+    if field_size == _U64_BYTES:  # the same bytes as the lines below give, packed faster
         return b''.join(struct.pack(_U64_SEGMENT_FORMAT, *segment) for segment in segments)
     return pack_ints((field for segment in segments for field in segment), field_size)
 
@@ -151,7 +151,7 @@ def unpack_segments(table: bytes, memory_width: int) -> List[Tuple[int, int, int
     field_size = segment_field_size(memory_width)
     if len(table) % (SEGMENT_FIELDS * field_size) != 0:
         raise struct.error(f'the segment table is {len(table)} bytes, not a whole number of segments')
-    if field_size == _U64_BYTES:
+    if field_size == _U64_BYTES:  # the same segments as the lines below give, unpacked faster
         return list(struct.iter_unpack(_U64_SEGMENT_FORMAT, table))
     fields = iter(unpack_ints(table, field_size))
     return list(zip(fields, fields, fields, fields))  # SEGMENT_FIELDS at a time

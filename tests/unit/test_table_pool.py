@@ -437,8 +437,8 @@ def test_a_block_hands_out_slots_and_pins_the_word() -> None:
 
 
 def test_a_table_too_wide_for_any_slot_declines_and_breaks_the_group() -> None:
-    pool = _laid_out({'g': {16: 2, 40: 1}})  # the 40-op table is counted in the widest (32-op) bucket, laid out first
-    assert _reserve(pool) == POOL_BASE + 32 * OP_BITS
+    pool = _laid_out({'g': {16: 2, 40: 1}})  # the 40-op table is too wide for a slot: the block keeps none for it
+    assert pool.blocks['g'].sub_blocks == {16: (0, 2)} and _reserve(pool) == POOL_BASE
     assert _reserve(pool, 40) is None and pool.blocks['g'].broken
     assert pool.pinned_words() == {}  # a broken group is never pinned...
     pool.pin_incomplete_groups = True
@@ -560,7 +560,7 @@ def test_occurrences_count_the_tables_that_decline() -> None:
     # the census saw both tables, so the heat list numbers the 16-op one as occurrence 1
     pool = _laid_out({'g': {40: 1, 16: 1}}, heat={'g': [('site', 1, 16)]})
     assert _reserve(pool, 40, site='f1:l1:site') is None  # too wide
-    assert _reserve(pool, 16, site='f1:l2:site') == POOL_BASE + 32 * OP_BITS  # after the 32-op bucket: its rank's
+    assert _reserve(pool, 16, site='f1:l2:site') == POOL_BASE  # its listed rank's index; the wide table took none
 
 
 def test_a_listed_site_the_program_lost_pushes_no_table_out() -> None:
@@ -1018,9 +1018,15 @@ def test_a_fresh_pool_lays_out_a_saved_census_as_the_assembly_did(tmp_path: Path
     assert blocks_end == max(block.base + block.bits for block in fresh.blocks.values() if block.base is not None)
 
 
-def test_a_table_takes_the_slot_of_the_next_power_of_two_up_to_the_widest_slot() -> None:
-    pool = BlockPool(W, POOL_BASE, max_slot_ops=32)
-    assert [pool.slot_ops(width) for width in (1, 2, 3, 16, 17, 32, 33, 500)] == [1, 2, 4, 16, 32, 32, 32, 32]
+def test_a_table_takes_the_slot_of_the_next_power_of_two() -> None:
+    assert [BlockPool.slot_ops(width) for width in (1, 2, 3, 16, 17, 32, 33, 500)] == [1, 2, 4, 16, 32, 32, 64, 512]
+
+
+def test_a_group_of_tables_too_wide_to_move_gets_an_empty_block_that_takes_no_place() -> None:
+    pool = _laid_out({'wide': {40: 3}, 'g': {16: 2}})
+    assert pool.blocks['wide'].bits == 0 and pool.blocks['wide'].sub_blocks == {}
+    assert pool.blocks['g'].base == POOL_BASE  # the empty block moves no other block
+    assert _reserve(pool, 40, group='wide') is None and pool.pinned_words() == {}
 
 
 # a function is called and returns through `ret`, which a `hex.zero` also dispatches through: a jump word that an
@@ -1167,4 +1173,126 @@ def test_a_wflip_area_that_does_not_fit_after_the_pool_says_where_it_is(tmp_path
             print_time=False,
             use_stl=False,
             table_pool=BlockPool(16),
+        )
+
+
+# no stl. A declared table T moves out of its place before `after`, so L (after it) and go / io (before it) are in
+# different pieces. {LINE} is an op that the guard refuses
+REFUSED_OPERAND_PROGRAM = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+    }
+  }
+}
+def nop {
+    ;$
+}
+    ;go
+io: ;0
+go:
+    ;after
+    pad 1
+    my.__relocatable__.table T
+after:
+    wflip x+w, T
+L:
+{LINE}
+x:  ;x
+"""
+REFUSED_OPERANDS = {
+    'a count that has no value without the pool': (
+        '    rep(1 / (5 - L / (2*w)), i) nop',
+        'has no value without the pool and is 1 with it',
+    ),
+    'a sum that names a place which moved otherwise': (
+        '    ;2*go - io',
+        'does not land where the place it names moved to',
+    ),
+    'a moved label mixed with others': (
+        '    ;L - T',
+        "computes from T, a moved table's label, and labels outside that table",
+    ),
+    'a moved label as a number': ('    ;2 * T', "uses T, a moved table's label, as a number"),
+    'an inline label plus a constant that lands in the pool': (
+        '    ;L + (1 << 26)',
+        'lands at 0x4000100, in the table pool, and is not one of its labels plus a constant',
+    ),
+}
+
+
+@pytest.mark.parametrize('case', sorted(REFUSED_OPERANDS))
+def test_an_operand_the_guard_refuses_says_why(tmp_path: Path, case: str) -> None:
+    line, why = REFUSED_OPERANDS[case]
+    fj_path = tmp_path / 'refused.fj'
+    fj_path.write_text(REFUSED_OPERAND_PROGRAM.replace('{LINE}', line))
+    with pytest.raises(FlipJumpException, match=re.escape(why)):
+        assemble(
+            [fj_path],
+            tmp_path / 'p.fjm',
+            memory_width=W,
+            print_time=False,
+            use_stl=False,
+            table_pool=BlockPool(W, POOL_BASE),
+        )
+
+
+# no stl, w=8: 16 ops, the whole memory. The table has no room after the program
+NO_ROOM_AFTER_THE_PROGRAM = """
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+        ;start
+        ;start
+    }
+  }
+}
+def nop {
+    ;$
+}
+    ;go
+    ;0
+x:  ;x
+go:
+    ;after
+    pad 1
+    my.__relocatable__.table T
+after:
+    wflip x+w, T
+    rep(7, i) nop
+end:
+    ;end
+"""
+
+
+def test_a_pool_after_a_program_that_fills_the_memory_says_to_move_fewer_tables(tmp_path: Path) -> None:
+    fj_path = tmp_path / 'full.fj'
+    fj_path.write_text(NO_ROOM_AFTER_THE_PROGRAM)
+    assemble([fj_path], tmp_path / 'plain.fjm', memory_width=8, print_time=False, use_stl=False)
+    with pytest.raises(FlipJumpPreprocessorException, match=r'move fewer tables \(max_slot_ops\)'):
+        assemble(
+            [fj_path], tmp_path / 'p.fjm', memory_width=8, print_time=False, use_stl=False, table_pool=BlockPool(8)
+        )
+
+
+def test_a_program_that_outgrows_the_memory_is_told_so_with_a_pool_too(tmp_path: Path) -> None:
+    """a pool that has placed no table yet is nowhere: the program has not reached it"""
+    fj_path = tmp_path / 'big.fj'
+    fj_path.write_text('def nop {\n    ;$\n}\n    rep(2049, i) nop\n')
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width'):
+        assemble(
+            [fj_path], tmp_path / 'p.fjm', memory_width=16, print_time=False, use_stl=False, table_pool=BlockPool(16)
+        )
+
+
+def test_a_segment_that_starts_past_the_memory_is_told_so_with_a_pool_too(tmp_path: Path) -> None:
+    fj_path = tmp_path / 'far.fj'
+    fj_path.write_text('    ;0\nsegment 0x10000\n    ;0\n')
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width'):
+        assemble(
+            [fj_path], tmp_path / 'p.fjm', memory_width=16, print_time=False, use_stl=False, table_pool=BlockPool(16)
         )

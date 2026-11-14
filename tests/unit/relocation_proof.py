@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import bisect
 import dataclasses
-from array import array
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
@@ -145,8 +144,8 @@ class _Shifts:
     """runs of plain op addresses [start, end), each moved by one delta"""
 
     def __init__(self) -> None:
-        self.starts = array('Q')
-        self.ends = array('Q')
+        self.starts: List[int] = []  # (lists of ints: an address of a wide memory fits no typed array)
+        self.ends: List[int] = []
         self.deltas: List[int] = []
 
     def add(self, address: int, delta: int, op_bits: int) -> None:

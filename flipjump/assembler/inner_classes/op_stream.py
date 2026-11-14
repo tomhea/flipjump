@@ -381,13 +381,6 @@ class OpStream:
         self.vals.append(len(self.refs))
         self.refs.append(op)
 
-    def append(self, op: Union[Padding, NewSegment, ReserveBits]) -> None:
-        """append an op object (a flip-jump or a wflip is added by add_flip_jump / add_word_flip)"""
-        if isinstance(op, Padding):
-            self.add_padding(op.ops_count)
-        else:
-            self.add_object(op)
-
     def extend_slice(self, other: OpStream, op_start: int, val_start: int, op_end: int, val_end: int) -> None:
         """Append `other`'s ops [op_start, op_end), whose slots are other.vals[val_start:val_end]. Both streams must
         share `refs`."""

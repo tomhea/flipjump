@@ -106,6 +106,9 @@ def unpin(stream: OpStream, labels: Dict[str, int], pinned: Dict[int, int], pool
     - which wflips arm a word and which disarm it: `wflip word, table, word's op` is taken as an arm, as the stl's
       dispatches are. A program that arms a word without jumping, and then jumps with the wflip that disarms it,
       must name the word's cell in pin_all_but.
+    - with pin_all_but, a number that arms a word which an `a;b` op then jumps through (`wflip x+w, 0x200` and
+      `;x`): a number flipped into a word inside its window is taken as a change of its value, and is flipped as
+      it is. Name such a word's cell in pin_all_but.
     - a flip of an armed word at or above its table's `pad` alignment: it leaves the table only where the table's
       address has that bit set, which the pool changes (it aligns a moved table to its whole size)."""
     guard = pool.offset_guard

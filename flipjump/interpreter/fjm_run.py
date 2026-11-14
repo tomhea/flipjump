@@ -299,7 +299,7 @@ def _load_native(
     @return: the loaded core
     """
     assert _fjcore is not None
-    fjm_reader.validate_segments(header.segments, data_words=1 << 64)  # the data pool is checked later, with the data
+    fjm_reader.validate_segments(header.segments, data_words=None)  # the data pool is checked later, with the data
     core = _fjcore.Memory(
         header.memory_width, flat_max_words=flat_max_words if flat_max_words else 0, flat_required=flat_required
     )

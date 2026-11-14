@@ -380,7 +380,7 @@ def resolve_into(
         wflips_at=wflips_at,
     )
     if offset_guard is not None:
-        offset_guard.resolving(lambda: _where(binary_data, offset_guard))
+        offset_guard.resolving(lambda: _resolved_op_place(binary_data, offset_guard))
     _resolve_ops(ops, labels, binary_data, fjm_writer, offset_guard, on_progress)
     binary_data.close_and_add_segment(fjm_writer)
 
@@ -394,7 +394,7 @@ def _first_segment(ops: OpStream) -> NewSegment:
     return first_segment
 
 
-def _where(binary_data: BinaryData, guard: OffsetGuard) -> str:
+def _resolved_op_place(binary_data: BinaryData, guard: OffsetGuard) -> str:
     """Return where the op being resolved is, for the guard's refusals: its address, and the label nearest it."""
     address = binary_data.first_address + len(binary_data.fj_words) * binary_data.memory_width
     return f' of the op at {hex(address)} (after the label {guard.label_below(address)})'

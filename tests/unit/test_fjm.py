@@ -423,3 +423,15 @@ def test_a_segment_table_that_decompresses_to_far_more_than_its_segments_is_not_
     finally:
         tracemalloc.stop()
     assert peak < 1 << 24, peak  # the decoder's own 8 MiB dictionary, not the 64 MiB the stream holds
+
+
+@pytest.mark.parametrize('segment_num', [1 << 58, (1 << 63) + 1])
+def test_a_v4_file_that_claims_too_many_segments_is_rejected(tmp_path: Path, segment_num: int) -> None:
+    path = tmp_path / 'v4.fjm'
+    _write_segments(path, 64, V4, 1)
+    raw = bytearray(path.read_bytes())
+    struct.pack_into('<Q', raw, 12, segment_num)  # segment_num: a u64 after magic, width and version
+    path.write_bytes(bytes(raw))
+    for read in (Reader, fjm_reader.read_fjm_header, fjm_reader.read_fjm_raw):
+        with pytest.raises(FlipJumpReadFjmException, match='the segment table is 32 bytes'):
+            read(path)

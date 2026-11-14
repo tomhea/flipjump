@@ -18,6 +18,7 @@ from operator import itemgetter
 from typing import Callable, Dict, Iterable, List, NamedTuple, NoReturn, Optional, Set, Tuple
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException, FlipJumpPreprocessorException
+from flipjump.utils.functions import readable_int
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.op_stream import linear_parts
 
@@ -97,7 +98,7 @@ class OffsetGuard:
 
     The preprocessor checks the operands whose labels it knows; labels-resolve checks the rest. An operand that lands
     on code not emitted yet is pending. Until that code is emitted, a table about to move out of a place below it
-    stays inline (may_move), and a `pad` there that pads another number of ops refuses the program. Any other
+    stays inline (why_stay_inline), and a `pad` there that pads another number of ops refuses the program. Any other
     violation refuses the program too (`refuse`), and `where()` says where the op is.
     """
 
@@ -152,7 +153,7 @@ class OffsetGuard:
         if address:
             self.pads[address] = max(self.pads.get(address, 0), bits)
 
-    def may_move(self, anchor: int) -> Optional[str]:
+    def why_stay_inline(self, anchor: int) -> Optional[str]:
         """Return why the table about to move out of `anchor` must stay inline, or None if it may move."""
         if self.falls_to == anchor:
             return 'the op before it falls through to it'
@@ -178,7 +179,8 @@ class OffsetGuard:
         """Record that the `pad` at `address` pads another number of ops than without the pool: its padding ends at
         `pad_end`, and the code after it is `shift` bits below its plain place. A pending operand above it is
         refused."""
-        cut = f'the `pad {ops_alignment}` at {hex(address)}, which pads to another op once a table before it moved out'
+        pad = f'`pad {readable_int(ops_alignment, separators=False)}`'
+        cut = f'the {pad} at {hex(address)}, which pads to another op once a table before it moved out'
         if self.falls_to == address:
             self.refuse('$', f'falls through to {cut}')
         for pending in self._pending:
@@ -364,10 +366,9 @@ class OffsetGuard:
         except FlipJumpExprException:
             plain = None
         if plain != value:
-            was = 'has no value' if plain is None else f'is {plain}'
-            self.refuse(
-                str(expr), f'{was} without the pool and is {value} with it: it is computed from code that moved'
-            )
+            was = 'has no value' if plain is None else f'is {readable_int(plain, separators=False)}'
+            now = readable_int(value, separators=False)
+            self.refuse(str(expr), f'{was} without the pool and is {now} with it: it is computed from code that moved')
 
     def validate_emitted(self, expr: Expr, is_address: bool = False) -> None:
         """Check an operand kept for labels-resolve now, if all its labels are declared."""
@@ -379,35 +380,52 @@ class OffsetGuard:
         moved table's label."""
         addresses = {label: self.labels[label] for label in coefficients}
         names_a_table = any(address >= self.inline_end for address in addresses.values())
-        total = sum(coefficients.values())
         if len(coefficients) == 1:
-            label = next(iter(coefficients))
-            if total == 1:
-                self.validate_offset(label, addresses[label], constant, operand)
-            elif names_a_table:  # (an inline label times another number, `2 * L`, is an address used as a number)
-                self.refuse(operand, self._mixes_a_table(addresses))
-            return names_a_table
+            self._validate_one_label_sum(coefficients, addresses, constant, operand, names_a_table)
+        else:
+            self._validate_many_labels_sum(coefficients, addresses, constant, operand, names_a_table)
+        return names_a_table
+
+    def _validate_one_label_sum(
+        self, coefficients: Dict[str, int], addresses: Dict[str, int], constant: int, operand: str, names_a_table: bool
+    ) -> None:
+        """Check a sum of one label: `label + constant` lands where the label's piece is, and a moved table's label
+        takes no other coefficient (an inline label times a number, `2 * L`, is an address used as a number)."""
+        label, coefficient = next(iter(coefficients.items()))
+        if coefficient == 1:
+            self.validate_offset(label, addresses[label], constant, operand)
+        elif names_a_table:
+            self.refuse(operand, self._mixes_a_table(addresses))
+
+    def _validate_many_labels_sum(
+        self, coefficients: Dict[str, int], addresses: Dict[str, int], constant: int, operand: str, names_a_table: bool
+    ) -> None:
+        """Check a sum of several labels by what their coefficients add up to: 0 is a distance (it must not change),
+        1 is an address (it must land on a place that moved as far as the sum did), and anything else is an address
+        used as a number (right while its labels moved alike)."""
         shifts = {label: self._label_shift(label, addresses[label]) for label in coefficients}
         for label in coefficients:
             if label in self.watched:
                 self._keep(addresses[label], shifts[label], operand)
         shift = sum(coefficient * shifts[label] for label, coefficient in coefficients.items())  # of the whole sum
         value = constant + sum(coefficient * addresses[label] for label, coefficient in coefficients.items())
-        if total == 0:  # a distance
+        total = sum(coefficients.values())
+        if total == 0:
             right = shift == 0
-        elif total == 1:  # an address
+        elif total == 1:
             right = self._shift_at(value) == shift
-        else:  # an address used as a number: right while its labels moved alike
+        else:
             right = len(set(shifts.values())) == 1 and not names_a_table
         if not right:
             self.refuse(operand, self._mixes_a_table(addresses) if names_a_table else self._why_distance(addresses))
         if total == 1:
             self._keep(value, shift, operand)
-        return names_a_table
 
     def _mixes_a_table(self, addresses: Dict[str, int]) -> str:
         moved = next(label for label, address in addresses.items() if address >= self.inline_end)
-        return f'computes from {moved}, a moved table\'s label, and labels outside that table'
+        if len(addresses) == 1:
+            return f"uses {moved}, a moved table's label, as a number: only a constant may be added to it"
+        return f"computes from {moved}, a moved table's label, and labels outside that table"
 
     def _why_distance(self, addresses: Dict[str, int]) -> str:
         """Return why a sum of the labels at `addresses` is not what it is without the pool."""
@@ -440,4 +458,6 @@ def _moves_with(expr: Expr, label: str, address: int, value: int) -> bool:
 
 
 def _operand(label: str, offset: int) -> str:
-    return f'{label} + {offset}' if offset > 0 else f'{label} - {-offset}' if offset else label
+    if not offset:
+        return label
+    return f"{label} {'+' if offset > 0 else '-'} {readable_int(abs(offset), separators=False)}"

@@ -110,7 +110,7 @@ class TableSite:
     address: int  # where it went; 0 means it stayed inline
 
 
-# Why a table stayed inline (the keys of BlockPool.kept_inline; OffsetGuard.may_move gives two more)
+# Why a table stayed inline (the keys of BlockPool.kept_inline; OffsetGuard.why_stay_inline gives two more)
 KEPT_NO_JUMP_WORD = 'it is dispatched through no word the pool can name'
 KEPT_RUNTIME_WORD = "it is dispatched through one of the runtime's words"
 KEPT_TOO_WIDE = 'it is wider than any slot'
@@ -264,7 +264,7 @@ class Block:
     `base ^ offset`)."""
 
     sub_blocks: Dict[int, Tuple[int, int]]  # slot width in ops -> (the sub-block's bit offset in the block, its slots)
-    bits: int  # the block's size in bits: a power of two
+    bits: int  # the block's size in bits: a power of two, or 0 if no table of the group fits a slot
     cheapest_first: bool  # hand each width's slots out fewest-set-bits first, not in order (a spread group)
     hot: Optional[HotGroup]  # the heat list's ranks, for a hot group
     base: Optional[int] = None  # its address. None: the pool has no room for it (its tables go to the overflow region)
@@ -365,7 +365,9 @@ class BlockPool:
         # operand), and words left unpinned because a pin could not hold (pins.unpin). The cli prints both.
         self.kept_inline: Dict[str, int] = {}
         self.unpins: Dict[str, int] = {}
-        self.heat_unmatched: List[str] = []  # the heat list's groups this program has none of, or several of
+        # the heat list's groups this program has none of, or several of. For the caller that gave `heat` to read:
+        # the assembler does not use it
+        self.heat_unmatched: List[str] = []
 
     @property
     def op_bits(self) -> int:
@@ -467,7 +469,7 @@ class BlockPool:
             group, site = alias.get(tables.groups[index], tables.groups[index]), tables.sites[index]
             occurrence = occurrences.get((group, site), 0)
             occurrences[(group, site)] = occurrence + 1
-            self.table_sites.append(TableSite(group, site, occurrence, _pow2_ceil(tables.width(index)), address))
+            self.table_sites.append(TableSite(group, site, occurrence, self.slot_ops(tables.width(index)), address))
 
     # ---- placing in blocks ----
 
@@ -504,16 +506,23 @@ class BlockPool:
                 self.heat_unmatched.append(key)
         return hot
 
+    def _movable(self, widths: Dict[int, int]) -> Dict[int, int]:
+        """Return the part of a group's {table width: how many} that fits a slot. A wider table stays inline: it
+        takes no slot and needs no room."""
+        return {width: count for width, count in widths.items() if width <= self.max_slot_ops}
+
     def _block(self, widths: Dict[int, int], hot: Optional[HotGroup]) -> Block:
-        """Size a group's block from its tables' widths: one sub-block per slot width, the biggest sub-block first."""
-        spread = self.spread_factor if sum(widths.values()) >= self.spread_min_tables else 1
-        slots = self._slots_by_width(widths, spread, hot)
+        """Size a group's block from the widths of its movable tables: one sub-block per slot width, the biggest
+        sub-block first."""
+        movable = self._movable(widths)
+        spread = self.spread_factor if sum(movable.values()) >= self.spread_min_tables else 1
+        slots = self._slots_by_width(movable, spread, hot)
         sub_blocks, bits = self._sub_blocks(slots)
         return Block(sub_blocks, bits, spread > 1, hot)
 
     def _slots_by_width(self, widths: Dict[int, int], spread: int, hot: Optional[HotGroup]) -> Dict[int, int]:
-        """Return {slot width: how many slots a block keeps of it}, for a group's {table width: how many}: a power of
-        two that holds the tables of that slot width, times `spread`."""
+        """Return {slot width: how many slots a block keeps of it}, for a group's movable {table width: how many}: a
+        power of two that holds the tables of that slot width, times `spread`."""
         tables: Dict[int, int] = {}  # slot width -> tables
         for width, count in widths.items():
             slot_ops = self.slot_ops(width)
@@ -528,7 +537,7 @@ class BlockPool:
 
     def _sub_blocks(self, slots: Dict[int, int]) -> Tuple[Dict[int, Tuple[int, int]], int]:
         """Lay out a block's sub-blocks, the biggest first, each aligned to its own size. Return
-        ({slot width: (the sub-block's bit offset, its slots)}, the block's size in bits)."""
+        ({slot width: (the sub-block's bit offset, its slots)}, the block's size in bits: 0 with no slot)."""
         bits = {slot_ops: count * slot_ops * self.op_bits for slot_ops, count in slots.items()}
         sub_blocks: Dict[int, Tuple[int, int]] = {}
         offset = 0
@@ -536,14 +545,15 @@ class BlockPool:
             offset = _align_up(offset, bits[slot_ops])
             sub_blocks[slot_ops] = (offset, slots[slot_ops])
             offset += bits[slot_ops]
-        return sub_blocks, _pow2_ceil(offset)
+        return sub_blocks, _pow2_ceil(offset) if offset else 0
 
     def _block_ends(self, order: Sequence[str]) -> List[int]:
-        """Return where the first k blocks of `order` end, for every k: each block is aligned to its own size."""
+        """Return where the first k blocks of `order` end, for every k: each block is aligned to its own size (an
+        empty block takes no place)."""
         ends = [self.pool_base]
         for group in order:
             bits = self.blocks[group].bits
-            ends.append(_align_up(ends[-1], bits) + bits)
+            ends.append(_align_up(ends[-1], bits) + bits if bits else ends[-1])
         return ends
 
     def _how_many_fit(
@@ -554,8 +564,7 @@ class BlockPool:
         # of the groups from k on: the widest slot their movable tables need, and the bits all those slots take
         widest, room = [1] * (len(order) + 1), [0] * (len(order) + 1)
         for k in range(len(order) - 1, -1, -1):
-            # (a table too wide for a slot stays inline: it needs no room)
-            movable = {width: count for width, count in groups[order[k]].items() if width <= self.max_slot_ops}
+            movable = self._movable(groups[order[k]])
             widest[k] = max([widest[k + 1]] + [self._slot_bits(width) for width in movable])
             room[k] = room[k + 1] + sum(self._slot_bits(width) * count for width, count in movable.items())
         limit = self._pool_limit()
@@ -601,7 +610,7 @@ class BlockPool:
         if width > self.max_slot_ops:
             block.broken = True
             return None
-        return block.take_slot(_pow2_ceil(width), self.op_bits, hot_site)
+        return block.take_slot(self.slot_ops(width), self.op_bits, hot_site)
 
     # ---- placing a raw program's tables ----
 
@@ -649,13 +658,14 @@ class BlockPool:
             f'tables. {advice}, or assemble without the pool.'
         )
 
-    def slot_ops(self, table_ops: int) -> int:
-        """Return the width, in ops, of the slot that a block keeps for a table `table_ops` wide: the next power of
-        two, up to the widest slot (max_slot_ops)."""
-        return _pow2_ceil(min(table_ops, self.max_slot_ops))
+    @staticmethod
+    def slot_ops(table_ops: int) -> int:
+        """Return the width, in ops, of the slot that a table `table_ops` wide takes: the next power of two. (A
+        block has no slot for a table wider than max_slot_ops.)"""
+        return _pow2_ceil(table_ops)
 
     def _slot_bits(self, width: int) -> int:
-        return _pow2_ceil(width) * self.op_bits
+        return self.slot_ops(width) * self.op_bits
 
     def _pool_limit(self) -> int:
         top = 1 << self.memory_width

@@ -480,8 +480,9 @@ def add_table_pool_arguments(group: argparse._ArgumentGroup) -> None:
         '--pin-all-but',
         metavar='LABEL[:OPS],...',
         help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
-        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong "
-        "(an empty list, \"\", pins every word). Without it, a program that uses pointers pins nothing",
+        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, and every cell whose "
+        "dispatch word is jumped through while no table is armed in it, or it runs wrong (an empty list, \"\", pins "
+        "every word). Without it, a program that uses pointers pins nothing",
     )
 
 

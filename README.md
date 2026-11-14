@@ -133,7 +133,7 @@ fj hello_world.fj
 ![Hello World in FlipJump](resources/hello.gif)
 
   - The --no-stl flag tells the assembler not to include the standard library. for example: `fj programs/print_tests/hello_no-stl.fj --no-stl`.
-  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default, and can be any power of two from 8 (8, 16, 32, 64, 128, ... 32768). The native engine runs the widths up to 64; a wider program runs on the much slower pure-Python engine, and its .fjm (version 4) holds segments anywhere in its memory.
+  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default, and can be any power of two from 8 (8, 16, 32, 64, 128, ... 32768). The native engine runs the widths up to 64; a wider program runs on the much slower pure-Python engine, and its .fjm holds segments anywhere in its memory.
   - You can use the `-o` flag to save the assembled file for later use too.
   - You can find all the different flags with `fj -h`.
 
@@ -161,7 +161,7 @@ a macro whose innermost namespace has that name is a table the pool may move.
 What a pool does not follow, so a program that depends on it may run differently with the pool:
 - an address used as a number beyond a sum of labels and constants (`(L >> 6) & 15` printed, say - storing a pointer
   or retargeting a jump that way is fine);
-- a number used as an address (`;0x280` names no label);
+- a number used as an address (`;0x280` names no label, and `wflip x+w, 0x200` arms no table the pool knows);
 - what the padding ops of a `pad` hold;
 - a flip of a dispatch word at or above the `pad` alignment of the table armed in it;
 - a dispatch word that is armed without a jump, and jumped through by the wflip that disarms it.

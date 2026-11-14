@@ -438,7 +438,8 @@ def _decompress_in_chunks(
         position, stream_start = 0, size
         try:
             while position < len(remaining) and not decompressor.eof:
-                room = -1 if max_size is None else max_size + 1 - size  # (-1: no limit)
+                # how much more to decompress (-1: no limit), as a size the decompressor takes
+                room = -1 if max_size is None else min(max_size + 1 - size, sys.maxsize)
                 piece = decompressor.decompress(remaining[position : position + _DECOMPRESS_CHUNK], room)  # noqa: E203
                 position += _DECOMPRESS_CHUNK
                 if size + len(piece) > len(output):
@@ -471,11 +472,11 @@ def _decompress_in_chunks(
     return output
 
 
-def validate_segments(segments: List[Tuple[int, int, int, int]], data_words: int) -> None:
+def validate_segments(segments: List[Tuple[int, int, int, int]], data_words: Optional[int]) -> None:
     """
-    Check the segments of a .fjm before loading it: each data length is even and inside the data pool, each segment's
-    data fits in the segment, and no segments overlap. The writer guarantees all of these, so a file that breaks one
-    is damaged.
+    Check the segments of a .fjm before loading it: each data length is even and inside the data pool (of
+    `data_words` words; None skips this one check), each segment's data fits in the segment, and no segments
+    overlap. The writer guarantees all of these, so a file that breaks one is damaged.
     """
     for segment_start, segment_length, data_start, data_length in segments:
         if data_length % 2 != 0:
@@ -483,7 +484,7 @@ def validate_segments(segments: List[Tuple[int, int, int, int]], data_words: int
                 f"Bad .fjm file: segment data-length must be even (an integer number of ops), "
                 f"got {readable_int(data_length)}."
             )
-        if data_start + data_length > data_words:
+        if data_words is not None and data_start + data_length > data_words:
             raise FlipJumpReadFjmException(
                 f"Bad .fjm file: segment data range "
                 f"[{readable_int(data_start)}, {readable_int(data_start + data_length)})"

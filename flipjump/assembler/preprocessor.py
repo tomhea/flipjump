@@ -18,6 +18,7 @@ from flipjump.utils.constants import (
     GAP_BETWEEN_PYTHONS_AND_PREPROCESSOR_MACRO_RECURSION_DEPTH,
 )
 from flipjump.utils.exceptions import FlipJumpPreprocessorException, FlipJumpExprException
+from flipjump.utils.functions import readable_int
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.ops import (
     FlipJump,
@@ -167,7 +168,7 @@ class PreprocessorData:
 
         first_segment: NewSegment = NewSegment(0)
         self.last_new_segment: NewSegment = first_segment
-        self.result_ops.append(first_segment)
+        self.result_ops.add_object(first_segment)
 
         self.max_recursion_depth = max_recursion_depth
         # set python's recursion-limit so the preprocessor's own depth-check (at max_recursion_depth)
@@ -205,7 +206,7 @@ class PreprocessorData:
 
         new_segment = NewSegment(next_segment_start)
         self.last_new_segment = new_segment
-        self.result_ops.append(new_segment)
+        self.result_ops.add_object(new_segment)
 
         self.curr_address = next_segment_start
         if self.mover is not None:
@@ -215,7 +216,7 @@ class PreprocessorData:
         self.curr_address += reserved_bits_size
         if self.mover is not None:
             self.mover.validate_not_reaching_the_pool(self.curr_address)
-        self.result_ops.append(ReserveBits(self.curr_address))
+        self.result_ops.add_object(ReserveBits(self.curr_address))
 
     def insert_label(self, label: str, code_position: CodePosition, *, address: Optional[int] = None) -> None:
         if address is None:
@@ -277,7 +278,7 @@ class PreprocessorData:
             macro_resolve_error(
                 self.curr_tree,
                 f"'pad' requires the current address to be op-aligned (a multiple of 2*w={op_size} bits), "
-                f"but it's currently {self.curr_address} bits "
+                f"but it's currently {readable_int(self.curr_address)} bits "
                 f"(this usually happens after a 'reserve' or 'segment' that isn't 2*w-aligned).",
             )
         ops_to_pad = (-self.curr_address // op_size) % ops_alignment
@@ -293,13 +294,19 @@ class PreprocessorData:
     def _validate_pad_fits(self, ops_alignment: int, ops_to_pad: int) -> None:
         """Check that the `ops_to_pad` padding ops of a `pad` here end inside the memory, and that their count fits
         an op-stream slot."""
-        pad = f"'pad {ops_alignment}' at {hex(self.curr_address)} adds {ops_to_pad} padding ops"
-        if self.curr_address + ops_to_pad * 2 * self.memory_width > 1 << self.memory_width:
+        fits_the_memory = self.curr_address + ops_to_pad * 2 * self.memory_width <= 1 << self.memory_width
+        if fits_the_memory and ops_to_pad <= LITERAL_MAX:
+            return
+        pad = (
+            f"'pad {readable_int(ops_alignment, separators=False)}' at {hex(self.curr_address)} adds "
+            f"{readable_int(ops_to_pad)} "
+            f"padding ops"
+        )
+        if not fits_the_memory:
             macro_resolve_error(
                 self.curr_tree, f'Not enough space with the {self.memory_width}-bits memory-width: {pad}.'
             )
-        if ops_to_pad > LITERAL_MAX:
-            macro_resolve_error(self.curr_tree, f'{pad}: too many to assemble.')
+        macro_resolve_error(self.curr_tree, f'{pad}: too many to assemble.')
 
     def record_alignment(self, address: int, bits: int) -> None:
         """Note that a `pad` aligned `address` to 2^bits bits. The mover's guard keeps these."""
@@ -336,7 +343,8 @@ def get_pad_ops_alignment(op: Pad, preprocessor_data: PreprocessorData) -> int:
     if ops_alignment <= 0:
         macro_resolve_error(
             preprocessor_data.curr_tree,
-            f"'pad' must get a positive ops-alignment, but got {ops_alignment}. In {op.code_position}.",
+            f"'pad' must get a positive ops-alignment, but got {readable_int(ops_alignment)}. "
+            f"In {op.code_position}.",
         )
     return ops_alignment
 
@@ -405,6 +413,14 @@ class TableCall(NamedTuple):
     start_label: str
 
 
+def _next_op_index(ops: List[Op], after: int) -> Optional[int]:
+    """Return the index of the first op after ops[after] that is no label, or None if there is none."""
+    for index in range(after + 1, len(ops)):
+        if not isinstance(ops[index], Label):
+            return index
+    return None
+
+
 def relocatable_call(
     preprocessor_data: PreprocessorData, ops: List[Op], pad_index: int, params_dict: Dict[str, Expr], ops_alignment: int
 ) -> Optional[TableCall]:
@@ -415,14 +431,9 @@ def relocatable_call(
     start label. It may hold only labels and `a;b` ops, and no `$` (see _validate_relocatable_table). Its jump word
     is the word of the `wflip` right after the call that disarms the start label.
     """
-    for index in range(pad_index + 1, len(ops)):
-        op = ops[index]
-        if isinstance(op, Label):
-            continue
-        if not isinstance(op, MacroCall) or not is_relocatable(op.macro_name):
-            return None
-        break
-    else:
+    index = _next_op_index(ops, pad_index)
+    op = None if index is None else ops[index]
+    if index is None or not isinstance(op, MacroCall) or not is_relocatable(op.macro_name):
         return None
     call = op.eval_new(params_dict)
     macro = preprocessor_data.macros.get(call.macro_name)
@@ -432,19 +443,17 @@ def relocatable_call(
     if ops_alignment & (ops_alignment - 1):
         macro_resolve_error(
             preprocessor_data.curr_tree,
-            f'the relocatable table after `pad {ops_alignment}` (at {ops[pad_index].code_position}) needs a '
+            f'the relocatable table after `pad {readable_int(ops_alignment, separators=False)}` '
+            f'(at {ops[pad_index].code_position}) needs a '
             f'power-of-two pad: a pool places tables in power-of-two slots',
         )
     group_expr: Optional[Expr] = None
-    for after in range(index + 1, len(ops)):
-        disarm = ops[after]
-        if isinstance(disarm, Label):
-            continue
-        if isinstance(disarm, WordFlip) and disarm.flip_value.eval_new(params_dict).value == call.arguments[0].value:
-            # bind the macro's parameters (`src + w` names the caller's variable); unknown labels
-            # stay as names, so two sites on the same variable compare equal
-            group_expr = disarm.word_address.eval_new(params_dict)
-        break
+    disarm_index = _next_op_index(ops, index)
+    disarm = None if disarm_index is None else ops[disarm_index]
+    if isinstance(disarm, WordFlip) and disarm.flip_value.eval_new(params_dict).value == call.arguments[0].value:
+        # bind the macro's parameters (`src + w` names the caller's variable); unknown labels
+        # stay as names, so two sites on the same variable compare equal
+        group_expr = disarm.word_address.eval_new(params_dict)
     return TableCall(index, table_ops, group_expr, str(call.arguments[0].value))
 
 
