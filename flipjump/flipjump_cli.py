@@ -396,6 +396,66 @@ def add_run_only_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_table_pool_arguments(group: argparse._ArgumentGroup) -> None:
+    """
+    add --pool-tables and the flags of its pool (see make_table_pool) to the assemble arguments.
+    @param group: the assemble arguments' group
+    """
+    group.add_argument(
+        '--pool-tables',
+        action='store_true',
+        help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
+        "they are cheap to arm: fewer ops per table dispatch, the same program",
+    )
+
+    group.add_argument(
+        '--pool-base',
+        type=lambda text: int(text, 0),
+        metavar='ADDRESS',
+        help="with --pool-tables: the bit address of the pool's first block (default: the first power of two above "
+        "the program)",
+    )
+    group.add_argument(
+        '--pool-end',
+        type=lambda text: int(text, 0),
+        metavar='ADDRESS',
+        help="with --pool-tables: the pool ends below this bit address (default: the top of memory)",
+    )
+    group.add_argument(
+        '--pool-max-slot-ops',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: the widest table, in ops, the pool moves (default 32); wider ones stay in place",
+    )
+    group.add_argument(
+        '--pool-spread-factor',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: give each big group of tables N times the slots it needs, so its tables take the "
+        "cheapest ones (default 1)",
+    )
+    group.add_argument(
+        '--pool-spread-min-tables',
+        type=int,
+        metavar='N',
+        help="with --pool-tables: a group of at least N tables is big, for --pool-spread-factor (default 256)",
+    )
+    group.add_argument(
+        '--pool-pin-incomplete-groups',
+        action='store_true',
+        help="with --pool-tables: pin a group's dispatch word even when some of its tables stayed in place (cheaper "
+        "for the moved ones, dearer for the others)",
+    )
+
+    group.add_argument(
+        '--pin-all-but',
+        metavar='LABEL[:OPS],...',
+        help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
+        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong "
+        "(an empty list, \"\", pins every word). Without it, a program that uses pointers pins nothing",
+    )
+
+
 def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
     """
     add the arguments that are usable in assemble time.
@@ -454,59 +514,7 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         f"used by versions {FJMVersion.CompressedVersion.value} and {FJMVersion.CompressedSegmentsVersion.value}).",
     )
 
-    asm_arguments.add_argument(
-        '--pool-tables',
-        action='store_true',
-        help="move the stl's lookup tables (the `__relocatable__` macros) to blocks right above the program, where "
-        "they are cheap to arm: fewer ops per table dispatch, the same program",
-    )
-
-    asm_arguments.add_argument(
-        '--pool-base',
-        type=lambda text: int(text, 0),
-        metavar='ADDRESS',
-        help="with --pool-tables: the bit address of the pool's first block (default: the first power of two above "
-        "the program)",
-    )
-    asm_arguments.add_argument(
-        '--pool-end',
-        type=lambda text: int(text, 0),
-        metavar='ADDRESS',
-        help="with --pool-tables: the pool ends below this bit address (default: the top of memory)",
-    )
-    asm_arguments.add_argument(
-        '--pool-max-slot-ops',
-        type=int,
-        metavar='N',
-        help="with --pool-tables: the widest table, in ops, the pool moves (default 32); wider ones stay in place",
-    )
-    asm_arguments.add_argument(
-        '--pool-spread-factor',
-        type=int,
-        metavar='N',
-        help="with --pool-tables: give each big group of tables N times the slots it needs, so its tables take the "
-        "cheapest ones (default 1)",
-    )
-    asm_arguments.add_argument(
-        '--pool-spread-min-tables',
-        type=int,
-        metavar='N',
-        help="with --pool-tables: a group of at least N tables is big, for --pool-spread-factor (default 256)",
-    )
-    asm_arguments.add_argument(
-        '--pool-pin-incomplete-groups',
-        action='store_true',
-        help="with --pool-tables: pin a group's dispatch word even when some of its tables stayed in place (cheaper "
-        "for the moved ones, dearer for the others)",
-    )
-
-    asm_arguments.add_argument(
-        '--pin-all-but',
-        metavar='LABEL[:OPS],...',
-        help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
-        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong "
-        "(an empty list, \"\", pins every word). Without it, a program that uses pointers pins nothing",
-    )
+    add_table_pool_arguments(asm_arguments)
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')
     asm_arguments.add_argument(
