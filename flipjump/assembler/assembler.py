@@ -87,8 +87,8 @@ def add_segment_to_fjm(
         fjm_writer.add_segment(segment_start_address, segment_length, data_start, data_length)
     except FlipJumpWriteFjmException as e:
         exception_message = (
-            f"failed to add the segment: "
-            f"{fjm_writer.get_segment_addresses_repr(segment_start_address, segment_length)}."
+            f"failed to add the segment "
+            f"{fjm_writer.get_segment_addresses_repr(segment_start_address, segment_length)}: {e}"
         )
         raise FlipJumpAssemblerException(exception_message) from e
 
