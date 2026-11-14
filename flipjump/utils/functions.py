@@ -1,19 +1,45 @@
 """
 shared utility functions.
 locating the standard-library files, building the (name, path) file-tuples the assembler
-consumes, and saving/loading the compressed debugging-info (label dictionaries) used by
-the debugger.
+consumes, writing the -D defines file, and saving/loading the compressed debugging-info
+(label dictionaries) used by the debugger.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import lzma
 import os
+import re
+import sys
 from pathlib import Path
-from typing import List, Dict, Tuple, Union, Optional
+from typing import Iterator, List, Dict, Mapping, Tuple, Union, Optional
 
 from flipjump.utils.constants import DEBUG_JSON_ENCODING, DEBUG_JSON_LZMA_FORMAT, DEBUG_JSON_LZMA_FILTERS, STL_PATH
+
+_DECIMAL_MAX_BITS = 64  # a longer number is shown in hex
+
+
+def readable_int(value: int, *, separators: bool = True) -> str:
+    """Return a number as a message shows it: decimal (with thousands separators, unless `separators` is False), or
+    hex if it does not fit 64 bits (python refuses to print a number of more than 4300 decimal digits, and a wide
+    memory has such addresses)."""
+    if value.bit_length() > _DECIMAL_MAX_BITS:
+        return hex(value)
+    return f'{value:,}' if separators else str(value)
+
+
+@contextlib.contextmanager
+def _any_int_length() -> Iterator[None]:
+    """Let python turn an int of any length into decimal text and back. By default it refuses more than 4300
+    digits, and the addresses of a wide memory are longer."""
+    limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(0)
+    try:
+        yield
+    finally:
+        sys.set_int_max_str_digits(limit)
 
 
 def get_stl_paths() -> List[Path]:
@@ -33,7 +59,8 @@ def save_debugging_labels(debugging_file_path: Optional[Path], labels: Dict[str,
     """
     if debugging_file_path:
         with open(debugging_file_path, 'wb') as f:
-            data = json.dumps(labels).encode(DEBUG_JSON_ENCODING)
+            with _any_int_length():
+                data = json.dumps(labels).encode(DEBUG_JSON_ENCODING)
             compressed_data = lzma.compress(data, format=DEBUG_JSON_LZMA_FORMAT, filters=DEBUG_JSON_LZMA_FILTERS)
             f.write(compressed_data)
 
@@ -48,7 +75,8 @@ def load_debugging_labels(debugging_file_path: Path) -> Dict[str, int]:
         compressed_data = f.read()
 
     data = lzma.decompress(compressed_data, format=DEBUG_JSON_LZMA_FORMAT, filters=DEBUG_JSON_LZMA_FILTERS)
-    debugging_labels: Dict[str, int] = json.loads(data.decode(DEBUG_JSON_ENCODING))
+    with _any_int_length():
+        debugging_labels: Dict[str, int] = json.loads(data.decode(DEBUG_JSON_ENCODING))
     return debugging_labels
 
 
@@ -69,6 +97,40 @@ def get_file_tuples(files: List[str], *, no_stl: bool = False) -> List[Tuple[str
         file_tuples.append((f"f{i}", Path(file)))
 
     return file_tuples
+
+
+_DEFINE_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*(\.[a-zA-Z_][a-zA-Z_0-9]*)*$')
+
+
+def bad_define_message(name: str, value: Union[int, str]) -> Optional[str]:
+    """@return: why `name = value` is not a valid define, or None when it is"""
+    if not _DEFINE_NAME_RE.match(name):
+        return f'a define needs a (possibly dotted) name, like a.b.NAME, got {name!r}'
+    if not str(value).strip() or '\n' in str(value):
+        return f'the define {name} needs a one-line value, got {value!r}'
+    return None
+
+
+def write_defines_file(defines: Mapping[str, Union[int, str]], path: Path) -> None:
+    """
+    Write the defines into a .fj file of constants. The assembler parses it first (before the stl), and its constants
+    override the program's declarations, so a value may use `w` and earlier defines, but not stl constants.
+    A dotted name is wrapped in its namespaces: `hex.pointers.PTRSIZE = 12` becomes
+    `ns hex { ns pointers { PTRSIZE = 12 } }`.
+    @param defines: the constants' full names, and their values (a number, or an fj expression)
+    @param path: the file to write
+    @raises ValueError: a define is invalid (see bad_define_message)
+    """
+    lines = []
+    for name, value in defines.items():
+        bad = bad_define_message(name, value)
+        if bad is not None:
+            raise ValueError(bad)
+        *namespaces, base_name = name.split('.')
+        opening = "".join(f"ns {namespace} {{\n" for namespace in namespaces)
+        closing = "\n}" * len(namespaces)
+        lines.append(f"{opening}{base_name} = {value}{closing}\n")
+    path.write_text(''.join(lines), encoding='utf-8')
 
 
 def get_temp_directory_suffix(files: Union[List[Path], List[str]]) -> str:

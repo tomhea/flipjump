@@ -1,0 +1,23 @@
+// C21: a computed operand from an INLINE label ((L + 15*dw) | 0) across a moved table: check_expr checks a
+// non-linear operand only if it names a moved table label or lands in the pool.
+ns my {
+  ns __relocatable__ {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+stl.startup
+L:
+    ;(L + 15*dw) | 0
+    wflip x+w, T, x
+    pad 16
+    my.__relocatable__.table T, outA
+  e:
+    wflip x+w, T
+    stl.output 'P'
+    stl.loop
+outA:
+    stl.loop
+x:  hex.hex 0

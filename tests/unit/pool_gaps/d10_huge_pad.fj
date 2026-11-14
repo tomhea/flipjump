@@ -1,0 +1,14 @@
+// D10 (w=64): `pad (1 << 40)` before a declared table. The table is too wide for any slot and stays inline; its
+// alignment is no 32-bit number.
+ns my {
+  ns __relocatable__ {
+    def table start {
+      start:
+        ;start
+    }
+  }
+}
+    pad (1 << 40)
+    my.__relocatable__.table T
+    wflip x+w, T
+x:  ;0

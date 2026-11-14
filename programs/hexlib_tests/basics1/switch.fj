@@ -1,0 +1,68 @@
+// Tests hex.switch (a 16-way jump on a hex): every value jumps to its own target, and the hex is unchanged.
+// Prints the hex digit each value reached, then the value it holds after: "00", "11", ... "ff".
+stl.startup
+
+test_switch 0
+test_switch 1
+test_switch 2
+test_switch 3
+test_switch 4
+test_switch 5
+test_switch 6
+test_switch 7
+test_switch 8
+test_switch 9
+test_switch 10
+test_switch 11
+test_switch 12
+test_switch 13
+test_switch 14
+test_switch 15
+
+stl.loop
+
+
+hex.init
+
+
+def test_switch v @ x, t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, after, end {
+    hex.switch x, t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15
+  t0:  stl.output '0'
+    ;after
+  t1:  stl.output '1'
+    ;after
+  t2:  stl.output '2'
+    ;after
+  t3:  stl.output '3'
+    ;after
+  t4:  stl.output '4'
+    ;after
+  t5:  stl.output '5'
+    ;after
+  t6:  stl.output '6'
+    ;after
+  t7:  stl.output '7'
+    ;after
+  t8:  stl.output '8'
+    ;after
+  t9:  stl.output '9'
+    ;after
+  t10: stl.output 'a'
+    ;after
+  t11: stl.output 'b'
+    ;after
+  t12: stl.output 'c'
+    ;after
+  t13: stl.output 'd'
+    ;after
+  t14: stl.output 'e'
+    ;after
+  t15: stl.output 'f'
+    ;after
+  after:
+    hex.print_as_digit x, 0
+    stl.output '\n'
+    ;end
+  x: hex.hex v
+  end:
+}

@@ -7,10 +7,12 @@ known/resolved.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from operator import mul, add, sub, floordiv, lshift, rshift, mod, xor, or_, and_
 from typing import Union, Tuple, Set, Dict, Callable
 
 from flipjump.utils.exceptions import FlipJumpExprException
+from flipjump.utils.functions import readable_int
 
 # dictionary from a math-op string, to its pythonic function.
 # @note: if changed, update Expr.__str__().
@@ -52,13 +54,13 @@ op_string_to_function: Dict[str, Union[UNARY_TYPE, BINARY_TYPE, TRINARY_TYPE]] =
 }
 
 
+@dataclass(slots=True, eq=False)
 class Expr:
     """
     The python representation of a .fj expression (from labels, consts and math-ops)
     """
 
-    def __init__(self, expr: Union[int, str, Tuple[str, Tuple[Expr, ...]]]):
-        self.value = expr
+    value: Union[int, str, Tuple[str, Tuple[Expr, ...]]]  # a number, a name, or (op, its arguments)
 
     def is_int(self) -> bool:
         return isinstance(self.value, int)
@@ -83,7 +85,7 @@ class Expr:
         returns a minimal Expr: replaces every string it can with its dictionary value, and
         evaluates any op it can.
         Expr objects are immutable, so unchanged (sub)expressions are returned as-is and may
-        be shared between trees - the dominant assemble-time cost used to be cloning them.
+        be shared between trees (no clone is made).
         @param params_dict: the label->ExprValue dictionary to be used
         @raise FlipJumpExprException if math op failed
         @return: this Expr if nothing was substituted, else a new minimal Expr
@@ -137,6 +139,11 @@ class Expr:
 
         op, args = value
         try:
+            # the common binary case, without a generator frame per node
+            if len(args) == 2:
+                first, second = args
+                binary = op_string_to_function[op]
+                return binary(first.exact_eval(labels), second.exact_eval(labels))  # type: ignore[call-arg]
             return op_string_to_function[op](*(e.exact_eval(labels) for e in args))
         except FlipJumpExprException:
             raise
@@ -158,7 +165,7 @@ class Expr:
         if isinstance(self.value, str):
             return self.value
         if isinstance(self.value, int):
-            return str(self.value)
+            return readable_int(self.value, separators=False)
         raise FlipJumpExprException(f'bad expression: {self.value} (of type {type(self.value)})')
 
     def __repr__(self) -> str:

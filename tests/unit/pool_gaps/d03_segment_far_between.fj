@@ -1,0 +1,11 @@
+// D03: a far segment (0x100000) starts between an operand and the lower segment (0x1000) it lands in, which
+// holds a table below that place: the operand stays pending across the far segment, and the table stays inline.
+startup
+L:
+    ;L + 0x1000 - 0x80 + 12*dw
+segment 0x100000
+    halt
+segment 0x1000
+    dead x
+    rows
+x:  ;0

@@ -59,14 +59,14 @@ def test_eof_termination_handbuilt(tmp_path: Path) -> None:
     writer.add_simple_segment_with_data(0, [0, 16, 0, 16])
     writer.write_to_file()
 
-    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False)
+    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False)
     assert statistics.termination_cause == TerminationCause.EOF
 
 
 def test_cat_program_echoes_input() -> None:
     io_device = FixedIO(b'AB')
     statistics = assemble_and_run(
-        [CAT_PROGRAM], use_stl=True, io_device=io_device, print_time=False, print_termination=False
+        [CAT_PROGRAM], use_stl=True, io_device=io_device, show_progress=False, print_termination=False
     )
     assert statistics.termination_cause == TerminationCause.EOF
     assert io_device.get_output(allow_incomplete_output=True) == b'AB'
@@ -75,11 +75,11 @@ def test_cat_program_echoes_input() -> None:
 def test_last_ops_addresses_deque(tmp_path: Path) -> None:
     fjm_path = assemble_to_path(INFINITE_LOOP_PROGRAM, tmp_path)
 
-    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False, last_ops_debugging_list_length=3)
+    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False, last_ops_debugging_list_length=3)
     assert statistics.last_ops_addresses is not None
     assert len(statistics.last_ops_addresses) <= 3
 
-    statistics_none = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False)
+    statistics_none = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False)
     assert statistics_none.last_ops_addresses is None
 
 
@@ -95,7 +95,7 @@ def test_native_run_reports_flat_storage_mode(tmp_path: Path, monkeypatch: pytes
 def test_run_flat_max_words_limits_the_flat_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv('FLIPJUMP_NO_NATIVE', raising=False)
     fjm_path = assemble_to_path(INFINITE_LOOP_PROGRAM, tmp_path, memory_width=32)
-    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), print_time=False, flat_max_words=4)
+    statistics = fjm_run.run(fjm_path, io_device=FixedIO(b''), show_progress=False, flat_max_words=4)
     assert statistics.termination_cause == TerminationCause.Looping
     assert statistics.storage_mode == 'hybrid'  # words 0..3 flat, the rest page-backed
 

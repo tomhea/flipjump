@@ -14,11 +14,13 @@
  */
 
 #define PY_SSIZE_T_CLEAN
-/* the stable ABI (abi3): one wheel per platform/arch covers every CPython >= 3.10 */
+/* the stable ABI (abi3): one wheel per platform/arch covers every CPython >= 3.11 */
 #ifndef Py_LIMITED_API
-#define Py_LIMITED_API 0x030A0000
+#define Py_LIMITED_API 0x030B0000
 #endif
 #include <Python.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -58,23 +60,22 @@ static double monotonic_seconds(void)
 /* how often to check for signals (Ctrl+C): every 2^18 ops */
 #define SIGNAL_CHECK_MASK 0x3FFFFull
 
-/* flat-storage mode: programs whose segments all end below a word-count limit (and with
-   w<=32, so bit 63 is free to mark out-of-segment words) use one dense array instead of
-   the page table - removing the page lookup from the serial jump-address chain.
+/* flat-storage mode: programs whose segments all end below a word-count limit use one dense
+   array instead of the page table - removing the page lookup from the serial jump-address chain.
    the limit is the Memory(flat_max_words=...) parameter, else the FLIPJUMP_FLAT_MAX_WORDS
    environment variable, else this default. raising it trades startup time + footprint
-   (the array is sentinel-filled: RSS = 8 bytes x span, fill ~0.1s/GB) for flat-path speed;
+   (the array is sentinel-filled: RSS = 4 or 8 bytes (w<=32 / w=64) x span, fill ~0.1s/GB) for flat-path speed;
    the per-op cost is unaffected by the limit's value. */
-#define FLAT_MAX_WORDS_DEFAULT (1ull << 23) /* 8M words, 64MB */
-#define GARBAGE_SENTINEL (1ull << 63)
-/* the w=64 flat gap-fill sentinel. w<=32 keeps the in-band bit-63 sentinel (values are
-   masked below it, so it is exact), but w=64 values use all 64 bits - gaps are filled
-   with this fixed magic value instead, and a real word that happens to equal it is
+#define FLAT_MAX_WORDS_DEFAULT (1ull << 23) /* 8M words: 32 MB at w<=32, 64 MB at w=64 */
+/* the w=64 flat gap-fill sentinel. w=64 values use all 64 bits - gaps are filled
+   with this fixed magic value, and a real word that happens to equal it is
    disambiguated through the segment list on the cold path (gap words are never legally
    written, so in-segment + magic == real data). the constant is sqrt(3)'s fractional
    bits (the SHA-512 h1 constant) - any value works since collisions are handled; this
    one is just recognizable in memory dumps. */
 #define FLAT_GARBAGE_MAGIC 0xBB67AE8584CAA73Bull
+/* the w<=32 gap-fill sentinel, in 4-byte cells: the high half of the w=64 one, and it collides the same way */
+#define FLAT_GARBAGE_MAGIC32 0xBB67AE85u
 
 /* termination causes (mapped to TerminationCause in fjm_run.py) */
 #define TERM_LOOPING 0
@@ -120,24 +121,42 @@ typedef struct {
     uint64_t page_cache_valid_start[16];
     uint64_t page_cache_valid_end[16];
 
-    SegmentRange* segments; /* sorted, merged */
+    SegmentRange* segments; /* sorted once storage is decided, not merged */
+    int segments_disjoint;  /* sorted and non-overlapping: flat_seg_contains may binary-search */
     Py_ssize_t segment_count;
     Py_ssize_t segment_capacity;
     int segments_sorted;
 
     /* flat-storage mode (built at the first run when eligible; NULL = paged mode) */
-    uint64_t* flat;
+    void* flat;           /* cell_bytes-wide cells: uint32_t at w<=32 (half the cache footprint), else uint64_t */
+    int cell_bytes;
     uint64_t flat_count;
     uint64_t flat_max_words; /* constructor override; 0 = use the env var / default */
+    int flat_required;       /* a flat window that cannot be allocated raises MemoryError, not runs paged */
     int storage_decided;
     int flat_covers_all; /* 1: every segment fits in the flat window ('flat'); 0 with a
                             non-NULL flat: low window flat, the rest paged ('hybrid') */
+
+    void* pristine; /* freeze()'s copy of `flat`, restored by reset() */
 
     int mem_error;            /* set when garbage_stop fired */
     uint64_t error_bit_address;
 
     unsigned long long last_run_op_count; /* op count of the last run (also on exceptions) */
     double last_run_paused_seconds;       /* IO-paused seconds of the last run (also on exceptions) */
+
+    /* run(write_byte=): output bits gathered into bytes, so the device is called once a byte. Only from a byte
+       boundary of its stream (out_phase: bits sent through write_bit, mod 8, across runs). borrowed for one run */
+    PyObject* out_write_byte;
+    unsigned out_acc;
+    int out_n;
+    int out_phase;
+    /* run(read_byte=): a whole input byte fetched from the device at a byte boundary of its stream (in_phase: bits
+       taken through read_bit, mod 8, across runs), its bits handed out from in_acc (in_n left). borrowed for one run */
+    PyObject* in_read_byte;
+    unsigned in_acc;
+    int in_n;
+    int in_phase;
 } MemoryObject;
 
 /* ---------------------------------------------------------------- pages */
@@ -301,31 +320,64 @@ static inline int flat_garbage(MemoryObject* m, uint64_t word_address)
     return 0;
 }
 
-/* is this flat value the width's garbage sentinel? (w<=32: in-band bit 63, exact;
-   w=64: the magic fill value - may collide with real data, see flat_garbage_check) */
+/* is this flat value the width's garbage sentinel? (the magic fill value of its cell width -
+   may collide with real data, see flat_garbage_check) */
 static inline int flat_is_garbage(const MemoryObject* m, uint64_t value)
 {
-    return (m->w <= 32) ? ((value & GARBAGE_SENTINEL) != 0) : (value == FLAT_GARBAGE_MAGIC);
+    return (m->w <= 32) ? (value == FLAT_GARBAGE_MAGIC32) : (value == FLAT_GARBAGE_MAGIC);
 }
 
+/* is `word_address` inside any declared segment? a binary search once mem_decide_storage proved the
+   ranges sorted and disjoint; linear otherwise */
 static inline int flat_seg_contains(const MemoryObject* m, uint64_t word_address)
 {
-    Py_ssize_t seg;
-    for (seg = 0; seg < m->segment_count; seg++) {
-        if (word_address >= m->segments[seg].start && word_address < m->segments[seg].end) {
+    Py_ssize_t lo, hi;
+    if (!m->segments_sorted || !m->segments_disjoint) {
+        Py_ssize_t seg;
+        for (seg = 0; seg < m->segment_count; seg++) {
+            if (word_address >= m->segments[seg].start && word_address < m->segments[seg].end) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    lo = 0;
+    hi = m->segment_count - 1;
+    while (lo <= hi) {
+        Py_ssize_t mid = lo + (hi - lo) / 2;
+        if (word_address < m->segments[mid].start) {
+            hi = mid - 1;
+        } else if (word_address >= m->segments[mid].end) {
+            lo = mid + 1;
+        } else {
             return 1;
         }
     }
     return 0;
 }
 
+/* the flat cells, for the cold paths (the hot loop folds the cell width at compile time) */
+static FJ_ALWAYS_INLINE uint64_t flat_load(const MemoryObject* m, uint64_t i)
+{
+    return (m->cell_bytes == 4) ? (uint64_t)((const uint32_t*)m->flat)[i]
+                                : ((const uint64_t*)m->flat)[i];
+}
+
+static FJ_ALWAYS_INLINE void flat_store(MemoryObject* m, uint64_t i, uint64_t v)
+{
+    if (m->cell_bytes == 4) {
+        ((uint32_t*)m->flat)[i] = (uint32_t)v;
+    } else {
+        ((uint64_t*)m->flat)[i] = v;
+    }
+}
+
 /* a flat word whose value matched the width's sentinel: decide whether it is REAL
-   garbage (an out-of-segment touch - reported via flat_garbage, returns -1) or, at
-   w=64, an in-segment word that legitimately holds the magic value (kept, returns 0).
-   w<=32 has no collisions, so a sentinel match there is always real garbage. */
+   garbage (an out-of-segment touch - reported via flat_garbage, returns -1) or an
+   in-segment word that legitimately holds the magic value (kept, returns 0). */
 static inline int flat_garbage_check(MemoryObject* m, uint64_t word_address, uint64_t* value)
 {
-    if (m->w > 32 && flat_seg_contains(m, word_address)) {
+    if (flat_seg_contains(m, word_address)) {
         return 0; /* the word really holds the magic constant - real data */
     }
     if (!flat_garbage(m, word_address)) {
@@ -341,7 +393,7 @@ static inline int mem_read_word(MemoryObject* m, uint64_t word_address, uint64_t
 {
     Page* page;
     if (m->flat && word_address < m->flat_count) {
-        uint64_t value = m->flat[word_address];
+        uint64_t value = flat_load(m, word_address);
         if (flat_is_garbage(m, value) && flat_garbage_check(m, word_address, &value) < 0) {
             return -1;
         }
@@ -366,11 +418,11 @@ static inline int mem_flip_bit(MemoryObject* m, uint64_t bit_address)
     uint64_t word_address = bit_address >> m->ww;
     Page* page;
     if (m->flat && word_address < m->flat_count) {
-        uint64_t value = m->flat[word_address];
+        uint64_t value = flat_load(m, word_address);
         if (flat_is_garbage(m, value) && flat_garbage_check(m, word_address, &value) < 0) {
             return -1;
         }
-        m->flat[word_address] = value ^ (1ull << (bit_address & (uint64_t)(m->w - 1)));
+        flat_store(m, word_address, value ^ (1ull << (bit_address & (uint64_t)(m->w - 1))));
         return 0;
     }
     /* paged, or a hybrid access above the flat window (validated by access_check) */
@@ -392,11 +444,11 @@ static inline int mem_write_bit(MemoryObject* m, uint64_t bit_address, int bit_v
     uint64_t bit = 1ull << (bit_address & (uint64_t)(m->w - 1));
     Page* page;
     if (m->flat && word_address < m->flat_count) {
-        uint64_t value = m->flat[word_address];
+        uint64_t value = flat_load(m, word_address);
         if (flat_is_garbage(m, value) && flat_garbage_check(m, word_address, &value) < 0) {
             return -1;
         }
-        m->flat[word_address] = bit_value ? (value | bit) : (value & ~bit);
+        flat_store(m, word_address, bit_value ? (value | bit) : (value & ~bit));
         return 0;
     }
     /* paged, or a hybrid access above the flat window (validated by access_check) */
@@ -462,7 +514,7 @@ static uint64_t mem_flat_words_limit(MemoryObject* m)
 
 /* decide the storage mode (once, at the first run): in garbage-stop mode, the LOW WINDOW
    of memory - segment data below the flat-words limit - gets a dense flat array (gaps
-   carry the in-band bit-63 sentinel at w<=32, the FLAT_GARBAGE_MAGIC fill at w=64).
+   carry the FLAT_GARBAGE_MAGIC32 fill at w<=32, the FLAT_GARBAGE_MAGIC fill at w=64).
    when every segment fits inside the window the mode is 'flat' (exactly the historic
    behavior); segments continuing or living above it stay page-backed and the mode is
    'hybrid' - the run loop reads sub-window words from the array and falls back to the
@@ -485,10 +537,24 @@ static int mem_decide_storage(MemoryObject* m)
         PyErr_SetString(PyExc_ValueError,
                         "the program has no memory segments - a FlipJump program must define its "
                         "first op at address 0");
+        m->storage_decided = 0; /* a failed decision stays undecided: a later run reports the same error */
         return -1;
     }
     if (!m->garbage_stop) {
         return 0; /* continue-mode: paged (the flat sentinel scheme needs garbage-stop) */
+    }
+    /* sort once, before any op runs, so flat_seg_contains may binary-search */
+    mem_ensure_segments_sorted(m);
+    {
+        /* ...which also needs the ranges disjoint: add_segment appends without merging */
+        Py_ssize_t k;
+        m->segments_disjoint = 1;
+        for (k = 1; k < m->segment_count; k++) {
+            if (m->segments[k].start < m->segments[k - 1].end) {
+                m->segments_disjoint = 0;
+                break;
+            }
+        }
     }
     {
         const char* no_flat = getenv("FLIPJUMP_NO_FLAT");
@@ -515,39 +581,41 @@ static int mem_decide_storage(MemoryObject* m)
         PyErr_SetString(PyExc_ValueError,
                         "the program has no segment in the low address window - the first op at "
                         "address 0 is missing");
+        m->storage_decided = 0;
         return -1;
     }
-    if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
-        fprintf(stderr, "flipjump: flat-storage window is too large (byte size overflows); running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-        fflush(stderr);
-        return 0; /* paged fallback */
-    }
-
+    m->cell_bytes = (m->w <= 32) ? 4 : 8;
     {
-        /* deterministic allocation-failure injection for the error-path test
+        /* FLIPJUMP_TEST_FLAT_ALLOC_FAIL=1: a deterministic allocation failure for the error-path tests
            (a real flat-array OOM is not safely reproducible across platforms) */
         const char* simulate_alloc_fail = getenv("FLIPJUMP_TEST_FLAT_ALLOC_FAIL");
-        if (simulate_alloc_fail && simulate_alloc_fail[0] == '1') {
-            fprintf(stderr, "flipjump: flat-storage allocation failed (test injection); running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-            fflush(stderr);
-            return 0; /* paged fallback */
+        const char* failure = NULL;
+        if (low_max_end > SIZE_MAX / sizeof(uint64_t)) {
+            failure = "its byte size overflows";
+        } else if (simulate_alloc_fail && simulate_alloc_fail[0] == '1') {
+            failure = "test injection";
+        } else if (!(m->flat = malloc((size_t)low_max_end * (size_t)m->cell_bytes))) {
+            failure = "out of memory";
         }
-    }
-    m->flat = (uint64_t*)malloc((size_t)low_max_end * sizeof(uint64_t));
-    if (!m->flat) {
-        fprintf(stderr, "flipjump: flat-storage allocation failed; running paged (slower). lower --flat-max-words / "
-                "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n");
-        fflush(stderr);
-        return 0; /* paged fallback - the program still runs, just slower */
+        if (failure && m->flat_required) {
+            PyErr_Format(PyExc_MemoryError, "allocating the flat-storage window of %llu words failed (%s)",
+                         (unsigned long long)low_max_end, failure);
+            m->storage_decided = 0;
+            return -1;
+        }
+        if (failure) {
+            fprintf(stderr, "flipjump: flat-storage allocation failed (%s); running paged (slower). lower --flat-max-words / "
+                    "FLIPJUMP_FLAT_MAX_WORDS, or set FLIPJUMP_NO_FLAT=1 to silence this.\n", failure);
+            fflush(stderr);
+            return 0; /* paged fallback - the program still runs, just slower */
+        }
     }
     m->flat_count = low_max_end;
     m->flat_covers_all = (max_end <= low_max_end);
     {
-        const uint64_t garbage_fill = (m->w <= 32) ? GARBAGE_SENTINEL : FLAT_GARBAGE_MAGIC;
+        const uint64_t garbage_fill = (m->w <= 32) ? FLAT_GARBAGE_MAGIC32 : FLAT_GARBAGE_MAGIC;
         for (i = 0; i < low_max_end; i++) {
-            m->flat[i] = garbage_fill;
+            flat_store(m, i, garbage_fill);
         }
     }
     for (seg = 0; seg < m->segment_count; seg++) {
@@ -555,7 +623,8 @@ static int mem_decide_storage(MemoryObject* m)
         const uint64_t end_clamped =
             (m->segments[seg].end < low_max_end) ? m->segments[seg].end : low_max_end;
         if (start < end_clamped) {
-            memset(m->flat + start, 0, (size_t)(end_clamped - start) * sizeof(uint64_t));
+            memset((char*)m->flat + (size_t)start * (size_t)m->cell_bytes, 0,
+                   (size_t)(end_clamped - start) * (size_t)m->cell_bytes);
         }
     }
     /* copy the loaded in-segment data: each allocated page, intersected with each
@@ -580,8 +649,17 @@ static int mem_decide_storage(MemoryObject* m)
                     hi = low_max_end; /* the part above the window stays page-backed */
                 }
                 if (lo < hi) {
-                    memcpy(m->flat + lo, m->slots[i].page->words + (lo - page_start),
-                           (size_t)(hi - lo) * sizeof(uint64_t));
+                    /* the staging pages hold uint64_t words: a conversion into narrower cells */
+                    const uint64_t* src = m->slots[i].page->words + (lo - page_start);
+                    if (m->cell_bytes == 8) {
+                        memcpy((uint64_t*)m->flat + lo, src, (size_t)(hi - lo) * sizeof(uint64_t));
+                    } else {
+                        uint32_t* dst = (uint32_t*)m->flat + lo;
+                        uint64_t k, n = hi - lo;
+                        for (k = 0; k < n; k++) {
+                            dst[k] = (uint32_t)src[k];
+                        }
+                    }
                 }
             }
         }
@@ -606,6 +684,8 @@ static void mem_free_allocations(MemoryObject* self)
     }
     free(self->flat);
     self->flat = NULL;
+    free(self->pristine);
+    self->pristine = NULL;
     free(self->segments);
     self->segments = NULL;
 }
@@ -613,10 +693,11 @@ static void mem_free_allocations(MemoryObject* self)
 static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
 {
     MemoryObject* self = (MemoryObject*)op;
-    static char* kwlist[] = {"memory_width", "garbage_stop", "flat_max_words", NULL};
-    int w, garbage_stop = 1;
+    static char* kwlist[] = {"memory_width", "garbage_stop", "flat_max_words", "flat_required", NULL};
+    int w, garbage_stop = 1, flat_required = 0;
     unsigned long long flat_max_words = 0; /* 0: use FLIPJUMP_FLAT_MAX_WORDS / the default */
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|pK", kwlist, &w, &garbage_stop, &flat_max_words)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|pKp", kwlist, &w, &garbage_stop, &flat_max_words,
+                                     &flat_required)) {
         return -1;
     }
     if (w != 8 && w != 16 && w != 32 && w != 64) {
@@ -640,15 +721,21 @@ static int Memory_init(PyObject* op, PyObject* args, PyObject* kwds)
     self->segment_count = 0;
     self->segment_capacity = 0;
     self->segments_sorted = 1;
+    self->segments_disjoint = 0;      /* proven in mem_decide_storage, never assumed */
     self->flat = NULL;
+    self->cell_bytes = 8;
     self->flat_count = 0;
     self->flat_max_words = flat_max_words;
+    self->flat_required = flat_required;
     self->storage_decided = 0;
     self->flat_covers_all = 0;
+    self->pristine = NULL;
     self->mem_error = 0;
     self->error_bit_address = 0;
     self->last_run_op_count = 0;
     self->last_run_paused_seconds = 0.0;
+    self->out_acc = 0, self->out_n = 0, self->out_phase = 0;
+    self->in_acc = 0, self->in_n = 0, self->in_phase = 0;
     return 0;
 }
 
@@ -688,6 +775,7 @@ static PyObject* Memory_add_segment(MemoryObject* self, PyObject* args)
     self->segments[self->segment_count].end = start_word + length_words;
     self->segment_count++;
     self->segments_sorted = 0;
+    self->segments_disjoint = 0;      /* a new range may overlap an existing one */
     /* validity ranges of already-allocated pages may change - recompute them */
     if (self->slots) {
         for (uint64_t i = 0; i < self->slot_count; i++) {
@@ -707,7 +795,7 @@ static PyObject* Memory_set_word(MemoryObject* self, PyObject* args)
         return NULL;
     }
     if (self->flat && word_address < self->flat_count && flat_seg_contains(self, word_address)) {
-        self->flat[word_address] = value & self->word_mask;
+        flat_store(self, word_address, value & self->word_mask);
         Py_RETURN_NONE;
     }
     /* out-of-segment (or paged mode): page-backed - device/API memory beyond the declared
@@ -729,7 +817,7 @@ static PyObject* Memory_get_word(MemoryObject* self, PyObject* args)
         return NULL;
     }
     if (self->flat && word_address < self->flat_count && flat_seg_contains(self, word_address)) {
-        return PyLong_FromUnsignedLongLong(self->flat[word_address]);
+        return PyLong_FromUnsignedLongLong(flat_load(self, word_address));
     }
     /* out-of-segment (or paged mode): page-backed - see set_word */
     page = mem_get_page(self, word_address >> PAGE_BITS);
@@ -776,7 +864,7 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
             return NULL;
         }
         if (self->flat) {
-            self->flat[start_word + i] = value & self->word_mask;
+            flat_store(self, start_word + i, value & self->word_mask);
             continue;
         }
         page = mem_get_page(self, (start_word + i) >> PAGE_BITS);
@@ -790,7 +878,201 @@ static PyObject* Memory_set_words(MemoryObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+/* set_words without a Python int per word: the words are read in place from the .fjm's decompressed data
+   (bytes or a bytearray). relative_jumps: the .fjm v2/v3 jump words, stored minus their own bit address */
+static PyObject* Memory_set_words_bytes(MemoryObject* self, PyObject* args)
+{
+    unsigned long long start_word, data_word_offset, count;
+    int relative_jumps = 0;
+    PyObject* data;
+    char* buffer;
+    Py_ssize_t buffer_length;
+    const int word_bytes = self->w / 8;
+    const uint64_t w = (uint64_t)self->w;
+    Page* page = NULL;
+    uint64_t page_index = 0, i;
+    if (!PyArg_ParseTuple(args, "KOKK|p", &start_word, &data, &data_word_offset, &count, &relative_jumps)) {
+        return NULL;
+    }
+    if (word_bytes == 0) {
+        PyErr_SetString(PyExc_RuntimeError, "set_words_bytes on a Memory that was never initialized");
+        return NULL;
+    }
+    if (PyByteArray_Check(data)) {
+        buffer = PyByteArray_AsString(data);
+        buffer_length = PyByteArray_Size(data);
+    } else if (PyBytes_AsStringAndSize(data, &buffer, &buffer_length) < 0) {
+        return NULL;
+    }
+    if (data_word_offset + count < data_word_offset ||
+        (data_word_offset + count) > (uint64_t)buffer_length / (uint64_t)word_bytes) {
+        PyErr_SetString(PyExc_ValueError, "set_words_bytes range is beyond the data");
+        return NULL;
+    }
+    if (start_word + count < start_word) {
+        PyErr_SetString(PyExc_ValueError, "set_words_bytes range overflows the 64-bit word-address space");
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        const unsigned char* src = (const unsigned char*)buffer + (size_t)(data_word_offset + i) * (size_t)word_bytes;
+        const uint64_t address = start_word + i;
+        uint64_t value = 0;
+        int b;
+        for (b = word_bytes - 1; b >= 0; b--) {
+            value = (value << 8) | src[b];
+        }
+        if (relative_jumps && (i & 1)) {
+            value += address * w;
+        }
+        value &= self->word_mask;
+        if (self->flat && address < self->flat_count) {
+            flat_store(self, address, value); /* loaded after decide_storage(): straight into the image */
+            continue;
+        }
+        if (!page || (address >> PAGE_BITS) != page_index) {
+            page_index = address >> PAGE_BITS;
+            page = mem_get_page(self, page_index);
+            if (!page) {
+                return NULL;
+            }
+        }
+        page->words[address & PAGE_MASK] = value;
+    }
+    Py_RETURN_NONE;
+}
+
 #define CAUSE_PYTHON_ERROR (-2)
+
+/* deliver one output bit through write_bit, keeping the device's bit phase */
+static int out_call_bit(MemoryObject* self, PyObject* write_bit, int bit, double* paused_seconds_out)
+{
+    double io_start = monotonic_seconds();
+    PyObject* result = PyObject_CallFunctionObjArgs(write_bit, bit ? Py_True : Py_False, NULL);
+    *paused_seconds_out += monotonic_seconds() - io_start;
+    if (!result) {
+        return -1;
+    }
+    Py_DECREF(result);
+    self->out_phase = (self->out_phase + 1) & 7;
+    return 0;
+}
+
+/* one output bit: gathered into the pending byte when write_byte is set and the device is at a byte
+   boundary, delivered through write_bit otherwise. 0, or -1 with a Python error set */
+static int out_bit(MemoryObject* self, PyObject* write_bit, int bit, double* paused_seconds_out)
+{
+    if (!self->out_write_byte || self->out_phase) {
+        return out_call_bit(self, write_bit, bit, paused_seconds_out);
+    }
+    self->out_acc |= (unsigned)bit << self->out_n;
+    if (++self->out_n < 8) {
+        return 0;
+    }
+    {
+        double io_start = monotonic_seconds();
+        PyObject* byte = PyLong_FromLong((long)self->out_acc);
+        PyObject* result;
+        self->out_acc = 0;
+        self->out_n = 0;
+        if (!byte) {
+            return -1;
+        }
+        result = PyObject_CallFunctionObjArgs(self->out_write_byte, byte, NULL);
+        Py_DECREF(byte);
+        *paused_seconds_out += monotonic_seconds() - io_start;
+        if (!result) {
+            return -1;
+        }
+        Py_DECREF(result);
+    }
+    return 0;
+}
+
+/* the pending bits of a partial byte, delivered through write_bit (before an input is read, and at the
+   end of a run), so the device has seen every bit the program output so far. 0, or -1 on error */
+static int out_flush_bits(MemoryObject* self, PyObject* write_bit, double* paused_seconds_out)
+{
+    int n = self->out_n, i;
+    unsigned acc = self->out_acc;
+    self->out_n = 0;
+    self->out_acc = 0;
+    for (i = 0; i < n; i++) {
+        if (out_call_bit(self, write_bit, (int)((acc >> i) & 1u), paused_seconds_out) < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+#define IN_EOF (-2)
+
+/* one input bit through read_bit, keeping the device's input phase: 0/1, -1 on error, IN_EOF on the EOF exception */
+static int in_call_bit(MemoryObject* self, PyObject* read_bit, PyObject* eof_exception_type, double* paused_seconds_out)
+{
+    double io_start = monotonic_seconds();
+    PyObject* result = PyObject_CallNoArgs(read_bit);
+    int bit_value;
+    *paused_seconds_out += monotonic_seconds() - io_start;
+    if (!result) {
+        if (PyErr_ExceptionMatches(eof_exception_type)) {
+            PyErr_Clear();
+            return IN_EOF;
+        }
+        return -1;
+    }
+    bit_value = PyObject_IsTrue(result);
+    Py_DECREF(result);
+    if (bit_value < 0) {
+        return -1;
+    }
+    self->in_phase = (self->in_phase + 1) & 7;
+    return bit_value;
+}
+
+/* the program's next input bit: a buffered bit of the last fetched byte; else a whole byte from read_byte when the
+   device has one and its stream is at a byte boundary; else read_bit. The pending output bits go to the device before
+   it is asked for anything (it has seen every bit the program output). 0/1, -1 on error, IN_EOF on EOF */
+static int in_bit(MemoryObject* self, PyObject* read_bit, PyObject* write_bit, PyObject* eof_exception_type,
+                  double* paused_seconds_out)
+{
+    if (self->in_n) {
+        int bit_value = (int)(self->in_acc & 1u);
+        self->in_acc >>= 1;
+        self->in_n--;
+        return bit_value;
+    }
+    if (self->out_n && out_flush_bits(self, write_bit, paused_seconds_out) < 0) {
+        return -1;
+    }
+    if (!self->in_read_byte || self->in_phase) {
+        return in_call_bit(self, read_bit, eof_exception_type, paused_seconds_out);
+    }
+    {
+        double io_start = monotonic_seconds();
+        PyObject* result = PyObject_CallNoArgs(self->in_read_byte);
+        long value;
+        *paused_seconds_out += monotonic_seconds() - io_start;
+        if (!result) {
+            if (PyErr_ExceptionMatches(eof_exception_type)) {
+                PyErr_Clear();
+                return IN_EOF;
+            }
+            return -1;
+        }
+        value = PyLong_AsLong(result);
+        Py_DECREF(result);
+        if (value == -1 && PyErr_Occurred()) {
+            return -1;
+        }
+        if (value < 0 || value > 255) {
+            PyErr_Format(PyExc_ValueError, "read_byte() must return 0..255, got %ld", value);
+            return -1;
+        }
+        self->in_acc = (unsigned)value >> 1;
+        self->in_n = 7;
+        return (int)(value & 1);
+    }
+}
 
 /* the dedicated flat-storage run loop - the common fast case (no last-ops ring, flat
    memory): all paged-mode and ring branches are out of the per-op path.
@@ -814,7 +1096,10 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
     const uint64_t dw = 2 * width;
     const uint64_t in_addr = 3 * width + ww + 1; /* 3w + #w */
     const uint64_t in_lo_exclusive = in_addr - dw;
-    uint64_t* const flat = self->flat;
+    /* exactly one of these is the live view of `self->flat` (4-byte cells at w<=32); `width` is a literal
+       at every call site, so the compiler folds the dead one and every branch below away. */
+    uint32_t* const flat32 = (uint32_t*)self->flat;
+    uint64_t* const flat64 = (uint64_t*)self->flat;
     const uint64_t flat_count = self->flat_count;
 
     uint64_t ip = start_ip, ops = 0;
@@ -842,8 +1127,8 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             if (word_address + 1 >= flat_count) {
                 goto cold_flip_word_out_of_span;
             }
-            f = flat[word_address];
-            if (width <= 32 ? ((f & GARBAGE_SENTINEL) != 0) : (f == FLAT_GARBAGE_MAGIC)) {
+            f = (width <= 32) ? (uint64_t)flat32[word_address] : flat64[word_address];
+            if (width <= 32 ? (f == FLAT_GARBAGE_MAGIC32) : (f == FLAT_GARBAGE_MAGIC)) {
                 goto cold_flip_word_garbage;
             }
         flip_word_ready:
@@ -864,12 +1149,19 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             if (flip_word_address >= flat_count) {
                 goto cold_flip_out_of_span;
             }
-            flip_value = flat[flip_word_address];
-            if (width <= 32 ? ((flip_value & GARBAGE_SENTINEL) != 0) : (flip_value == FLAT_GARBAGE_MAGIC)) {
+            flip_value = (width <= 32) ? (uint64_t)flat32[flip_word_address] : flat64[flip_word_address];
+            if (width <= 32 ? (flip_value == FLAT_GARBAGE_MAGIC32) : (flip_value == FLAT_GARBAGE_MAGIC)) {
                 goto cold_flip_garbage;
             }
         flip_value_ready:
-            flat[flip_word_address] = flip_value ^ (1ull << (f & bit_mask));
+            {
+                const uint64_t flipped = flip_value ^ (1ull << (f & bit_mask));
+                if (width <= 32) {
+                    flat32[flip_word_address] = (uint32_t)flipped;
+                } else {
+                    flat64[flip_word_address] = flipped;
+                }
+            }
         after_flip:
 
             /* read jump word (after the flip - the flip may modify it). word_address is
@@ -877,8 +1169,8 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
             if (word_address + 1 >= flat_count) {
                 goto cold_jump_word_slow;
             }
-            j = flat[word_address + 1];
-            if (width <= 32 ? ((j & GARBAGE_SENTINEL) != 0) : (j == FLAT_GARBAGE_MAGIC)) {
+            j = (width <= 32) ? (uint64_t)flat32[word_address + 1] : flat64[word_address + 1];
+            if (width <= 32 ? (j == FLAT_GARBAGE_MAGIC32) : (j == FLAT_GARBAGE_MAGIC)) {
                 goto cold_jump_word_garbage;
             }
         jump_word_ready:
@@ -929,35 +1221,22 @@ static FJ_ALWAYS_INLINE int run_flat_loop_impl(MemoryObject* self, PyObject* rea
 
     cold_output:
     {
-        /* time the output callback as paused, exactly like the input callback below - so the
-           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
-        double io_start = monotonic_seconds();
-        PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == dw + 1) ? Py_True : Py_False, NULL);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
+        /* the device's callbacks are timed as paused (out_bit), exactly like the input callback below - so
+           the reported run-time is net fj-compute, excluding the cost of the IO device's writes */
+        if (out_bit(self, write_bit, f == dw + 1, paused_seconds_out) < 0) {
             goto done;
         }
-        Py_DECREF(result);
         goto after_output;
     }
 
     cold_input:
     {
-        PyObject* result;
-        int bit_value;
-        double io_start = monotonic_seconds();
-        result = PyObject_CallNoArgs(read_bit);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
-            if (PyErr_ExceptionMatches(eof_exception_type)) {
-                PyErr_Clear();
-                cause = TERM_EOF;
-                goto done;
-            }
+        /* the device's callbacks are timed as paused (in_bit) -- the reported run-time is net fj-compute */
+        int bit_value = in_bit(self, read_bit, write_bit, eof_exception_type, paused_seconds_out);
+        if (bit_value == IN_EOF) {
+            cause = TERM_EOF;
             goto done;
         }
-        bit_value = PyObject_IsTrue(result);
-        Py_DECREF(result);
         if (bit_value < 0) {
             goto done;
         }
@@ -1064,13 +1343,16 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
     const uint64_t dw = 2 * width;
     const uint64_t in_addr = 3 * width + ww + 1; /* 3w + #w */
     const uint64_t in_lo_exclusive = in_addr - dw;
-    uint64_t* const flat = self->flat; /* non-NULL only in the with_ring clone */
+    /* NO raw view of the array here: its element type changes with cell_bytes, and this lane
+       is the debugger's ring mode rather than the hot path, so it reads through the accessor. */
+    const int has_flat = (self->flat != NULL);
     const uint64_t flat_count = self->flat_count;
 
     uint64_t ip = start_ip, ops = 0, ring_writes = 0;
     uint64_t word_address, op_offset, op_slot, f, j;
     uint64_t* op_words; /* the hot lane's cached words; NULL marks the slow lanes */
-    uint64_t* op_flat_jump = NULL;
+#define OP_FLAT_JUMP_NONE UINT64_MAX
+    uint64_t op_flat_jump = OP_FLAT_JUMP_NONE; /* INDEX of the jump word, not a pointer */
     uint64_t cold_word; /* out-param for the cold-path reads, so f/j stay in registers */
     uint64_t inner_left;
     int cause = CAUSE_PYTHON_ERROR;
@@ -1087,8 +1369,8 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
             if (with_ring) {
                 last_ops_ring[ring_writes % (uint64_t)last_ops_length] = ip;
                 ring_writes++;
-                op_flat_jump = NULL;
-                if (flat) {
+                op_flat_jump = OP_FLAT_JUMP_NONE;
+                if (has_flat) {
                     goto flat_lane;
                 }
             }
@@ -1149,9 +1431,9 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
             /* read jump word (after the flip - the flip may modify it, including this
                word). the hot lane re-reads through the cached slot: op_offset >= the
                valid start already held for f, so only the end bound needs checking. */
-            if (with_ring && op_flat_jump) {
-                j = *op_flat_jump;
-                if (flat_is_garbage(self, j) && flat_garbage_check(self, (uint64_t)(op_flat_jump - flat), &j) < 0) {
+            if (with_ring && op_flat_jump != OP_FLAT_JUMP_NONE) {
+                j = flat_load(self, op_flat_jump);
+                if (flat_is_garbage(self, j) && flat_garbage_check(self, op_flat_jump, &j) < 0) {
                     goto memory_or_python_error;
                 }
             } else if (op_words) {
@@ -1204,11 +1486,11 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
             f = cold_word;
             goto flip_word_ready;
         }
-        f = flat[word_address];
+        f = flat_load(self, word_address);
         if (flat_is_garbage(self, f) && flat_garbage_check(self, word_address, &f) < 0) {
             goto memory_or_python_error;
         }
-        op_flat_jump = flat + word_address + 1;
+        op_flat_jump = word_address + 1;
         goto flip_word_ready;
 
     cold_unaligned_flip_word:
@@ -1244,35 +1526,22 @@ static FJ_ALWAYS_INLINE int run_paged_loop_impl(MemoryObject* self, PyObject* re
 
     cold_output:
     {
-        /* time the output callback as paused, exactly like the input callback below - so the
-           reported run-time is net fj-compute, excluding the cost of the IO device's writes */
-        double io_start = monotonic_seconds();
-        PyObject* result = PyObject_CallFunctionObjArgs(write_bit, (f == dw + 1) ? Py_True : Py_False, NULL);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
+        /* the device's callbacks are timed as paused (out_bit), exactly like the input callback below - so
+           the reported run-time is net fj-compute, excluding the cost of the IO device's writes */
+        if (out_bit(self, write_bit, f == dw + 1, paused_seconds_out) < 0) {
             goto loop_done;
         }
-        Py_DECREF(result);
         goto after_output;
     }
 
     cold_input:
     {
-        PyObject* result;
-        int bit_value;
-        double io_start = monotonic_seconds();
-        result = PyObject_CallNoArgs(read_bit);
-        *paused_seconds_out += monotonic_seconds() - io_start;
-        if (!result) {
-            if (PyErr_ExceptionMatches(eof_exception_type)) {
-                PyErr_Clear();
-                cause = TERM_EOF;
-                goto loop_done;
-            }
+        /* the device's callbacks are timed as paused (in_bit) -- the reported run-time is net fj-compute */
+        int bit_value = in_bit(self, read_bit, write_bit, eof_exception_type, paused_seconds_out);
+        if (bit_value == IN_EOF) {
+            cause = TERM_EOF;
             goto loop_done;
         }
-        bit_value = PyObject_IsTrue(result);
-        Py_DECREF(result);
         if (bit_value < 0) {
             goto loop_done;
         }
@@ -1391,24 +1660,127 @@ static PyObject* build_run_result(MemoryObject* self, int cause, uint64_t ops, u
     return Py_BuildValue("iKNNd", cause, (unsigned long long)ops, error_address, last_ops_list, paused_seconds);
 }
 
+/* decide_storage(): the storage mode now, so a bulk load after it goes straight into the flat image,
+   and a flat window that cannot be allocated fails before the load */
+static PyObject* Memory_decide_storage(MemoryObject* self, PyObject* Py_UNUSED(ignored))
+{
+    if (mem_decide_storage(self) < 0) {
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+/* freeze(): decide the storage mode and snapshot the flat image for reset() ('flat' mode only:
+   a hybrid/paged snapshot would also need the page tables) */
+static PyObject* Memory_freeze(MemoryObject* self, PyObject* Py_UNUSED(ignored))
+{
+    if (mem_decide_storage(self) < 0) {
+        return NULL;
+    }
+    if (!self->flat || !self->flat_covers_all) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "freeze() requires pure flat storage ('flat' mode) - raise flat_max_words");
+        return NULL;
+    }
+    if (!self->pristine) {
+        self->pristine = malloc((size_t)self->flat_count * (size_t)self->cell_bytes);
+        if (!self->pristine) {
+            return PyErr_NoMemory();
+        }
+    }
+    memcpy(self->pristine, self->flat, (size_t)self->flat_count * (size_t)self->cell_bytes);
+    Py_RETURN_NONE;
+}
+
+/* reset(): restore the frozen image in one memcpy, and drop all pages (device/API memory above the
+   segments), so a rerun starts from the exact frozen state */
+static PyObject* Memory_reset(MemoryObject* self, PyObject* Py_UNUSED(ignored))
+{
+    if (!self->pristine || !self->flat) {
+        PyErr_SetString(PyExc_RuntimeError, "reset() needs a prior freeze()");
+        return NULL;
+    }
+    memcpy(self->flat, self->pristine, (size_t)self->flat_count * (size_t)self->cell_bytes);
+    if (self->slots) {
+        for (uint64_t i = 0; i < self->slot_count; i++) {
+            if (self->slots[i].key_plus1) {
+                free(self->slots[i].page->words);
+                free(self->slots[i].page);
+                self->slots[i].key_plus1 = 0;
+                self->slots[i].page = NULL;
+            }
+        }
+        self->slots_used = 0;
+    }
+    memset(self->page_cache_key_plus1, 0, sizeof(self->page_cache_key_plus1));
+    self->mem_error = 0;
+    self->error_bit_address = 0;
+    /* a reset run starts fresh streams: both bit phases at a byte boundary, no input bit buffered */
+    self->out_phase = 0;
+    self->in_phase = 0;
+    self->in_n = 0;
+    self->in_acc = 0;
+    Py_RETURN_NONE;
+}
+
+static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
+                         PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip);
+
 /* the run loop.
-   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0)
-   -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds) */
+   run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)
+   -> (termination_cause, op_count, error_bit_address_or_None, last_ops_list, paused_seconds)
+   paused_seconds excludes the final flush of a partial output byte; last_run_paused_seconds includes it */
 static PyObject* Memory_run(MemoryObject* self, PyObject* args, PyObject* kwds)
 {
-    static char* kwlist[] = {"read_bit", "write_bit", "eof_exception_type", "last_ops_length", "start_ip", NULL};
+    static char* kwlist[] = {"read_bit", "write_bit", "eof_exception_type", "last_ops_length", "start_ip",
+                             "write_byte", "read_byte", NULL};
     PyObject* read_bit;
     PyObject* write_bit;
     PyObject* eof_exception_type;
+    PyObject* write_byte = Py_None;
+    PyObject* read_byte = Py_None;
     Py_ssize_t last_ops_length = 0;
     unsigned long long start_ip = 0;
+    PyObject* run_result;
 
-    uint64_t* last_ops_ring = NULL;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOO|nK", kwlist, &read_bit, &write_bit, &eof_exception_type,
-                                     &last_ops_length, &start_ip)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "OOO|nKOO", kwlist, &read_bit, &write_bit, &eof_exception_type,
+                                     &last_ops_length, &start_ip, &write_byte, &read_byte)) {
         return NULL;
     }
+    /* write_byte(b) must act as write_bit of b's 8 bits, lsb first; the engine then calls it once a byte
+       (see out_bit). Borrowed: the caller's argument outlives the run */
+    self->out_write_byte = (write_byte == Py_None) ? NULL : write_byte;
+    /* read_byte() must return the next 8 read_bit() values as a byte (lsb first), whatever the program outputs while
+       it takes them; the engine then calls it once a byte (see in_bit). Borrowed, as write_byte */
+    self->in_read_byte = (read_byte == Py_None) ? NULL : read_byte;
+    run_result = mem_run(self, read_bit, write_bit, eof_exception_type, last_ops_length, start_ip);
+    self->out_write_byte = NULL;
+    self->in_read_byte = NULL;
+    /* the bits of a partial byte still pending go out bit by bit -- also when the run failed, keeping its error */
+    if (self->out_n) {
+        PyObject *et, *ev, *tb;
+        double flush_paused = 0.0;
+        PyErr_Fetch(&et, &ev, &tb);
+        if (out_flush_bits(self, write_bit, &flush_paused) < 0) {
+            if (et) {
+                PyErr_Clear();
+            } else {
+                Py_CLEAR(run_result);
+            }
+        }
+        self->last_run_paused_seconds += flush_paused; /* the result tuple already holds the loop's */
+        if (et) {
+            PyErr_Restore(et, ev, tb);
+        }
+    }
+    return run_result;
+}
+
+static PyObject* mem_run(MemoryObject* self, PyObject* read_bit, PyObject* write_bit,
+                         PyObject* eof_exception_type, Py_ssize_t last_ops_length, unsigned long long start_ip)
+{
+    uint64_t* last_ops_ring = NULL;
+
     if (last_ops_length < 0) {
         last_ops_length = 0;
     }
@@ -1474,7 +1846,7 @@ static PyObject* Memory_get_storage_mode(MemoryObject* self, void* closure)
 static PyObject* Memory_get_allocated_bytes(MemoryObject* self, void* closure)
 {
     (void)closure;
-    return PyLong_FromUnsignedLongLong(self->flat_count * sizeof(uint64_t) +
+    return PyLong_FromUnsignedLongLong(self->flat_count * (uint64_t)self->cell_bytes +
                                        self->slots_used * PAGE_WORDS * sizeof(uint64_t) +
                                        self->slot_count * sizeof(Slot));
 }
@@ -1573,8 +1945,19 @@ static PyMethodDef Memory_methods[] = {
     {"set_word", (PyCFunction)Memory_set_word, METH_VARARGS, "set_word(word_address, value)"},
     {"get_word", (PyCFunction)Memory_get_word, METH_VARARGS, "get_word(word_address) -> value"},
     {"set_words", (PyCFunction)Memory_set_words, METH_VARARGS, "set_words(start_word_address, values)"},
+    {"set_words_bytes", (PyCFunction)Memory_set_words_bytes, METH_VARARGS,
+     "set_words_bytes(start_word_address, data, data_word_offset, count, relative_jumps=False)\n"
+     "store `count` little-endian w-bit words of the bytes `data`, from word `data_word_offset` of it.\n"
+     "relative_jumps: add (start_word_address + i) * w to every odd word i (the .fjm v2/v3 jumps)."},
+    {"decide_storage", (PyCFunction)Memory_decide_storage, METH_NOARGS,
+     "decide_storage() - choose flat/hybrid/paged now (normally done at the first run), so a bulk\n"
+     "load after it (set_words_bytes) goes straight into the flat image; segments must all be added"},
+    {"freeze", (PyCFunction)Memory_freeze, METH_NOARGS,
+     "freeze() - decide storage (building the flat image) and snapshot it as the pristine copy"},
+    {"reset", (PyCFunction)Memory_reset, METH_NOARGS,
+     "reset() - restore the frozen pristine image (one memcpy) and drop device/API pages"},
     {"run", (PyCFunction)Memory_run, METH_VARARGS | METH_KEYWORDS,
-     "run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0)\n"
+     "run(read_bit, write_bit, eof_exception_type, last_ops_length=0, start_ip=0, write_byte=None, read_byte=None)\n"
      "-> (termination_cause, op_count, error_bit_address_or_None, last_ops, paused_seconds)"},
     {NULL, NULL, 0, NULL},
 };

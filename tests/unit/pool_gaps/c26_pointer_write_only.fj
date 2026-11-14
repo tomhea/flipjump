@@ -1,0 +1,10 @@
+// C26: a correct program that only FLIPS a value bit through a bit pointer (bit.ptr_flip): no raw read.
+stl.startup
+    bit.ptr_flip p
+    hex.xor y, x
+    hex.print_as_digit y, 0
+    stl.loop
+p:  bit.vec w, y+dbit
+x:  hex.hex 5
+y:  hex.hex 0
+bit.pointers.ptr_init

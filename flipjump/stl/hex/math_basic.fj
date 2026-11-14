@@ -7,7 +7,7 @@ ns hex {
     // (n=2 when operating on 16-255 bit-numbers)
     //   dst[:n] += src.#on-bits (between 0->4)
     // dst is hex.vec n, src is hex.
-    // @Assumes: dst and src do not alias.
+    // @Assumes: dst and src do not alias, and n >= 1.
     def add_count_bits n, dst, src @ count_switch,  do_add,  add_switch, add4_switch,  xor_switch,  \
             after_add, is_carry,  should_inc, do_inc,  clean {
         //part1
@@ -80,6 +80,7 @@ ns hex {
     //
     // x is hex.vec n, and dst is hex.vec small_n.
     // small_n (it's 2 for 16-255 bit-numbers) is the smallest number of bits that can hold the number n:  ((#(n*4))+3)/4
+    // @Assumes: dst and x do not overlap.
     def count_bits n, dst, x {
         .zero ((#(n*4))+3)/4, dst
         rep(n, i) .add_count_bits ((#(n*4))+3)/4, dst, x+i*dw
@@ -132,6 +133,7 @@ ns hex {
       end:
     }
     ns inc {
+        //   hex++; if it did not wrap (no carry out) goto end, else continue (inc n's step).
         def step hex, end @ next {
             ..inc1 hex, end, next
           next:
@@ -179,6 +181,7 @@ ns hex {
       end:
     }
     ns dec {
+        //   hex--; if it did not wrap (no borrow out) goto end, else continue (dec n's step).
         def step hex, end @ next {
             ..dec1 hex, end, next
           next:
@@ -209,6 +212,7 @@ ns hex {
     //  Time Complexity: (full_n - signed_n)(@+4)
     // Space Complexity: (full_n - signed_n)(@+16)
     //   sign-extends hex[:signed_n] into hex[:full_n]
+    // @Assumes: signed_n >= 1.
     def sign_extend full_n, signed_n, hex @ negative, positive {
         .zero full_n - signed_n, hex + signed_n * dw
         .sign signed_n, hex, negative, positive

@@ -24,11 +24,13 @@ The Interpreter ([fjm_run.py](interpreter/fjm_run.py)) dispatches each run to on
 
 - **The native engine** ([_fjcore.c](interpreter/_fjcore.c)) - the run-loop in C, used automatically whenever its compiled module is present (prebuilt in the official wheels for Linux/macOS/Windows, every CPython >= 3.10). ~300M fj-ops/s (`python tests/benchmarks/benchmark_interpreter.py`; history in [benchmark_results.md](../tests/benchmarks/benchmark_results.md)). Compact programs (all segments below the flat-storage limit, at w<=32) run over one dense flat array; sparse programs have that initial flat array + lazily-allocated pages, so the footprint scales with the memory actually touched. `FLIPJUMP_NO_NATIVE=1` disables it.
 
-  The flat-storage limit defaults to 2^23 words; set it with `fj --flat-max-words N`, `fjm_run.run(flat_max_words=)`, or the `FLIPJUMP_FLAT_MAX_WORDS` environment variable. It never affects per-op speed - only startup time and memory (8 bytes per word of span; an impossible allocation falls back to paged mode). The mode that ran is available as `TerminationStatistics.storage_mode`.
+  The flat-storage limit defaults to 2^23 words; set it with `fj --flat-max-words N`, `fjm_run.run(flat_max_words=)`, or the `FLIPJUMP_FLAT_MAX_WORDS` environment variable. `fj --run --flat-memory` (or `--flat-memory` when assembling it) sizes it to the program's highest segment, which a program spanning at most 2^24 words gets automatically. It never affects per-op speed - only startup time and memory (4 bytes per word of span at w<=32, 8 at w=64; an impossible allocation falls back to paged mode, unless flat memory was asked for - then the run stops and says what to do). The mode that ran is `TerminationStatistics.storage_mode`. The `fj` command line and `flipjump_quickstart.run` / `debug` apply the `.fjm`'s flat memory and io mode the same way ([run_defaults.py](interpreter/run_defaults.py)); `fjm_run.run` takes the window and the device as given. `FLIPJUMP_NO_FLAT=1` forces paged memory (for A/B benchmarking).
+
+  The program loads straight from the `.fjm`'s bytes into the flat array (`Memory.set_words_bytes`, after the storage mode is decided): no Python object per word. `Memory.freeze()` / `reset()` snapshot a loaded flat program and restore it with one memcpy, to re-run it on many inputs.
 - **The pure-python fast loop** - the fallback when the native engine isn't built (~4M fj-ops/s). Stores the memory in a dictionary {address: value}, with the memory accesses and IO/termination checks inlined into the loop.
 - **The featured loop** - used for tracing, breakpoints, and `--profile` (full per-op statistics). This is the loop the debugger runs on.
 
-All three engines behave identically (same outputs, same termination causes, same op-counts - pinned by the test-suite), support unaligned-word access, and route IO through the same [io_devices](interpreter/io_devices). Devices can also read/write the running program's memory through the [device_memory.py](interpreter/io_devices/device_memory.py) hook - e.g. the screen device reads pixel data straight from the program memory.
+All three engines behave identically (same outputs, same termination causes, same op-counts - pinned by the test-suite), support unaligned-word access, and route IO through the same [io_devices](interpreter/io_devices). Devices can also read/write the running program's memory through the [device_memory.py](interpreter/io_devices/device_memory.py) hook (the screen does not: its commands carry their data in the output stream - see [io_devices/README.md](interpreter/io_devices/README.md)).
 
 The whole interpretation is done within the [run()](interpreter/fjm_run.py) function (also uses the [fjm_reader.py](fjm/fjm_reader.py) to read the fjm file - i.e. to get the flipjump program memory from the compiled fjm file).  
 More about [how to run](../README.md#how-to-run).
@@ -52,15 +54,18 @@ For example:
 
 ### FJM versions
 
-The .fjm file currently has 4 versions:
+The .fjm file currently has 5 versions:
 
 - Version 0: The basic version
 - Version 1: The normal version (more configurable than the basic version)
 - Version 2: The relative-jumps version (good for further compression)
 - Version 3: The compressed version
+- Version 4: The compressed-segments version (version 3, with the segment table compressed too)
 
 You can specify the version you want with the `-v VERSION` flag.  
-The assembler chooses **by default** version **3** if the `--outfile` is specified, and version **1** if it isn't. 
+The assembler chooses **by default** version **4** if the `--outfile` is specified, and version **1** if it isn't. 
+
+Version 4 is version 3 with the segment table lzma2-compressed too: the table is its own stream, before the data's, and the header holds its compressed size - so reading only the header and the segments decompresses that small stream, never the data. Version 3 stores the table raw, 32 bytes a segment; a program of many segments, such as one assembled with a table pool (each moved table is a segment), gets a much smaller file.
 
 ### Generated Label Names
 

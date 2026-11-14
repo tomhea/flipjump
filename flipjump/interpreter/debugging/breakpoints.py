@@ -274,39 +274,48 @@ class BreakpointHandler:
             line = ask_for_command('(debug, "h" for help) > ')
             if line is None:  # EOF / Ctrl+D
                 return ('exit', 0)
-            if not line:  # empty line - just re-prompt
-                continue
+            action = self.debug_action(line, mem)
+            if action is not None:
+                return action
 
-            tokens = line.split()
-            command, argument = tokens[0].lower(), (tokens[1] if len(tokens) > 1 else None)
+    def debug_action(self, line: str, mem: fjm_reader.Reader) -> Optional[Tuple[str, int]]:
+        """
+        Act on one line of the debugger prompt: show help or memory inline, or pick the action that resumes the run.
+        @return: (command, argument) as query_user_for_debug_action's, or None to prompt again.
+        """
+        tokens = line.split()
+        if not tokens:  # an empty line - just re-prompt
+            return None
+        command, argument = tokens[0].lower(), (tokens[1] if len(tokens) > 1 else None)
 
-            if command in ('h', 'help', '?'):
-                show_message(DEBUGGER_HELP, 'Debugger commands')
-            elif command in ('r', 'read'):
-                if argument is None:
-                    show_message("usage: read <address/label/:variable:>  ('help' lists the formats).", 'Debugger')
-                else:
-                    self.handle_read_memory(' '.join(tokens[1:]), mem)
-            elif command in ('s', 'step') and argument is None:
-                return ('step', 0)
-            elif command in ('s', 'skip') and argument is not None:
-                try:
-                    count = int(argument, 0)  # accepts decimal and 0x-hex
-                except ValueError:
-                    show_message(f"skip needs a number (decimal or 0x-hex), got {argument!r}.", 'Debugger')
-                    continue
-                if count <= 0:
-                    show_message(f"skip needs a positive count, got {count}.", 'Debugger')
-                    continue
-                return ('skip', count)
-            elif command in ('c', 'cont', 'continue') and argument is None:
-                return ('continue', 0)
-            elif command in ('c*', 'ca') or line.lower() == 'continue all':
-                return ('continue_all', 0)
-            elif command in ('q', 'quit', 'exit'):
-                return ('exit', 0)
+        if command in ('h', 'help', '?'):
+            show_message(DEBUGGER_HELP, 'Debugger commands')
+        elif command in ('r', 'read'):
+            if argument is None:
+                show_message("usage: read <address/label/:variable:>  ('help' lists the formats).", 'Debugger')
             else:
-                show_message(f"unknown command {line!r}. type 'h' (or 'help') for the commands.", 'Debugger')
+                self.handle_read_memory(' '.join(tokens[1:]), mem)
+        elif command in ('s', 'step') and argument is None:
+            return ('step', 0)
+        elif command in ('s', 'skip') and argument is not None:
+            try:
+                count = int(argument, 0)  # accepts decimal and 0x-hex
+            except ValueError:
+                show_message(f"skip needs a number (decimal or 0x-hex), got {argument!r}.", 'Debugger')
+                return None
+            if count <= 0:
+                show_message(f"skip needs a positive count, got {count}.", 'Debugger')
+                return None
+            return ('skip', count)
+        elif command in ('c', 'cont', 'continue') and argument is None:
+            return ('continue', 0)
+        elif command in ('c*', 'ca') or line.lower() == 'continue all':
+            return ('continue_all', 0)
+        elif command in ('q', 'quit', 'exit'):
+            return ('exit', 0)
+        else:
+            show_message(f"unknown command {line!r}. type 'h' (or 'help') for the commands.", 'Debugger')
+        return None
 
     def apply_debug_action(self, action: Tuple[str, int], op_counter: int) -> None:
         """

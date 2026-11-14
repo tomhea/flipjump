@@ -1,0 +1,348 @@
+// Tests hex.read_back / hex.write_back: the byte at the address the last pointer operation armed.
+// That address is the operation's own (before an _and_inc's inc, the last cell of an n-cell op, ptr+index of
+//   an _nth_ op, *ptr after ptr_flip_dbit / ptr_wflip), on every path in; address 0 before any pointer operation.
+// The NEGATIVE sections show what breaking the precondition does: the byte read back is another cell's.
+// Values are random (python, seed 1024); each check prints '=' when the result is right.
+stl.startup_and_init_all
+
+// before any pointer operation, the armed address is 0 (the startup op: not a byte cell to read back)
+test_initial_arm
+// a read / a write, then read_back / write_back at the same address
+test_read_back 30, 40
+test_write_back 30, 177, 228
+test_read_back 5, 83
+test_write_back 5, 42, 18
+test_read_back 5, 18
+test_write_back 5, 171, 52
+test_read_back 0, 205
+test_write_back 0, 154, 189
+test_read_back 11, 114
+test_write_back 11, 81, 69
+test_read_back 24, 224
+test_write_back 24, 82, 146
+// *_and_inc arm the address before the inc (the armed address, not the pointer)
+test_read_back_after_inc 27, 236, 27
+test_write_back_after_inc 27, 117, 46, 27
+test_read_back_after_inc 26, 255, 46
+test_write_back_after_inc 26, 235, 61, 46
+test_read_back_after_inc 21, 25, 183
+test_write_back_after_inc 21, 210, 12, 183
+// the n-cell ops arm their last cell, then restore the pointer
+test_read_back_after_n 2, 25, 36, 61
+test_write_back_after_n 2, 25, 11
+test_read_back_after_n 3, 26, 11, 27
+test_write_back_after_n 3, 26, 126
+test_read_back_after_n 5, 24, 146, 126
+test_write_back_after_n 5, 24, 79
+// *_nth_* arm ptr+index (negative indexes too)
+test_read_back_after_nth 3, 5, 223
+test_write_back_after_nth 3, 5, 170
+test_read_back_after_nth 20, -7, 94
+test_write_back_after_nth 20, -7, 176
+test_read_back_after_nth 0, 0, 189
+test_write_back_after_nth 0, 0, 236
+// ptr_flip_dbit / ptr_wflip step to_flip during their work, and end armed at *ptr
+test_back_after_flip_dbit 11, 68, 31
+test_back_after_wflip 4, 100, 196
+test_back_after_flip_dbit 6, 212, 199
+test_back_after_wflip 11, 31, 109
+// the precondition holds per path: both arms of a branch end armed at the same address
+test_paths_same_address 0, 27, 32
+test_paths_same_address 1, 22, 183
+// NEGATIVE: one arm moved the pointer - read_back on that path reads the cell it armed, not the other one
+test_paths_moved_pointer 0, 1, 5, 124
+test_paths_moved_pointer 1, 5, 52, 199
+// NEGATIVE: a pointer operation in between re-arms - an stl.call, a push, a read through another pointer
+test_call_rearms 19
+test_push_rearms 19, 251, 9
+test_other_pointer_rearms 19, 79
+test_call_rearms 9
+test_push_rearms 9, 134, 2
+test_other_pointer_rearms 9, 95
+
+stl.loop
+
+
+// ---- helpers
+def set_ptr k < p, cells {
+    hex.set w/4, p, cells + k*dw
+}
+
+// prints '=' if x[:n] == expected, else '<' / '>'. Then a new line.
+def check n, x, expected @ lt, eq, gt, expected_x, end {
+    hex.cmp n, x, expected_x, lt, eq, gt
+  lt:
+    stl.output '<'
+    ;end
+  eq:
+    stl.output '='
+    ;end
+  gt:
+    stl.output '>'
+    ;end
+  expected_x: hex.vec n, expected
+  end:
+    stl.output '\n'
+}
+
+// prints '=' if x[:n] != unexpected, else '!'. Then a new line.
+def check_not n, x, unexpected @ eq, ne, unexpected_x, end {
+    hex.cmp n, x, unexpected_x, ne, eq, ne
+  eq:
+    stl.output '!'
+    ;end
+  ne:
+    stl.output '='
+    ;end
+  unexpected_x: hex.vec n, unexpected
+  end:
+    stl.output '\n'
+}
+
+
+// ---- the tests
+def test_initial_arm < hex.pointers.to_ptr_var {
+    check w/4, hex.pointers.to_ptr_var, 0
+}
+
+def test_read_back k, value < p, v {
+    set_ptr k
+    hex.read_byte v, p
+    hex.read_back v
+    check 2, v, value
+}
+
+// write x, write_back y: the cell holds y (two lines: read_back, then a fresh read).
+def test_write_back k, x, y @ x_byte, y_byte, end < p, v {
+    set_ptr k
+    hex.write_byte p, x_byte
+    hex.write_back y_byte
+    hex.read_back v
+    check 2, v, y
+    hex.read_byte v, p
+    check 2, v, y
+    ;end
+  x_byte: hex.vec 2, x
+  y_byte: hex.vec 2, y
+  end:
+}
+
+def test_read_back_after_inc k, value, next_value < p, v {
+    set_ptr k
+    hex.read_byte_and_inc v, p
+    hex.read_back v
+    check 2, v, value
+    hex.read_byte v, p
+    check 2, v, next_value
+}
+
+// write_back after write_byte_and_inc writes the cell it wrote (k), and leaves k+1 alone.
+def test_write_back_after_inc k, x, y, next_value @ x_byte, y_byte, end < p, v {
+    set_ptr k
+    hex.write_byte_and_inc p, x_byte
+    hex.write_back y_byte
+    hex.read_byte v, p
+    check 2, v, next_value
+    set_ptr k
+    hex.read_byte v, p
+    check 2, v, y
+    hex.read_back v
+    check 2, v, y
+    ;end
+  x_byte: hex.vec 2, x
+  y_byte: hex.vec 2, y
+  end:
+}
+
+def test_read_back_after_n n, k, first_value, last_value @ dst, end < p, v {
+    set_ptr k
+    hex.read_byte n, dst, p
+    hex.read_back v
+    check 2, v, last_value
+    hex.read_byte v, p
+    check 2, v, first_value
+    ;end
+  dst: hex.vec 2*n
+  end:
+}
+
+// write_hex n arms its last cell: write_back y lands there (read through the restored pointer + n-1).
+def test_write_back_after_n n, k, y @ src, y_byte, end < p, v {
+    set_ptr k
+    hex.write_hex n, p, src
+    hex.write_back y_byte
+    hex.ptr_add p, n-1
+    hex.read_byte v, p
+    check 2, v, y
+    hex.read_back v
+    check 2, v, y
+    ;end
+  src: hex.vec n
+  y_byte: hex.vec 2, y
+  end:
+}
+
+def test_read_back_after_nth k, idx, value @ index, end < p, v {
+    set_ptr k
+    hex.read_nth_byte v, p, index
+    hex.zero 2, v
+    hex.read_back v
+    check 2, v, value
+    ;end
+  index: hex.vec w/4, idx
+  end:
+}
+
+def test_write_back_after_nth k, idx, y @ index, x_byte, y_byte, end < p, v {
+    set_ptr k
+    hex.write_nth_byte p, index, x_byte
+    hex.write_back y_byte
+    hex.read_nth_byte v, p, index
+    check 2, v, y
+    ;end
+  index: hex.vec w/4, idx
+  x_byte: hex.vec 2, 0
+  y_byte: hex.vec 2, y
+  end:
+}
+
+// ptr_flip_dbit flips the value's bit 0; read_back sees it; write_back y lands at *p.
+def test_back_after_flip_dbit k, flipped_value, y @ y_byte, end < p, v {
+    set_ptr k
+    hex.ptr_flip_dbit p
+    hex.read_back v
+    check 2, v, flipped_value
+    hex.write_back y_byte
+    hex.read_byte v, p
+    check 2, v, y
+    ;end
+  y_byte: hex.vec 2, y
+  end:
+}
+
+// ptr_wflip flips *p's flip word (not its value; here to a harmless bit, as reading a cell runs it);
+//   read_back sees the value; write_back y lands at *p.
+def test_back_after_wflip k, value, y @ y_byte, junk, end < p, v {
+    set_ptr k
+    hex.ptr_wflip p, junk
+    hex.read_back v
+    check 2, v, value
+    hex.write_back y_byte
+    hex.ptr_wflip p, junk
+    hex.read_byte v, p
+    check 2, v, y
+    ;end
+  y_byte: hex.vec 2, y
+  junk: ;0
+  end:
+}
+
+// both arms read the same cell, through two pointer variables.
+def test_paths_same_address flag, k, value @ f, arm0, arm1, join, end < p, q, v {
+    set_ptr k
+    hex.mov w/4, q, p
+    hex.if f, arm0, arm1
+  arm0:
+    hex.read_byte v, p
+    ;join
+  arm1:
+    hex.read_byte v, q
+  join:
+    hex.zero 2, v
+    hex.read_back v
+    check 2, v, value
+    ;end
+  f: hex.hex flag
+  end:
+}
+
+// arm1 moves the pointer first: on that path read_back reads cell k+1, on the other cell k.
+def test_paths_moved_pointer flag, k, value, next_value @ f, arm0, arm1, join, end < p, v {
+    set_ptr k
+    hex.if f, arm0, arm1
+  arm0:
+    hex.read_byte v, p
+    ;join
+  arm1:
+    hex.ptr_inc p
+    hex.read_byte v, p
+  join:
+    hex.zero 2, v
+    hex.read_back v
+    check 2, v, flag ? next_value : value
+    ;end
+  f: hex.hex flag
+  end:
+}
+
+// stl.call re-arms at a stack cell + w (ptr_wflip_2nd_word's): a read_back there would be a wild jump, so this
+//   checks the arm's shadow (to_ptr_var) left the cell, instead of reading.
+def test_call_rearms k @ func, end < p, v, cells, hex.pointers.to_ptr_var {
+    set_ptr k
+    hex.read_byte v, p
+    stl.call func
+    check_not w/4, hex.pointers.to_ptr_var, cells + k*dw
+    ;end
+  func:
+    stl.return
+  end:
+}
+
+def test_push_rearms k, value, pushed @ h, end < p, v {
+    set_ptr k
+    hex.read_byte v, p
+    hex.push_hex h
+    hex.read_back v
+    check_not 2, v, value
+    hex.pop_hex h
+    ;end
+  h: hex.hex pushed
+  end:
+}
+
+def test_other_pointer_rearms k, other_value < p, q, v, cells {
+    set_ptr k
+    hex.set w/4, q, cells + ((k + 9) % 32)*dw
+    hex.read_byte v, p
+    hex.read_byte v, q
+    hex.read_back v
+    check 2, v, other_value
+}
+
+
+p: hex.vec w/4
+q: hex.vec w/4
+v: hex.vec 2
+cells:
+  ;205*dw
+  ;5*dw
+  ;124*dw
+  ;218*dw
+  ;100*dw
+  ;83*dw
+  ;213*dw
+  ;203*dw
+  ;223*dw
+  ;134*dw
+  ;26*dw
+  ;114*dw
+  ;132*dw
+  ;94*dw
+  ;207*dw
+  ;185*dw
+  ;241*dw
+  ;184*dw
+  ;95*dw
+  ;251*dw
+  ;204*dw
+  ;25*dw
+  ;183*dw
+  ;191*dw
+  ;224*dw
+  ;36*dw
+  ;255*dw
+  ;236*dw
+  ;27*dw
+  ;105*dw
+  ;40*dw
+  ;112*dw

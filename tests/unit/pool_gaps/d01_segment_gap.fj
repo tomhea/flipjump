@@ -1,0 +1,12 @@
+// D01: `L + 0x1000`, from a label after a moved table, lands in a gap that a later `segment 0x1000` fills: L's
+// code moved and the segment's did not, so the operand is refused when that segment starts.
+startup
+    dead x
+L:
+    ;go_on
+x:  ;0
+segment 0x4000
+go_on:
+    ;L + 0x1000
+segment 0x1000
+    rows

@@ -339,7 +339,7 @@ class TestDebuggerEndToEnd:
             [program],
             breakpoints_contains={'code_start'},
             io_device=FixedIO(b''),
-            print_time=False,
+            show_progress=False,
             print_termination=False,
         )
         assert statistics.termination_cause == TerminationCause.KeyboardInterrupt
@@ -361,7 +361,7 @@ class TestDebuggerEndToEnd:
             [program],
             breakpoints_contains={'code_start'},
             io_device=FixedIO(b''),
-            print_time=False,
+            show_progress=False,
             print_termination=False,
         )
         assert statistics.termination_cause == TerminationCause.Looping

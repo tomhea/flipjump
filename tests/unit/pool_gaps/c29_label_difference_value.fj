@@ -1,0 +1,16 @@
+// C29: a VALUE computed from two inline labels whose distance spans a moved table (b - a), written into a
+// word that is not pinned (raw wflip; printed through print_as_digit's own inline table). The catalog's
+// print_address_difference.fj is this program (TablePool prints a different number; fj --pool-tables refuses
+// it only because its `result` happens to be pinned).
+stl.startup
+    ;skip
+a:
+    hex.xor s, s
+b:
+skip:
+    wflip r+w, (((b - a) >> 6) & 0xf) * dw
+    wflip r+dw+w, (((b - a) >> 10) & 0xf) * dw
+    hex.print_as_digit 2, r, 0
+    stl.loop
+r:  hex.vec 2
+s:  hex.hex 0

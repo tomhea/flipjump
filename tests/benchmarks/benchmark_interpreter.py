@@ -39,7 +39,7 @@ def get_benchmark_fjm(program: str, memory_width: int) -> Path:
     fjm_path = COMPILED_DIR / f'{program}_w{memory_width}.fjm'
     if not fjm_path.exists() or fjm_path.stat().st_mtime < fj_path.stat().st_mtime:
         print(f'assembling {fj_path.name} at w={memory_width}...')
-        assemble([fj_path], fjm_path, memory_width=memory_width, print_time=False)
+        assemble([fj_path], fjm_path, memory_width=memory_width, show_progress=False)
     return fjm_path
 
 
@@ -57,7 +57,8 @@ def benchmark(program: str, memory_width: int, n: int) -> None:
 
     ops = termination_statistics.op_counter
     run_time = termination_statistics.run_time
-    print(f'w={memory_width}: {ops:,} ops in {run_time:.2f}s (wall {wall_time:.2f}s) ' f'=> {ops / run_time:,.0f} fj/s')
+    rate = round(ops / run_time)
+    print(f'w={memory_width}: {ops:,} ops in {run_time:.2f}s (wall {wall_time:.2f}s) => {rate:,} fj/s')
 
 
 def main() -> None:

@@ -1,0 +1,23 @@
+// D16: c32 without its `pad 8`: the inline table merely sits at op 8, armed with a NUMBER (0x200 at w=32) by an op
+// that then jumps through the word. No `pad` marks the table, so only "a jump through the word that is no arm"
+// tells that the pin cannot hold.
+stl.startup
+    ;start
+    ;start
+    ;start
+    ;start
+    ;start
+    ;start
+    ;o0
+    ;o1
+start:
+    hex.xor z, x
+    wflip x+w, 0x200, x
+o0: wflip x+w, 0x200, p0
+o1: wflip x+w, 0x200, p1
+p0: stl.output '0'
+    stl.loop
+p1: stl.output '1'
+    stl.loop
+x:  hex.hex 1
+z:  hex.hex 0

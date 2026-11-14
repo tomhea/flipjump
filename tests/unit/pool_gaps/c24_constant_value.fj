@@ -1,0 +1,11 @@
+// C24: a named constant as a hex value of a pinned word (hex.xor_by y, C; and a raw wflip by C*dw).
+C = 5
+stl.startup
+    hex.xor_by y, C
+    wflip y+w, C*dw
+    wflip y+w, C*dw
+    hex.xor z, y
+    hex.print_as_digit z, 0
+    stl.loop
+y:  hex.hex 0
+z:  hex.hex 0

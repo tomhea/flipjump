@@ -52,7 +52,7 @@ ns bit {
 
     //  Time Complexity: n + 5@+12
     // Space Complexity: n(2@+6)
-    //   x[:n]--
+    //   x[:n] = -x[:n]
     // x is a bit[:n]
     def neg n, x {
         .not n, x
@@ -77,6 +77,7 @@ ns bit {
     // Complexity: n(8@+14)
     //   dst[:n] += src[:n]
     // dst,src are bit[:n]
+    // note: doesn't work if dst and src overlap. works if dst==src.
     def add n, dst, src @ carry {
         .zero carry
         rep(n, i) .add1 dst+i*dw, src+i*dw, carry
@@ -88,6 +89,7 @@ ns bit {
     // Complexity: n(8@+16)
     //   dst[:n] -= src[:n]
     // dst,src are bit[:n]
+    // @Assumes: dst and src do not overlap (sub n, x, x gives 2x).
     def sub n, dst, src @ carry {
         .not n, src
         .one carry

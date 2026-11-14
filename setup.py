@@ -4,7 +4,7 @@ the setuptools build entry: declares the optional native interpreter engine (_fj
 the extension is best-effort - if no C compiler is available (a plain sdist install on an
 exotic platform), the build falls back to a pure-python package and the interpreter uses
 the pure-python fast loop. the prebuilt wheels (built in CI with cibuildwheel) ship the
-compiled engine, tagged abi3 so one wheel per platform covers every CPython >= 3.10.
+compiled engine, tagged abi3 so one wheel per platform covers every CPython >= 3.11.
 """
 
 from setuptools import Extension, setup
@@ -38,9 +38,9 @@ setup(
         Extension(
             'flipjump.interpreter._fjcore',
             sources=['flipjump/interpreter/_fjcore.c'],
-            py_limited_api=True,  # abi3: one binary covers every CPython >= 3.10
+            py_limited_api=True,  # abi3: one binary covers every CPython >= 3.11
         )
     ],
     cmdclass={'build_ext': OptionalBuildExt},
-    options={'bdist_wheel': {'py_limited_api': 'cp310'}},
+    options={'bdist_wheel': {'py_limited_api': 'cp311'}},
 )

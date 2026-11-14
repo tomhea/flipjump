@@ -43,8 +43,12 @@ class FlipJumpRuntimeMemoryException(FlipJumpRuntimeException):
         self.memory_address = memory_address
 
 
-class FlipJumpMissingImportException(FlipJumpException):
-    pass
+class FlipJumpFlatMemoryException(FlipJumpRuntimeException):
+    """the flat memory a run asked for (--flat-memory, given or compiled into the .fjm) could not be allocated"""
+
+    def __init__(self, message: str, window_words: int):
+        super().__init__(message)
+        self.window_words = window_words
 
 
 class IODeviceException(IOError, FlipJumpException):

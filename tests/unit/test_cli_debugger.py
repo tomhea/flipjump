@@ -69,7 +69,7 @@ class TestDebuggerEndToEnd:
         assert breakpoint_handler.breakpoints, 'breakpoint was not resolved from the debug file'
         feed_answers(monkeypatch, answers)
         statistics = fjm_run.run(
-            fjm_path, io_device=FixedIO(b''), print_time=False, breakpoint_handler=breakpoint_handler
+            fjm_path, io_device=FixedIO(b''), show_progress=False, breakpoint_handler=breakpoint_handler
         )
         return statistics, breakpoint_handler
 

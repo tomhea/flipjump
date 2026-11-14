@@ -1,0 +1,12 @@
+// C11: (w=16) a user segment inside the pool's half, then a segment back below it: finish() checks only
+// the LAST curr_address, so the code at 0x8000 sits on the block of x.
+stl.startup
+    ;high
+segment 0x8000
+high:
+    hex.xor y, x
+    hex.print_as_digit y, 0
+    stl.loop
+segment 0x2000
+x:  hex.hex 1
+y:  hex.hex 0

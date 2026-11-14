@@ -26,6 +26,7 @@ ns bit {
         //   Sets both to_jump and to_jump_var to point to the given pointer.
         //   (  to_jump{_var} = ptr  )
         // ptr is a bit[:w] that holds an address.
+        // @requires bit.pointers.ptr_init (or stl.ptr_init)
         def set_jump_pointer ptr < .to_jump, .to_jump_var {
             ..address_and_variable_xor w, .to_jump+w, .to_jump_var, .to_jump_var
             ..address_and_variable_xor w, .to_jump+w, .to_jump_var, ptr
@@ -36,6 +37,7 @@ ns bit {
         //   Sets both to_flip and to_flip_var to point to the given pointer.
         //   (  to_flip{_var} = ptr  )
         // ptr is a bit[:w] that holds an address.
+        // @requires bit.pointers.ptr_init (or stl.ptr_init)
         def set_flip_pointer ptr < .to_flip, .to_flip_var {
             ..address_and_variable_xor w, .to_flip, .to_flip_var, .to_flip_var
             ..address_and_variable_xor w, .to_flip, .to_flip_var, ptr
@@ -113,6 +115,7 @@ ns bit {
     ns pointers {
         // Advances *to_flip by 1 (which takes n flips, from bit0 to bit1, bit2,...).
         // If do_flip (value) isn't 0 - then make a flip, like:  to_flip;advance.
+        // @requires bit.pointers.ptr_init (or stl.ptr_init)
         def advance_by_one_and_flip__ptr_wflip n, do_flip @ cleanup, advance < bit.pointers.to_flip {
             stl.comp_if0 do_flip, advance
             wflip bit.pointers.to_flip+w, cleanup, bit.pointers.to_flip
@@ -183,7 +186,7 @@ ns bit {
 
     //  Time Complexity: 2w + 5@+12
     // Space Complexity: w(2@+6)
-    //   ptr[:n] -= 2w
+    //   ptr[:w] -= 2w
     def ptr_dec ptr {
         .dec w-#w, ptr+(#w)*dw
     }

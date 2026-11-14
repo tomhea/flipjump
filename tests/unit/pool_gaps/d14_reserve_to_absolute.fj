@@ -1,0 +1,13 @@
+// D14: `reserve 0x2000 - before` reserves up to an absolute address from code after a moved table: another size
+// with the pool, so it is refused.
+stl.startup
+    hex.xor y, x
+    ;after
+before:
+    reserve 0x2000 - before
+after:
+    hex.set y, ((after - before) >> 6) & 15
+    hex.print_as_digit y, 0
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

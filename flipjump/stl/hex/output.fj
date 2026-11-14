@@ -195,6 +195,7 @@ ns hex {
     //
     // x_prefix (constant): print with the "0x" prefix.
     // use_uppercase (constant): if true, print in uppercase (else lowercase).
+    // @Assumes: n >= 1.
     def print_int n, x, x_prefix, use_uppercase @ do_neg, print, neg, end {
         bit.zero neg
         .sign n, x, do_neg, print
@@ -216,6 +217,7 @@ ns hex {
     //  Time Complexity: nd(28@+48) + n(5@-4)    (for d number of decimal digits)
     // Space Complexity: n(56@+64)
     //    prints x[:n] as an unsigned DECIMAL number (without leading zeros).
+    // @Assumes: n >= 1.
     def print_dec_uint n, x @ bit, end {
         stl.hex2bit n, bit, x
         bit.print_dec_uint 4*n, bit
@@ -227,6 +229,7 @@ ns hex {
     //  Time Complexity: nd(28@+48) + n(5@+4)    (for d number of decimal digits)
     // Space Complexity: n(59@+98)
     //    prints x[:n] as a signed DECIMAL number (without leading zeros).
+    // @Assumes: n >= 1.
     def print_dec_int n, x @ do_neg, print, neg, end {
         bit.zero neg
         .sign n, x, do_neg, print

@@ -34,9 +34,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import flipjump
-from flipjump import assemble, is_native_engine_active
+from flipjump import assemble, is_native_engine_active, native
 from flipjump.interpreter import fjm_run
-from flipjump.interpreter import _fjcore  # type: ignore[attr-defined]
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.classes import TerminationCause
 
@@ -49,13 +48,13 @@ PROGRAMS = {
     'sieve': (REPO_ROOT / 'programs' / 'prime_sieve.fj', b'5000\n'),
 }
 
-# exact, deterministic op-counts (verified against benchmark_results.md). a miscompile on any
-# arch changes these - they are the cross-platform correctness anchor.
+# exact, deterministic op-counts. a miscompile on any arch changes these - they are the
+# cross-platform correctness anchor. (they also change when the stl macros a program uses change.)
 GOLDEN_OP_COUNTS = {
     ('loop', 32): 298_927_147,
     ('loop', 64): 351_500_749,
-    ('sieve', 32): 16_580_560,
-    ('sieve', 64): 33_304_073,
+    ('sieve', 32): 15_781_504,
+    ('sieve', 64): 31_384_891,
 }
 
 # the cpu_calibrate L1 micro-bench shares the engine's bottleneck, so its checksum is fixed for a
@@ -75,7 +74,7 @@ MIN_FJ_TO_C_RATIO = 0.01
 def measure_cpu_ops_per_sec() -> float:
     """L1 throughput micro-bench (same toolchain + bottleneck as the engine); fixed iterations so
     the checksum is pinnable across arches, while the elapsed time encodes this cpu's speed."""
-    result = _fjcore.cpu_calibrate(CALIB_ITERATIONS)
+    result = native.cpu_calibrate(CALIB_ITERATIONS)
     assert (
         result['checksum'] == GOLDEN_CALIB_CHECKSUM
     ), f"cpu_calibrate checksum 0x{result['checksum']:016X} != golden (calibration miscompiled?)"
@@ -87,9 +86,11 @@ def run_program(name: str, width: int, tmp_dir: Path) -> Tuple[int, float]:
     correctness failure (wrong termination cause or wrong op-count)."""
     fj_path, run_input = PROGRAMS[name]
     fjm_path = tmp_dir / f'{name}_w{width}.fjm'
-    assemble([fj_path], fjm_path, memory_width=width, print_time=False)
+    assemble([fj_path], fjm_path, memory_width=width, show_progress=False)
 
-    stats = fjm_run.run(fjm_path, io_device=FixedIO(run_input), print_time=False, last_ops_debugging_list_length=None)
+    stats = fjm_run.run(
+        fjm_path, io_device=FixedIO(run_input), show_progress=False, last_ops_debugging_list_length=None
+    )
 
     if stats.termination_cause != TerminationCause.Looping:
         raise AssertionError(f'{name} w={width}: terminated as {stats.termination_cause.name}, expected Looping')

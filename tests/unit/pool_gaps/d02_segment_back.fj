@@ -1,0 +1,11 @@
+// D02: `H - 0x3000 + 12*dw` reaches back into a lower segment that is emitted later, and that holds a table
+// below the place it lands on: the table stays inline.
+startup
+    ;H
+segment 0x4000
+H:
+    ;H - 0x3000 + 12*dw
+segment 0x1000
+    dead x
+    rows
+x:  ;0

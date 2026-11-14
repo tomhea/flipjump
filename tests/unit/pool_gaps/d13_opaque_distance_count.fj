@@ -1,0 +1,11 @@
+// D13: `rep(((end | 0) - (start | 0)) / dw, ..)` is c37's distance across a moved table, spelled so that it is no
+// +/- sum: still another number with the pool, so it is refused.
+stl.startup
+start:
+    hex.xor y, x
+end:
+    rep(((end | 0) - (start | 0)) / dw, i) stl.output 'A'
+    stl.output '\n'
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

@@ -104,7 +104,7 @@ pip install flipjump
 And jump right into the neat [**FlipJump Docs**](https://fjdocs.tomhe.app) site!
 
 You can also install it with its extras:
-- `flipjump[io]`: the interactive IO devices (e.g. pygame for the `--io pc` keyboard+screen window).
+- `flipjump[io]`: the interactive IO devices (pygame-ce, for the `--io pc` keyboard+screen window).
 - `flipjump[stats]`: support for viewing macro usage in an interactive graph.
 - `flipjump[tests]`: all the testing libraries needed.
 ```shell
@@ -133,7 +133,7 @@ fj hello_world.fj
 ![Hello World in FlipJump](resources/hello.gif)
 
   - The --no-stl flag tells the assembler not to include the standard library. for example: `fj programs/print_tests/hello_no-stl.fj --no-stl`.
-  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default.
+  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default, and can be any power of two from 8 (8, 16, 32, 64, 128, ... 32768). The native engine runs the widths up to 64; a wider program runs on the much slower pure-Python engine, and its .fjm holds segments anywhere in its memory.
   - You can use the `-o` flag to save the assembled file for later use too.
   - You can find all the different flags with `fj -h`.
 
@@ -149,16 +149,67 @@ fj --run hello_world.fjm
 - The first line will assemble your code.
 - The second line will run your code.
 
+`--pool-tables` makes the assembled program run fewer ops: it moves the tables the stl declares relocatable (those
+of `hex.exact_xor` and its kin, and of the bit shifts) to blocks right above the program (from the first power of two
+above its end), where they are cheap to arm. The program runs the same: where moving a table would change an operand
+that names a label (an offset from another label into or across the table), the table stays where it is, or - if the
+operand comes too late for that - the program is refused with the reason, as is a program that leaves the tables no
+room in the memory. So is a `rep` count, a `pad`, a `reserve` size or a `segment` address that is computed from the
+address of code after a moved table: it would be another number. With it, `__relocatable__` is a reserved namespace:
+a macro whose innermost namespace has that name is a table the pool may move.
+
+What a pool does not follow, so a program that depends on it may run differently with the pool:
+- an address used as a number beyond a sum of labels and constants (`(L >> 6) & 15` printed, say - storing a pointer
+  or retargeting a jump that way is fine);
+- a number used as an address (`;0x280` names no label, and `wflip x+w, 0x200` arms no table the pool knows);
+- what the padding ops of a `pad` hold;
+- a flip of a dispatch word at or above the `pad` alignment of the table armed in it;
+- a dispatch word that is armed without a jump, and jumped through by the wflip that disarms it.
+
+A program that reads or writes cells raw through pointers (`hex.pointers`) gets its tables moved but nothing pinned,
+unless `--pin-all-but LABEL[:OPS],...` names those cells: then every other dispatch word is pinned too, which saves
+more ops (`--pin-all-but d0,d1:1` - a label alone runs to the next label). A cell whose dispatch word is jumped
+through while no table is armed in it is raw too. Leaving such a cell out makes the program run wrong. Without
+`--pin-all-but`, a dispatch word that an `a;b` op jumps through is left unpinned.
+
+The `table pool:` line says how many tables moved and how many words were pinned; the lines under it say what stayed
+as it was, and why.
+
+The pool's layout, each flag with `--pool-tables`:
+- `--pool-base ADDRESS`, `--pool-end ADDRESS`: where the pool lies (default: from the first power of two above the
+  program to the top of memory).
+- `--pool-max-slot-ops N`: the widest table it moves, in ops (default 32).
+- `--pool-spread-factor N`, `--pool-spread-min-tables M`: a group of at least M tables gets N times the slots, so its
+  tables take the cheapest ones (defaults 1, 256).
+- `--pool-pin-incomplete-groups`: pin a group's dispatch word even when some of its tables stayed in place.
+
 <details>
 <summary><b>Make it fast 🚀</b> — the three interpreter engines (native C is the default, ~300M fj-ops/s).</summary>
 
 The interpreter has three engines:
 - **The native engine** (~300M fj-ops/s) - a C-extension, prebuilt in the official wheels
-  (Linux glibc/musl, macOS, Windows; every CPython >= 3.10), so a plain `pip install flipjump`
+  (Linux glibc/musl, macOS, Windows; every CPython >= 3.11), so a plain `pip install flipjump`
   already has it. it is used automatically whenever present (`FLIPJUMP_NO_NATIVE=1` disables it).
 - **The fast loop** (~4M fj-ops/s) - pure Python, the fallback when the native engine isn't built.
 - **The featured loop** - used for `--trace`/breakpoints, or with `--profile` for the full
   per-op statistics (flips/jumps percentages).
+
+Python code can drive the native engine itself with `flipjump.native`: its `Memory` loads words and runs them,
+and after `freeze()`, `reset()` restores it for another run (the import raises an ImportError where the engine
+is not built):
+
+```python
+from flipjump import native
+from flipjump.interpreter.io_devices.BrokenIO import BrokenIO
+from flipjump.utils.exceptions import IOReadOnEOF
+
+io_device = BrokenIO()           # any IODevice
+memory = native.Memory(64)       # the memory width: 8, 16, 32 or 64
+memory.add_segment(0, 8)         # the segment's first word, and its length in words
+memory.set_words(0, [256, 0])    # one op: it flips bit 256, and jumps to itself
+cause, op_count, *_ = memory.run(io_device.read_bit, io_device.write_bit, IOReadOnEOF)
+assert cause == native.TERM_LOOPING
+```
 
 Benchmark them yourself with `python tests/benchmarks/benchmark_interpreter.py` (results and the
 w=32-vs-w=64 recommendation are recorded in [tests/benchmarks/benchmark_results.md](tests/benchmarks/benchmark_results.md)).
@@ -173,16 +224,34 @@ The interpreter's IO is pluggable: `--io MODE` picks one complete IO device.
 fj --run program.fjm --io pc
 ```
 
-- **`--io standard`** (the default) - input/output over the terminal.
-- **`--io pc`** - an interactive window: live keyboard input **and** a scaled 256-color screen,
+- **`--io standard`** - input/output over the terminal.
+- **`--io pc`** - an interactive window: live keyboard input **and** a scaled screen,
   in one window the device owns (F11 toggles fullscreen, closing it stops the run). Needs
-  pygame (`pip install flipjump[io]`); works on Windows, Linux and macOS.
+  pygame-ce (`pip install flipjump[io]`), not upstream pygame (the window refuses it); works on
+  Windows, Linux and macOS.
+
+A program can carry its own defaults in the `.fjm` header, so `fj --run program.fjm` is all it takes:
+
+```bash
+fj --asm game.fj -o game.fjm --io-mode pc --flat-memory
+fj --run game.fjm                                        # runs with the pc window, in flat memory
+```
+
+- **`--io-mode MODE`** (assembling): the default io device - `standard` (the default) or `pc`.
+  `--io MODE` overrides it at run time.
+- **`--flat-memory`**: the whole program in the native engine's flat array (fastest; costs memory for its
+  whole span). Compiled in when assembling; `--flat-memory` / `--no-flat-memory` override it when running.
+  If the flat allocation fails, the run stops and says so (`--no-flat-memory` runs it slower).
+
+From python, `flipjump.assemble(..., io_mode=, flat_memory=)` compiles them in and `flipjump.run` /
+`flipjump.debug` follow them the same way (`flat_memory=True / False` or an `io_device` override them).
 
 Each mode is one complete `IODevice` that owns all of its channels (and window, if any).
 Adding a new device (e.g. a windowed text console, or one that also
 drives speakers/printer) is one entry in `IO_MODES` (`io_devices/cli_devices.py`) plus its
 device class. Devices can also read the program's memory through the `DeviceMemory` hook
-(`IODevice.attach_memory`) - e.g. the screen reads pixel data straight from memory. Headless /
+(`IODevice.attach_memory`); the screen and keyboard protocols are
+[io_devices/README.md](flipjump/interpreter/io_devices/README.md). Headless /
 scripted devices (a scripted keyboard + PNG frames, a plain `InMemoryScreen`, ...) are built
 programmatically and passed to `fjm_run.run(io_device=...)` - e.g. `PcIO.headless(events, dir)`.
 </details>
@@ -219,6 +288,7 @@ _You can also use the `flipjump.assemble_run_according_to_cmd_line_args(cmd_line
   - [fjm/](flipjump/fjm) - Tools for reading/writing .fjm (flipjump-memory) files.
   - [interpreter/fjm_run.py](flipjump/interpreter/fjm_run.py) - Interpreter + debugger for assembled fj files.
   - [interpreter/_fjcore.c](flipjump/interpreter/_fjcore.c) - The optional native engine: the run-loop in C (~100x faster than the pure-python loop).
+  - [native.py](flipjump/native.py) - The native engine's public names, for python code that drives it itself.
   - [assembler/](flipjump/assembler) - Components for assembling FlipJump code.
     - [fj_parser.py](flipjump/assembler/fj_parser.py) - Pythonic lex/yacc parser.
     - [preprocessor.py](flipjump/assembler/preprocessor.py) - Unwinds all macros and reps (repetitions).

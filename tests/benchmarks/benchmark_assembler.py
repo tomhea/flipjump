@@ -22,6 +22,7 @@ import sys
 import tempfile
 from pathlib import Path
 from time import time
+from typing import List
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -46,7 +47,7 @@ def generate_lut64k_fj(target_path: Path) -> None:
 
 
 def benchmark(name: str, fj_path: Path, runs: int, profile: bool) -> None:
-    durations = []
+    durations: List[float] = []
     for _ in range(runs):
         with tempfile.TemporaryDirectory() as temp_dir:
             fjm_path = Path(temp_dir) / 'out.fjm'
@@ -54,7 +55,7 @@ def benchmark(name: str, fj_path: Path, runs: int, profile: bool) -> None:
             if profile:
                 profiler = cProfile.Profile()
                 profiler.enable()
-            assemble([fj_path], fjm_path, memory_width=64, print_time=runs == 1)
+            assemble([fj_path], fjm_path, memory_width=64, show_progress=runs == 1)
             if profile:
                 profiler.disable()
             durations.append(time() - start_time)

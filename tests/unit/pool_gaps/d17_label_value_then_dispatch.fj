@@ -1,0 +1,13 @@
+// D17: `wflip x+w, L3` writes a label's address into x's word as a value (L3 is no table), and the dispatch that
+// follows reads it. Flipped xor the base like an arm, it would leave the word armed twice - so the word is unpinned.
+stl.startup
+    ;start
+L3: ;start
+start:
+    wflip x+w, L3
+    hex.xor z, x
+    hex.print_as_digit z, 0
+    stl.loop
+    pad 32
+x:  hex.hex 0
+z:  hex.hex 0

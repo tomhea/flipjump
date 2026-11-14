@@ -1,0 +1,11 @@
+// C14: a user macro that happens to live in a namespace named __relocatable__ (no pad before its call).
+ns util {
+  ns __relocatable__ {
+    def emit c {
+        stl.output c
+    }
+  }
+}
+stl.startup
+    util.__relocatable__.emit 'Q'
+    stl.loop

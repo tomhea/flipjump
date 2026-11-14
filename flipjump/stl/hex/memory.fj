@@ -7,9 +7,11 @@ ns hex {
     // This is another basic variable in the FlipJump standard library - a hexadecimal (can contain only 0-15).
     // you can't place it as any other standard library macro, as "running" this line is undefined behavior.
     // The hex (and hex.vec) should be placed in a place that won't run.
+    // val is clamped to 0..15 (hex.vec takes value's hex digits: a negative or a big value wraps).
     def hex val {
         ;(val > 0xf ? 0xf : (val < 0 ? 0 : val)) * dw
     }
+    // a hex of value 0.
     def hex {
         .hex 0
     }
@@ -20,6 +22,7 @@ ns hex {
     def vec n, value {
         rep(n, i) .hex (value>>(4*i))&0xf
     }
+    // a hex[:n] of value 0.
     def vec n {
         rep(n, i) .hex
     }
@@ -70,6 +73,7 @@ ns hex {
 
     // Complexity: 4 (avg. 2: #on-bits)
     //   hex ^= val (constant)
+    // val is clamped to 0..15 (the n form takes val's hex digits).
     def xor_by hex, val {
         wflip hex+w, (val > 0xf ? 0xf : (val < 0 ? 0 : val)) * dw
     }
@@ -83,6 +87,7 @@ ns hex {
     //  Time Complexity: @+4
     // Space Complexity: @+16
     //   hex = val (constant)
+    // val is clamped to 0..15 (the n form takes val's hex digits).
     def set hex, val {
         .zero hex
         .xor_by hex, val

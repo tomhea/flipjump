@@ -1,0 +1,16 @@
+// C28: a correct program whose code goes to a higher segment and comes back lower, with a declared table
+// (hex.xor) on both sides.
+stl.startup
+    hex.xor y, x
+    ;high
+segment 0x4000
+high:
+    hex.xor y, x
+    ;low
+segment 0x2000
+low:
+    hex.xor y, x
+    hex.print_as_digit y, 0
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

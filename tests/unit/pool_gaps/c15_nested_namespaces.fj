@@ -1,0 +1,32 @@
+// C15: `__relocatable__` as an OUTER namespace (not innermost) is not a declaration; at top level it is.
+ns __relocatable__ {
+  ns inner {
+    def table start, a {
+      start:
+        ;a
+    }
+  }
+}
+ns __relocatable__ {
+    def top start, a {
+      start:
+        ;a
+    }
+}
+stl.startup
+    wflip x+w, T, x
+    pad 16
+    __relocatable__.inner.table T, o1
+  e1:
+    wflip x+w, T
+    wflip x+w, U, x
+    pad 16
+    __relocatable__.top U, o2
+  e2:
+    wflip x+w, U
+    stl.loop
+o1: stl.output '1'
+    ;e1
+o2: stl.output '2'
+    ;e2
+x:  hex.hex 0

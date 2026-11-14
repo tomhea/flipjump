@@ -10,6 +10,7 @@ ns bit {
     def bit value {
         ; value ? dw : 0
     }
+    // a bit of value 0.
     def bit {
         .bit 0
     }
@@ -20,6 +21,7 @@ ns bit {
     def vec n, value {
         rep(n, i) .bit (value>>i)&1
     }
+    // a bit[:n] of value 0.
     def vec n {
         rep(n, i) .bit
     }
@@ -106,7 +108,7 @@ ns bit {
     // Complexity: n(2@+5)
     // Space: n(3@+8)
     //   a[:n], b[:n] = b[:n], a[:n]
-    // a,b are bit.vec[:n].
+    // a,b are bit.vec[:n]. They must not overlap, unless a == b.
     def swap n, a, b {
         rep(n, i) .swap a+i*dw, b+i*dw
     }
