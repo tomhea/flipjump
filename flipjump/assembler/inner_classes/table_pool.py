@@ -107,11 +107,6 @@ class TableSite:
     address: int  # where it went; 0 means it stayed inline
 
 
-# What BlockPool.defer decides for a table the expansion reached
-DEFER_OUT = 'out'  # it leaves the op stream, and is placed once the expansion is done
-DEFER_TOO_WIDE = 'too_wide'  # it stays inline: no slot is wide enough
-DEFER_INLINE = 'inline'  # it stays inline: it has no group
-
 # Why a table stayed inline (the keys of BlockPool.kept_inline; OffsetGuard.may_move gives two more)
 KEPT_NO_JUMP_WORD = 'it is dispatched through no word the pool can name'
 KEPT_RUNTIME_WORD = "it is dispatched through one of the runtime's words"
@@ -361,8 +356,9 @@ class BlockPool:
 
     # ---- while the expansion runs ----
 
-    def defer(self, group: Optional[str], word: Optional[Expr], ops_alignment: int, table_ops: int) -> str:
-        """Count a table the expansion reached (at its pad) in the census, and return what becomes of it (a DEFER_*).
+    def defer(self, group: Optional[str], word: Optional[Expr], ops_alignment: int, table_ops: int) -> Optional[str]:
+        """Count a table the expansion reached (at its pad) in the census. Return None if it leaves the op stream (it
+        is placed once the expansion is done), else why it stays inline: KEPT_NO_JUMP_WORD or KEPT_TOO_WIDE.
         `group` is the text of `word`, its group's jump word; both are None for a table with no group."""
         width = max(table_ops, ops_alignment)
         raw = self._raw()
@@ -372,10 +368,10 @@ class BlockPool:
                 census = self.census[group] = GroupCensus(word, {})
             census.widths[width] = census.widths.get(width, 0) + 1
         elif not raw:  # (a raw program's tables need no group: see _place_cheapest)
-            return DEFER_INLINE
+            return KEPT_NO_JUMP_WORD
         if width > self.max_slot_ops and not raw:
-            return DEFER_TOO_WIDE
-        return DEFER_OUT
+            return KEPT_TOO_WIDE
+        return None
 
     # ---- once the expansion is done ----
 

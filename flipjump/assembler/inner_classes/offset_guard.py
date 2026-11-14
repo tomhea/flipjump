@@ -10,7 +10,7 @@ Words used here (the pool's own words are in table_pool.py):
 from __future__ import annotations
 
 import bisect
-from typing import Callable, Dict, List, NoReturn, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, List, NoReturn, Optional, Set, Tuple
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException, FlipJumpPreprocessorException
 from flipjump.assembler.inner_classes.expr import Expr
@@ -95,6 +95,12 @@ class OffsetGuard:
     def table_moved(self, anchor: int, table: str) -> None:
         self._cut(anchor, f'the place of the table {table}, which moved out of {hex(anchor)}', False)
         self.moved_tables.append(table)
+
+    def tables_placed(self, extents: Iterable[Tuple[int, int]], inline_end: int) -> None:
+        """Record where the moved tables went: `extents` are their (start, end), in the order they moved.
+        `inline_end` is where the pool starts, now that it is placed."""
+        self.inline_end = inline_end
+        self.tables = sorted((start, end, table) for (start, end), table in zip(extents, self.moved_tables))
 
     def pad_realigned(self, address: int, ops_alignment: int) -> None:
         """Record that the `pad` at `address` pads differently than without the pool. An operand across it is

@@ -317,7 +317,7 @@ def test_a_declared_table_moves_and_the_program_runs_the_same(tmp_path: Path) ->
 
 def test_a_moved_table_holds_the_ops_its_declaration_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """a declared table holds only labels and `a;b` ops, so its expansion is the ops relocatable_call counts
-    (end_relocation asserts it; it was a refusal no program could reach). The control: a miscount is caught."""
+    (TableMover.end asserts it; it was a refusal no program could reach). The control: a miscount is caught."""
     labels = expand_labels(_declared(), tmp_path, BlockPool(W, POOL_BASE))
     assert any(address >= POOL_BASE for address in labels.values())
     counted = preprocessor.relocatable_call
@@ -412,9 +412,9 @@ def test_unpinned_words_are_every_word_of_each_cell() -> None:
 def test_defer_counts_the_census_and_keeps_a_too_wide_table_inline() -> None:
     pool = BlockPool(W, POOL_BASE)
     word = Expr('g')
-    assert [pool.defer('g', word, 16, width) for width in (16, 16, 31)] == [table_pool.DEFER_OUT] * 3
-    assert pool.defer('g', word, 16, 40) == table_pool.DEFER_TOO_WIDE  # wider than max_slot_ops (32)
-    assert pool.defer(None, None, 16, 16) == table_pool.DEFER_INLINE
+    assert [pool.defer('g', word, 16, width) for width in (16, 16, 31)] == [None] * 3  # they leave the stream
+    assert pool.defer('g', word, 16, 40) == table_pool.KEPT_TOO_WIDE  # wider than max_slot_ops (32)
+    assert pool.defer(None, None, 16, 16) == table_pool.KEPT_NO_JUMP_WORD
     assert pool.census == {'g': GroupCensus(word, {16: 2, 31: 1, 40: 1})}
 
 
@@ -463,9 +463,10 @@ def test_the_runtime_words_are_never_relocated() -> None:
     pool = BlockPool(W, POOL_BASE)
     data = PreprocessorData(W, {}, DEFAULT_MAX_MACRO_RECURSION_DEPTH, table_pool=pool)
     data.labels['stl.IO'] = 64
-    assert not data.begin_relocation(16, '', 16, sum_expr('stl.IO', 32), 'T')
+    assert data.mover is not None
+    assert not data.mover.begin(16, '', 16, sum_expr('stl.IO', 32), 'T')
     assert pool.kept_inline == {table_pool.KEPT_RUNTIME_WORD: 1} and not pool.census  # it stayed inline
-    assert data.begin_relocation(16, '', 16, sum_expr('x', 32), 'T')
+    assert data.mover.begin(16, '', 16, sum_expr('x', 32), 'T')
     assert len(pool.census) == 1 and len(pool.kept_inline) == 1
 
 

@@ -63,9 +63,16 @@ def resolve_macros(
     data = PreprocessorData(
         memory_width, macros, DEFAULT_MAX_MACRO_RECURSION_DEPTH, save_debug_labels=False, table_pool=table_pool
     )
-    data.result_ops.labels = data.pool_ops.labels = {}
-    if pads is not None:
-        data.pads = pads
+    data.result_ops.labels = {}
+    if data.mover is not None:
+        data.mover.table_ops.labels = {}
+    if pads is not None:  # record every address a `pad` aligns (or a segment starts at), as OffsetGuard.pads does
+
+        def aligned(address: int, bits: int) -> None:
+            if address:
+                pads[address] = max(pads.get(address, 0), bits)
+
+        data.aligned = aligned  # type: ignore[method-assign]
     expand = preprocessor.resolve_macro_aux
 
     def expand_recording(
