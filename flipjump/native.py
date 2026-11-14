@@ -1,10 +1,13 @@
 """
-The native (C) engine's memory, for code that drives the engine itself: it loads the words, runs them, and may
-reset the memory and run it again. `flipjump.run` does all of this for an .fjm file.
+The native (C) engine's memory, for code that drives the engine itself: it loads the words and runs them, and
+after `freeze()`, `reset()` restores the memory for another run. `flipjump.run` does all of this for an .fjm file.
 
     from flipjump import native
+    from flipjump.interpreter.io_devices.BrokenIO import BrokenIO
+    from flipjump.utils.exceptions import IOReadOnEOF
 
-    memory = native.Memory(64)  # the memory width, up to 64
+    io_device = BrokenIO()  # any IODevice
+    memory = native.Memory(64)  # the memory width: 8, 16, 32 or 64
     memory.add_segment(0, 8)  # the segment's first word, and its length in words
     memory.set_words(0, [256, 0])  # one op: it flips bit 256, and jumps to itself
     cause, op_count, *_ = memory.run(io_device.read_bit, io_device.write_bit, IOReadOnEOF)

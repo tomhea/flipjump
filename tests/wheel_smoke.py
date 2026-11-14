@@ -49,7 +49,7 @@ PROGRAMS = {
 }
 
 # exact, deterministic op-counts. a miscompile on any arch changes these - they are the
-# cross-platform correctness anchor. (the sieve's also change when the stl's macros change.)
+# cross-platform correctness anchor. (they also change when the stl macros a program uses change.)
 GOLDEN_OP_COUNTS = {
     ('loop', 32): 298_927_147,
     ('loop', 64): 351_500_749,

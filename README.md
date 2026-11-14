@@ -194,13 +194,17 @@ The interpreter has three engines:
 - **The featured loop** - used for `--trace`/breakpoints, or with `--profile` for the full
   per-op statistics (flips/jumps percentages).
 
-Python code can drive the native engine itself with `flipjump.native`: its `Memory` loads words, runs them,
-and can be reset and run again (the import raises an ImportError where the engine is not built):
+Python code can drive the native engine itself with `flipjump.native`: its `Memory` loads words and runs them,
+and after `freeze()`, `reset()` restores it for another run (the import raises an ImportError where the engine
+is not built):
 
 ```python
 from flipjump import native
+from flipjump.interpreter.io_devices.BrokenIO import BrokenIO
+from flipjump.utils.exceptions import IOReadOnEOF
 
-memory = native.Memory(64)       # the memory width, up to 64
+io_device = BrokenIO()           # any IODevice
+memory = native.Memory(64)       # the memory width: 8, 16, 32 or 64
 memory.add_segment(0, 8)         # the segment's first word, and its length in words
 memory.set_words(0, [256, 0])    # one op: it flips bit 256, and jumps to itself
 cause, op_count, *_ = memory.run(io_device.read_bit, io_device.write_bit, IOReadOnEOF)
