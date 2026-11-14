@@ -69,7 +69,7 @@ def test_every_test_program_is_the_same_program_with_the_pool(program: Tuple[str
     try:
         proof = prove_relocation(memory_width, _macros(files, memory_width, use_stl), pool)
     except FlipJumpPreprocessorException as refused:
-        assert 'Raise pool_end' in str(refused)  # prime_sieve's reserve fills the memory above its tables
+        assert 'has no room for its tables' in str(refused)  # prime_sieve's reserve fills the memory above them
         pytest.skip('the program leaves its tables no room')
     else:
         assert proof.mismatches == []

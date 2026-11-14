@@ -33,6 +33,7 @@ from flipjump.utils.constants import (
     LAST_OPS_DEBUGGING_LIST_DEFAULT_LENGTH,
     DEFAULT_MAX_MACRO_RECURSION_DEPTH,
     FLIPJUMP_VERSION,
+    MACRO_SEPARATOR_STRING,
 )
 from flipjump.utils.exceptions import FlipJumpFlatMemoryException, FlipJumpReadFjmException, IODeviceException
 from flipjump.utils.functions import bad_define_message, get_file_tuples, get_temp_directory_suffix
@@ -157,14 +158,16 @@ def run(in_fjm_path: Path, debug_file: Optional[Path], args: argparse.Namespace,
 
 
 def parse_unpinned_cells(text: str, error_func: ErrorFunc) -> List[UnpinnedCell]:
-    """Parse --pin-all-but's value: `a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but)."""
+    """Parse --pin-all-but's value: `a,b:4` -> ['a', ('b', 4)] (see BlockPool's pin_all_but). An empty value is no
+    cell: every word is pinned."""
     cells: List[UnpinnedCell] = []
-    for item in filter(None, (part.strip() for part in text.split(','))):
-        label, colon, ops = item.partition(':')
-        if not colon:
-            cells.append(label)
-        elif ops.isdigit() and int(ops) > 0:
+    for item in (part.strip() for part in text.split(',')) if text.strip() else ():
+        # A macro's own label holds colons too (`f1:l3:go---d`): what follows its last colon holds the `---`.
+        label, colon, ops = item.rpartition(':')
+        if colon and label and ops.isascii() and ops.isdecimal() and int(ops) > 0:
             cells.append((label, int(ops)))
+        elif item and (not colon or MACRO_SEPARATOR_STRING in ops):
+            cells.append(item)
         else:
             error_func(f'--pin-all-but expects LABEL or LABEL:OPS (OPS a positive number), got {item!r}')
     return cells
@@ -501,8 +504,8 @@ def add_assemble_only_arguments(parser: argparse.ArgumentParser) -> None:
         '--pin-all-but',
         metavar='LABEL[:OPS],...',
         help="with --pool-tables: pin every dispatch word (fewer ops) except these cells, each LABEL (up to the next "
-        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong. "
-        "Without it, a program that uses pointers pins nothing",
+        "label) or LABEL:OPS. List every cell the program reads or writes through a pointer, or it runs wrong "
+        "(an empty list, \"\", pins every word). Without it, a program that uses pointers pins nothing",
     )
 
     asm_arguments.add_argument('--werror', help="treat all assemble warnings as errors", action='store_true')

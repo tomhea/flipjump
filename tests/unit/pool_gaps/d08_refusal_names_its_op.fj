@@ -1,0 +1,63 @@
+// D08: the operand `L + 0x1000` (in the macro `jumper`, at 0x140) is pending when the segment it reaches starts,
+// three ops later: its refusal names its own op and macro, not where the expansion had got to.
+dw = 2 * w
+def startup @ code_start > IO {
+    ;code_start
+  IO:
+    ;0
+  code_start:
+}
+def outbit b < IO {
+    IO + b;
+}
+def outc c {
+    rep(8, i) outbit (c >> i) & 1
+}
+def halt @ l {
+  l:
+    ;l
+}
+ns my {
+  ns __relocatable__ {
+    def table start, e0, e1, e2, e3 {
+      start:
+        ;e0
+        ;e1
+        ;e2
+        ;e3
+    }
+  }
+}
+def go x, e0, e1, e2, e3 @ T, end {
+    wflip x+w, T, x
+    pad 4
+    my.__relocatable__.table T, e0, e1, e2, e3
+  end:
+    wflip x+w, T
+}
+// a declared table nobody runs: `;skip` jumps over it
+def dead x @ T, skip, h {
+    ;skip
+    pad 4
+    my.__relocatable__.table T, h, h, h, h
+    wflip x+w, T
+  h:
+    ;h
+  skip:
+}
+def jumper L {
+    ;L + 0x1000
+}
+def filler {
+    ;0
+    ;0
+    ;0
+}
+startup
+    dead x
+L:
+    jumper L
+    filler
+x:  ;0
+segment 0x1000
+    halt

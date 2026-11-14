@@ -1,0 +1,13 @@
+// D15: `;x` jumps through x's word while it is not armed: plain, it rests at `3*dw` (the `;exit` op). Pinned, it
+// would rest at its base too and run a table entry - so the word is unpinned.
+stl.startup
+    ;start
+    ;exit
+start:
+    hex.xor y, x
+    ;x
+exit:
+    stl.output 'E'
+    stl.loop
+x:  hex.hex 3
+y:  hex.hex 0

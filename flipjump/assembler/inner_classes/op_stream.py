@@ -457,13 +457,15 @@ class OpStream:
 
     def label_address(self, encoded: int, labels: Dict[str, int]) -> int:
         """Return the address of the label that a VALUE_ADDRESS operand (its slot holds ~encoded) names."""
-        ref = self.refs[encoded >> 2]
-        if encoded & 3 != TAG_EXPR:
-            return labels[ref]
-        linear = linear_sum(ref)
-        label = None if linear is None else linear[0]
-        assert label is not None  # a VALUE_ADDRESS expression is one label plus a constant
-        return labels[label]
+        label = self.refs[encoded >> 2]
+        if encoded & 3 == TAG_EXPR:
+            linear = linear_sum(label)
+            label = None if linear is None else linear[0]
+            assert label is not None  # a VALUE_ADDRESS expression is one label plus a constant
+        address = labels.get(label)
+        if address is None:
+            return Expr(label).exact_eval(labels)  # raises the Expr's own "Can't evaluate label"
+        return address
 
     def rebuild_operand(self, slots: Iterator[int]) -> Expr:
         """Read the next operand's slots from `slots` and return its Expr (for messages and iteration)."""

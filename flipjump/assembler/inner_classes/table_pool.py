@@ -50,6 +50,7 @@ from typing import (
     Union,
 )
 
+from flipjump.utils.constants import MACRO_SEPARATOR_STRING
 from flipjump.utils.exceptions import FlipJumpExprException, FlipJumpPreprocessorException
 from flipjump.assembler.inner_classes.expr import Expr
 from flipjump.assembler.inner_classes.offset_guard import OffsetGuard
@@ -150,6 +151,12 @@ class DeferredTables:
     def width(self, index: int) -> int:
         """Return how many ops table `index` needs in a slot: its ops, or its alignment if that is more."""
         return max(self.sizes[index], self.aligns[index])
+
+
+def _written_in_source(label: str) -> bool:
+    """Is `label` one the program's source declares? Not one the assembler adds, whose own name has a `:` (a macro's
+    `:start:` label for the debugging file, a `$:` label)."""
+    return ':' not in label.rpartition(MACRO_SEPARATOR_STRING)[2]
 
 
 def _pow2_ceil(value: int) -> int:
@@ -378,6 +385,8 @@ class BlockPool:
     def place_deferred(self, tables: DeferredTables, labels: LabelsDict, end: int) -> Sequence[int]:
         """Place every queued table and return their addresses; 0 means the table stayed inline. `end` is where the
         program ends."""
+        if not len(tables.sizes):
+            return ()
         self._choose_base(end)
         self.alias = self._groups_sharing_a_word(labels)
         groups = self._merged_census()
@@ -575,9 +584,15 @@ class BlockPool:
         return addresses
 
     def _no_room(self) -> FlipJumpPreprocessorException:
+        if self.pool_end is not None and self.pool_end < 1 << self.memory_width:
+            advice = 'Raise pool_end'
+        elif self.after_program:
+            advice = 'The program leaves them no room below the top of memory: move fewer tables (max_slot_ops)'
+        else:
+            advice = 'Lower pool_base'
         return FlipJumpPreprocessorException(
             f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
-            f'tables. Raise pool_end, or assemble without the pool.'
+            f'tables. {advice}, or assemble without the pool.'
         )
 
     def _slot_bits(self, width: int) -> int:
@@ -612,12 +627,14 @@ class BlockPool:
 
     def unpinned_words(self, labels: LabelsDict) -> Tuple[Set[int], List[str]]:
         """Return the addresses of the words in pin_all_but's cells (the words the assembler must not pin), and the
-        labels pin_all_but names that the program does not define."""
+        labels pin_all_but names that the program does not define. A cell named by its label alone runs to the next
+        label the source declares in the program's own code (not in a moved table)."""
         words: Set[int] = set()
         missing: List[str] = []
         if not self.pin_all_but:
             return words, missing
-        addresses = sorted(set(labels.values()))
+        pool_start = self.pool_start()
+        addresses = sorted({a for label, a in labels.items() if a < pool_start and _written_in_source(label)})
         for cell in self.pin_all_but:
             label, ops = (cell, None) if isinstance(cell, str) else cell
             if label not in labels:

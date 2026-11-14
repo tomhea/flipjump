@@ -1,0 +1,54 @@
+// D11: a relocatable macro called with a wrong number of arguments is not defined: the pooled build says so too
+// (not that it needs a `pad`).
+dw = 2 * w
+def startup @ code_start > IO {
+    ;code_start
+  IO:
+    ;0
+  code_start:
+}
+def outbit b < IO {
+    IO + b;
+}
+def outc c {
+    rep(8, i) outbit (c >> i) & 1
+}
+def halt @ l {
+  l:
+    ;l
+}
+ns my {
+  ns __relocatable__ {
+    def table start, e0, e1, e2, e3 {
+      start:
+        ;e0
+        ;e1
+        ;e2
+        ;e3
+    }
+  }
+}
+def go x, e0, e1, e2, e3 @ T, end {
+    wflip x+w, T, x
+    pad 4
+    my.__relocatable__.table T, e0, e1, e2, e3
+  end:
+    wflip x+w, T
+}
+// a declared table nobody runs: `;skip` jumps over it
+def dead x @ T, skip, h {
+    ;skip
+    pad 4
+    my.__relocatable__.table T, h, h, h, h
+    wflip x+w, T
+  h:
+    ;h
+  skip:
+}
+startup
+    ;e
+    pad 4
+    my.__relocatable__.table T, e, e
+    wflip x+w, T
+e:  halt
+x:  ;0

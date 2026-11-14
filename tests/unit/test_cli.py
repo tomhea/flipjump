@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple
 
 import pytest
 
-from flipjump import assemble_run_according_to_cmd_line_args
+from flipjump import assemble_run_according_to_cmd_line_args, flipjump_cli
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpParsingException
 from flipjump.fjm.fjm_consts import FJMVersion
@@ -494,3 +494,16 @@ def test_cli_pool_tables_refuses_a_program_that_leaves_its_tables_no_room(tmp_pa
     # prime_sieve reserves the upper half of memory after its code: no room for its tables above the program
     with pytest.raises(FlipJumpException, match='has no room for'):
         _cli_assemble(tmp_path, 'pooled', [PROGRAMS_DIR / 'prime_sieve.fj'], '--pool-tables')
+
+
+def test_pin_all_but_cells_are_labels_and_labels_with_ops() -> None:
+    cells = flipjump_cli.parse_unpinned_cells('a, b:4,f1:l3:go---d,f1:l3:go---d:2', _no_error)
+    assert cells == ['a', ('b', 4), 'f1:l3:go---d', ('f1:l3:go---d', 2)]  # a macro's own label holds colons too
+    assert flipjump_cli.parse_unpinned_cells('', _no_error) == []  # no cell: pin every word
+
+
+@pytest.mark.parametrize('text', ['d0:x', 'x:\u00b2', 'x:0', ':2', 'a,,b', ',', 'a:'])
+def test_pin_all_but_refuses_a_cell_it_cannot_read(text: str) -> None:
+    errors: List[str] = []
+    flipjump_cli.parse_unpinned_cells(text, errors.append)
+    assert errors and 'expects LABEL or LABEL:OPS' in errors[0]

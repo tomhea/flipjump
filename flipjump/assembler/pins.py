@@ -6,7 +6,7 @@ that can hold: a pinned word holds `value ^ base`, so every use of the word must
 (see unpin).
 """
 
-from typing import AbstractSet, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import AbstractSet, Dict, Iterable, List, Optional, Set, Tuple
 
 from flipjump.utils.exceptions import FlipJumpAssemblerException, FlipJumpExprException
 from flipjump.utils.progress import clear_progress_line
@@ -26,9 +26,15 @@ def pins(
     unpinned_words, missing = pool.unpinned_words(labels)
     if missing:
         pin_all_but_warning(missing, warning_as_errors)
-    pinned, _ = resolve_pinned(pool.pinned_words(), labels, memory_width, unpinned_words)
+    pinned, conflicts = resolve_pinned(pool.pinned_words(), labels, memory_width, unpinned_words)
+    if conflicts:
+        pool.unpins['two groups pin it at different bases'] = conflicts
     if pinned:
-        unpin(ops, labels, memory_width, pinned, pool)
+        try:
+            unpin(ops, labels, memory_width, pinned, pool)
+        except FlipJumpExprException:
+            # an operand has no value. Labels-resolve runs next, and says which op it is and where.
+            pinned = {}
     pool.pinned = pinned
     return pinned
 
@@ -76,11 +82,17 @@ def resolve_pinned(
 def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: Dict[int, int], pool: BlockPool) -> None:
     """Unpin each word of `pinned` whose pin can't hold, counting why in `pool.unpins`. Unpinning is always safe,
     only slower.
-    A pin holds when the word has its own op, and every flip of it is an arm (a label plus a constant, flipped xor
-    the base) or stays inside the word's window. So these unpin it: a number or computed value above the window
-    (`wflip x+w, 0x4000`, `T1 ^ T2`), an `a;b` flip above it, or a wflip across two words. And when an op that is
-    not an arm jumps through the word, no flip may be able to point it into a table below its window
-    (tables_armed_below). With the pointer runtime and no pin_all_but, no pin holds."""
+    A pinned word holds its value xor its base, and is right again only while it is armed: a table's address is
+    flipped into it xor the base, so the bases cancel. So a pin holds when:
+    - the word has its own op (the pin changes what it rests at);
+    - every address flipped into it is a table's (a label plus a constant; the label's a moved table's, or an inline
+      one's that a `pad` aligned), and so is an arm or a disarm;
+    - every other flip of it - a number, a value computed from labels (`T1 ^ T2`), an `a;b` flip - stays inside its
+      window: such a flip changes a value or moves within the armed table, the same with or without the pool;
+    - no wflip flips across it and the next word;
+    - the only ops that jump through it are its arms (`wflip word, table, word's op`): any other jump finds it
+      unarmed, holding its base too.
+    With the pointer runtime and no pin_all_but, no pin holds."""
     guard = pool.offset_guard
     assert guard is not None  # a pool's preprocessor made it
     if pool.reads_words_raw and pool.pin_all_but is None:
@@ -88,8 +100,7 @@ def unpin(stream: OpStream, labels: Dict[str, int], memory_width: int, pinned: D
     else:
         uses = WordUses(pinned, memory_width)
         uses.scan(stream, labels, guard)
-        low_tables = sorted(guard.pads.items())
-        reasons = {word: uses.why_unpin(word, base, low_tables) for word, base in pinned.items()}
+        reasons = {word: uses.why_unpin(word, base) for word, base in pinned.items()}
     for word, why in reasons.items():
         if why is not None:
             del pinned[word]
@@ -109,6 +120,7 @@ class WordUses:
         self.computed: Dict[int, int] = {}  # word -> the bits that wflips of computed values (`T1 ^ T2`) flip in it
         self.jumped: Set[int] = set()  # words that an op jumps through without being one of their arms
         self.split: Set[int] = set()  # words that a wflip across two words flips
+        self.not_tables: Set[int] = set()  # words that an address which is no table's is flipped into
 
     def scan(self, stream: OpStream, labels: Dict[str, int], guard: OffsetGuard) -> None:
         """Walk the op stream, noting every use of the words."""
@@ -133,7 +145,11 @@ class WordUses:
                 if value < 0:
                     value_kind = kind_of(~value)
                     if value_kind == VALUE_ADDRESS and word in arms:
-                        arms[word].append(guard.alignment(stream.label_address(~value, labels)))
+                        table_bits = guard.alignment(stream.label_address(~value, labels))
+                        if table_bits:
+                            arms[word].append(table_bits)
+                        else:
+                            self.not_tables.add(word)
                     value = value_of(~value, next_slot, labels)
                 return_address = next_slot()
                 if return_address < 0:
@@ -181,39 +197,25 @@ class WordUses:
             into = self.numbers if value_kind == VALUE_NUMBER else self.computed
             into[word] = into.get(word, 0) | value
 
-    def why_unpin(self, word: int, base: int, low_tables: Sequence[Tuple[int, int]]) -> Optional[str]:
-        """Return why `word`, pinned at `base`, can't stay pinned, or None if its pin holds.
-        `low_tables` is tables_armed_below's `pads`."""
+    def why_unpin(self, word: int, base: int) -> Optional[str]:
+        """Return why `word`, pinned at `base`, can't stay pinned, or None if its pin holds (see unpin)."""
         if word in self.split:
             return 'a wflip across two words'
         if word not in self.rests:
             return 'no op of its own'
-        # The word's window: its low bits, below its base's alignment and below its widest armed table. A flip inside
-        # the window changes a value or moves within the armed table, the same with or without the pool. Only an arm
-        # may flip a bit above it.
+        if word in self.not_tables:
+            return 'armed with an address that is no table'
+        # The word's window: its low bits, below its base's alignment and below its widest armed table.
         top = (base & -base).bit_length() - 1 if base else self.memory_width
         if self.arms[word]:
             top = min(top, max(self.arms[word]))
         above = ~((1 << top) - 1)
-        flipped, numbers, computed = (uses.get(word, 0) for uses in (self.flipped_bits, self.numbers, self.computed))
-        if flipped & above:
+        if self.flipped_bits.get(word, 0) & above:
             return 'a bit flip above its window'
-        if numbers & above:
+        if self.numbers.get(word, 0) & above:
             return 'armed with a number'
-        if computed & above:
+        if self.computed.get(word, 0) & above:
             return 'armed with a value computed from labels'
-        if word in self.jumped and tables_armed_below(low_tables, top, self.rests[word], flipped | numbers | computed):
-            return 'a flip below its window could arm a table there'
+        if word in self.jumped:
+            return 'an op jumps through it without arming it'
         return None
-
-
-def tables_armed_below(pads: Sequence[Tuple[int, int]], top: int, rest: int, flips: int) -> bool:
-    """Could a word that starts at `rest`, flipped by some of the bits of `flips`, point into a table of `pads` below
-    2^top? (`pads` is [(table address, log2 of its alignment in bits)], ascending.)"""
-    for address, bits in pads:
-        if address >> top:
-            break
-        above = ~((1 << bits) - 1)  # the bits above the table's alignment (all its entries share them)
-        if address & flips & above and not address & ~(rest | flips) and not rest & ~flips & above & ~address:
-            return True
-    return False

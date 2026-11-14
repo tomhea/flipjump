@@ -15,6 +15,7 @@ from flipjump import assemble, assemble_run_according_to_cmd_line_args, flipjump
 from flipjump.fjm.fjm_reader import read_fjm_header
 from flipjump.interpreter.run_defaults import FLAT_MEMORY_AUTO_MAX_WORDS
 from flipjump.assembler import pins
+from flipjump.assembler.inner_classes import op_stream
 from flipjump.assembler.fj_parser import parse_macro_tree
 from tests.unit import relocation_proof
 from tests.unit.relocation_proof import prove_relocation
@@ -77,7 +78,8 @@ GUARD_C38 = (
     r'is\.'
 )
 REACHES = 'an operand reaches over its place'
-BELOW = 'a flip below its window could arm a table there'
+JUMPED = 'an op jumps through it without arming it'
+NO_TABLE = 'armed with an address that is no table'
 GUARDED = [
     'c06_label_before_pad',
     'c07a_reach_in_plus',
@@ -147,9 +149,9 @@ FALLBACKS: Dict[Tuple[str, str], Tuple[Dict[str, int], Dict[str, int]]] = {
     ('c23_numeric_address_arm', 'cli'): ({}, {'armed with a number': 1}),
     ('c26_pointer_write_only', 'cli'): POINTERS,
     ('c27_bitwise_arm', 'cli'): ({}, {'a bit flip above its window': 1}),
-    ('c32_numeric_arm_below_window', 'cli'): ({}, {BELOW: 1}),
-    ('c33_bitwise_arm_below_window', 'cli'): ({}, {BELOW: 1}),
-    ('c34_numeric_arm_wide_window', 'cli'): ({}, {'armed with a number': 1}),
+    ('c32_numeric_arm_below_window', 'cli'): ({}, {JUMPED: 1}),
+    ('c33_bitwise_arm_below_window', 'cli'): ({}, {JUMPED: 1}),
+    ('c34_numeric_arm_wide_window', 'cli'): ({}, {NO_TABLE: 1}),
     ('c36_opaque_label_plus_offset', 'cli'): ({REACHES: 1}, {}),
 }
 PARAMS = [(name, width, pool, refusal) for (name, width), pools in CASES.items() for pool, refusal in pools.items()]
@@ -325,16 +327,24 @@ def test_without_its_check_a_program_with_a_hidden_reach_miscompiles(
 
 
 def test_a_wide_inline_arm_alone_does_not_widen_the_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # C34's check alone: with no table below the window (C32's check off), C34's numeric arm is still above the
-    # moved table's window - unpinned, and the same; widened by T2's address, it is kept and miscompiles
-    monkeypatch.setattr(pins, 'tables_armed_below', lambda pads, top, rest, flips: False)
+    # C34 arms its word with T2 too, a label at a segment's start (0x8000): that address's own alignment (15 bits) is
+    # no table's, so the arm is no arm and the word is unpinned. Taken for a table's, it would widen the word's window
+    # over the numeric arm (0x4000), and - with the jump through the unarmed word let through too - miscompile.
     source = GAPS / 'c34_numeric_arm_wide_window.fj'
     pool = _pool('cli', W, source, tmp_path)
     assemble([source], tmp_path / 'pooled.fjm', memory_width=W, print_time=False, table_pool=pool)
-    assert pool.unpins == {'armed with a number': 1}
+    assert pool.unpins == {NO_TABLE: 1}
     assert not _differs(source, tmp_path, 'cli')
     monkeypatch.setattr(OffsetGuard, 'alignment', _address_alignment)
+    monkeypatch.setattr(pins.WordUses, '_wflip', _wflip_never_jumps)
     assert _differs(source, tmp_path, 'cli')
+
+
+def _wflip_never_jumps(self: pins.WordUses, word: int, value: int, value_kind: int, return_address: int) -> None:
+    """the control: WordUses._wflip, but no wflip counts as a jump through a word without arming it"""
+    if word in self.arms and value_kind != op_stream.VALUE_ADDRESS:
+        into = self.numbers if value_kind == op_stream.VALUE_NUMBER else self.computed
+        into[word] = into.get(word, 0) | value
 
 
 def _proof(name: str) -> List[str]:
@@ -583,3 +593,119 @@ def test_a_program_that_leaves_its_tables_no_room_is_refused(tmp_path: Path) -> 
     source = [PROGRAMS_DIR / 'prime_sieve.fj']
     with pytest.raises(FlipJumpException, match='has no room for its tables'):
         assemble(source, tmp_path / 'pooled.fjm', memory_width=64, print_time=False, table_pool=BlockPool(64))
+
+
+# --- the D cases: programs that reviews of the pool crafted, most of them without the stl ---
+
+# program: (memory width, with the stl, SAME or the words of its refusal)
+D_CASES: Dict[str, Tuple[int, bool, Optional[str]]] = {
+    # operands across segments that are not emitted in rising address order
+    'd01_segment_gap': (
+        32,
+        False,
+        r'the operand `L \+ 4096` of the op at 0x4000 \(in the top level\) reaches across the start of the segment at '
+        r'0x1000, which stays where it is',
+    ),
+    'd02_segment_back': (32, False, SAME),  # kept inline
+    'd03_segment_far_between': (32, False, SAME),  # kept inline
+    'd04_pad_slot_back': (32, False, r'the operand `M - 64` .* lands in the padding of the `pad 4` at 0x[0-9a-f]+'),
+    'd05_value_moves_with_label': (32, False, SAME),  # kept inline
+    # operands that were refused for no reason
+    'd06_distance_in_one_piece': (32, False, SAME),
+    'd07_ternary_unselected': (32, False, SAME),
+    # what a refusal says
+    'd08_refusal_names_its_op': (32, False, r'the operand `L \+ 4096` of the op at 0x140 \(in macro jumper\(1\)'),
+    'd09_segment_address_from_moved_code': (
+        32,
+        False,
+        r'the address of the segment at file .* \(line \d+\) \(in the top level\), is 17024 without the pool and is '
+        r'16704 with it',
+    ),
+    'd10_huge_pad': (64, False, SAME),
+    # numbers the expansion evaluates from the addresses of code that moved
+    'd12_rep_count_from_address': (
+        32,
+        True,
+        r'the count of the rep at file .*, is 1 without the pool and is 4 with it',
+    ),
+    'd13_opaque_distance_count': (
+        32,
+        True,
+        r'the count of the rep at file .*, is 31 without the pool and is 2 with it',
+    ),
+    'd14_reserve_to_absolute': (
+        32,
+        True,
+        r'the size of the reserve at file .*, is 6016 without the pool and is 7872 with it',
+    ),
+    # pins that cannot hold
+    'd15_jump_through_unarmed_word': (32, True, SAME),
+    'd16_number_arm_of_unpadded_table': (32, True, SAME),
+    'd17_label_value_then_dispatch': (32, True, SAME),
+}
+D_UNPINS = {
+    'd15_jump_through_unarmed_word': {JUMPED: 1},
+    'd16_number_arm_of_unpadded_table': {JUMPED: 1},
+    'd17_label_value_then_dispatch': {NO_TABLE: 1},
+}
+# each program's control: the check that keeps it the same program, switched off
+D_CONTROLS: Dict[str, Callable[[pytest.MonkeyPatch], None]] = {
+    'd01_segment_gap': no_refusals,
+    'd02_segment_back': _moved_unrefused,
+    'd03_segment_far_between': _moved_unrefused,
+    'd04_pad_slot_back': no_refusals,
+    'd05_value_moves_with_label': _moved_unrefused,
+    'd12_rep_count_from_address': no_refusals,
+    'd13_opaque_distance_count': no_refusals,
+    'd14_reserve_to_absolute': no_refusals,
+    'd15_jump_through_unarmed_word': _keep_every_pin,
+    'd16_number_arm_of_unpadded_table': _keep_every_pin,
+    'd17_label_value_then_dispatch': _keep_every_pin,
+}
+# d15's and d16's miscompiles never halt: they run into the 30 s timeout (with --slow)
+D_CONTROL_PARAMS = [
+    pytest.param(name, marks=[pytest.mark.slow] if name[:3] in ('d15', 'd16') else []) for name in sorted(D_CONTROLS)
+]
+
+
+def _build_both(tmp_path: Path, name: str, pool: BlockPool) -> Tuple[Path, Path]:
+    """assemble the D case `name` without a pool and with `pool`; return the two .fjm paths"""
+    memory_width, use_stl, _ = D_CASES[name]
+    plain, pooled = tmp_path / 'plain.fjm', tmp_path / 'pooled.fjm'
+    assemble([GAPS / f'{name}.fj'], plain, memory_width=memory_width, print_time=False, use_stl=use_stl)
+    assemble(
+        [GAPS / f'{name}.fj'], pooled, memory_width=memory_width, print_time=False, use_stl=use_stl, table_pool=pool
+    )
+    return plain, pooled
+
+
+@pytest.mark.parametrize('name', sorted(D_CASES))
+def test_a_reviewed_program_runs_the_same_with_the_pool_or_is_refused(tmp_path: Path, name: str) -> None:
+    memory_width, _, refusal = D_CASES[name]
+    pool = BlockPool(memory_width)
+    if refusal is not None:
+        with pytest.raises(FlipJumpException, match=refusal):
+            _build_both(tmp_path, name, pool)
+        return
+    plain, pooled = _build_both(tmp_path, name, pool)
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT' and run(pooled, 30) == expected  # two timeouts are not the same run
+    assert pool.unpins == D_UNPINS.get(name, {})
+
+
+@pytest.mark.parametrize('name', D_CONTROL_PARAMS)
+def test_without_its_check_a_reviewed_program_miscompiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    # the controls of the D cases: each check above prevents a real miscompile, which this run shows
+    D_CONTROLS[name](monkeypatch)
+    plain, pooled = _build_both(tmp_path, name, BlockPool(D_CASES[name][0]))
+    expected = run(plain, 30)
+    assert expected[1] != 'TIMEOUT' and run(pooled, 30) != expected
+
+
+def test_an_undefined_relocatable_macro_says_so_with_a_pool_too(tmp_path: Path) -> None:
+    source = GAPS / 'd11_undefined_relocatable.fj'
+    for pool in (None, BlockPool(W)):
+        with pytest.raises(FlipJumpException, match=r"macro my.__relocatable__.table\(3\) is used but isn't defined"):
+            assemble([source], tmp_path / 'p.fjm', memory_width=W, print_time=False, use_stl=False, table_pool=pool)

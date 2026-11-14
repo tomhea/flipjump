@@ -63,9 +63,16 @@ def add_segment_to_fjm(
     @param take: the caller gives fj_words away (the writer may keep it instead of copying it) and switches to new
     buffers, so neither list is cleared.
     """
-    validate_addresses(memory_width, first_address, last_address)
     if first_address == last_address:
         return
+    validate_addresses(memory_width, first_address, last_address)
+    for words in (fj_words, wflip_words):
+        if isinstance(words, list) and words and not 0 <= min(words) <= max(words) < 1 << memory_width:
+            # (a typed array, at w <= 64, refuses such a word as it is inserted: see _resolve_ops)
+            raise FlipJumpAssemblerException(
+                f'Not enough space with the {memory_width}-bits memory-width: a word of the segment at '
+                f'{hex(first_address)} does not fit in {memory_width} bits.'
+            )
 
     # Two appends instead of `fj_words + wflip_words`, which would copy every word. The data stays contiguous.
     # measured before add_data, since a writer that takes fj_words appends to it
@@ -162,9 +169,11 @@ class BinaryData:
             return WFlipSpot(self.fj_words, index, self.first_address + self.memory_width * index)
 
         if self.next_wflip_address + 2 * self.memory_width > 1 << self.memory_width:
+            after_the_pool = '' if self.wflips_at is None else ' The wflip areas come after the table pool.'
             raise FlipJumpAssemblerException(
                 f'Not enough space with the {self.memory_width}-bits memory-width: the wflip area of the segment at '
                 f'{hex(self.first_address)} reaches {hex(self.next_wflip_address + 2 * self.memory_width)}.'
+                f'{after_the_pool}'
             )
         wflip_spot = WFlipSpot(self.wflip_words, len(self.wflip_words), self.next_wflip_address)
         self.wflip_words.extend((0, 0))
@@ -407,29 +416,36 @@ def _resolve_ops(
         op_stream.PACKED_JUMP_BITS,
         op_stream.PACKED_JUMP_MASK,
     )
-    while op_index < len(kinds):
-        chunk_end = min(op_index + _PROGRESS_CHUNK, len(kinds))
-        for kind in kinds[op_index:chunk_end]:
-            if kind == FJ_PACKED:
-                packed = next_slot()
-                insert_fj_op(packed >> PACKED_JUMP_BITS, packed & PACKED_JUMP_MASK)
-            elif kind == FJ:
-                insert_fj_op(next_slot(), next_slot())
-            elif kind == FJ_POS or kind == WFLIP:
-                try:
-                    if kind == FJ_POS:
-                        _resolve_flip_jump(ops, next_slot, labels, binary_data, guard)
-                    else:
-                        _resolve_word_flip(ops, next_slot, labels, binary_data, guard)
-                except FlipJumpException as e:
-                    raise FlipJumpAssemblerException(f"{e} in op {ops.op_at(op_index)}.")
-            elif kind == PAD:
-                binary_data.insert_padding(next_slot())
-            else:
-                _resolve_object(refs[next_slot()], binary_data, fjm_writer)
-            op_index += 1
-        if on_progress is not None:
-            on_progress(op_index / len(kinds))
+    try:
+        while op_index < len(kinds):
+            chunk_end = min(op_index + _PROGRESS_CHUNK, len(kinds))
+            for kind in kinds[op_index:chunk_end]:
+                if kind == FJ_PACKED:
+                    packed = next_slot()
+                    insert_fj_op(packed >> PACKED_JUMP_BITS, packed & PACKED_JUMP_MASK)
+                elif kind == FJ:
+                    insert_fj_op(next_slot(), next_slot())
+                elif kind == FJ_POS or kind == WFLIP:
+                    try:
+                        if kind == FJ_POS:
+                            _resolve_flip_jump(ops, next_slot, labels, binary_data, guard)
+                        else:
+                            _resolve_word_flip(ops, next_slot, labels, binary_data, guard)
+                    except FlipJumpException as e:
+                        raise FlipJumpAssemblerException(f"{e} in op {ops.op_at(op_index)}.")
+                elif kind == PAD:
+                    binary_data.insert_padding(next_slot())
+                else:
+                    _resolve_object(refs[next_slot()], binary_data, fjm_writer)
+                op_index += 1
+            if on_progress is not None:
+                on_progress(op_index / len(kinds))
+    except OverflowError:  # a typed word array took a word that does not fit its width
+        width = binary_data.memory_width
+        raise FlipJumpAssemblerException(
+            f'Not enough space with the {width}-bits memory-width: a word of the op {ops.op_at(op_index)} does not '
+            f'fit in {width} bits.'
+        ) from None
 
 
 def _resolve_flip_jump(

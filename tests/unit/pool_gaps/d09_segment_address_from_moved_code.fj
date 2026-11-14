@@ -1,0 +1,55 @@
+// D09: `segment b + 0x4000`, with b after a moved table: the segment would not start where it does without the
+// pool. The refusal says it is the segment's address, and its two values.
+dw = 2 * w
+def startup @ code_start > IO {
+    ;code_start
+  IO:
+    ;0
+  code_start:
+}
+def outbit b < IO {
+    IO + b;
+}
+def outc c {
+    rep(8, i) outbit (c >> i) & 1
+}
+def halt @ l {
+  l:
+    ;l
+}
+ns my {
+  ns __relocatable__ {
+    def table start, e0, e1, e2, e3 {
+      start:
+        ;e0
+        ;e1
+        ;e2
+        ;e3
+    }
+  }
+}
+def go x, e0, e1, e2, e3 @ T, end {
+    wflip x+w, T, x
+    pad 4
+    my.__relocatable__.table T, e0, e1, e2, e3
+  end:
+    wflip x+w, T
+}
+// a declared table nobody runs: `;skip` jumps over it
+def dead x @ T, skip, h {
+    ;skip
+    pad 4
+    my.__relocatable__.table T, h, h, h, h
+    wflip x+w, T
+  h:
+    ;h
+  skip:
+}
+startup
+    dead x
+b:
+    ;b
+    ;b
+    ;b
+segment b + 0x4000
+x:  ;0

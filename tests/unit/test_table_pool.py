@@ -32,6 +32,8 @@ from flipjump.assembler.inner_classes.table_pool import (
     reserved_below,
 )
 from flipjump.fjm.fjm_reader import Reader
+from flipjump.interpreter import fjm_run
+from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.constants import DEFAULT_MAX_MACRO_RECURSION_DEPTH
 from flipjump.utils.exceptions import FlipJumpException, FlipJumpPreprocessorException
 from flipjump.utils.functions import load_debugging_labels
@@ -858,7 +860,8 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
         assert len(tables.sizes) == count
         return cost
 
-    one_label, two_labels = per_table(1), per_table(2)
+    # the least of three: another thread's allocation (xdist's) would be counted too
+    one_label, two_labels = (min(per_table(labels) for _ in range(3)) for labels in (1, 2))
     extra_label = two_labels - one_label
     print(f'deferred table: {one_label:.1f} B, a 2nd label +{extra_label:.1f} B')
     assert one_label < 80 and extra_label < 24
@@ -867,3 +870,121 @@ def test_a_deferred_table_costs_tens_of_bytes() -> None:
 def test_the_pool_is_importable_from_the_preprocessor_too() -> None:
     for name in ('BlockPool', 'heat_key'):
         assert getattr(preprocessor, name) is getattr(table_pool, name), name
+
+
+# --- the edges of the memory, and what a pool is asked ---
+
+ONE_XOR = """
+stl.startup
+    hex.xor x, y
+{EXTRA}    hex.print_as_digit x, 0
+    stl.loop
+x: hex.hex 3
+y: hex.hex 5
+"""
+
+
+def _xors(count: int) -> str:
+    """a w=16 program of `count` hex.xors: its wflip area fills the memory up to its top at 56, and passes it at 58"""
+    return (
+        'stl.startup\n'
+        + ''.join(f'    hex.xor v{i % 4}, s\n' for i in range(count))
+        + '    hex.print_as_digit v0, 0\n    hex.print_as_digit v1, 0\n    stl.loop\n'
+        + ''.join(f'v{i}: hex.hex {i + 1}\n' for i in range(4))
+        + 's: hex.hex 7\n'
+    )
+
+
+@pytest.mark.parametrize('below_the_top', [0x800, 0x1000])
+def test_a_pool_whose_last_table_ends_at_the_top_of_the_memory(tmp_path: Path, below_the_top: int) -> None:
+    source = ONE_XOR.replace('{EXTRA}', '')
+    reference, _, _ = build_and_run(source, tmp_path, None, name='inline', memory_width=64)
+    pool = BlockPool(64, (1 << 64) - below_the_top)
+    output, _, _ = build_and_run(source, tmp_path, pool, memory_width=64)
+    assert output == reference == b'6' and pool.moved == 1
+
+
+def test_a_wflip_area_that_ends_at_the_top_of_the_memory(tmp_path: Path) -> None:
+    # the pool puts the wflip area after its tables: [0xf000, 0x10000) at w=16, exactly up to the top
+    reference, _, _ = build_and_run(_xors(56), tmp_path, None, name='inline', memory_width=16)
+    pool = BlockPool(16)
+    output, _, _ = build_and_run(_xors(56), tmp_path, pool, memory_width=16)
+    assert output == reference and pool.moved and pool.wflips_at() is not None
+
+
+def test_a_program_that_outgrows_its_memory_says_so(tmp_path: Path) -> None:
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width'):
+        build_and_run(_xors(62), tmp_path, None, name='inline', memory_width=16)
+    # two ops more than fit after the pool: the wflip area passes the top
+    with pytest.raises(FlipJumpException, match='Not enough space with the 16-bits memory-width: the wflip area'):
+        build_and_run(_xors(58), tmp_path, BlockPool(16), memory_width=16)
+
+
+@pytest.mark.parametrize('extra', ['    wflip y+w, nowhere\n', '    nowhere;\n'], ids=['wflip-value', 'flip'])
+def test_an_undefined_label_is_reported_with_its_op_with_a_pool_too(tmp_path: Path, extra: str) -> None:
+    # (with a pinned word, the pins are judged before labels-resolve: the missing label is not theirs to report)
+    source = ONE_XOR.replace('{EXTRA}', extra)
+    for pool in (None, BlockPool(W)):
+        with pytest.raises(FlipJumpException, match=r"Can't evaluate label nowhere in expression nowhere in op Flip"):
+            build_and_run(source, tmp_path, pool)
+
+
+def test_a_program_with_no_table_needs_no_room_in_the_pool(tmp_path: Path) -> None:
+    source = "stl.startup\n    stl.output 'H'\n    stl.loop\n"
+    pool = BlockPool(W, pool_end=0x40)  # below the program: no table could go there
+    assert build_and_run(source, tmp_path, pool)[0] == b'H' and pool.moved == 0 and not pool.blocks
+
+
+def test_a_pool_refuses_what_it_cannot_be() -> None:
+    with pytest.raises(FlipJumpPreprocessorException, match='max_slot_ops is the widest table a slot holds, not 0'):
+        BlockPool(W, max_slot_ops=0)
+    with pytest.raises(FlipJumpPreprocessorException, match="pool_base is an address or 'after_program'"):
+        BlockPool(W, 'somewhere')
+
+
+def test_a_pool_of_another_width_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(FlipJumpException, match='the pool is for w=16, and the program is assembled at w=32'):
+        build_and_run(ONE_XOR.replace('{EXTRA}', ''), tmp_path, BlockPool(16))
+
+
+POINTER_INTO_A_VEC = """
+stl.startup_and_init_all
+    hex.set d+dw, 6
+    hex.xor e, d+dw
+    hex.set v, 0xD
+    hex.xor_hex_from_ptr v, p
+    hex.print_as_digit v, 1
+    stl.loop
+d: hex.vec 2
+e: hex.hex
+v: hex.hex
+p: hex.vec w/4, d+dw
+"""
+
+
+@pytest.mark.parametrize('debugging_file', [False, True])
+def test_a_cell_named_by_its_label_runs_to_the_next_label_of_the_source(tmp_path: Path, debugging_file: bool) -> None:
+    # `d` is a hex.vec of two: the cell `d` runs to `e`. The debugging file's labels (one at each hex.hex's start)
+    # are not the source's, and do not end it at d+dw.
+    reference, _, _ = build_and_run(POINTER_INTO_A_VEC, tmp_path, None, name='inline')
+    assert reference == b'B'
+    source = tmp_path / 'pointer.fj'
+    source.write_text(POINTER_INTO_A_VEC)
+    pool = BlockPool(W, pin_all_but=['d'])
+    fjm, debug = tmp_path / 'pooled.fjm', tmp_path / 'pooled.fjd'
+    labels = assemble(
+        [source],
+        fjm,
+        memory_width=W,
+        print_time=False,
+        table_pool=pool,
+        debugging_file_path=debug if debugging_file else None,
+    )
+    assert pool.pinned and not {labels['d'] + W, labels['d'] + OP_BITS + W} & set(pool.pinned)
+    assert _run_fjm(fjm) == reference
+
+
+def _run_fjm(fjm_path: Path) -> bytes:
+    io_device = FixedIO(b'')
+    fjm_run.run(fjm_path, io_device=io_device, print_time=False)
+    return io_device.get_output()

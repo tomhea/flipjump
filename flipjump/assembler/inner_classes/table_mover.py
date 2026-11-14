@@ -56,6 +56,11 @@ class TableMover:
             raise FlipJumpPreprocessorException(
                 'table-placement: this pool already laid out an assembly; construct a fresh one for every assemble()'
             )
+        if pool.memory_width != data.memory_width:
+            raise FlipJumpPreprocessorException(
+                f'table-placement: the pool is for w={pool.memory_width}, and the program is assembled at '
+                f'w={data.memory_width}'
+            )
         self.data = data  # the preprocessor it is part of
         self.pool = pool
         # checks that moving a table changes no operand
@@ -149,7 +154,8 @@ class TableMover:
         address: the same address with or without the pool."""
         start = self.data.curr_address
         self.refuse_reaching_the_pool(previous_end)
-        self.refuse_reaching_the_pool(start + 1)
+        if start >= self.pool.pool_start():
+            raise reached_the_pool(start, self.pool.pool_start())
         self.code_end = max(self.code_end, previous_end)
         self.shift = 0
         self.guard.segment_started(start, previous_end)
