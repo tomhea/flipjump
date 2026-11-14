@@ -239,19 +239,18 @@ def test_cli_define_repeated_for_a_declared_name_takes_the_last(tmp_path: Path) 
     assert twice == once
 
 
-def test_cli_define_refusal_names_the_defines_file(tmp_path: Path) -> None:
-    # the error points at the -D, not at the user's program (a position that exists there, and is wrong)
+def test_cli_define_refusal_names_the_define(tmp_path: Path) -> None:
+    # the error names the -D, not a line of a file: not of the user's program (a position that exists there, and is
+    # wrong), and not of the defines file (which the user never wrote)
     fj_path = tmp_path / 'prog.fj'
     fj_path.write_text(DEFINE_PROG)
     with pytest.raises(FlipJumpParsingException) as excinfo:
         assemble_run_according_to_cmd_line_args(
             cmd_line_args=['--asm', '-o', str(tmp_path / 'out.fjm'), '-w', '32', '-D', 'NOPE = 5', str(fj_path)]
         )
-    # the reported file, not any substring: the temp directory is itself named "..__prog.fj__temp_directory"
     message = str(excinfo.value)
-    reported = re.search(r'in file (.+?) \(line', message)
-    assert reported is not None, message
-    assert Path(reported.group(1)).name == '_defines.fj', reported.group(1)
+    assert 'Error in the define of "NOPE" (-D NOPE=...)' in message and 'override of non-defined constant' in message
+    assert re.search(r'in file .+? \(line', message) is None, message
 
 
 def _no_error(message: str) -> None:

@@ -8,7 +8,9 @@ changes nothing in what is assembled.
 
 import inspect
 import io
+import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -84,13 +86,31 @@ def test_show_progress_false_prints_nothing(monkeypatch: pytest.MonkeyPatch) -> 
     assert terminal.getvalue() == ''
 
 
-def test_clear_progress_line_erases_the_bar_before_other_output(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_safe_print_erases_the_bar_prints_and_draws_it_again(monkeypatch: pytest.MonkeyPatch) -> None:
     terminal = _terminal(monkeypatch)
     with ProgressBar('  parsing:  ') as bar:
         bar.update(0.5)
-        progress_module.clear_progress_line()
-        assert _screen_row(terminal.getvalue()).strip() == ''
+        progress_module.safe_print('a warning')
+        rows = terminal.getvalue().split('\n')
+        assert _screen_row(rows[0]).rstrip() == 'a warning'  # on the bar's row, with nothing of the bar left
+        assert _screen_row(rows[1]).startswith('  parsing:  ###############---------------  50%')  # drawn again below
     assert progress_module._shown_bar is None
+    progress_module.safe_print('no bar is shown')  # with no bar, it is print()
+    assert terminal.getvalue().endswith('no bar is shown\n')
+
+
+def test_a_terminal_too_narrow_for_a_bar_shows_only_the_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    terminal = _terminal(monkeypatch)
+    monkeypatch.setattr(shutil, 'get_terminal_size', lambda: os.terminal_size((30, 24)))
+    with ProgressBar('  loading memory:  ') as bar:
+        assert not bar.active and bar.get_active_update_function() is None
+        bar.update(0.5)
+    assert '#' not in terminal.getvalue() and terminal.getvalue().startswith('  loading memory:  ')
+    monkeypatch.setattr(shutil, 'get_terminal_size', lambda: os.terminal_size((60, 24)))
+    with ProgressBar('  loading memory:  ') as bar:  # 60 columns: a 22-column bar, and the line still fits
+        assert bar.get_active_update_function() == bar.update
+        bar.update(0.5)
+        assert len(_screen_row(terminal.getvalue().split('\n')[-1])) < 60
 
 
 class _Recorder:

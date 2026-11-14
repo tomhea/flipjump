@@ -20,7 +20,7 @@ struct {
         u32 io_mode;    // the default io device (IO_MODE_*); `fj --io` overrides
         u32 reserved;   // 0
     }
-    { // for version 4
+    { // for versions >= 4
         u64 segments_size;  // the byte length of the compressed segment table that follows
     }
     struct segment {
@@ -28,7 +28,7 @@ struct {
         u64 segment_length; // in memory words (w-bits)
         u64 data_start;     // in the outer-struct.data words (w-bits)
         u64 data_length;    // in the outer-struct.data words (w-bits)
-    } *segments;        // segments[segment_num] (lzma2-compressed in version 4)
+    } *segments;        // segments[segment_num] (lzma2-compressed since version 4)
     u8* data;       // the data: little-endian words of word_size/8 bytes (might be compressed in some versions)
 } fjm_file;     // FlipJump Memory file
 """

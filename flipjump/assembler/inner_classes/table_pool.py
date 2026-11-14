@@ -519,7 +519,7 @@ class BlockPool:
         for k in range(len(order), hot_groups - 1, -1):
             if _align_up(ends[k], widest[k]) + room[k] <= limit:
                 return k
-        raise self._no_room()
+        raise self._no_room_exception()
 
     def _place_in_blocks(self, tables: DeferredTables, blocks_end: int) -> Sequence[int]:
         """Return every table's address: a slot of its group's block, or a place in the overflow region (from
@@ -573,7 +573,7 @@ class BlockPool:
             if cursor <= self._pool_limit():
                 break
         else:
-            raise self._no_room()
+            raise self._no_room_exception()
         addresses = _zero_addresses(self.memory_width, len(tables.sizes))
         for index, address in placed:
             addresses[index] = address
@@ -581,7 +581,7 @@ class BlockPool:
             self.unpins['the pointer runtime'] = groups
         return addresses
 
-    def _no_room(self) -> FlipJumpPreprocessorException:
+    def _no_room_exception(self) -> FlipJumpPreprocessorException:
         if self.pool_end is not None and self.pool_end < 1 << self.memory_width:
             advice = 'Raise pool_end'
         elif self.after_program:

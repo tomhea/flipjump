@@ -69,11 +69,11 @@ def resolve_macros(
         data.mover.table_ops.labels = {}
     if pads is not None:  # record every address a `pad` aligns (or a segment starts at), as OffsetGuard.pads does
 
-        def aligned(address: int, bits: int) -> None:
+        def record_alignment(address: int, bits: int) -> None:
             if address:
                 pads[address] = max(pads.get(address, 0), bits)
 
-        data.aligned = aligned  # type: ignore[method-assign]
+        data.record_alignment = record_alignment  # type: ignore[method-assign]
     expand = preprocessor.resolve_macro_aux
 
     def expand_recording(

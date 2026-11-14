@@ -1,22 +1,35 @@
 """
-A progress bar for a long stage. It replaces `PrintTimer`: it prints the same `  stage:  1.234s` line at the end, and
-on a terminal it also draws `  loading memory:  ##############----------------  48%  0:03 left` while it runs.
+A progress bar for a long stage. It prints a `  stage:  1.234s` line at the end, and on a terminal it also draws
+`  loading memory:  ##############----------------  48%  0:03 left` while it runs.
+
+The bar is drawn with a carriage return, spaces and ASCII only (no ANSI escape codes, no cursor moves), which every
+common terminal handles alike: Windows' cmd, PowerShell and Windows Terminal, macOS' Terminal and iTerm, the Linux
+terminals, and the IDEs' consoles. It is drawn only when the output is a terminal, and only when the line fits its
+width (a wrapped line could not be redrawn in place).
 """
 
+import shutil
 import sys
 from time import monotonic, time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 _REDRAW_SECONDS = 0.1
 _BAR_WIDTH = 30
+_MIN_BAR_WIDTH = 10
+# what follows the bar at its longest, ` 100%  999:59 left`, and one free column (some terminals wrap at the last one)
+_AFTER_BAR_WIDTH = len(' 100%  999:59 left') + 1
 
 _shown_bar: Optional['ProgressBar'] = None
 
 
-def clear_progress_line() -> None:
-    """erase the progress bar on screen (if one is), so that other output starts on a clean line"""
-    if _shown_bar is not None:
-        _shown_bar.clear()
+def safe_print(*values: Any, **print_options: Any) -> None:
+    """print(), also while a progress bar is on screen: the bar's line is erased first, and drawn again after."""
+    bar = _shown_bar
+    if bar is not None:
+        bar.clear()
+    print(*values, **print_options)
+    if bar is not None:
+        bar.redraw()
 
 
 class ProgressBar:
@@ -28,10 +41,13 @@ class ProgressBar:
     def __init__(self, init_message: str, *, show_progress: bool = True):
         self.init_message = init_message
         self.show_progress = show_progress
-        self.active = show_progress and sys.stdout.isatty()
+        # the bar is as wide as the terminal has room for, measured once; with no room for one, only the time is shown
+        self._bar_width = min(_BAR_WIDTH, shutil.get_terminal_size().columns - len(init_message) - _AFTER_BAR_WIDTH)
+        self.active = show_progress and sys.stdout.isatty() and self._bar_width >= _MIN_BAR_WIDTH
         self._start_time = 0.0
         self._last_draw = 0.0
         self._drawn_width = 0
+        self._fraction = 0.0  # the last progress reported
 
     def __enter__(self) -> 'ProgressBar':
         global _shown_bar
@@ -52,18 +68,28 @@ class ProgressBar:
             elapsed = '\r' + (self.init_message + elapsed).ljust(self._drawn_width)
         print(elapsed, flush=True)
 
+    def get_active_update_function(self) -> Optional[Callable[[float], None]]:
+        """Return `update`, or None if the bar is not drawn - so a stage can skip its progress bookkeeping."""
+        return self.update if self.active else None
+
     def update(self, fraction: float) -> None:
         """report the stage's progress, a fraction in [0, 1] (drawn at most ~10 times a second)"""
+        self._fraction = min(max(fraction, 0.0), 1.0)
         now = monotonic()
-        if not self.active or now - self._last_draw < _REDRAW_SECONDS:
+        if self.active and now - self._last_draw >= _REDRAW_SECONDS:
+            self._last_draw = now
+            self.redraw()
+
+    def redraw(self) -> None:
+        """draw the bar now, at the last progress reported"""
+        if not self.active:
             return
-        self._last_draw = now
-        fraction = min(max(fraction, 0.0), 1.0)
-        full = int(fraction * _BAR_WIDTH)
-        line = f'{self.init_message}{"#" * full}{"-" * (_BAR_WIDTH - full)} {int(fraction * 100):3d}%'
+        fraction = self._fraction
+        full = int(fraction * self._bar_width)
+        line = f'{self.init_message}{"#" * full}{"-" * (self._bar_width - full)} {int(fraction * 100):3d}%'
         elapsed = time() - self._start_time
         if fraction >= 0.02 and elapsed >= 1:
-            left = int(elapsed * (1 - fraction) / fraction)
+            left = min(int(elapsed * (1 - fraction) / fraction), 999 * 60 + 59)
             line += f'  {left // 60}:{left % 60:02d} left'
         sys.stdout.write('\r' + line.ljust(self._drawn_width))
         sys.stdout.flush()

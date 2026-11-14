@@ -18,7 +18,7 @@ from sly.lex import Token
 # noinspection PyProtectedMember
 from sly.yacc import YaccProduction as ParsedRule
 
-from flipjump.utils.progress import clear_progress_line
+from flipjump.utils.progress import safe_print
 from flipjump.utils.exceptions import FlipJumpExprException, FlipJumpParsingException
 from flipjump.assembler.inner_classes.expr import Expr, get_minimized_expr as _get_minimized_expr
 from flipjump.assembler.inner_classes.ops import (
@@ -47,34 +47,27 @@ all_errors: str
 error_occurred: bool
 
 
-# shared within a parse: one path string per file, one CodePosition per line, and one Expr per equal
-# number / name / `$` leaf (Exprs are immutable, so equal leaves can be one object)
-_position_file: Optional[Path] = None
-_position_file_str = ''
+# Shared within a parse, to save memory: the ops of one line share one CodePosition, the positions of one file share
+# one path string, and equal number / name / `$` leaves are one Expr (Exprs are immutable). A program repeats the same
+# few lines, numbers and names millions of times.
 _last_position: Optional[CodePosition] = None
 _leaf_exprs: Dict[Union[int, str], Expr] = {}
 
 
 def get_position(lineno: int) -> CodePosition:
-    global _position_file, _position_file_str, _last_position
-    if curr_file is not _position_file:
-        _position_file = curr_file
-        _position_file_str = str(curr_file)
-        _last_position = None
+    """Return the CodePosition of line `lineno` of the file being parsed (the last one made, if it is that line's)."""
+    global _last_position
     last = _last_position
-    if (
-        last is not None
-        and last.line == lineno
-        and last.file_short_name is curr_file_short_name
-        and last.file is _position_file_str
-    ):
-        return last
-    _last_position = CodePosition(_position_file_str, curr_file_short_name, lineno)
-    return _last_position
+    if last is None or last.line != lineno or last.file_short_name is not curr_file_short_name:
+        same_file = last is not None and last.file_short_name is curr_file_short_name
+        file = last.file if last is not None and same_file else str(curr_file)
+        last = _last_position = CodePosition(file, curr_file_short_name, lineno)
+    return last
 
 
-def _leaf(value: Union[int, str]) -> Expr:
-    """Return the parse's shared Expr for the number or name `value`."""
+def _leaf_expr(value: Union[int, str]) -> Expr:
+    """Return the parse's shared Expr for the number or name `value`: equal leaves are one object, which saves the
+    memory of millions of equal Exprs."""
     expr = _leaf_exprs.get(value)
     if expr is None or expr.value.__class__ is not value.__class__:
         expr = Expr(value)
@@ -84,8 +77,8 @@ def _leaf(value: Union[int, str]) -> Expr:
 
 def _reset_parse_sharing() -> None:
     """Forget the shared leaves and positions (the parsed tree keeps the ones it uses)."""
-    global _position_file, _position_file_str, _last_position
-    _position_file, _position_file_str, _last_position = None, '', None
+    global _last_position
+    _last_position = None
     _leaf_exprs.clear()
 
 
@@ -93,7 +86,7 @@ def get_minimized_expr(op: str, params: Tuple[Expr, ...]) -> Expr:
     """Like expr.get_minimized_expr, but a folded constant is shared like any other number leaf."""
     expr = _get_minimized_expr(op, params)
     if expr.value.__class__ is int:
-        return _leaf(expr.value)
+        return _leaf_expr(expr.value)
     return expr
 
 
@@ -111,9 +104,17 @@ def syntax_error_at(code_position: CodePosition, msg: str = '') -> None:
         error_string = f"Syntax Error in {code_position}"
     all_errors += f"{error_string}\n"
 
-    clear_progress_line()
+    safe_print(error_string)
 
-    print(error_string)
+
+def define_error(name: str, msg: str) -> None:
+    """Record an error in the -D define of `name`. It names the define, not a line: the defines reach the parser as a
+    file the user did not write."""
+    global error_occurred, all_errors
+    error_occurred = True
+    error_string = f'Error in the define of "{name}" (-D {name}=...):\n  {msg}'
+    all_errors += f"{error_string}\n"
+    safe_print(error_string)
 
 
 def syntax_warning(line: int, is_error: bool, msg: str = '') -> None:
@@ -128,8 +129,7 @@ def syntax_warning(line: int, is_error: bool, msg: str = '') -> None:
         error_occurred = True
         all_errors += f"{error_string}\n"
 
-    clear_progress_line()
-    print(error_string)
+    safe_print(error_string)
 
 
 # Regex for the parser
@@ -310,14 +310,13 @@ class FJLexer(sly.Lexer):
 
         error_string = f"Lexing Error in {get_position(self.lineno)}: {t.value[0]}"
         all_errors += f"{error_string}\n"
-        clear_progress_line()
-        print(error_string)
+        safe_print(error_string)
 
         self.index += 1
 
 
 def next_address() -> Expr:
-    return _leaf('$')
+    return _leaf_expr('$')
 
 
 def _get_main_macro_code_position(first_file: Tuple[str, Path]) -> CodePosition:
@@ -378,16 +377,16 @@ class FJParser(sly.Parser):
         self.macros: Dict[MacroName, Macro] = {
             INITIAL_MACRO_NAME: Macro([], [], [], '', _get_main_macro_code_position(first_file))
         }
-        # -D overrides. The defines file is a real .fj file, so a define can use fj expressions (`w + 33`, an earlier
-        # define). It overrides instead of declaring because its constants land here, not in self.consts.
-        # (see _NoneOnlyPositions: sly.Parser.parse uses these instead of its own ever-growing dicts)
+        # A memory optimization: sly records a position for every reduction, for the parser's whole life, in these two
+        # dicts. FJParser reads only the position of `None`, so these keep only that one: nothing is lost.
         self._line_positions = _NoneOnlyPositions()
         self._index_positions = _NoneOnlyPositions()
+        # The -D defines: a .fj file of constants, parsed first. A constant it sets overrides the program's
+        # declaration of it (it does not declare one).
         self.defines_file: Optional[Path] = defines_file.resolve() if defines_file else None
-        self.defines: Dict[str, int] = {}
-        self.defines_lineno: Dict[str, int] = {}
-        self.used_defines: Set[str] = set()
-        self.parsing_defines = False  # True while the defines file is being parsed (set for each file)
+        self.defines: Dict[str, int] = {}  # each define's value
+        self.used_defines: Set[str] = set()  # the defines that overrode a declaration
+        self.parsing_defines = False  # True while the defines file is being parsed
 
     def _parsing_the_defines_file(self) -> bool:
         try:
@@ -607,8 +606,7 @@ class FJParser(sly.Parser):
             error_string = f'Syntax Error in {get_position(token.lineno)}, token=("{token.type}", {token.value})'
 
         all_errors += f"{error_string}\n"
-        clear_progress_line()
-        print(error_string)
+        safe_print(error_string)
 
     # Parsing Rules:
 
@@ -753,11 +751,11 @@ class FJParser(sly.Parser):
 
     @_('SC expr')
     def statement(self, p: ParsedRule) -> FlipJump:
-        return FlipJump(_leaf(0), p.expr, get_position(p.lineno))
+        return FlipJump(_leaf_expr(0), p.expr, get_position(p.lineno))
 
     @_('SC')
     def statement(self, p: ParsedRule) -> FlipJump:
-        return FlipJump(_leaf(0), next_address(), get_position(p.lineno))
+        return FlipJump(_leaf_expr(0), next_address(), get_position(p.lineno))
 
     @_('ID')
     def id(self, p: ParsedRule) -> Tuple[str, int]:
@@ -807,9 +805,8 @@ class FJParser(sly.Parser):
             try:
                 self.defines[name] = int(evaluated)
             except FlipJumpExprException:
-                syntax_error(p.lineno, f'Can\'t evaluate expression:  {str(evaluated)}.')
+                define_error(name, f'can\'t evaluate its value:  {str(evaluated)}.')
                 return
-            self.defines_lineno[name] = p.lineno
             # No "already declared?" check: an override is satisfied only by the declaration it replaces.
             # The value is visible from here on, so a later define can use an earlier one.
             self.consts[name] = Expr(self.defines[name])
@@ -873,7 +870,7 @@ class FJParser(sly.Parser):
     @_('"-" expr_ %prec UMINUS')
     def expr_(self, p: ParsedRule) -> Tuple[Expr, int]:
         # unary minus: reuse subtraction as (0 - expr).
-        return get_minimized_expr('-', (_leaf(0), p.expr_[0])), p.lineno
+        return get_minimized_expr('-', (_leaf_expr(0), p.expr_[0])), p.lineno
 
     @_('"~" expr_ %prec UNOT')
     def expr_(self, p: ParsedRule) -> Tuple[Expr, int]:
@@ -961,11 +958,11 @@ class FJParser(sly.Parser):
 
     @_('NUMBER')
     def expr_(self, p: ParsedRule) -> Tuple[Expr, int]:
-        return _leaf(p.NUMBER), p.lineno
+        return _leaf_expr(p.NUMBER), p.lineno
 
     @_('STRING')
     def expr_(self, p: ParsedRule) -> Tuple[Expr, int]:
-        return _leaf(p.STRING), p.lineno
+        return _leaf_expr(p.STRING), p.lineno
 
     @_('"$"')
     def expr_(self, p: ParsedRule) -> Tuple[Expr, int]:
@@ -976,7 +973,7 @@ class FJParser(sly.Parser):
         id_str, lineno = p.id
         if id_str in self.consts:
             return self.consts[id_str], lineno
-        return _leaf(id_str), lineno
+        return _leaf_expr(id_str), lineno
 
 
 def exit_if_errors() -> None:
@@ -1005,6 +1002,7 @@ def lex_parse_curr_file(lexer: FJLexer, parser: FJParser) -> None:
     global curr_text, curr_namespace
     curr_text = curr_file.open('r', encoding='utf-8').read()
     curr_namespace = []
+    parser.parsing_defines = parser._parsing_the_defines_file()
 
     lex_res = lexer.tokenize(curr_text)
     exit_if_errors()
@@ -1101,27 +1099,37 @@ def _parse_files_into_parser(
 
     prefix_length = _stl_prefix_length(input_files)
     cache_key = _stl_cache_key(input_files, prefix_length, memory_width, warning_as_errors) if prefix_length else None
+    try:
+        first_uncached_index = 0
+        if cache_key is not None and cache_key in _stl_prefix_cache:
+            _restore_parser_from_cache(parser, _stl_prefix_cache[cache_key])
+            # the skipped prefix files still need their name/path-uniqueness validated
+            for curr_file_short_name, curr_file in input_files[:prefix_length]:
+                validate_current_file(files_seen)
+            first_uncached_index = prefix_length
 
-    first_uncached_index = 0
-    if cache_key is not None and cache_key in _stl_prefix_cache:
-        _restore_parser_from_cache(parser, _stl_prefix_cache[cache_key])
-        # the skipped prefix files still need their name/path-uniqueness validated
-        for curr_file_short_name, curr_file in input_files[:prefix_length]:
+        # the progress is measured in bytes of source, a file at a time (a cached prefix counts as done)
+        sizes = [os.path.getsize(path) for _, path in input_files] if on_progress is not None else []
+        total_size, parsed_size = max(1, sum(sizes)), sum(sizes[:first_uncached_index])
+        for file_index, (curr_file_short_name, curr_file) in enumerate(
+            input_files[first_uncached_index:], first_uncached_index
+        ):
             validate_current_file(files_seen)
-        first_uncached_index = prefix_length
+            if on_progress is not None:
+                on_progress(parsed_size / total_size)
+                parsed_size += sizes[file_index]
+            lex_parse_curr_file(lexer, parser)
+            if cache_key is not None and file_index == prefix_length - 1:
+                _snapshot_parser_to_cache(parser, cache_key)
+        _refuse_unused_defines(parser)
+    finally:
+        _reset_parse_sharing()
 
-    # the progress is measured in bytes of source, a file at a time (a cached prefix counts as done)
-    sizes = [os.path.getsize(path) for _, path in input_files] if on_progress is not None else []
-    for file_index, (curr_file_short_name, curr_file) in enumerate(input_files):
-        if file_index < first_uncached_index:
-            continue
-        validate_current_file(files_seen)
-        parser.parsing_defines = parser._parsing_the_defines_file()
-        if on_progress is not None:
-            on_progress(sum(sizes[:file_index]) / max(1, sum(sizes)))
-        lex_parse_curr_file(lexer, parser)
-        if cache_key is not None and file_index == prefix_length - 1:
-            _snapshot_parser_to_cache(parser, cache_key)
+
+def _refuse_unused_defines(parser: FJParser) -> None:
+    """A -D define may only override a constant the program declares: one that met no declaration is a typo."""
+    for name in sorted(set(parser.defines) - parser.used_defines):
+        define_error(name, f'override of non-defined constant "{name}".')
 
 
 def parse_macro_tree(
@@ -1137,12 +1145,11 @@ def parse_macro_tree(
     @param input_files:[in]: a list of (short_file_name, fj_file_path). The files will to be parsed in that given order.
     @param memory_width:[in]: the memory-width
     @param warning_as_errors:[in]: treat warnings as errors (stop execution on warnings)
-    @param defines_file:[in]: the -D file among input_files, if any. Its constants override the declarations
-    elsewhere instead of adding new ones (see FJParser.statement).
+    @param defines_file:[in]: the -D file, constants in it override other declarations.
     @param on_progress:[in]: if given, called before each file with the fraction of the source parsed so far.
     @return: the macro-dictionary.
     """
-    global error_occurred, all_errors, curr_file, curr_file_short_name
+    global error_occurred, all_errors
     error_occurred = False
     all_errors = ''
 
@@ -1152,20 +1159,7 @@ def parse_macro_tree(
     lexer = FJLexer()
     parser = FJParser(memory_width, warning_as_errors, input_files[0], defines_file)
 
-    try:
-        _parse_files_into_parser(parser, lexer, input_files, memory_width, warning_as_errors, on_progress)
-    finally:
-        _reset_parse_sharing()
-
-    # -D may only override, so a define that never met a declaration is a typo. syntax_error() names curr_file
-    # (now the last file parsed), so point it back at the defines file.
-    unmatched = sorted(set(parser.defines) - parser.used_defines)
-    if unmatched:
-        assert parser.defines_file is not None  # a define exists only if a defines file was parsed
-        curr_file = parser.defines_file
-        curr_file_short_name = next(short for short, path in input_files if path.resolve() == curr_file)
-        for name in unmatched:
-            syntax_error(parser.defines_lineno[name], f'override of non-defined constant "{name}".')
+    _parse_files_into_parser(parser, lexer, input_files, memory_width, warning_as_errors, on_progress)
 
     parser.validate_no_label_const_collisions()
     exit_if_errors()

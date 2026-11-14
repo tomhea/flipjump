@@ -28,7 +28,7 @@ Table = Tuple[int, int, str, int]
 _start = itemgetter(0)
 
 
-def reached_the_pool(address: int, pool_start: int) -> FlipJumpPreprocessorException:
+def reached_the_pool_exception(address: int, pool_start: int) -> FlipJumpPreprocessorException:
     return FlipJumpPreprocessorException(
         f'table-placement: the program reached {hex(address)}, which is inside the table pool at {hex(pool_start)}. '
         f'Raise pool_base, or relocate fewer tables.'
@@ -219,7 +219,7 @@ class OffsetGuard:
         if address >= self.inline_end:
             table = self.table_at(address)
             if table is None:
-                raise reached_the_pool(address, self.inline_end)
+                raise reached_the_pool_exception(address, self.inline_end)
             return table[3] - table[0]
         piece = self._piece(label, address)
         return self.cuts[piece - 1][1] if piece else 0
@@ -375,7 +375,7 @@ class OffsetGuard:
         emitting = None if self.emitting is None else self.emitting()
         if emitting is not None and emitting > self.inline_end:
             # the program's own code ran into the pool: report that as the cause
-            raise reached_the_pool(emitting, self.inline_end)
+            raise reached_the_pool_exception(emitting, self.inline_end)
         raise FlipJumpAssemblerException(
             f'table-placement: the operand `{operand}`{self.where() if where is None else where} {why}. '
             f'Address a moved table by its own labels, '

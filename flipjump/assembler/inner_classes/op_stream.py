@@ -1,6 +1,6 @@
 """
 The compact op stream: the ops the preprocessor (macro resolve) emits and labels-resolve reads, in ~17-60 bytes an
-op instead of ~250 for an op object and its Expr trees.
+op.
 
     kinds: bytearray        - one byte per op: its kind (FJ, FJ_POS, WFLIP, PAD, OBJ, FJ_PACKED below)
     vals:  array('q')       - the ops' slots, in order (each kind below lists its slots)

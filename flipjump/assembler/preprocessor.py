@@ -182,7 +182,7 @@ class PreprocessorData:
     def finish(self, show_statistics: bool) -> None:
         self.patch_last_wflip_address()
         if self.mover is not None:
-            self.mover.refuse_reaching_the_pool(self.curr_address)
+            self.mover.validate_not_reaching_the_pool(self.curr_address)
             self.mover.place_tables()
         self.insert_macro_start_labels_if_their_address_not_used()
         if show_statistics:
@@ -208,12 +208,12 @@ class PreprocessorData:
         self.curr_address = next_segment_start
         if self.mover is not None:
             self.mover.segment_started(previous_end)
-        self.aligned(next_segment_start, 0)
+        self.record_alignment(next_segment_start, 0)
 
     def insert_reserve(self, reserved_bits_size: int) -> None:
         self.curr_address += reserved_bits_size
         if self.mover is not None:
-            self.mover.refuse_reaching_the_pool(self.curr_address)
+            self.mover.validate_not_reaching_the_pool(self.curr_address)
         self.result_ops.append(ReserveBits(self.curr_address))
 
     def insert_label(self, label: str, code_position: CodePosition, *, address: Optional[int] = None) -> None:
@@ -286,9 +286,9 @@ class PreprocessorData:
         self.emit(Padding(ops_to_pad))
         if ops_alignment > 1:
             bits = ops_alignment * op_size
-            self.aligned(self.curr_address, (bits & -bits).bit_length() - 1)
+            self.record_alignment(self.curr_address, (bits & -bits).bit_length() - 1)
 
-    def aligned(self, address: int, bits: int) -> None:
+    def record_alignment(self, address: int, bits: int) -> None:
         """Note that `address` is aligned to 2^bits bits by a `pad` (bits is 0 where a segment just starts). The
         mover's guard keeps these (OffsetGuard.pads)."""
         if self.mover is not None and address:
