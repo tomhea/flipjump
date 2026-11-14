@@ -53,15 +53,13 @@ _ADD_SUB = ('+', '-')
 _NO_PARAMS: Dict[str, Expr] = {}
 
 
-def linear_sum(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
+def linear_sum(expr: Expr, params: Dict[str, Expr] = _NO_PARAMS) -> Optional[Tuple[Optional[str], int]]:
     """Return `(label, constant)` if `expr` is one label plus integer constants (using only + and -), else None.
-    The label is None when `expr` names no label."""
-    return _linear_in(expr, _NO_PARAMS)
+    The label is None when `expr` names no label.
 
-
-def _linear_in(expr: Expr, params: Dict[str, Expr]) -> Optional[Tuple[Optional[str], int]]:
-    """Return linear_sum(expr.eval_new(params)), without building the substituted tree.
-    It may return None where linear_sum would not; the caller then falls back to eval_new (and gets its errors)."""
+    With `params` (a macro's arguments), return linear_sum(expr.eval_new(params)) without building the substituted
+    tree. It may then return None where the substituted tree is a linear sum; the caller falls back to eval_new (and
+    gets its errors)."""
     value: Any = expr.value
     if value.__class__ is int:
         return None, value
@@ -73,10 +71,10 @@ def _linear_in(expr: Expr, params: Dict[str, Expr]) -> Optional[Tuple[Optional[s
     op, args = value
     if len(args) != 2 or op not in _ADD_SUB:
         return None
-    left = _linear_in(args[0], params)
+    left = linear_sum(args[0], params)
     if left is None:
         return None
-    right = _linear_in(args[1], params)
+    right = linear_sum(args[1], params)
     if right is None:
         return None
     if op == '+':
@@ -149,7 +147,7 @@ def _linear_memo(expr: Expr) -> Optional[Tuple[Optional[str], int]]:
     if linear is _MISSING:
         if len(_LINEAR_MEMO) >= _LINEAR_MEMO_LIMIT:
             _LINEAR_MEMO.clear()
-        linear = _LINEAR_MEMO[expr] = _linear_in(expr, _NO_PARAMS)
+        linear = _LINEAR_MEMO[expr] = linear_sum(expr)
     return linear  # type: ignore[no-any-return]
 
 
@@ -199,7 +197,7 @@ class OpStream:
             refs.append(value)
             return True
         else:
-            linear = _linear_in(expr, _NO_PARAMS)
+            linear = linear_sum(expr)
             if linear is not None:
                 name, const = linear
                 if name is not None and self._label_plus(name, const):
@@ -233,7 +231,7 @@ class OpStream:
             return True
         return False
 
-    def _operand_in(self, expr: Expr, params: Dict[str, Expr], is_address: bool = True) -> bool:
+    def _operand_with_params(self, expr: Expr, params: Dict[str, Expr], is_address: bool = True) -> bool:
         """Like `_operand(expr.eval_new(params), is_address)`, but faster: a +/- operand builds no Expr.
         This is the expansion's hot path, so the common shapes are handled one by one."""
         value: Any = expr.value
@@ -264,7 +262,7 @@ class OpStream:
                 return False
             return self._operand(expr, is_address)
         else:
-            linear = _linear_in(expr, params)
+            linear = linear_sum(expr, params)
             if linear is None:
                 return self._operand(expr.eval_new(params), is_address)
             label, const = linear
@@ -293,11 +291,14 @@ class OpStream:
             return True
         return self._operand(expr.eval_new(params), is_address)
 
-    def add_flip_jump_in(self, flip: Expr, jump: Expr, params: Dict[str, Expr], code_position: CodePosition) -> None:
-        """Like `add_flip_jump(flip.eval_new(params), jump.eval_new(params))`, but faster: it doesn't build the
-        substituted expressions."""
-        deferred = self._operand_in(flip, params)
-        deferred = self._operand_in(jump, params) or deferred
+    def add_flip_jump(
+        self, flip: Expr, jump: Expr, code_position: CodePosition, params: Dict[str, Expr] = _NO_PARAMS
+    ) -> None:
+        """Append a flip-jump op. With `params` (a macro's arguments), it is like
+        `add_flip_jump(flip.eval_new(params), jump.eval_new(params))`, but faster: it doesn't build the substituted
+        expressions."""
+        deferred = self._operand_with_params(flip, params)
+        deferred = self._operand_with_params(jump, params) or deferred
         self._end_flip_jump(deferred, code_position)
 
     def _end_flip_jump(self, deferred: bool, code_position: CodePosition) -> None:
@@ -329,22 +330,22 @@ class OpStream:
         else:
             self.kinds.append(FJ)
 
-    def add_word_flip_in(
+    def add_word_flip(
         self,
         word_address: Expr,
         flip_value: Expr,
         return_address: Expr,
-        params: Dict[str, Expr],
         code_position: CodePosition,
+        params: Dict[str, Expr] = _NO_PARAMS,
     ) -> None:
-        """Like `add_word_flip` with each operand's `eval_new(params)`, but faster: it mostly skips building the
-        substituted expressions."""
-        self._operand_in(word_address, params)
+        """Append a wflip op. With `params` (a macro's arguments), it is like `add_word_flip` with each operand's
+        `eval_new(params)`, but faster: it mostly skips building the substituted expressions."""
+        self._operand_with_params(word_address, params)
         if self.keep_label_values:
             self._value(flip_value.eval_new(params))
         else:
-            self._operand_in(flip_value, params, False)
-        self._operand_in(return_address, params)
+            self._operand_with_params(flip_value, params, False)
+        self._operand_with_params(return_address, params)
         self._end_word_flip(code_position)
 
     def _value(self, expr: Expr) -> None:
@@ -362,14 +363,6 @@ class OpStream:
         else:
             self.vals.append(~(len(refs) << 2 | TAG_EXPR))
             refs.append(expr)
-
-    def add_flip_jump(self, flip: Expr, jump: Expr, code_position: CodePosition) -> None:
-        self.add_flip_jump_in(flip, jump, _NO_PARAMS, code_position)
-
-    def add_word_flip(
-        self, word_address: Expr, flip_value: Expr, return_address: Expr, code_position: CodePosition
-    ) -> None:
-        self.add_word_flip_in(word_address, flip_value, return_address, _NO_PARAMS, code_position)
 
     def add_padding(self, ops_count: int) -> None:
         self.kinds.append(PAD)

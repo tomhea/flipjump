@@ -78,9 +78,9 @@ def test_every_operand_shape_keeps_its_value() -> None:
     expected = []
     for flip in OPERANDS:
         for jump in OPERANDS:
-            stream.add_flip_jump_in(flip, jump, PARAMS, POSITION)
+            stream.add_flip_jump(flip, jump, POSITION, PARAMS)
             expected.append((flip.eval_new(PARAMS), jump.eval_new(PARAMS)))
-        stream.add_word_flip_in(flip, Expr('src'), Expr('$'), PARAMS, POSITION)
+        stream.add_word_flip(flip, Expr('src'), Expr('$'), POSITION, PARAMS)
     labels.update({'later': 1 << 30, 'va': 1 << 12, 'vb': 1 << 13})  # declared after the ops
 
     values = _stream_values(stream, labels)
@@ -108,8 +108,8 @@ def test_literal_ops_pack_into_one_slot_when_they_fit() -> None:
 def test_a_declared_label_is_folded_and_an_undeclared_one_is_deferred() -> None:
     labels = {'known': 100}
     stream = OpStream([], labels)
-    stream.add_flip_jump_in(sum_expr('known', 8), Expr(0), {}, POSITION)
-    stream.add_flip_jump_in(sum_expr('later', 8), Expr(0), {}, POSITION)
+    stream.add_flip_jump(sum_expr('known', 8), Expr(0), POSITION)
+    stream.add_flip_jump(sum_expr('later', 8), Expr(0), POSITION)
     assert list(stream.kinds) == [op_stream.FJ_PACKED, op_stream.FJ_POS]
     assert stream.refs == ['later', POSITION]  # the deferred label and the op's position: no Expr kept
 
@@ -118,8 +118,8 @@ def test_labels_resolve_reads_a_stream_like_the_op_objects(tmp_path: Path) -> No
     labels: Dict[str, int] = {}
     stream = OpStream([], labels)
     stream.add_object(NewSegment(0))
-    stream.add_flip_jump_in(sum_expr('x', 3), Expr('$'), {'$': Expr(128)}, POSITION)
-    stream.add_word_flip_in(Expr('x'), Expr(64), Expr('y'), {}, POSITION)
+    stream.add_flip_jump(sum_expr('x', 3), Expr('$'), POSITION, {'$': Expr(128)})
+    stream.add_word_flip(Expr('x'), Expr(64), Expr('y'), POSITION)
     stream.add_padding(2)
     stream.add_flip_jump(Expr(0), Expr(0), POSITION)
     labels.update({'x': 1024, 'y': 2048})

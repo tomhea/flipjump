@@ -708,10 +708,10 @@ def resolve_macro_aux(
                 preprocessor_data.dollar(dollar_ops[op_index], labels_prefix, op_index, op.code_position, params_dict)
             # straight into the compact stream - no FlipJump/WordFlip object is built for it
             if isinstance(op, FlipJump):
-                preprocessor_data.emit_target.add_flip_jump_in(op.flip, op.jump, params_dict, op.code_position)
+                preprocessor_data.emit_target.add_flip_jump(op.flip, op.jump, op.code_position, params_dict)
             else:
-                preprocessor_data.emit_target.add_word_flip_in(
-                    op.word_address, op.flip_value, op.return_address, params_dict, op.code_position
+                preprocessor_data.emit_target.add_word_flip(
+                    op.word_address, op.flip_value, op.return_address, op.code_position, params_dict
                 )
             del params_dict['$']
 
