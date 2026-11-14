@@ -23,12 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # refusals that say why (any other refusal of a pooled build is a finding)
 # the refusals a random program may meet: a span too small, a program reaching the pool, a label distance across
-# a moved table's place (the `distance` op), and - past w=64 - a pool the .fjm's 64-bit segment fields cannot hold
+# a moved table's place (the `distance` op)
 KNOWN_REFUSALS = (
     'inside the table pool',
     'has no room for its tables',
     'takes the distance across the place',
-    'holds segments below word 2^64',
 )
 
 _RUNNER = """

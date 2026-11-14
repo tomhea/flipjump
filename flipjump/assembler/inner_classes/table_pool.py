@@ -389,11 +389,11 @@ class BlockPool:
             return ()
         self._choose_base(end)
         self.alias = self._groups_sharing_a_word(labels)
-        groups = self._merged_census()
+        groups = self.merged_census()
         if self._raw():
             addresses = self._place_cheapest(tables, len(groups))
         else:
-            blocks_end = self._lay_out_blocks(groups)
+            blocks_end = self.lay_out_blocks(groups)
             addresses = self._place_in_blocks(tables, blocks_end)
         self._record_sites(tables, addresses)
         return addresses
@@ -422,8 +422,9 @@ class BlockPool:
                 alias[group] = first
         return alias
 
-    def _merged_census(self) -> Dict[str, Dict[int, int]]:
-        """Return {group: {table width: how many}}, with the groups that share a block counted as one."""
+    def merged_census(self) -> Dict[str, Dict[int, int]]:
+        """Return the census, {group: {table width in ops: how many}}, with the groups that share a block counted
+        as one."""
         merged: Dict[str, Dict[int, int]] = {}
         for group, census in self.census.items():
             widths = merged.setdefault(self.alias.get(group, group), {})
@@ -445,9 +446,11 @@ class BlockPool:
 
     # ---- placing in blocks ----
 
-    def _lay_out_blocks(self, groups: Dict[str, Dict[int, int]]) -> int:
-        """Give each group a block, aligned to its size: the hot groups first, then biggest first. Where they do not
-        all fit, the last groups get none (their tables go to the overflow region). Return where the blocks end."""
+    def lay_out_blocks(self, groups: Dict[str, Dict[int, int]]) -> int:
+        """Give each group of a census (as merged_census returns it) a block, aligned to its size: the hot groups
+        first, then biggest first. Where they do not all fit, the last groups get none (their tables go to the
+        overflow region). Return where the blocks end.
+        A tool can call this on a fresh pool, to get the blocks an assembly gave a saved census (`blocks`)."""
         hot = self._hot_groups(groups)
         blocks = {group: self._block(widths, hot.get(group)) for group, widths in groups.items()}
         order = list(hot) + sorted((group for group in groups if group not in hot), key=lambda g: (-blocks[g].bits, g))
@@ -480,7 +483,7 @@ class BlockPool:
         spread = self.spread_factor if tables >= self.spread_min_tables else 1
         counts: Dict[int, int] = {}  # slot width -> tables
         for width, count in widths.items():
-            slot_ops = _pow2_ceil(min(width, self.max_slot_ops))
+            slot_ops = self.slot_ops(width)
             counts[slot_ops] = counts.get(slot_ops, 0) + count
         sizes: Dict[int, Tuple[int, int]] = {}  # slot width -> (slots, the sub-block's bits)
         for slot_ops, count in counts.items():
@@ -594,6 +597,11 @@ class BlockPool:
             f'table-placement: the pool [{hex(self.pool_base)}, {hex(self._pool_limit())}) has no room for its '
             f'tables. {advice}, or assemble without the pool.'
         )
+
+    def slot_ops(self, table_ops: int) -> int:
+        """Return the width, in ops, of the slot that a block keeps for a table `table_ops` wide: the next power of
+        two, up to the widest slot (max_slot_ops)."""
+        return _pow2_ceil(min(table_ops, self.max_slot_ops))
 
     def _slot_bits(self, width: int) -> int:
         return _pow2_ceil(width) * self.op_bits

@@ -206,7 +206,7 @@ def _laid_out(width_hist: Dict[str, Dict[int, int]], **kwargs: Any) -> BlockPool
     pool = BlockPool(W, POOL_BASE, **kwargs)
     for group, hist in width_hist.items():
         pool.census[group] = GroupCensus(Expr(group), dict(hist))  # the group's word, as the expansion records it
-    pool._lay_out_blocks({group: dict(hist) for group, hist in width_hist.items()})
+    pool.lay_out_blocks({group: dict(hist) for group, hist in width_hist.items()})
     return pool
 
 
@@ -988,3 +988,28 @@ def _run_fjm(fjm_path: Path) -> bytes:
     io_device = FixedIO(b'')
     fjm_run.run(fjm_path, io_device=io_device, print_time=False)
     return io_device.get_output()
+
+
+# --- what a tool reads from a pool ---
+
+
+def test_a_fresh_pool_lays_out_a_saved_census_as_the_assembly_did(tmp_path: Path) -> None:
+    """a tool gets a build's block layout from its census alone: merged_census of the assembled pool, then
+    lay_out_blocks on a fresh pool with the same options"""
+    options: Dict[str, Any] = {'spread_factor': 2, 'spread_min_tables': 2}
+    assembled = BlockPool(W, POOL_BASE, **options)
+    build_and_run(CMP_PROGRAM, tmp_path, assembled)
+    census = assembled.merged_census()
+    fresh = BlockPool(W, POOL_BASE, **options)
+    blocks_end = fresh.lay_out_blocks(census)
+
+    def layout(pool: BlockPool) -> Dict[str, Any]:
+        return {group: (block.base, block.bits, block.sub_blocks) for group, block in pool.blocks.items()}
+
+    assert len(census) > 1 and layout(fresh) == layout(assembled)
+    assert blocks_end == max(block.base + block.bits for block in fresh.blocks.values() if block.base is not None)
+
+
+def test_a_table_takes_the_slot_of_the_next_power_of_two_up_to_the_widest_slot() -> None:
+    pool = BlockPool(W, POOL_BASE, max_slot_ops=32)
+    assert [pool.slot_ops(width) for width in (1, 2, 3, 16, 17, 32, 33, 500)] == [1, 2, 4, 16, 32, 32, 32, 32]

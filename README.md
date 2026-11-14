@@ -133,7 +133,7 @@ fj hello_world.fj
 ![Hello World in FlipJump](resources/hello.gif)
 
   - The --no-stl flag tells the assembler not to include the standard library. for example: `fj programs/print_tests/hello_no-stl.fj --no-stl`.
-  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default, and can be any power of two from 8 (8, 16, 32, 64, 128, ... 32768). The native engine runs the widths up to 64; a wider program runs on the much slower pure-Python engine.
+  - The `-w [WIDTH]` flag allows compiling the .fj files to a WIDTH-bits memory width. WIDTH is 64 by default, and can be any power of two from 8 (8, 16, 32, 64, 128, ... 32768). The native engine runs the widths up to 64; a wider program runs on the much slower pure-Python engine, and its .fjm (version 4) holds segments anywhere in its memory.
   - You can use the `-o` flag to save the assembled file for later use too.
   - You can find all the different flags with `fj -h`.
 

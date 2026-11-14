@@ -18,7 +18,7 @@ import pytest
 
 from flipjump import assemble
 from flipjump.assembler.inner_classes.table_pool import BlockPool, HotSite, heat_key
-from tests.unit.unit_utils import merged_census, pool_stats
+from tests.unit.unit_utils import pool_stats
 from flipjump.interpreter import fjm_run
 from flipjump.interpreter.io_devices.FixedIO import FixedIO
 from flipjump.utils.functions import load_debugging_labels
@@ -175,7 +175,7 @@ def _heat(tmp_path: Path) -> Heat:
 def _digests(tmp_path: Path, heat: Heat, pool: Optional[BlockPool] = None, **knobs: Any) -> Dict[str, Any]:
     pool = _pool(heat, **knobs) if pool is None else pool
     fjm, labels = _assemble(tmp_path, 'golden', pool)
-    census = merged_census(pool)
+    census = pool.merged_census()
     counts = {group: sum(widths.values()) for group, widths in census.items()}
     widest = {group: max(widths) for group, widths in census.items()}
     census_json = json.dumps([counts, widest, census, pool.alias])

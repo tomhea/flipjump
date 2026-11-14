@@ -20,20 +20,21 @@ from typing import BinaryIO, Callable, Iterable, List, Sequence, Tuple, Dict, Op
 from flipjump.fjm.fjm_consts import (
     FJ_MAGIC,
     _reserved_dict_threshold,
-    _header_base_format,
-    _header_extension_format,
-    _header_base_size,
-    _header_extension_size,
-    _segment_format,
-    _segment_size,
-    _segments_size_format,
-    _segments_size_size,
+    HEADER_BASE_FORMAT,
+    HEADER_EXTENSION_FORMAT,
+    HEADER_BASE_SIZE,
+    HEADER_EXTENSION_SIZE,
+    SEGMENT_FIELDS,
+    segment_field_size,
+    unpack_segments,
+    SEGMENTS_SIZE_FORMAT,
+    SEGMENTS_SIZE_SIZE,
     SUPPORTED_VERSIONS_NAMES,
     SUPPORTED_MEMORY_WIDTHS_TEXT,
     ARRAY_TYPECODE_BY_WIDTH,
     is_supported_memory_width,
-    _LZMA_FORMAT,
-    _LZMA_DECOMPRESSION_FILTERS,
+    LZMA_FORMAT,
+    LZMA_DECOMPRESSION_FILTERS,
     _LZMA_MAX_DICT_DECOMPRESSION_FILTERS,
     _new_garbage_val,
     FJMVersion,
@@ -98,7 +99,7 @@ class Reader:
 
     def _init_header_fields(self, fjm_file: BinaryIO) -> None:
         self.magic, self.memory_width, version, self.segment_num = unpack(
-            _header_base_format, fjm_file.read(_header_base_size)
+            HEADER_BASE_FORMAT, fjm_file.read(HEADER_BASE_SIZE)
         )
         try:
             self.version = FJMVersion(version)
@@ -110,16 +111,17 @@ class Reader:
             self.run_flags, self.io_mode, self.reserved = 0, 0, 0
         else:
             self.run_flags, self.io_mode, self.reserved = unpack(
-                _header_extension_format, fjm_file.read(_header_extension_size)
+                HEADER_EXTENSION_FORMAT, fjm_file.read(HEADER_EXTENSION_SIZE)
             )
 
     def _init_segments(self, fjm_file: BinaryIO) -> List[Tuple[int, int, int, int]]:
         # read the whole table at once (a read per segment is slow on some file systems), but never more than the rest
         # of the file, so a damaged segment_num can't make it allocate more memory than the file's size.
-        table_size = self.segment_num * _segment_size
+        segment_size = SEGMENT_FIELDS * segment_field_size(self.version, self.memory_width)
+        table_size = self.segment_num * segment_size
         stored_size = table_size
         if FJMVersion.CompressedSegmentsVersion == self.version:
-            (stored_size,) = unpack(_segments_size_format, fjm_file.read(_segments_size_size))
+            (stored_size,) = unpack(SEGMENTS_SIZE_FORMAT, fjm_file.read(SEGMENTS_SIZE_SIZE))
         try:
             remaining = max(0, os.fstat(fjm_file.fileno()).st_size - fjm_file.tell())
         except (OSError, ValueError):  # not a regular file (a pipe, an in-memory buffer): read what is asked
@@ -133,7 +135,7 @@ class Reader:
                 raise FlipJumpReadFjmException(
                     f'Error: the segment table is {len(table)} bytes; {self.segment_num} segments take {table_size}.'
                 )
-        return list(struct.iter_unpack(_segment_format, table))
+        return unpack_segments(table, self.version, self.memory_width)
 
     def _validate_header(self) -> None:
         if self.magic != FJ_MAGIC:
@@ -411,7 +413,7 @@ def _decompress_in_chunks(
     file_data: bytes, on_progress: Optional[Callable[[float], None]], expected_size: int = 0, stream: str = 'data'
 ) -> bytearray:
     """
-    Return lzma.decompress(file_data, format=_LZMA_FORMAT, filters=...), but feed it in chunks so its progress can be
+    Return lzma.decompress(file_data, format=LZMA_FORMAT, filters=...), but feed it in chunks so its progress can be
     reported. Like lzma.decompress, decode the streams one after the other and ignore junk after the last one.
     A stream the default filters cannot decode is decoded again with the presets 7-9 dictionary.
     The output is allocated once at `expected_size`, and grows past it if needed. `expected_size` comes from segments
@@ -421,9 +423,9 @@ def _decompress_in_chunks(
     damaged = f'Error: The compressed {stream} is damaged; Unable to decompress.'
     output = bytearray(min(max(0, expected_size), _INITIAL_EXPANSION * len(file_data)))
     size = 0
-    remaining, first_stream, filters = file_data, True, _LZMA_DECOMPRESSION_FILTERS
+    remaining, first_stream, filters = file_data, True, LZMA_DECOMPRESSION_FILTERS
     while True:
-        decompressor = lzma.LZMADecompressor(format=_LZMA_FORMAT, filters=filters)
+        decompressor = lzma.LZMADecompressor(format=LZMA_FORMAT, filters=filters)
         position, stream_start = 0, size
         try:
             while position < len(remaining) and not decompressor.eof:
@@ -440,7 +442,7 @@ def _decompress_in_chunks(
                     on_progress(min(1.0, (len(file_data) - len(remaining) + position) / len(file_data)))
         except lzma.LZMAError as e:
             size = stream_start
-            if filters is _LZMA_DECOMPRESSION_FILTERS:
+            if filters is LZMA_DECOMPRESSION_FILTERS:
                 filters = _LZMA_MAX_DICT_DECOMPRESSION_FILTERS
                 continue
             if first_stream:
@@ -451,7 +453,7 @@ def _decompress_in_chunks(
         remaining = decompressor.unused_data + remaining[position:]
         if not remaining:
             break
-        first_stream, filters = False, _LZMA_DECOMPRESSION_FILTERS
+        first_stream, filters = False, LZMA_DECOMPRESSION_FILTERS
     del output[size:]
     return output
 

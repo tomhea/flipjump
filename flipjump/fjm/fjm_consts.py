@@ -6,8 +6,9 @@ LZMA compression settings used by the compressed versions.
 """
 
 import lzma
+import struct
 from enum import Enum
-from typing import List, Dict, Optional, Union
+from typing import Iterable, List, Dict, Optional, Tuple, Union
 
 """
 struct {
@@ -23,11 +24,11 @@ struct {
     { // for version 4
         u64 segments_size;  // the byte length of the compressed segment table that follows
     }
-    struct segment {
-        u64 segment_start;  // in memory words (w-bits)
-        u64 segment_length; // in memory words (w-bits)
-        u64 data_start;     // in the outer-struct.data words (w-bits)
-        u64 data_length;    // in the outer-struct.data words (w-bits)
+    struct segment {    // each field is a u64. In version 4, if w > 64, each field is w bits (segment_field_size)
+        field segment_start;  // in memory words (w-bits)
+        field segment_length; // in memory words (w-bits)
+        field data_start;     // in the outer-struct.data words (w-bits)
+        field data_length;    // in the outer-struct.data words (w-bits)
     } *segments;        // segments[segment_num] (lzma2-compressed in version 4)
     u8* data;       // the data: little-endian words of word_size/8 bytes (might be compressed in some versions)
 } fjm_file;     // FlipJump Memory file
@@ -39,11 +40,11 @@ FJ_MAGIC = ord('F') + (ord('J') << 8)
 
 _reserved_dict_threshold = 1000
 
-_header_base_format = '<HHQQ'
-_header_base_size = 2 + 2 + 8 + 8
+HEADER_BASE_FORMAT = '<HHQQ'
+HEADER_BASE_SIZE = 2 + 2 + 8 + 8
 
-_header_extension_format = '<LLL'
-_header_extension_size = 4 + 4 + 4
+HEADER_EXTENSION_FORMAT = '<LLL'
+HEADER_EXTENSION_SIZE = 4 + 4 + 4
 
 # the header's io_mode: the io device a program runs with, unless `fj --run` is given --io.
 # Older files have a u64 'flags' here, always 0, so they read as io mode 0 (standard) with no run flags.
@@ -78,11 +79,11 @@ def bad_io_mode_message(io_mode: Union[int, str]) -> Optional[str]:
     return None
 
 
-_segment_format = '<QQQQ'
-_segment_size = 8 + 8 + 8 + 8
+SEGMENT_FIELDS = 4  # segment_start, segment_length, data_start, data_length
+_U64_SEGMENT_FORMAT = '<QQQQ'
 
-_segments_size_format = '<Q'
-_segments_size_size = 8
+SEGMENTS_SIZE_FORMAT = '<Q'
+SEGMENTS_SIZE_SIZE = 8
 
 
 class FJMVersion(Enum):
@@ -90,7 +91,8 @@ class FJMVersion(Enum):
     NormalVersion = 1  # added run flags, io mode and reserved
     RelativeJumpVersion = 2  # compress-friendly: jumps in data are saved relative to their address
     CompressedVersion = 3  # version 2 but data is lzma2-compressed
-    CompressedSegmentsVersion = 4  # version 3 but the segment table is lzma2-compressed too
+    # version 3 but the segment table is lzma2-compressed too, and its fields are w bits if w > 64
+    CompressedSegmentsVersion = 4
 
 
 SUPPORTED_VERSIONS_NAMES = {
@@ -108,7 +110,7 @@ MAX_MEMORY_WIDTH = 1 << 15
 SUPPORTED_MEMORY_WIDTHS_TEXT = f'a power of two from {MIN_MEMORY_WIDTH} to {MAX_MEMORY_WIDTH}'
 # the widths whose words fit a typed array (and the native engine); wider words are python ints
 ARRAY_TYPECODE_BY_WIDTH: Dict[int, str] = {8: 'B', 16: 'H', 32: 'I', 64: 'Q'}
-# a segment's start and length are u64 fields, in words
+# where the last segment may end, in words, if the segment fields are u64 (segment_field_size)
 MAX_SEGMENT_END_WORDS = 1 << 64
 
 
@@ -121,8 +123,36 @@ def is_supported_memory_width(memory_width: int) -> bool:
     return memory_width in SUPPORTED_MEMORY_WIDTHS
 
 
-_LZMA_FORMAT = lzma.FORMAT_RAW
-_LZMA_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [{"id": lzma.FILTER_LZMA2}]
+def segment_field_size(version: FJMVersion, memory_width: int) -> int:
+    """Return the size, in bytes, of one field of the segment table: a u64, or in version 4 a w-bit word if the
+    memory is wider than 64 bits (so a segment can be anywhere in the memory)."""
+    if version == FJMVersion.CompressedSegmentsVersion and memory_width > 64:
+        return memory_width // 8
+    return 8
+
+
+def pack_segments(segments: Iterable[Tuple[int, int, int, int]], version: FJMVersion, memory_width: int) -> bytes:
+    """Return the bytes of the segment table: the four fields of each segment, little-endian."""
+    field_size = segment_field_size(version, memory_width)
+    if field_size == 8:
+        return b''.join(struct.pack(_U64_SEGMENT_FORMAT, *segment) for segment in segments)
+    return b''.join(field.to_bytes(field_size, 'little') for segment in segments for field in segment)
+
+
+def unpack_segments(table: bytes, version: FJMVersion, memory_width: int) -> List[Tuple[int, int, int, int]]:
+    """Return the segments that the bytes of a segment table hold (see pack_segments)."""
+    field_size = segment_field_size(version, memory_width)
+    if field_size == 8:
+        return list(struct.iter_unpack(_U64_SEGMENT_FORMAT, table))
+    field_ends = range(field_size, len(table) + 1, field_size)
+    fields = [int.from_bytes(table[end - field_size : end], 'little') for end in field_ends]  # noqa: E203
+    return [
+        (fields[at], fields[at + 1], fields[at + 2], fields[at + 3]) for at in range(0, len(fields), SEGMENT_FIELDS)
+    ]
+
+
+LZMA_FORMAT = lzma.FORMAT_RAW
+LZMA_DECOMPRESSION_FILTERS: List[Dict[str, int]] = [{"id": lzma.FILTER_LZMA2}]
 # preset 9's dictionary size, the largest any preset uses, so a decoder this large reads every preset. The reader
 # uses it only when the default (8 MiB) decoder fails: presets 7-9 can match farther back than that.
 _LZMA_MAX_DICT_SIZE = 1 << 26
